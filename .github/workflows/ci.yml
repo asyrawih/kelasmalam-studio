@@ -28,6 +28,12 @@ jobs:
           components: rustfmt, clippy, rust-src
       - uses: Swatinem/rust-cache@v2
 
+      # `daw-native-host` memakai cpal → alsa-sys, yang menautkan pustaka
+      # sistem lewat pkg-config. Tanpa ini `cargo test --workspace` gagal di
+      # build script alsa-sys, bukan di kode kita.
+      - name: pustaka sistem untuk cpal
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
@@ -65,11 +71,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: browser-actions/setup-chrome@v1
 
+      # Toolchain STABIL khusus untuk mem-build perkakas. Perkakas ini tidak
+      # ikut ke artefak; ia hanya perlu bisa dikompilasi.
+      - run: rustup toolchain install stable --profile minimal
+
       - name: install tooling
         run: |
           set -euo pipefail
-          cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
-          cargo install wasm-pack --locked
+          # `cargo install` TANPA `+stable` memakai toolchain project (nightly
+          # yang dipin di rust-toolchain.toml). Dependensi transitif perkakas
+          # modern menuntut rustc yang lebih baru, jadi instalasinya gagal
+          # dengan pesan yang menunjuk crate asing — bukan masalah kode kita.
+          cargo +stable install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+          # wasm-pack: pakai binari siap pakai. Mengompilasinya dari sumber
+          # memakan menit CI untuk sesuatu yang tidak pernah masuk artefak.
+          curl -sSfL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
           sudo apt-get update && sudo apt-get install -y binaryen
 
       - run: wasm-pack test --headless --chrome crates/wasm-bridge

@@ -50,6 +50,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      # Perkakas dibangun dengan toolchain STABIL, bukan nightly project:
+      # dependensi transitifnya menuntut rustc lebih baru dari pin kita.
+      - run: rustup toolchain install stable --profile minimal
+
       - name: wasm-bindgen CLI
         run: |
           # Versinya HARUS sama persis dengan crate wasm-bindgen; kalau beda,
@@ -57,7 +61,7 @@ jobs:
           WANT="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
           HAVE="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
           if [ "$HAVE" != "$WANT" ]; then
-            cargo install wasm-bindgen-cli --version "$WANT" --locked --force
+            cargo +stable install wasm-bindgen-cli --version "$WANT" --locked --force
           fi
 
       - name: binaryen (wasm-opt)
@@ -73,7 +77,11 @@ jobs:
       # Deploy hanya boleh jalan kalau tesnya hijau. Menemukan regresi lewat
       # aplikasi yang sudah live adalah cara paling mahal untuk mengetahuinya.
       - name: Test Rust
-        run: cargo test --workspace
+        # `daw-native-host` DIKECUALIKAN dengan sengaja: ia binari debugging
+        # desktop (cpal → alsa-sys) yang tidak pernah ikut ke build web, dan
+        # menyertakannya berarti memasang pustaka ALSA di runner hanya untuk
+        # sesuatu yang tidak di-deploy. CI penuh (ci.yml) tetap mengujinya.
+        run: cargo test --workspace --exclude daw-native-host
 
       - name: Install web deps
         working-directory: web
