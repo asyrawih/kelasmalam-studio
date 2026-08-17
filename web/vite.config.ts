@@ -123,7 +123,10 @@ export default defineConfig({
     // esnext dibutuhkan untuk top-level await, import.meta.url, dan supaya
     // esbuild tidak men-downlevel BigInt (playhead u64 lewat BigInt64Array).
     target: 'esnext',
-    sourcemap: true,
+    // Sourcemap MATI di produksi: ia menyumbang sebagian besar dari ~17 MB
+    // dist dan mengekspos seluruh source. Nyalakan lewat
+    // `VITE_SOURCEMAP=1 vite build` kalau perlu menelusuri bug produksi.
+    sourcemap: process.env.VITE_SOURCEMAP === '1',
     rollupOptions: {
       input: { main: resolve(__dirname, 'index.html') },
     },

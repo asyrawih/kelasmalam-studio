@@ -18,14 +18,14 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import type { UiEngine } from './state';
 import './index.css';
+// Suffix `?worklet&url` WAJIB: ia melewati `audioWorkletPlugin()` yang mem-build
+// worklet jadi IIFE tanpa `import`. Memakai `new URL(...)` biasa membuat Vite
+// menyalin file .ts MENTAH ke dist — dev tetap jalan (dev-server men-transform),
+// produksi gagal dengan SyntaxError saat addModule().
+import workletUrl from './audio/worklet-processor.ts?worklet&url';
 
 async function createEngine(): Promise<UiEngine | null> {
   const mod = await import('./audio/engine-client');
-  // URL worklet dihasilkan plugin `audioWorkletPlugin()` di vite.config.ts
-  // (docs/04). Kalau plugin-nya belum terpasang, `new URL(...)` di bawah tetap
-  // memberi URL modul mentah dan `addModule` akan gagal — kegagalan itu
-  // ditangkap App dan ditampilkan, bukan menghentikan aplikasi.
-  const workletUrl = new URL('./audio/worklet-processor.ts', import.meta.url).href;
   return await mod.EngineClient.create({
     workletUrl,
     onFault: (message) => {

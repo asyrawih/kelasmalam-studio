@@ -1,0 +1,118 @@
+# Build di CI, deploy hasil jadinya ke Vercel.
+#
+# Vercel TIDAK mem-build apa pun di sini (`--prebuilt`). Alasannya ada di
+# `scripts/vercel-build.sh`: engine butuh Rust nightly + rust-src +
+# wasm-bindgen-cli + binaryen, dan `-Z build-std` mengompilasi ulang `std`.
+# Toolchain itu memang sudah ada di CI untuk `cargo test`, jadi membangunnya
+# di sini gratis; memasangnya di build image Vercel tidak.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      production:
+        description: 'Deploy ke produksi (bukan preview)'
+        type: boolean
+        default: false
+
+concurrency:
+  # Deploy tidak boleh saling menyalip: dua build paralel bisa membuat
+  # deployment yang lebih lama menimpa yang lebih baru.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Toolchain ──────────────────────────────────────────────────────────
+      # Versi nightly dibaca dari rust-toolchain.toml, jadi tidak ada dua tempat
+      # yang menyebut versi dan bisa berselisih.
+      - name: Rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add rust-src
+          rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: wasm-bindgen CLI
+        run: |
+          # Versinya HARUS sama persis dengan crate wasm-bindgen; kalau beda,
+          # glue yang dihasilkan tidak cocok dengan section __wbindgen di .wasm.
+          WANT="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          HAVE="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
+          if [ "$HAVE" != "$WANT" ]; then
+            cargo install wasm-bindgen-cli --version "$WANT" --locked --force
+          fi
+
+      - name: binaryen (wasm-opt)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # ── Gate ───────────────────────────────────────────────────────────────
+      # Deploy hanya boleh jalan kalau tesnya hijau. Menemukan regresi lewat
+      # aplikasi yang sudah live adalah cara paling mahal untuk mengetahuinya.
+      - name: Test Rust
+        run: cargo test --workspace
+
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck + test web
+        working-directory: web
+        run: |
+          npx tsc --noEmit
+          npx vitest run
+
+      # ── Build + deploy ─────────────────────────────────────────────────────
+      - name: Build .vercel/output
+        run: ./scripts/vercel-build.sh
+
+      - name: Deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "VERCEL_TOKEN belum diset — lewati deploy." >&2
+            echo "Artefak tetap dibangun dan diverifikasi." >&2
+            exit 0
+          fi
+          PROD=""
+          if [ "${{ github.event_name }}" = "push" ] || \
+             [ "${{ inputs.production }}" = "true" ]; then
+            PROD="--prod"
+          fi
+          npx --yes vercel@latest deploy --prebuilt $PROD --token "$VERCEL_TOKEN" --yes
+
+      # Berguna saat deploy dilewati atau gagal: hasil build tetap bisa diunduh
+      # dan diperiksa, tanpa harus menjalankan ulang seluruh pipeline.
+      - name: Upload build output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vercel-output
+          path: .vercel/output
+          retention-days: 7
