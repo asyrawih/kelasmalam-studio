@@ -18,7 +18,7 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import { type EqMode, timelineLenFor, MAX_LANE_SPEED, MIN_LANE_SPEED,
+import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SPEED, type EqMode, timelineLenFor, MAX_LANE_SPEED, MIN_LANE_SPEED,
   EQ_PRESETS,
   cloneEq,
   defaultEq,
@@ -101,6 +101,15 @@ export interface StudioAppState extends StudioState {
   readonly panelOrder: readonly PanelId[];
   /** Urutan panel di rail kanan. Daftar terpisah dari kolom kiri. */
   readonly railOrder: readonly PanelId[];
+  /**
+   * Panel yang sedang dibentangkan penuh layar, atau null.
+   *
+   * SENGAJA TIDAK DIPERSIST: membuka aplikasi dan langsung mendapati satu panel
+   * menutupi segalanya, tanpa ingat pernah memilihnya, itu membingungkan —
+   * apalagi kalau tombol keluarnya belum ditemukan. Ini state sesi, bukan
+   * bagian dari project.
+   */
+  readonly maximizedPanel: PanelId | null;
   /** Tampilan EQ yang dipilih user. Preferensi UI, tidak mempengaruhi audio. */
   readonly eqMode: EqMode;
   /** Batas bawah panjang timeline (detik), diatur manual. */
@@ -115,10 +124,18 @@ export type PanelId =
   | 'clip-detail'
   | 'transport'
   | 'rail-tabs'
+  | 'amplify'
+  | 'render-speed'
   | 'shortcuts';
 
 export const DEFAULT_PANEL_ORDER: readonly PanelId[] = ['timeline', 'clip-detail'];
-export const DEFAULT_RAIL_ORDER: readonly PanelId[] = ['transport', 'rail-tabs', 'shortcuts'];
+export const DEFAULT_RAIL_ORDER: readonly PanelId[] = [
+  'transport',
+  'rail-tabs',
+  'amplify',
+  'render-speed',
+  'shortcuts',
+];
 
 /** Panjang minimum timeline (design memakai DUR = 120 detik). */
 export const MIN_DURATION_SEC = 120;
@@ -148,6 +165,7 @@ let state: StudioAppState = withDerived({
   contentEnd: 0,
   panelOrder: DEFAULT_PANEL_ORDER,
   railOrder: DEFAULT_RAIL_ORDER,
+  maximizedPanel: null,
   eqMode: 'curve',
   minDurationSec: MIN_DURATION_SEC,
   maxDurationSec: null,
@@ -179,6 +197,23 @@ function set(patch: (s: StudioAppState) => Partial<StudioAppState> | null): void
 }
 
 /**
+ * Pertahankan urutan pilihan user, buang id yang sudah tidak dikenal, lalu
+ * tambahkan panel baru di akhir. Mengembalikan array LAMA kalau tidak ada yang
+ * berubah — supaya selector berbasis referensi tidak ikut render ulang.
+ */
+function reconcileOrder(
+  current: readonly PanelId[] | undefined,
+  canonical: readonly PanelId[],
+): readonly PanelId[] {
+  const known = (current ?? []).filter((id) => canonical.includes(id));
+  const missing = canonical.filter((id) => !known.includes(id));
+  if (missing.length === 0 && known.length === (current ?? []).length) {
+    return current ?? canonical;
+  }
+  return [...known, ...missing];
+}
+
+/**
  * `duration` diturunkan dari clip terjauh + ekor kosong, minimal 2 menit.
  * Tumbuh otomatis begitu clip ditambah/digeser ke kanan.
  */
@@ -198,6 +233,15 @@ function withDerived(s: StudioAppState): StudioAppState {
     const cap = secToSamples(Math.max(1, s.maxDurationSec), s.sampleRate);
     farthest = Math.max(Math.min(farthest, cap), contentEnd);
   }
+  // Urutan panel DIREKONSILIASI dengan daftar kanonik setiap kali state
+  // berubah. Tanpa ini, project yang tersimpan sebelum sebuah panel ada akan
+  // menyimpan urutan tanpa id panel itu — panelnya tetap tampil (di-append
+  // sebagai "extra"), tapi `movePanel` menolaknya karena tidak ada di daftar,
+  // jadi drag-nya diam saja tanpa error. Gejalanya: panel baru tidak bisa
+  // dipindah, hanya di project lama.
+  const panelOrder = reconcileOrder(s.panelOrder, DEFAULT_PANEL_ORDER);
+  const railOrder = reconcileOrder(s.railOrder, DEFAULT_RAIL_ORDER);
+
   // Seleksi yang menunjuk ke sesuatu yang sudah dihapus harus dibersihkan,
   // kalau tidak panel detail akan menampilkan clip hantu.
   const laneOk = s.lanes.some((l) => l.id === s.selectedLaneId);
@@ -206,6 +250,8 @@ function withDerived(s: StudioAppState): StudioAppState {
     ...s,
     duration: farthest,
     contentEnd,
+    panelOrder,
+    railOrder,
     selectedLaneId: laneOk ? s.selectedLaneId : (s.lanes[0]?.id ?? null),
     selectedClipId: clipOk ? s.selectedClipId : null,
   };
@@ -291,6 +337,11 @@ export const studioActions = {
   setLaneGain(laneId: string, gainDb: number): void {
     set((s) => mapLane(s, laneId, (l) => ({ ...l, gainDb })));
   },
+  /** Warna lane (hex). Dipakai clip, waveform, dan chip di mixer. */
+  setLaneColor(laneId: string, color: string): void {
+    set((s) => mapLane(s, laneId, (l) => (l.color === color ? l : { ...l, color })));
+  },
+
   setLaneEq(laneId: string, eq: EqSettings): void {
     set((s) => mapLane(s, laneId, (l) => ({ ...l, eq: cloneEq(eq) })));
   },
@@ -444,6 +495,26 @@ export const studioActions = {
       next.splice(to, 0, id);
       return { [key]: next } as Partial<StudioAppState>;
     });
+  },
+
+  setMasterGain(db: number): void {
+    set(() => ({
+      masterGainDb: Math.max(MIN_MASTER_GAIN_DB, Math.min(MAX_MASTER_GAIN_DB, db)),
+    }));
+  },
+  setRenderSpeed(v: number): void {
+    set(() => ({ renderSpeed: Math.max(MIN_RENDER_SPEED, Math.min(MAX_RENDER_SPEED, v)) }));
+  },
+  setExportFileName(name: string): void {
+    set(() => ({ exportFileName: name }));
+  },
+
+  /** Bentangkan panel, atau kembalikan kalau panel yang sama ditekan lagi. */
+  toggleMaximize(id: PanelId): void {
+    set((s) => ({ maximizedPanel: s.maximizedPanel === id ? null : id }));
+  },
+  clearMaximize(): void {
+    set((s) => (s.maximizedPanel === null ? null : { maximizedPanel: null }));
   },
 
   setEqMode(mode: EqMode): void {
@@ -687,6 +758,7 @@ export const studioActions = {
       contentEnd: 0,
       panelOrder: DEFAULT_PANEL_ORDER,
       railOrder: DEFAULT_RAIL_ORDER,
+      maximizedPanel: null,
       eqMode: 'curve',
       minDurationSec: MIN_DURATION_SEC,
       maxDurationSec: null,

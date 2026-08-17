@@ -35,6 +35,9 @@ interface PersistedProject {
   readonly eqMode: StudioAppState['eqMode'];
   readonly panelOrder: StudioAppState['panelOrder'];
   readonly railOrder: StudioAppState['railOrder'];
+  readonly masterGainDb: number;
+  readonly renderSpeed: number;
+  readonly exportFileName: string;
   readonly selectedLaneId: string | null;
   readonly selectedClipId: string | null;
 }
@@ -53,6 +56,9 @@ export function serialize(s: StudioAppState): string {
     eqMode: s.eqMode,
     panelOrder: s.panelOrder,
     railOrder: s.railOrder,
+    masterGainDb: s.masterGainDb,
+    renderSpeed: s.renderSpeed,
+    exportFileName: s.exportFileName,
     selectedLaneId: s.selectedLaneId,
     selectedClipId: s.selectedClipId,
   };
@@ -129,6 +135,10 @@ export async function restoreProject(
     // tetap menimpa nilai yang sudah ada di store.
     panelOrder: data.panelOrder ?? DEFAULT_PANEL_ORDER,
     railOrder: data.railOrder ?? DEFAULT_RAIL_ORDER,
+    // Project lama tidak punya field ini — WAJIB di-default, bukan undefined.
+    masterGainDb: data.masterGainDb ?? 0,
+    renderSpeed: data.renderSpeed ?? 1,
+    exportFileName: data.exportFileName ?? '',
     selectedLaneId: data.selectedLaneId,
     selectedClipId: data.selectedClipId,
   });

@@ -58,7 +58,10 @@ export function flattenBuffer(buf: AudioBuffer): Float32Array {
  * angka yang sama di kartu Compile — dua perhitungan berarti dua jawaban.
  */
 export function buildExportPayload(state: StudioState, getBuffer: BufferLookup): ExportPayload {
-  const speed = state.speed > 0 ? state.speed : 1;
+  // Kecepatan RENDER, bukan kecepatan transport: mengubah kecepatan saat
+  // mendengarkan tidak boleh diam-diam mengubah kecepatan file yang dihasilkan.
+  // Keduanya sengaja jadi dua angka terpisah di store.
+  const speed = state.renderSpeed > 0 ? state.renderSpeed : 1;
   const assets = new Map<number, ExportAssetPcm>();
 
   /**
@@ -140,7 +143,14 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
   }
 
   return {
-    json: JSON.stringify({ sampleRate: state.sampleRate, speed, lanes }),
+    json: JSON.stringify({
+      sampleRate: state.sampleRate,
+      speed,
+      // Amplify master: diterapkan setelah semua lane dijumlahkan. Dikirim ke
+      // engine supaya file hasilnya selevel dengan yang didengar di preview.
+      masterGainDb: state.masterGainDb,
+      lanes,
+    }),
     assets: [...assets.values()],
     endSample: Math.round(endTimeline / speed),
   };

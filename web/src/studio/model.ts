@@ -124,6 +124,14 @@ export const EQ_MAX_GAIN_DB = 18;
 export const EQ_MIN_HZ = 20;
 export const EQ_MAX_HZ = 20_000;
 
+/** Batas amplify master (dB). Cukup untuk mengangkat mix pelan tanpa absurd. */
+export const MIN_MASTER_GAIN_DB = -24;
+export const MAX_MASTER_GAIN_DB = 12;
+
+/** Rentang kecepatan render saat compile. */
+export const MIN_RENDER_SPEED = 0.25;
+export const MAX_RENDER_SPEED = 4;
+
 export type EqPreset = 'FLAT' | 'BASS' | 'VOCAL' | 'CLUB';
 
 /**
@@ -269,6 +277,21 @@ export interface StudioState {
 
   /** 0..1 saat export berjalan, null saat idle. */
   exportProgress: number | null;
+
+  /**
+   * Amplify master (dB) — diterapkan SETELAH semua lane dijumlahkan.
+   * Berlaku untuk preview DAN export; kalau hanya salah satu, file hasilnya
+   * beda level dari yang didengar.
+   */
+  masterGainDb: number;
+  /**
+   * Kecepatan pemutaran yang dipakai SAAT COMPILE. Terpisah dari `speed`
+   * (transport) supaya mengubah kecepatan saat mendengarkan tidak diam-diam
+   * mengubah kecepatan file yang dihasilkan.
+   */
+  renderSpeed: number;
+  /** Nama berkas hasil export, tanpa ekstensi. Kosong = pakai nama project. */
+  exportFileName: string;
 }
 
 // ── Helper murni (dipakai UI dan tes) ────────────────────────────────────────

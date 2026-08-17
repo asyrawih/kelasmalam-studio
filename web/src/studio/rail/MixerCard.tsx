@@ -74,7 +74,9 @@ function LaneFader({
           background: '#000',
           border: '1px solid var(--cy-border)',
           position: 'relative',
-          overflow: 'hidden',
+          // `overflow: hidden` DILEPAS: thumb-nya (14px) lebih tinggi dari
+          // track (8px) dan setengahnya menonjol di kedua sisi. Dengan clipping,
+          // yang terlihat cuma potongan kotak, bukan lingkaran.
           cursor: 'pointer',
           touchAction: 'none',
         }}
@@ -85,6 +87,32 @@ function LaneFader({
             inset: '0 auto 0 0',
             width: `${level}%`,
             background: 'linear-gradient(90deg,#ffd400,#ffb020)',
+          }}
+        />
+        {/*
+          Thumb bulat di ujung isian. `pointerEvents: 'none'` supaya seluruh
+          gerakan tetap ditangani track — thumb yang ikut menerima pointer akan
+          menelan `pointerdown` di titik yang justru paling sering diklik user,
+          dan drag-nya terasa mati di posisi itu saja.
+
+          Posisinya memakai `calc` supaya di 0% dan 100% lingkarannya tetap
+          utuh di dalam track, bukan setengah menggantung keluar.
+        */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: `calc(${level}% + ${7 - (level / 100) * 14}px)`,
+            width: '14px',
+            height: '14px',
+            marginTop: '-7px',
+            marginLeft: '-7px',
+            borderRadius: '50%',
+            background: 'var(--cy-accent)',
+            border: '1px solid var(--cy-bg)',
+            boxShadow: '0 0 0 1px var(--cy-border-strong), 0 0 8px #ffd40066',
+            pointerEvents: 'none',
           }}
         />
       </div>

@@ -103,5 +103,8 @@ export function createDemoStudio(): StudioState {
     format: 'AUTO',
     preset: 'FLAT',
     exportProgress: null,
+    masterGainDb: 0,
+    renderSpeed: 1,
+    exportFileName: '',
   };
 }

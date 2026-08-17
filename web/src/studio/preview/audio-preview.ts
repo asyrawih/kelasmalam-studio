@@ -9,7 +9,13 @@
  *
  * BATASAN YANG DISENGAJA (jangan ditambah, jangan dianggap engine):
  *   - Tidak ada FX, tidak ada compressor. Yang ada hanya gain, mute/solo,
- *     playbackRate, dan EQ parametrik 4 band lewat BiquadFilterNode.
+ *     playbackRate, EQ parametrik 4 band lewat BiquadFilterNode, dan satu gain
+ *     master (AMPLIFY) di ujung rantai.
+ *   - Tidak ada limiter maupun soft-clipper di master, termasuk yang
+ *     direkomendasikan docs/07 §7d — engine pun belum punya. Sample di atas
+ *     ±1.0 lewat apa adanya ke destination. Itu keputusan yang harus DIKATAKAN,
+ *     bukan disembunyikan, jadi panel Amplify menampilkan peak master asli
+ *     (`readMasterPeak`) dan menyatakan bahwa tidak ada limiter.
  *   - `playbackRate` = VARISPEED: pitch ikut berubah. Sama seperti perilaku
  *     engine untuk MVP (docs/07), jadi setidaknya tidak menyesatkan.
  *   - Penjadwalannya "sekali tembak" saat play: semua clip dijadwalkan di muka.
@@ -57,6 +63,27 @@ let voices: AudioBufferSourceNode[] = [];
 /** Node non-source (gain lane, filter EQ) — perlu di-disconnect saat stop. */
 let nodes: AudioNode[] = [];
 const laneNodes = new Map<string, LaneNodes>();
+
+/**
+ * AMPLIFY MASTER — satu gain yang dilewati SEMUA lane sebelum destination.
+ *
+ * Bukan dikalikan ke gain tiap lane: dengan satu node, menggeser slider hanya
+ * menyentuh satu AudioParam (n lane = n ramp yang bisa saling telat sepersekian
+ * blok, dan itu terdengar sebagai mix yang "goyang"), dan titik penerapannya
+ * sama persis dengan fader bus master di engine (⑮ docs/07 §7a) — yang membuat
+ * export selevel dengan preview.
+ */
+let masterGain: GainNode | null = null;
+/**
+ * Tap peak SESUDAH amplify. Ada supaya panel Amplify bisa menyatakan level
+ * sebenarnya alih-alih menebak: tidak ada limiter di jalur ini, jadi
+ * satu-satunya cara jujur memberi tahu user bahwa boost-nya clip adalah
+ * mengukurnya.
+ */
+let masterTap: AnalyserNode | null = null;
+/** `ArrayBuffer` eksplisit: `getFloatTimeDomainData` menolak view di atas
+ *  SharedArrayBuffer, dan `Float32Array` polos ikut memuat kemungkinan itu. */
+let masterTapBuf: Float32Array<ArrayBuffer> | null = null;
 
 /**
  * AudioContext dibuat malas (lazy) karena browser mewajibkan user gesture.
@@ -125,6 +152,30 @@ export function stop(): void {
   for (const n of nodes) n.disconnect();
   nodes = [];
   laneNodes.clear();
+  masterGain = null;
+  masterTap = null;
+  masterTapBuf = null;
+}
+
+/**
+ * Peak master (linear, sesudah amplify) sejak jendela analyser terakhir, atau
+ * `null` kalau tidak ada yang berbunyi / browser tanpa AnalyserNode.
+ *
+ * `null` BUKAN 0: panel harus bisa membedakan "senyap" dari "tidak terukur",
+ * karena meter yang menampilkan −inf saat sebenarnya tidak mengukur apa pun
+ * adalah meter yang berbohong.
+ */
+export function readMasterPeak(): number | null {
+  const tap = masterTap;
+  const buf = masterTapBuf;
+  if (tap === null || buf === null) return null;
+  tap.getFloatTimeDomainData(buf);
+  let peak = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const v = Math.abs(buf[i]!);
+    if (v > peak) peak = v;
+  }
+  return peak;
 }
 
 /**
@@ -134,6 +185,12 @@ export function stop(): void {
 export function updateLaneParams(state: StudioAppState): void {
   if (laneNodes.size === 0 || ctx === null) return;
   const at = ctx.currentTime;
+  // Amplify master lewat jalur yang SAMA dengan gain lane: `setTargetAtTime`
+  // pada node yang sudah ada. Membangun ulang graf tiap kali slider bergerak
+  // satu piksel akan terdengar sebagai deretan klik, bukan perubahan level.
+  if (masterGain !== null) {
+    masterGain.gain.setTargetAtTime(dbToLin(state.masterGainDb), at, PARAM_RAMP_SEC);
+  }
   for (const lane of state.lanes) {
     const n = laneNodes.get(lane.id);
     if (n === undefined) continue;
@@ -163,13 +220,34 @@ export function play(state: StudioAppState): void {
   if (audio === null) return;
   void audio.resume().catch(() => undefined);
 
+  // Master dirakit DULU supaya lane punya tujuan: `buildProjectGraph` menerima
+  // `destination`, jadi tidak ada satu pun lane yang menyambung langsung ke
+  // `audio.destination` dan amplify tidak mungkin terlewat oleh salah satunya.
+  const master = audio.createGain();
+  master.gain.value = dbToLin(state.masterGainDb);
+  master.connect(audio.destination);
+  masterGain = master;
+
+  // Analyser opsional: jsdom (dan browser sangat lama) tidak punya. Meter
+  // hilang jauh lebih baik daripada preview yang mati total karenanya.
+  if (typeof audio.createAnalyser === 'function') {
+    const tap = audio.createAnalyser();
+    // 2048 @48k = 43 ms — lebih panjang dari satu frame rAF (17 ms), jadi tidak
+    // ada sample yang lolos di antara dua pembacaan panel.
+    tap.fftSize = 2048;
+    master.connect(tap); // cabang buntu: tap tidak menyambung ke destination
+    masterTap = tap;
+    masterTapBuf = new Float32Array(tap.fftSize);
+  }
+
   const graph = buildProjectGraph(audio, state, {
     playheadSec: state.playhead / state.sampleRate,
     startAt: audio.currentTime + 0.05, // sedikit lookahead supaya start-nya rapi
     getBuffer: (id) => buffers.get(id),
+    destination: master,
   });
 
-  nodes = [...graph.nodes];
+  nodes = [master, ...(masterTap === null ? [] : [masterTap]), ...graph.nodes];
   voices = [...graph.voices];
   for (const [id, ln] of graph.lanes) laneNodes.set(id, ln);
 

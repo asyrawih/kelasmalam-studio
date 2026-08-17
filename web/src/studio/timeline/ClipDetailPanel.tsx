@@ -399,8 +399,12 @@ export function ClipDetailPanel(): JSX.Element {
   const inFrac = clipMs > 0 ? Math.min(1, (clip?.fadeInMs ?? 0) / clipMs) : 0;
   const outFrac = clipMs > 0 ? Math.min(1, (clip?.fadeOutMs ?? 0) / clipMs) : 0;
 
+  // Tanpa prop `live`: badge-nya duduk di pojok kanan atas header, tempat yang
+  // sama dengan tombol bentangkan (⛶) dan gagang drag (⋮⋮) dari
+  // ReorderableStack — ketiganya saling menimpa. Kontrol menang atas hiasan.
+  // Prop `live` sendiri tetap ada di Card untuk pemakai lain.
   return (
-    <Card title="Clip Detail" subtitle="waveform dari clip yang dipilih" notched live>
+    <Card title="Clip Detail" subtitle="waveform dari clip yang dipilih" notched>
       <div
         style={{
           display: 'flex',

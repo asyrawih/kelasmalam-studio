@@ -377,9 +377,17 @@ describe('buildExportPayload', () => {
     for (const r of referenced) expect(ids).toContain(r);
   });
 
-  it('panjang output mengerut mengikuti transport speed', () => {
+  it('panjang output mengerut mengikuti RENDER speed', () => {
     expect(buildExportPayload(state(), lookup).endSample).toBe(52_800);
-    expect(buildExportPayload(state({ speed: 2 }), lookup).endSample).toBe(26_400);
+    expect(buildExportPayload(state({ renderSpeed: 2 }), lookup).endSample).toBe(26_400);
+  });
+
+  it('kecepatan TRANSPORT tidak mempengaruhi file yang dihasilkan', () => {
+    // Dua angka yang sengaja dipisah: mendengarkan cepat untuk mencari titik
+    // edit tidak boleh diam-diam mengubah kecepatan file yang di-export.
+    const fast = buildExportPayload(state({ speed: 2 }), lookup);
+    expect(fast.endSample).toBe(52_800);
+    expect(JSON.parse(fast.json).speed).toBe(1);
   });
 
   it('lane mute tidak menyumbang panjang output', () => {

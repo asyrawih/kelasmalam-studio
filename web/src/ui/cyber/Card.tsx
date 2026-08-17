@@ -65,6 +65,16 @@ export function Card({
             borderBottom: '1px solid var(--cy-border)',
             paddingBottom: '10px',
             marginBottom: '12px',
+            // Ruang cadangan di kanan header untuk kontrol yang dipasang dari
+            // LUAR kartu — ReorderableStack menempelkan tombol bentangkan (⛶)
+            // dan gagang drag (⋮⋮) secara absolut di pojok kanan atas setiap
+            // panel. Tanpa ruang ini, apa pun yang diisi kartu di sisi kanan
+            // (badge, subtitle panjang) tertimpa tombol itu.
+            //
+            // Nilainya datang dari pemasangnya lewat CSS variable, bukan
+            // di-hardcode: kartu di luar tumpukan tidak boleh kehilangan ruang
+            // untuk kontrol yang tidak ada di sana.
+            paddingRight: 'var(--cy-card-header-reserve, 0px)',
           }}
         >
           {title !== undefined ? (

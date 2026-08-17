@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_PANEL_ORDER, studioActions, studioStore } from '../store';
+import { DEFAULT_PANEL_ORDER, DEFAULT_RAIL_ORDER, studioActions, studioStore } from '../store';
 import { deserialize, serialize } from '../persist/persistence';
 
 describe('urutan panel', () => {
@@ -74,5 +74,36 @@ describe('kompatibilitas data lama', () => {
     expect(parsed).not.toBeNull();
     // Field-nya memang tidak ada; pemulih WAJIB mengisinya dengan default.
     expect(parsed!.panelOrder).toBeUndefined();
+  });
+});
+
+describe('rekonsiliasi urutan dengan daftar kanonik', () => {
+  beforeEach(() => studioActions.__resetForTest());
+
+  it('panel yang belum ada di urutan tersimpan tetap BISA dipindah', () => {
+    // Bentuk urutan dari project yang disimpan sebelum panel amplify /
+    // render-speed ada. Dulu keduanya tampil tapi drag-nya diam saja.
+    studioActions.hydrate({ railOrder: ['transport', 'rail-tabs', 'shortcuts'] });
+
+    const order = studioStore.getState().railOrder;
+    expect(order).toContain('amplify');
+    expect(order).toContain('render-speed');
+
+    studioActions.movePanel('amplify', 0);
+    expect(studioStore.getState().railOrder[0]).toBe('amplify');
+  });
+
+  it('urutan pilihan user dipertahankan, panel baru ditambahkan di akhir', () => {
+    studioActions.hydrate({ railOrder: ['shortcuts', 'transport'] });
+    const order = studioStore.getState().railOrder;
+    expect(order.slice(0, 2)).toEqual(['shortcuts', 'transport']);
+    expect(order).toHaveLength(DEFAULT_RAIL_ORDER.length);
+  });
+
+  it('id yang sudah tidak dikenal dibuang, bukan bikin panel hantu', () => {
+    studioActions.hydrate({
+      railOrder: ['transport', 'panel-yang-sudah-dihapus' as never, 'shortcuts'],
+    });
+    expect(studioStore.getState().railOrder).not.toContain('panel-yang-sudah-dihapus');
   });
 });

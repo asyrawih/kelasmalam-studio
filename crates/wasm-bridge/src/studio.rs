@@ -22,6 +22,7 @@
 //! | `fadeCurve`           | `ClipDesc.fade_curve` | didukung penuh sejak equal-power masuk engine (`voice::fade_gain`) |
 //! | EQ 4 band parametrik  | `TrackDesc.eq`        | `lowshelf/peaking/highshelf` → `daw_dsp::FilterKind` |
 //! | `gainDb`              | `gain_db`             | sama-sama dB, tidak ada konversi |
+//! | `masterGainDb`        | `buses[0].gain_db`    | fader master (⑮ docs/07): satu-satunya gain SESUDAH semua track dijumlahkan |
 //! | —                     | `pan`, `sends`, `comp`| UI belum punya; `sends`/`comp` netral, `pan` tengah + dikompensasi (lihat `CENTER_PAN_COMPENSATION_DB`) |
 //!
 //! Apa pun yang TIDAK bisa dinyatakan engine dilaporkan lewat
@@ -55,6 +56,16 @@ const KIND_PEAKING: u8 = 4;
 /// pan harus terdengar apa adanya, dan preview yang harus menyusul.
 const CENTER_PAN_COMPENSATION_DB: f32 = 3.010_3;
 
+/// Batas amplify master — cerminan `MIN/MAX_MASTER_GAIN_DB` di `model.ts`.
+///
+/// Slider UI sudah menjepitnya, jadi nilai di luar rentang ini hanya bisa
+/// datang dari project yang disunting tangan atau dari versi UI lain. Di-clamp
+/// dan DILAPORKAN, bukan dipakai apa adanya: `masterGainDb: 60` akan menghasilkan
+/// file yang rusak total, dan file rusak tanpa keterangan adalah kegagalan
+/// termahal yang bisa kita kirim.
+const MIN_MASTER_GAIN_DB: f32 = -24.0;
+const MAX_MASTER_GAIN_DB: f32 = 12.0;
+
 // ---------------------------------------------------------------------------
 // Bentuk JSON — cerminan `web/src/studio/model.ts`
 // ---------------------------------------------------------------------------
@@ -67,6 +78,13 @@ pub struct StudioProjectJson {
     /// transport 2× menghasilkan file separuh panjang — persis seperti preview.
     #[serde(default = "one_f64")]
     pub speed: f64,
+    /// Amplify master (dB). Panel AMPLIFY di UI memasangnya sebagai satu
+    /// GainNode yang dilewati SEMUA lane sebelum destination; di sini ia jadi
+    /// fader bus master, yang di `build_plan` dieksekusi tepat setelah seluruh
+    /// track dijumlahkan ke akumulator master (⑮ docs/07 §7a). Titiknya sama,
+    /// jadi file hasil export selevel dengan yang barusan didengar.
+    #[serde(default)]
+    pub master_gain_db: f32,
     #[serde(default)]
     pub lanes: Vec<LaneJson>,
 }
@@ -211,7 +229,25 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
     };
 
     // Satu bus master. UI belum punya bus/group sama sekali.
-    let buses = vec![BusDesc::default()];
+    //
+    // Amplify master masuk sebagai fader bus ini. Tidak ada perkalian ke gain
+    // tiap track: menyebarnya ke track akan diterapkan SEBELUM insert chain
+    // track dan mengubah cara kompresor bereaksi — bukan yang didengar user di
+    // preview, tempat gain-nya duduk sesudah semuanya.
+    let master_gain_db = if src.master_gain_db.is_finite() {
+        src.master_gain_db
+    } else {
+        0.0
+    };
+    if master_gain_db < MIN_MASTER_GAIN_DB || master_gain_db > MAX_MASTER_GAIN_DB {
+        warnings.push(format!(
+            "Amplify master {master_gain_db:.1} dB di luar rentang {MIN_MASTER_GAIN_DB:.0}…{MAX_MASTER_GAIN_DB:.0} dB; dipotong ke batas."
+        ));
+    }
+    let buses = vec![BusDesc {
+        gain_db: master_gain_db.clamp(MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB),
+        ..BusDesc::default()
+    }];
     let mut tracks: Vec<TrackDesc> = Vec::new();
     let mut clips: Vec<ClipDesc> = Vec::new();
 
@@ -579,6 +615,116 @@ mod tests {
         // Tepi-tepinya harus jauh lebih pelan: fade user + micro-fade wajib.
         assert!(l[0].abs() < 0.05, "awal clip tidak di-fade: {}", l[0]);
         assert!(l[23_999].abs() < 0.05, "akhir clip tidak di-fade: {}", l[23_999]);
+    }
+
+    /// Amplify master → fader bus master. Bukan ke gain track: kalau ia bocor
+    /// ke sana, mix dengan 2 lane akan naik dua kali dan tidak ada yang
+    /// menyadarinya sampai file-nya didengar.
+    #[test]
+    fn master_gain_lands_on_the_master_bus_only() {
+        let json = r#"{
+          "sampleRate": 48000, "speed": 1, "masterGainDb": -6,
+          "lanes": [
+            { "id": "a", "gainDb": 0, "clips": [
+              { "id": "c1", "assetId": 0, "start": 0, "len": 4800 } ] },
+            { "id": "b", "gainDb": 0, "clips": [
+              { "id": "c2", "assetId": 1, "start": 0, "len": 4800 } ] }
+          ] }"#;
+        let m = mapping_from_json(json).unwrap();
+        assert!(m.warnings.is_empty(), "{:?}", m.warnings);
+        assert_eq!(m.project.master_bus(), Some(0));
+        assert_eq!(m.project.buses[0].gain_db, -6.0);
+        // Gain track hanya berisi kompensasi pan — amplify TIDAK ikut ke sini.
+        for t in &m.project.tracks {
+            assert!((t.gain_db - CENTER_PAN_COMPENSATION_DB).abs() < 1e-4);
+        }
+        // Dan ia harus selamat menyeberang postcard, karena itulah yang
+        // sebenarnya dikirim ke engine.
+        let back = Project::from_bytes(&m.project.to_bytes().unwrap()).unwrap();
+        assert_eq!(back.buses[0].gain_db, -6.0);
+    }
+
+    #[test]
+    fn master_gain_defaults_to_unity_and_is_clamped_with_a_warning() {
+        // Project lama tanpa field ini sama sekali → 0 dB, bukan senyap.
+        let none = mapping_from_json(&project_json(1.0)).unwrap();
+        assert_eq!(none.project.buses[0].gain_db, 0.0);
+
+        let hot = r#"{ "sampleRate": 48000, "masterGainDb": 60, "lanes": [
+          { "id": "a", "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 4800 }] } ] }"#;
+        let m = mapping_from_json(hot).unwrap();
+        assert_eq!(m.project.buses[0].gain_db, MAX_MASTER_GAIN_DB);
+        assert_eq!(m.warnings.len(), 1);
+        assert!(m.warnings[0].contains("Amplify master"));
+
+        let cold = r#"{ "sampleRate": 48000, "masterGainDb": -400, "lanes": [
+          { "id": "a", "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 4800 }] } ] }"#;
+        let m = mapping_from_json(cold).unwrap();
+        assert_eq!(m.project.buses[0].gain_db, MIN_MASTER_GAIN_DB);
+        assert_eq!(m.warnings.len(), 1);
+    }
+
+    /// Yang sebenarnya dipertaruhkan: bukan angka di snapshot, tapi AMPLITUDO
+    /// yang keluar dari `render_block`. Tes ini me-render project yang sama dua
+    /// kali dengan amplify berbeda dan membandingkan sample di tengah clip —
+    /// satu-satunya cara membuktikan fader master benar-benar dieksekusi
+    /// sesudah track dijumlahkan, dan bukan diabaikan diam-diam.
+    #[test]
+    fn render_block_output_scales_by_master_gain() {
+        fn mid_sample(master_db: f64) -> f32 {
+            use daw_engine::voice::Asset;
+            use daw_engine::Engine;
+            use daw_export::OfflineRenderer;
+            use daw_timeline::TimelineSample;
+
+            let json = format!(
+                r#"{{ "sampleRate": 48000, "speed": 1, "masterGainDb": {master_db},
+                  "lanes": [{{ "id": "l", "gainDb": 0, "speedRatio": 1,
+                    "clips": [{{ "id": "c", "assetId": 0, "start": 0, "len": 24000,
+                                 "fadeInMs": 10, "fadeOutMs": 10 }}] }}] }}"#
+            );
+            let bytes = mapping_from_json(&json).unwrap().project.to_bytes().unwrap();
+            let mut engine = Engine::from_snapshot(&bytes, 48_000).unwrap();
+
+            let frames = 48_000usize;
+            let pcm: Vec<f32> = vec![0.5f32; frames * 2];
+            // SAFETY: `pcm` hidup sampai akhir fungsi dan tidak pernah dimutasi
+            // setelah didaftarkan.
+            unsafe {
+                engine.register_asset(
+                    0,
+                    Asset {
+                        data: pcm.as_ptr(),
+                        frames,
+                        channels: 2,
+                        sample_rate: 48_000,
+                    },
+                );
+            }
+            let mut renderer =
+                OfflineRenderer::new(engine, TimelineSample(0), TimelineSample(24_000));
+            let mut l = vec![0.0f32; 24_000];
+            let mut r = vec![0.0f32; 24_000];
+            assert_eq!(renderer.render_batch(1000, &mut l, &mut r), 24_000);
+            l[12_000]
+        }
+
+        let unity = mid_sample(0.0);
+        assert!((unity - 0.5).abs() < 1e-3, "0 dB harus netral: {unity}");
+
+        // -6,02 dB = tepat setengah amplitudo.
+        let half = mid_sample(-6.020_6);
+        assert!((half - unity * 0.5).abs() < 2e-3, "-6 dB → {half}, unity {unity}");
+
+        // Batas atas panel: +12 dB atas material 0,5 = 1,99 — jauh DI ATAS
+        // 0 dBFS, dengan sengaja. Tidak ada limiter maupun soft-clip di jalur
+        // ini, dan engine memang harus melewatkannya apa adanya (f32 tidak
+        // clip; DAC dan encoder integer yang clip). Kalau assert ini pecah di
+        // ~1.0, ada yang diam-diam menjepit di master — dan panel Amplify
+        // sedang menjanjikan sebaliknya ke user.
+        let loud = mid_sample(MAX_MASTER_GAIN_DB as f64);
+        assert!((loud - unity * 3.981_07).abs() < 5e-3, "+12 dB → {loud}, unity {unity}");
+        assert!(loud > 1.5, "master boost tidak boleh dijepit diam-diam: {loud}");
     }
 
     #[test]

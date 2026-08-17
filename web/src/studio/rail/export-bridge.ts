@@ -120,8 +120,103 @@ const LAZY_ENCODER_LABEL: Partial<Record<EncoderFormat, string>> = {
   ogg: 'Encoder OGG Vorbis (vorbis-encoder-js)',
 };
 
+// ── Nama berkas ──────────────────────────────────────────────────────────────
+
+/** Dipakai kalau field DAN nama project sama-sama tidak menyisakan apa pun. */
+export const DEFAULT_EXPORT_NAME = 'mixdown';
+/**
+ * Batas panjang basename. Bukan batas satu OS tertentu: limit per-komponen
+ * ext4/APFS/NTFS ada di 255 BYTE, dan satu huruf non-ASCII bisa memakan 4 byte.
+ * 120 karakter aman di semua kasus itu sekaligus menyisakan ruang untuk
+ * ekstensi dan suffix " (1)" yang ditambahkan browser saat nama bentrok.
+ */
+export const MAX_EXPORT_NAME_LEN = 120;
+
+/** Ilegal di Windows, dan `/` juga memecah path di POSIX. */
+const ILLEGAL_CHARS = /[/\\:*?"<>|]/g;
+/** Control char tidak terlihat di UI tapi merusak nama berkas — buang total. */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+/** Ekstensi audio yang kita tambahkan sendiri; jangan sampai jadi `mix.wav.wav`. */
+const AUDIO_EXT = /\.(wav|flac|mp3|ogg)$/i;
+/**
+ * Nama device DOS. Masih dipesan di Windows modern: `CON.wav` gagal ditulis,
+ * dan pesan errornya tidak menyebut-nyebut nama berkas.
+ */
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/** Titik dan spasi di ujung: Windows memangkasnya diam-diam, jadi kita duluan. */
+const trimEdges = (s: string): string => s.replace(/^[.\s]+/, '').replace(/[.\s]+$/, '');
+
+/**
+ * Bersihkan satu basename agar aman ditulis ke disk. Hasilnya bisa string
+ * KOSONG (mis. input `"///"`) — itu sinyal bagi pemanggil untuk jatuh ke
+ * fallback, bukan kegagalan.
+ *
+ * Huruf non-ASCII sengaja DIPERTAHANKAN: "Café Sessions" adalah nama yang sah
+ * di semua filesystem yang kita targetkan, dan meng-ASCII-kannya adalah persis
+ * jenis pengubahan diam-diam yang ingin kita hindari.
+ */
+export function sanitizeFileName(raw: string): string {
+  let s = raw.replace(CONTROL_CHARS, '').replace(ILLEGAL_CHARS, '-');
+  // Newline/tab sudah hilang di atas; sisanya spasi beruntun.
+  s = s.replace(/\s+/g, ' ');
+  s = trimEdges(s.replace(AUDIO_EXT, ''));
+  // Potong per CODE POINT, bukan per code unit: `slice` biasa bisa membelah
+  // surrogate pair dan menyisakan setengah emoji di ujung nama.
+  const cp = Array.from(s);
+  if (cp.length > MAX_EXPORT_NAME_LEN) s = trimEdges(cp.slice(0, MAX_EXPORT_NAME_LEN).join(''));
+  // Kalau yang tersisa cuma pemisah (`"///"` → `"---"`), itu bukan nama — itu
+  // sisa pembersihan. Anggap kosong supaya jatuh ke fallback; file bernama
+  // "---.wav" tidak lebih berguna daripada nama project.
+  if (!/[^-_. ]/.test(s)) return '';
+  return RESERVED.test(s) ? `_${s}` : s;
+}
+
+export interface ResolvedExportName {
+  /** Basename siap pakai, tanpa ekstensi. Tidak pernah kosong. */
+  readonly base: string;
+  /** Dari mana `base` berasal — dipakai UI untuk memilih kalimat penjelasan. */
+  readonly source: 'field' | 'project' | 'default';
+  /** true kalau user mengetik sesuatu dan hasilnya TIDAK sama persis. */
+  readonly changed: boolean;
+}
+
+/**
+ * Rantai fallback nama export: field → nama project → `mixdown`.
+ *
+ * `changed` ada supaya UI bisa mengatakannya SEBELUM user mengunduh. Nama yang
+ * diam-diam berubah baru ketahuan saat file sudah ada di folder Downloads
+ * dengan nama yang tidak dicari siapa pun.
+ */
+export function resolveExportName(field: string, projectName: string): ResolvedExportName {
+  const wanted = field.trim();
+  const fromField = sanitizeFileName(field);
+  if (fromField !== '') {
+    return { base: fromField, source: 'field', changed: fromField !== wanted };
+  }
+  // Nama project membawa pseudo-ekstensi sendiri (`NEON_DRIFT.STUDIO`), jadi
+  // segmen terakhirnya dibuang — `NEON_DRIFT.STUDIO.wav` bukan nama yang dicari
+  // siapa pun. Aturan ini SENGAJA tidak berlaku untuk field: kalau user mengetik
+  // "Mix v1.2", angka di belakang titik itu bagian dari nama, bukan ekstensi.
+  const fromProject = sanitizeFileName(projectName.replace(/\.[^.]*$/, ''));
+  const base = fromProject !== '' ? fromProject : DEFAULT_EXPORT_NAME;
+  // `changed` hanya berarti kalau user MEMANG mengetik sesuatu: field kosong
+  // adalah pilihan sadar untuk memakai nama project, bukan sesuatu yang perlu
+  // diperingatkan.
+  return {
+    base,
+    source: fromProject !== '' ? 'project' : 'default',
+    changed: wanted !== '',
+  };
+}
+
 export interface CompileParams {
   format: EncoderFormat;
+  /**
+   * Basename mentah seperti yang diketik user (boleh kosong / kotor). Dibersihkan
+   * dan di-fallback DI SINI supaya nama yang ditawarkan picker, nama file yang
+   * diunduh, dan nama yang ditampilkan kartu Compile berasal dari satu fungsi.
+   */
   fileName: string;
   /** WAV: 16/24/32. FLAC: 16/24. Diabaikan untuk MP3/OGG. */
   bitDepth?: 16 | 24 | 32;
@@ -164,7 +259,10 @@ export async function runCompile(p: CompileParams): Promise<void> {
 
   const ext = p.format;
   const mime = MIME[p.format];
-  const fileName = `${p.fileName}.${ext}`;
+  // Satu nama untuk DUA jalur simpan: `suggestedName` picker File System Access
+  // dan atribut `download` anchor. Kalau keduanya dihitung terpisah, file yang
+  // sama bisa mendarat dengan dua nama berbeda tergantung browser.
+  const fileName = `${resolveExportName(p.fileName, state.projectName).base}.${ext}`;
   // Picker DULU, sebelum render: ia butuh user gesture, dan gesture-nya hilang
   // begitu kita menunggu batch pertama. `null` = browser tanpa File System
   // Access API (atau user batal) → jalur anchor+Blob.

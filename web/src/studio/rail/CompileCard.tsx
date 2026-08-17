@@ -4,11 +4,12 @@
  * Seluruh statistik dihitung dari state store (design meng-hardcode-nya).
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type React from 'react';
 import { Card, ProgressBar } from '../../ui/cyber';
 import { formatTime, isAudible, type ExportFormat, type StudioState } from '../model';
 import { hasRenderableAudio } from '../preview/audio-preview';
-import { runCompile, useExportAvailability } from './export-bridge';
+import { resolveExportName, runCompile, useExportAvailability } from './export-bridge';
 import { studioActions, useStudio } from './store-adapter';
 
 const FORMATS: readonly ExportFormat[] = ['AUTO', 'WAV', 'FLAC', 'MP3', 'OGG'];
@@ -84,7 +85,10 @@ export function computeStats(
   }
   const sr = state.sampleRate > 0 ? state.sampleRate : 48_000;
   // Varispeed: memutar 2x lebih cepat menghasilkan file separuh panjangnya.
-  const speed = state.speed > 0 ? state.speed : 1;
+  // `renderSpeed`, BUKAN `speed` transport — `buildExportPayload` memakai yang
+  // ini, dan statistik yang membaca angka lain akan memprediksi panjang serta
+  // ukuran file yang tidak pernah ditulis.
+  const speed = state.renderSpeed > 0 ? state.renderSpeed : 1;
   const outputSeconds = endSample / sr / speed;
 
   const fmt = resolveFormat(state.format);
@@ -169,6 +173,104 @@ function OptionRow({
           {o.text}
         </button>
       ))}
+    </div>
+  );
+}
+
+const fieldLabelStyle = {
+  fontSize: '9px',
+  letterSpacing: '.18em',
+  color: 'var(--cy-text-muted)',
+  textTransform: 'uppercase',
+} as const;
+
+const fieldBoxStyle = {
+  width: '100%',
+  height: '26px',
+  background: '#000',
+  border: '1px solid var(--cy-border)',
+  color: 'var(--cy-text)',
+  fontFamily: 'var(--cy-font-mono)',
+  fontSize: '11px',
+  padding: '0 8px',
+  outline: 'none',
+} as const;
+
+/**
+ * Nama berkas hasil export (tanpa ekstensi).
+ *
+ * Diterapkan saat blur / Enter, bukan tiap ketikan — sama seperti DurationBounds:
+ * menulis tiap huruf ke store berarti nama yang tersimpan (dan ikut di-persist)
+ * sempat berupa potongan setengah jadi.
+ *
+ * Nama final DITAMPILKAN lengkap dengan ekstensinya, dan kalau hasil pembersihan
+ * berbeda dari yang diketik, itu dikatakan DI SINI — bukan dibiarkan ditemukan
+ * user sebagai file bernama aneh di folder Downloads.
+ */
+function FileNameField({
+  raw,
+  projectName,
+  ext,
+  disabled,
+}: {
+  raw: string;
+  projectName: string;
+  ext: string;
+  disabled: boolean;
+}): JSX.Element {
+  const [text, setText] = useState(raw);
+  // Sinkron kalau nama berubah dari tempat lain (load project, undo).
+  useEffect(() => setText(raw), [raw]);
+
+  // Dihitung dari nilai store, bukan `text`: preview nama harus mencerminkan apa
+  // yang benar-benar akan dipakai export, bukan ketikan yang belum di-commit.
+  const resolved = resolveExportName(raw, projectName);
+  // Placeholder = persis nama yang dipakai kalau field dibiarkan kosong.
+  const fallback = resolveExportName('', projectName).base;
+
+  const commit = (): void => studioActions.setExportFileName(text.trim());
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.currentTarget.blur();
+    }
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: '5px' }}>
+      <label style={{ display: 'grid', gap: '5px' }}>
+        <span style={fieldLabelStyle}>Nama berkas</span>
+        <input
+          aria-label="Nama berkas export (tanpa ekstensi)"
+          value={text}
+          placeholder={fallback}
+          spellCheck={false}
+          disabled={disabled}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={onKeyDown}
+          style={fieldBoxStyle}
+        />
+      </label>
+
+      <div
+        style={{
+          fontFamily: 'var(--cy-font-mono)',
+          fontSize: '10px',
+          color: 'var(--cy-accent)',
+          wordBreak: 'break-all',
+        }}
+      >
+        → {resolved.base}.{ext}
+      </div>
+
+      {resolved.changed ? (
+        <div style={{ fontSize: '9px', lineHeight: 1.5, color: 'var(--cy-text-dim)' }}>
+          {resolved.source === 'field'
+            ? 'Nama disesuaikan agar aman untuk sistem berkas.'
+            : `Nama itu tidak menyisakan karakter yang bisa dipakai — memakai "${resolved.base}".`}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -299,10 +401,17 @@ export function CompileCard(): JSX.Element {
           />
         ) : null}
 
+        <FileNameField
+          raw={state.exportFileName}
+          projectName={state.projectName}
+          ext={fmt.toLowerCase()}
+          disabled={exporting}
+        />
+
         <div style={{ display: 'grid', gap: '5px', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
           <StatRow k="lanes aktif" v={String(stats.activeLanes)} />
           <StatRow k="panjang output" v={formatTime(stats.outputSeconds)} />
-          <StatRow k="render speed" v={`${state.speed}x`} />
+          <StatRow k="render speed" v={`${state.renderSpeed}x`} />
           <StatRow k="estimasi size" v={`${formatSize(stats.bytes)} · ${stats.label}`} accent />
         </div>
 
@@ -320,7 +429,10 @@ export function CompileCard(): JSX.Element {
             studioActions.setExportProgress(0);
             void runCompile({
               format: fmt.toLowerCase() as 'wav' | 'flac' | 'mp3' | 'ogg',
-              fileName: state.projectName.replace(/\.[^.]*$/, '') || 'mixdown',
+              // Mentah: pembersihan dan fallback ke nama project dikerjakan
+              // `runCompile` supaya nama yang ditawarkan picker sama persis
+              // dengan yang ditampilkan kartu ini.
+              fileName: state.exportFileName,
               bitDepth: wavBits,
               quality: lossyQuality,
               onProgress: studioActions.setExportProgress,

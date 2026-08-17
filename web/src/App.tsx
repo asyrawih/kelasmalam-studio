@@ -93,6 +93,7 @@ export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element
       readouts={<ReadoutStrip />}
       main={
         <ReorderableStack
+          overlayAside={<StudioRail />}
           items={[
             { id: 'timeline', node: <TimelinePanel /> },
             // Clip Detail hanya ada saat ADA clip terpilih. Kartu kosong yang

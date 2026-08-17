@@ -186,6 +186,9 @@ function state(lanes: StudioLane[], format: ExportFormat = 'WAV'): StudioState {
     format,
     preset: 'FLAT',
     exportProgress: null,
+    masterGainDb: 0,
+    renderSpeed: 1,
+    exportFileName: '',
   };
 }
 

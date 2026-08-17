@@ -144,6 +144,9 @@ describe('taper fader', () => {
 
 describe('computeStats', () => {
   const base: StudioState = {
+    masterGainDb: 0,
+    renderSpeed: 1,
+    exportFileName: '',
     projectName: 'X',
     sampleRate: 48_000,
     duration: 48_000 * 120,
@@ -199,8 +202,12 @@ describe('computeStats', () => {
     expect(s.bytes).toBeCloseTo((120 * 192_000) / 8, 0);
   });
 
-  it('speed 2x memotong panjang output', () => {
-    expect(computeStats({ ...base, speed: 2 }).outputSeconds).toBeCloseTo(60, 3);
+  it('renderSpeed 2x memotong panjang output', () => {
+    expect(computeStats({ ...base, renderSpeed: 2 }).outputSeconds).toBeCloseTo(60, 3);
+  });
+
+  it('speed TRANSPORT tidak mengubah statistik — export tidak memakainya', () => {
+    expect(computeStats({ ...base, speed: 2 }).outputSeconds).toBeCloseTo(120, 3);
   });
 
   it('MP3 memakai bitrate yang dipilih, bukan default', () => {
