@@ -136,7 +136,20 @@ export type EqPreset = 'FLAT' | 'BASS' | 'VOCAL' | 'CLUB';
  *                cuma mau menaikkan/menurunkan sesuatu.
  */
 export type EqMode = 'curve' | 'sliders';
-export type ExportFormat = 'AUTO' | 'WAV' | 'MP3';
+/**
+ * Format file hasil compile.
+ *
+ *  - `AUTO` : resolve ke WAV — lossless, nol dependensi, selalu bisa dibuka.
+ *  - `WAV`  : PCM mentah (Rust), kedalaman bit bisa dipilih.
+ *  - `FLAC` : lossless TERKOMPRESI (Rust) — sample yang sama persis, ±setengah
+ *             ukuran WAV. Ini jawaban untuk "WAV-nya kebesaran".
+ *  - `MP3`  : lossy, lamejs (di-`import()` saat dipilih).
+ *  - `OGG`  : lossy Vorbis, vorbis-encoder-js (di-`import()` saat dipilih).
+ *
+ * Project lama hanya menyimpan tiga nilai pertama; nilai yang tidak dikenal
+ * jatuh ke AUTO lewat `resolveFormat` di `CompileCard`.
+ */
+export type ExportFormat = 'AUTO' | 'WAV' | 'FLAC' | 'MP3' | 'OGG';
 export type RailTab = 'mix' | 'eq' | 'compile';
 
 /** Nilai kecepatan yang ditawarkan design. PITCH LOCKED — lihat catatan bawah. */

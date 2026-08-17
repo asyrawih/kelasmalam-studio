@@ -11,18 +11,44 @@ import { hasRenderableAudio } from '../preview/audio-preview';
 import { runCompile, useExportAvailability } from './export-bridge';
 import { studioActions, useStudio } from './store-adapter';
 
-const FORMATS: readonly ExportFormat[] = ['AUTO', 'WAV', 'MP3'];
+const FORMATS: readonly ExportFormat[] = ['AUTO', 'WAV', 'FLAC', 'MP3', 'OGG'];
 
-/** AUTO = WAV: default paling aman (lossless, tanpa dependensi encoder lossy). */
-export const resolveFormat = (f: ExportFormat): 'WAV' | 'MP3' => (f === 'MP3' ? 'MP3' : 'WAV');
+/** Format yang benar-benar dieksekusi. AUTO — dan nilai apa pun yang tidak
+ *  dikenal, mis. dari project lama — jatuh ke WAV: lossless dan nol dependensi. */
+export type ResolvedFormat = 'WAV' | 'FLAC' | 'MP3' | 'OGG';
+export const resolveFormat = (f: ExportFormat): ResolvedFormat =>
+  f === 'FLAC' || f === 'MP3' || f === 'OGG' ? f : 'WAV';
 
 /** Kedalaman bit WAV yang di-encode Rust (docs/03 §3b). */
 const WAV_DEPTHS = [16, 24, 32] as const;
 type WavDepth = (typeof WAV_DEPTHS)[number];
 
+/** FLAC tidak punya float32 — formatnya memang hanya integer. */
+const FLAC_DEPTHS = [16, 24] as const;
+
 /** WAV 16-bit PCM stereo — kedalaman default export. */
 const WAV_BITS: WavDepth = 16;
+const MP3_RATES = [128, 192, 320] as const;
 const MP3_KBPS = 192;
+/**
+ * Quality Vorbis (-0.1..1.0) beserta bitrate NOMINAL-nya untuk estimasi ukuran.
+ * Vorbis itu VBR: angka kbps di sini adalah rata-rata kasar dari dokumentasi
+ * libvorbis, bukan janji.
+ */
+const OGG_QUALITIES = [
+  { q: 0.2, kbps: 96 },
+  { q: 0.5, kbps: 160 },
+  { q: 0.8, kbps: 256 },
+] as const;
+const OGG_DEFAULT_Q = 0.5;
+
+/**
+ * Rasio ukuran FLAC terhadap PCM yang setara. ESTIMASI, dan tidak bisa lebih
+ * dari itu: FLAC lossless, jadi ukurannya bergantung pada isi audionya — musik
+ * padat ±0.7, rekaman sunyi bisa 0.3. 0.6 dipilih supaya angka yang ditampilkan
+ * cenderung sedikit terlalu besar, bukan terlalu kecil.
+ */
+const FLAC_RATIO = 0.6;
 const CHANNELS = 2;
 
 export interface CompileStats {
@@ -32,8 +58,18 @@ export interface CompileStats {
   label: string;
 }
 
-/** Statistik export dari state nyata. Diekspor supaya bisa dites terpisah. */
-export function computeStats(state: StudioState, wavBits: WavDepth = WAV_BITS): CompileStats {
+/**
+ * Statistik export dari state nyata. Diekspor supaya bisa dites terpisah.
+ *
+ * `lossyQuality` = kbps untuk MP3, quality (-0.1..1.0) untuk OGG. Dibiarkan
+ * opsional supaya pemanggil yang hanya peduli panjang output tidak perlu tahu
+ * apa-apa soal encoder.
+ */
+export function computeStats(
+  state: StudioState,
+  wavBits: WavDepth = WAV_BITS,
+  lossyQuality?: number,
+): CompileStats {
   const activeLanes = state.lanes.filter(
     (l) => l.clips.length > 0 && isAudible(l, state.lanes),
   ).length;
@@ -52,23 +88,89 @@ export function computeStats(state: StudioState, wavBits: WavDepth = WAV_BITS): 
   const outputSeconds = endSample / sr / speed;
 
   const fmt = resolveFormat(state.format);
-  const bytes =
-    fmt === 'WAV'
-      ? 44 + outputSeconds * sr * CHANNELS * (wavBits / 8)
-      : (outputSeconds * MP3_KBPS * 1000) / 8;
+  // FLAC tidak menyimpan float32; 32-bit yang dipilih user turun ke 24.
+  const flacBits = wavBits === 32 ? 24 : wavBits;
+  const pcmBytes = (bits: number): number => outputSeconds * sr * CHANNELS * (bits / 8);
+  const kbpsBytes = (kbps: number): number => (outputSeconds * kbps * 1000) / 8;
 
-  return {
-    activeLanes,
-    outputSeconds,
-    bytes,
-    label: fmt === 'WAV' ? `WAV ${wavBits}-bit` : `MP3 ${MP3_KBPS} kbps`,
-  };
+  let bytes: number;
+  let label: string;
+  switch (fmt) {
+    case 'WAV':
+      bytes = 44 + pcmBytes(wavBits);
+      label = `WAV ${wavBits}-bit`;
+      break;
+    case 'FLAC':
+      // "~" bukan basa-basi: ukuran FLAC hanya diketahui setelah di-encode.
+      bytes = pcmBytes(flacBits) * FLAC_RATIO;
+      label = `FLAC ${flacBits}-bit (~estimasi)`;
+      break;
+    case 'MP3': {
+      const kbps = Math.round(lossyQuality ?? MP3_KBPS);
+      bytes = kbpsBytes(kbps);
+      label = `MP3 ${kbps} kbps`;
+      break;
+    }
+    case 'OGG': {
+      const q = lossyQuality ?? OGG_DEFAULT_Q;
+      const nominal =
+        OGG_QUALITIES.reduce((best, o) =>
+          Math.abs(o.q - q) < Math.abs(best.q - q) ? o : best,
+        ).kbps;
+      bytes = kbpsBytes(nominal);
+      label = `OGG q${q} (~${nominal} kbps)`;
+      break;
+    }
+  }
+
+  return { activeLanes, outputSeconds, bytes, label };
 }
 
 function formatSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1) return `${mb.toFixed(1)} MB`;
   return `${Math.max(0, bytes / 1024).toFixed(0)} KB`;
+}
+
+/** Satu baris tombol pilihan (kedalaman bit / bitrate / quality). */
+function OptionRow({
+  label,
+  disabled,
+  options,
+}: {
+  label: string;
+  disabled: boolean;
+  options: readonly { key: string; text: string; active: boolean; onSelect: () => void }[];
+}): JSX.Element {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: '4px' }}
+    >
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          className="cy-btn-reset cy-hover-accent-border"
+          aria-pressed={o.active}
+          disabled={disabled}
+          onClick={o.onSelect}
+          style={{
+            height: '24px',
+            border: '1px solid var(--cy-border)',
+            background: 'transparent',
+            color: o.active ? 'var(--cy-accent)' : 'var(--cy-text-muted)',
+            fontFamily: 'var(--cy-font-mono)',
+            fontSize: '9px',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {o.text}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function StatRow({ k, v, accent }: { k: string; v: string; accent?: boolean }): JSX.Element {
@@ -88,7 +190,14 @@ export function CompileCard(): JSX.Element {
   const state = useStudio((s) => s);
   const engine = useExportAvailability();
   const [wavBits, setWavBits] = useState<WavDepth>(WAV_BITS);
-  const stats = computeStats(state, wavBits);
+  const [mp3Kbps, setMp3Kbps] = useState<number>(MP3_KBPS);
+  const [oggQ, setOggQ] = useState<number>(OGG_DEFAULT_Q);
+  const fmt = resolveFormat(state.format);
+  // Satu state per format, bukan satu "quality" bersama: kbps dan quality
+  // Vorbis bukan skala yang sama, dan berpindah format tidak boleh diam-diam
+  // mengubah setelan format yang lain.
+  const lossyQuality = fmt === 'MP3' ? mp3Kbps : fmt === 'OGG' ? oggQ : undefined;
+  const stats = computeStats(state, wavBits, lossyQuality);
   // Progress hidup di store (`exportProgress`, null saat idle) — supaya bagian
   // UI lain bisa ikut menampilkannya. Error export lokal saja.
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +231,7 @@ export function CompileCard(): JSX.Element {
   return (
     <Card title="Compile" subtitle="semua lane → satu file" notched>
       <div style={{ display: 'grid', gap: '12px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: '4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: '4px' }}>
           {FORMATS.map((f) => {
             const active = state.format === f;
             return (
@@ -148,37 +257,46 @@ export function CompileCard(): JSX.Element {
           })}
         </div>
 
-        {resolveFormat(state.format) === 'WAV' ? (
-          <div
-            role="group"
-            aria-label="Kedalaman bit WAV"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: '4px' }}
-          >
-            {WAV_DEPTHS.map((d) => {
-              const active = wavBits === d;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  className="cy-btn-reset cy-hover-accent-border"
-                  aria-pressed={active}
-                  disabled={exporting}
-                  onClick={() => setWavBits(d)}
-                  style={{
-                    height: '24px',
-                    border: '1px solid var(--cy-border)',
-                    background: 'transparent',
-                    color: active ? 'var(--cy-accent)' : 'var(--cy-text-muted)',
-                    fontFamily: 'var(--cy-font-mono)',
-                    fontSize: '9px',
-                    cursor: exporting ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {d === 32 ? 'F32' : `${d}-BIT`}
-                </button>
-              );
-            })}
-          </div>
+        {/* Baris opsi milik format yang sedang dipilih. Hanya SATU yang tampil:
+            dua baris opsi sekaligus membuat user menebak mana yang berlaku. */}
+        {fmt === 'WAV' || fmt === 'FLAC' ? (
+          <OptionRow
+            label={fmt === 'WAV' ? 'Kedalaman bit WAV' : 'Kedalaman bit FLAC'}
+            disabled={exporting}
+            options={(fmt === 'WAV' ? WAV_DEPTHS : FLAC_DEPTHS).map((d) => ({
+              key: String(d),
+              text: d === 32 ? 'F32' : `${d}-BIT`,
+              // FLAC tidak punya float32, jadi 32 dianggap 24 di sana.
+              active: fmt === 'WAV' ? wavBits === d : (wavBits === 32 ? 24 : wavBits) === d,
+              onSelect: () => setWavBits(d),
+            }))}
+          />
+        ) : null}
+
+        {fmt === 'MP3' ? (
+          <OptionRow
+            label="Bitrate MP3"
+            disabled={exporting}
+            options={MP3_RATES.map((k) => ({
+              key: String(k),
+              text: `${k}K`,
+              active: mp3Kbps === k,
+              onSelect: () => setMp3Kbps(k),
+            }))}
+          />
+        ) : null}
+
+        {fmt === 'OGG' ? (
+          <OptionRow
+            label="Quality OGG Vorbis"
+            disabled={exporting}
+            options={OGG_QUALITIES.map((o) => ({
+              key: String(o.q),
+              text: `Q${o.q}`,
+              active: oggQ === o.q,
+              onSelect: () => setOggQ(o.q),
+            }))}
+          />
         ) : null}
 
         <div style={{ display: 'grid', gap: '5px', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
@@ -201,10 +319,10 @@ export function CompileCard(): JSX.Element {
             cancelRef.current = false;
             studioActions.setExportProgress(0);
             void runCompile({
-              format: resolveFormat(state.format) === 'MP3' ? 'mp3' : 'wav',
+              format: fmt.toLowerCase() as 'wav' | 'flac' | 'mp3' | 'ogg',
               fileName: state.projectName.replace(/\.[^.]*$/, '') || 'mixdown',
               bitDepth: wavBits,
-              quality: MP3_KBPS,
+              quality: lossyQuality,
               onProgress: studioActions.setExportProgress,
               onWarnings: setWarnings,
               isCancelled: () => cancelRef.current,
@@ -275,11 +393,23 @@ export function CompileCard(): JSX.Element {
         ) : null}
 
         {!engine.ready ? (
+          // Tampilkan ALASAN SEBENARNYA, bukan kalimat tetap. Versi lama selalu
+          // menulis "engine belum dibangun" apa pun penyebabnya, dan alasan
+          // aslinya hanya ada di tooltip — jadi kegagalan instantiasi, ABI
+          // mismatch, atau layout blok kontrol semuanya terbaca sebagai
+          // "artefaknya belum di-build", dan orang membangun ulang berkali-kali
+          // untuk masalah yang berbeda.
           <div
             title={engine.reason}
-            style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}
+            style={{
+              fontSize: '9px',
+              letterSpacing: '.1em',
+              color: 'var(--cy-warning)',
+              lineHeight: 1.5,
+              wordBreak: 'break-word',
+            }}
           >
-            ENGINE BELUM DIBANGUN · EXPORT NONAKTIF
+            EXPORT NONAKTIF — {engine.reason}
           </div>
         ) : null}
         {error !== null ? (

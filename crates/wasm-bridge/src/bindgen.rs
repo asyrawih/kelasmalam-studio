@@ -7,7 +7,7 @@
 //! Yang ada di sini:
 //! - load/serialize project snapshot (postcard, docs/03 §3a),
 //! - offline renderer untuk export worker,
-//! - WAV encoder streaming (docs/03 §3b),
+//! - WAV encoder streaming (docs/03 §3b) + FLAC (lossless, terkompresi),
 //! - import/decode asset PCM + peak pyramid,
 //! - alokasi blok kontrol + info build (untuk `wasm-loader.ts`).
 
@@ -16,6 +16,7 @@
 use wasm_bindgen::prelude::*;
 
 use daw_engine::Engine;
+use daw_export::flac::{FlacBits, FlacSpec, FlacStreamWriter};
 use daw_export::wav::{DitherSettings, WavFormat, WavSpec, WavStreamWriter};
 use daw_export::OfflineRenderer;
 use daw_timeline::TimelineSample;
@@ -355,6 +356,96 @@ impl WavEncoderHandle {
     #[wasm_bindgen(js_name = patchHeader)]
     pub fn patch_header(&self) -> Vec<u8> {
         self.inner.patch_header().to_vec()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FLAC encoder streaming — lossless, ±setengah ukuran WAV
+// ---------------------------------------------------------------------------
+
+/// Kedalaman bit FLAC. Tidak ada float32: FLAC menyimpan integer, dan
+/// menawarkan pilihan yang tidak ada di formatnya hanya akan menyesatkan.
+#[wasm_bindgen]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FlacBitsJs {
+    Pcm16 = 0,
+    Pcm24 = 1,
+}
+
+/// Writer FLAC dengan bentuk yang SAMA PERSIS dengan [`WavEncoderHandle`]
+/// (`header`/`encode`/`flush`/`patchHeader`), supaya `run-export.ts` tidak
+/// butuh cabang kedua: satu loop render, banyak encoder.
+#[wasm_bindgen]
+pub struct FlacEncoderHandle {
+    inner: FlacStreamWriter,
+}
+
+#[wasm_bindgen]
+impl FlacEncoderHandle {
+    /// Melempar (bukan panic) kalau parameternya ditolak flacenc — pesannya
+    /// sampai ke UI apa adanya.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        sample_rate: u32,
+        channels: u32,
+        bits: FlacBitsJs,
+        dither_seed: u32,
+    ) -> Result<FlacEncoderHandle, JsError> {
+        let spec = FlacSpec {
+            sample_rate,
+            channels: channels.clamp(1, 2) as u16,
+            bits: match bits {
+                FlacBitsJs::Pcm16 => FlacBits::Pcm16,
+                FlacBitsJs::Pcm24 => FlacBits::Pcm24,
+            },
+        };
+        let dither = DitherSettings {
+            seed: dither_seed as u64 | 1,
+            ..DitherSettings::default()
+        };
+        FlacStreamWriter::new(spec, dither)
+            .map(|inner| FlacEncoderHandle { inner })
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Header dengan `total_samples`/md5 masih nol. STREAMINFO panjangnya tetap,
+    /// jadi [`Self::patch_header`] bisa menggantikannya byte-per-byte.
+    pub fn header(&self) -> Result<Vec<u8>, JsError> {
+        self.inner
+            .placeholder_header()
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    pub fn encode(&mut self, l: &[f32], r: &[f32]) -> Result<Vec<u8>, JsError> {
+        self.inner
+            .write_planar(&[l, r])
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(match self.inner.poll_chunk() {
+            Some(chunk) => {
+                let out = chunk.to_vec();
+                self.inner.release_chunk();
+                out
+            }
+            None => Vec::new(),
+        })
+    }
+
+    /// Encode frame terakhir (yang boleh lebih pendek) lalu kembalikan sisanya.
+    pub fn flush(&mut self) -> Result<Vec<u8>, JsError> {
+        let out = self
+            .inner
+            .finish()
+            .map_err(|e| JsError::new(&e.to_string()))?
+            .to_vec();
+        self.inner.release_chunk();
+        Ok(out)
+    }
+
+    #[wasm_bindgen(js_name = patchHeader)]
+    pub fn patch_header(&self) -> Result<Vec<u8>, JsError> {
+        self.inner
+            .patch_header()
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 }
 

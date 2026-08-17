@@ -351,3 +351,177 @@ mod offline_tests {
         }
     }
 }
+
+/// Tes FLAC.
+///
+/// Yang dibuktikan di sini bukan "flacenc benar" (itu urusan crate-nya), tapi
+/// dua hal yang MILIK KITA dan bisa rusak diam-diam: (1) writer streaming
+/// menghasilkan byte yang identik dengan encode sekali-jalan pustaka — artinya
+/// pemotongan blok kita tidak menggeser apa pun, dan (2) header placeholder dan
+/// header final sama panjang, syarat mutlak agar penukaran part pertama Blob di
+/// `run-export.ts` tidak merusak file.
+mod flac_tests {
+    use crate::flac::*;
+    use crate::wav::{encode_all as wav_encode_all, DitherSettings, WavFormat, WavSpec};
+
+    use flacenc::bitsink::MemSink;
+    use flacenc::component::BitRepr;
+    use flacenc::config;
+    use flacenc::encode_with_fixed_block_size;
+    use flacenc::error::Verify;
+    use flacenc::source::MemSource;
+
+    fn signal(n: usize) -> (Vec<f32>, Vec<f32>) {
+        super::test_signal(n)
+    }
+
+    fn spec24() -> FlacSpec {
+        FlacSpec {
+            sample_rate: 48_000,
+            channels: 2,
+            bits: FlacBits::Pcm24,
+        }
+    }
+
+    /// Dither dimatikan di seluruh tes ini: dither menambahkan noise acak, dan
+    /// perbandingan byte-per-byte hanya bermakna kalau encoder deterministik.
+    fn no_dither() -> DitherSettings {
+        DitherSettings {
+            dither_16: false,
+            dither_24: false,
+            seed: 1,
+        }
+    }
+
+    #[test]
+    fn header_is_valid_flac_and_fixed_length() {
+        let (l, r) = signal(1000);
+        let bytes = encode_all(&[&l, &r], spec24(), no_dither()).unwrap();
+        assert_eq!(&bytes[0..4], b"fLaC");
+        // last-metadata-block + type 0 (STREAMINFO), panjang 34.
+        assert_eq!(bytes[4], 0x80);
+        assert_eq!(&bytes[5..8], &[0, 0, 34]);
+
+        let mut w = FlacStreamWriter::new(spec24(), no_dither()).unwrap();
+        let placeholder = w.placeholder_header().unwrap();
+        w.write_planar(&[&l, &r]).unwrap();
+        w.finish().unwrap();
+        let final_header = w.patch_header().unwrap();
+        assert_eq!(placeholder.len(), HEADER_BYTES);
+        assert_eq!(final_header.len(), placeholder.len());
+        // Placeholder benar-benar KOSONG isinya; kalau tidak, file yang ditulis
+        // sebelum patch akan mengklaim panjang yang salah.
+        assert_ne!(placeholder, final_header);
+    }
+
+    #[test]
+    fn total_samples_and_channels_land_in_streaminfo() {
+        let (l, r) = signal(5000);
+        let bytes = encode_all(&[&l, &r], spec24(), no_dither()).unwrap();
+        // STREAMINFO mulai di byte 8. total_samples = 36 bit terakhir sebelum md5.
+        let si = &bytes[8..42];
+        let sr = (u32::from(si[10]) << 12) | (u32::from(si[11]) << 4) | (u32::from(si[12]) >> 4);
+        assert_eq!(sr, 48_000);
+        let channels = ((si[12] >> 1) & 0b111) + 1;
+        assert_eq!(channels, 2);
+        let total = ((u64::from(si[13]) & 0x0F) << 32)
+            | (u64::from(si[14]) << 24)
+            | (u64::from(si[15]) << 16)
+            | (u64::from(si[16]) << 8)
+            | u64::from(si[17]);
+        assert_eq!(total, 5000);
+        // md5 tidak boleh nol: itu yang membuktikan Context ikut diisi.
+        assert_ne!(&bytes[26..42], &[0u8; 16]);
+    }
+
+    /// Memotong input jadi banyak panggilan `write_planar` TIDAK boleh mengubah
+    /// satu byte pun. Ini yang gampang rusak: batas blok FLAC (4096) tidak ada
+    /// hubungannya dengan batas batch render (12800).
+    #[test]
+    fn streaming_equals_one_shot() {
+        let (l, r) = signal(20_000);
+        let one_shot = encode_all(&[&l, &r], spec24(), no_dither()).unwrap();
+
+        let mut w = FlacStreamWriter::with_chunk_size(spec24(), no_dither(), usize::MAX).unwrap();
+        let mut body = Vec::new();
+        let mut off = 0;
+        // Ukuran batch yang sengaja bukan kelipatan 4096.
+        for step in [1000usize, 4095, 4097, 128, 333] {
+            loop {
+                if off >= l.len() {
+                    break;
+                }
+                let end = (off + step).min(l.len());
+                w.write_planar(&[&l[off..end], &r[off..end]]).unwrap();
+                off = end;
+                break;
+            }
+        }
+        while off < l.len() {
+            let end = (off + 4096).min(l.len());
+            w.write_planar(&[&l[off..end], &r[off..end]]).unwrap();
+            off = end;
+        }
+        body.extend_from_slice(w.finish().unwrap());
+        let mut streamed = w.patch_header().unwrap();
+        streamed.extend_from_slice(&body);
+
+        assert_eq!(streamed.len(), one_shot.len());
+        assert_eq!(streamed, one_shot);
+    }
+
+    /// Pembanding independen: byte kita harus sama dengan yang dihasilkan jalur
+    /// resmi flacenc untuk sample yang sama. Kalau ini gagal, salah satu dari
+    /// penomoran frame / pengisian Context / framing metadata kita salah.
+    #[test]
+    fn matches_flacenc_reference_encoder() {
+        let (l, r) = signal(12_000);
+        let ours = encode_all(&[&l, &r], spec24(), no_dither()).unwrap();
+
+        // Kuantisasi yang SAMA dengan yang dipakai writer kita.
+        let mut interleaved = Vec::with_capacity(l.len() * 2);
+        for i in 0..l.len() {
+            for c in [&l, &r] {
+                interleaved.push(crate::dither::quantize(
+                    c[i],
+                    8_388_607.0,
+                    -8_388_608.0,
+                    8_388_607.0,
+                    None,
+                ));
+            }
+        }
+        let src = MemSource::from_samples(&interleaved, 2, 24, 48_000);
+        let stream = encode_with_fixed_block_size(
+            &config::Encoder::default().into_verified().unwrap(),
+            src,
+            BLOCK_SIZE,
+        )
+        .unwrap();
+        let mut sink = MemSink::<u8>::new();
+        stream.write(&mut sink).unwrap();
+        assert_eq!(ours, sink.into_inner());
+    }
+
+    /// Alasan seluruh fitur ini ada: file harus benar-benar lebih kecil.
+    #[test]
+    fn flac_is_smaller_than_wav_for_the_same_signal() {
+        let (l, r) = signal(48_000);
+        let flac = encode_all(&[&l, &r], spec24(), no_dither()).unwrap();
+        let wav = wav_encode_all(
+            &[&l, &r],
+            WavSpec {
+                sample_rate: 48_000,
+                channels: 2,
+                format: WavFormat::Pcm24,
+            },
+            no_dither(),
+        );
+        assert!(
+            flac.len() < wav.len(),
+            "flac {} byte tidak lebih kecil dari wav {} byte",
+            flac.len(),
+            wav.len()
+        );
+    }
+}

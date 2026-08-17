@@ -59,18 +59,31 @@ RUSTFLAGS_ST="-C target-feature=+bulk-memory,+mutable-globals,+simd128"
 
 BUILD_STD_ARGS=(-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort)
 
-# `-all` = izinkan SEMUA fitur wasm saat validasi/optimasi.
+# Fitur wasm yang boleh dipakai wasm-opt — DIDAFTAR SATU PER SATU, jangan `-all`.
 #
-# Kenapa bukan daftar fitur eksplisit: rustc terus menambah fitur yang
-# di-emit secara default (yang menjatuhkan build ini: `nontrapping-float-to-int`
-# dari `i64.trunc_sat_f64_u`, dipakai konversi f64→u64 biasa). Mendaftar fitur
-# satu per satu berarti build ini rusak lagi setiap kali toolchain naik, dengan
-# pesan error yang tidak menyebut penyebabnya. `-all` hanya mengizinkan
-# wasm-opt MEMBACA fitur tersebut; ia tidak membuat output memakai fitur yang
-# tidak ada di input.
-WASM_OPT_ARGS_MT=(-O4 -all --enable-threads
+# `-all` pernah dipakai di sini dengan alasan yang masuk akal (rustc terus
+# menambah fitur default; `nontrapping-float-to-int` sempat menjatuhkan build).
+# Tapi `-all` juga menyalakan proposal yang MASIH EKSPERIMEN di binaryen —
+# sejak binaryen 132 termasuk `custom-descriptors`, yang MENGUBAH ENCODING
+# section import. Hasilnya: file .wasm yang tidak bisa di-compile browser
+# maupun Node sama sekali ("unknown import kind 0x7f"), padahal wasm-opt keluar
+# dengan status 0 dan ukurannya terlihat wajar. Itu kegagalan diam: satu-satunya
+# gejalanya adalah engine tidak pernah bisa dimuat.
+#
+# Daftar di bawah = fitur yang benar-benar di-emit rustc untuk target kita.
+# Kalau toolchain naik dan wasm-opt mengeluh soal fitur yang belum terdaftar,
+# TAMBAHKAN fitur itu ke sini — jangan kembali ke `-all`.
+WASM_OPT_FEATURES=(--enable-bulk-memory
+                   --enable-mutable-globals
+                   --enable-simd
+                   --enable-nontrapping-float-to-int
+                   --enable-sign-ext
+                   --enable-multivalue
+                   --enable-reference-types
+                   --enable-extended-const)
+WASM_OPT_ARGS_MT=(-O4 "${WASM_OPT_FEATURES[@]}" --enable-threads
                   --strip-debug --strip-producers --strip-dwarf)
-WASM_OPT_ARGS_ST=(-O4 -all --disable-threads
+WASM_OPT_ARGS_ST=(-O4 "${WASM_OPT_FEATURES[@]}" --disable-threads
                   --strip-debug --strip-producers --strip-dwarf)
 
 # build_variant <nama> <outdir> <rustflags> <wasm-opt args...>
@@ -108,6 +121,23 @@ build_variant() {
   wasm-opt "${optargs[@]}" \
     -o "$outdir/${OUT_NAME}_bg.wasm" \
        "$outdir/${OUT_NAME}_bg.wasm"
+
+  # Artefak WAJIB bisa di-compile mesin wasm sungguhan sebelum dianggap jadi.
+  # wasm-opt bisa keluar dengan status 0 dan tetap menulis modul yang ditolak
+  # browser (lihat catatan WASM_OPT_FEATURES) — satu-satunya cara mengetahuinya
+  # adalah benar-benar meng-compile hasilnya.
+  if command -v node >/dev/null 2>&1; then
+    node -e '
+      const fs = require("fs");
+      try { new WebAssembly.Module(fs.readFileSync(process.argv[1])); }
+      catch (e) {
+        console.error("error: artefak " + process.argv[1] + " ditolak WebAssembly: " + e.message);
+        process.exit(1);
+      }
+    ' "$outdir/${OUT_NAME}_bg.wasm"
+  else
+    echo "warning: node tidak ada — artefak $name tidak diverifikasi" >&2
+  fi
 
   local raw gz
   raw=$(wc -c < "$outdir/${OUT_NAME}_bg.wasm" | tr -d ' ')

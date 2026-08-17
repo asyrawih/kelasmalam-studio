@@ -70,7 +70,8 @@ export interface ExportEncoder {
   readonly mime: string;
   init(opts: { sampleRate: number; channels: number; quality?: number; bitDepth?: 16 | 24 | 32 }): Promise<void>;
   encode(planar: Float32Array[]): Uint8Array;
-  finish(): Uint8Array;
+  /** Boleh async — encoder Vorbis hanya bisa menyerahkan hasilnya lewat Blob. */
+  finish(): Uint8Array | Promise<Uint8Array>;
   /** WAV: header final yang menggantikan placeholder. */
   finalHeader?(): Uint8Array | null;
   /** WAV: header placeholder yang ditulis lebih dulu. */
@@ -200,7 +201,7 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
       await yieldFn();
     }
 
-    const tail = encoder.finish();
+    const tail = await encoder.finish();
     if (tail.length > 0) parts.push(tail.slice() as BlobPart);
 
     // WAV: ukuran RIFF/data baru diketahui sekarang, jadi header placeholder di

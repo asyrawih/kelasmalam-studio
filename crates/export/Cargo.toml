@@ -11,6 +11,7 @@ daw-engine = { workspace = true }
 daw-rt = { workspace = true }
 daw-timeline = { workspace = true }
 hound = { workspace = true }
+flacenc = { workspace = true }
 
 [features]
 default = []

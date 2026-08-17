@@ -341,8 +341,40 @@ describe('buildExportPayload', () => {
     expect(json.lanes[0]!.clips[0]!.fadeCurve).toBe('equalPower');
     expect(json.lanes[0]!.speedRatio).toBe(1.5);
     expect(p.assets).toHaveLength(1);
-    expect(p.assets[0]).toMatchObject({ assetId: 7, channels: 2, frames: 1024 });
+    // Id asset DINOMORI ULANG jadi index rapat 0..n-1. Id UI (di sini 7, tapi
+    // di aplikasi sungguhan berbasis timestamp ~1.7e15) tidak muat di `u32`
+    // milik engine dan akan ditolak saat snapshot dideserialisasi.
+    expect(p.assets[0]).toMatchObject({ assetId: 0, channels: 2, frames: 1024 });
     expect(p.assets[0]!.data.length).toBe(2048);
+  });
+
+  it('menomori ulang id asset besar ke rentang u32 yang rapat', () => {
+    const big = 1_786_993_078_361_001; // bentuk id sungguhan: Date.now() * 1000
+    const s = state({
+      lanes: [
+        {
+          ...((state() as unknown as { lanes: Record<string, unknown>[] }).lanes[0] as object),
+          clips: [
+            {
+              ...((state() as unknown as { lanes: { clips: object[] }[] }).lanes[0]!
+                .clips[0] as object),
+              assetId: big,
+            },
+          ],
+        },
+      ],
+    });
+    const p = buildExportPayload(s, (id: number) => (id === big ? buffer(1024) : undefined));
+    const json = JSON.parse(p.json) as { lanes: { clips: { assetId: number }[] }[] };
+
+    const ids = p.assets.map((a) => a.assetId);
+    expect(ids).toEqual([0]);
+    for (const id of ids) expect(id).toBeLessThanOrEqual(0xffff_ffff);
+
+    // Referensi clip harus IKUT dinomori ulang; kalau tidak, clip menunjuk
+    // asset yang tidak ada dan hasilnya senyap.
+    const referenced = json.lanes.flatMap((l) => l.clips.map((c) => c.assetId));
+    for (const r of referenced) expect(ids).toContain(r);
   });
 
   it('panjang output mengerut mengikuti transport speed', () => {

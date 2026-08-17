@@ -537,9 +537,22 @@ export const studioActions = {
   newClipId(): string {
     return nextId('clip-');
   },
+  /**
+   * Id asset baru. WAJIB muat di `u32`: engine memakainya sebagai index tabel
+   * asset (`AssetId = u32`), dan id berbasis timestamp (~1.7e15) ditolak saat
+   * snapshot dideserialisasi.
+   *
+   * Di-seed dari id terbesar yang sudah ada supaya tidak bentrok dengan project
+   * yang dipulihkan; id lama yang terlalu besar diabaikan saat menghitung seed,
+   * jadi rentangnya tidak pernah bertabrakan.
+   */
   newAssetId(): number {
-    idCounter += 1;
-    return Date.now() * 1000 + (idCounter % 1000);
+    const existing = Object.keys(state.assets)
+      .map(Number)
+      .filter((n) => Number.isFinite(n) && n >= 0 && n <= 0xffff_ffff);
+    const floor = existing.length > 0 ? Math.max(...existing) : 0;
+    idCounter = Math.max(idCounter + 1, floor + 1);
+    return idCounter;
   },
 
   // — transport —

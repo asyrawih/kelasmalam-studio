@@ -16,6 +16,7 @@
  */
 
 import { detectCaps, type Caps, type WasmVariant } from './caps';
+import { WASM_URLS } from './wasm-urls';
 import { SAB_SIZE } from './sab-layout';
 
 /** Harus sama dengan `daw_wasm::ABI_VERSION`. */
@@ -53,6 +54,8 @@ export interface WasmBindgenExports {
   OfflineRender: OfflineRenderCtor;
   WavEncoderHandle: WavEncoderCtor;
   WavBits: { Pcm16: number; Pcm24: number; Float32: number };
+  FlacEncoderHandle: FlacEncoderCtor;
+  FlacBitsJs: { Pcm16: number; Pcm24: number };
 }
 
 export interface ImportedAssetHandle {
@@ -123,6 +126,26 @@ export interface WavEncoderHandleT {
   free(): void;
 }
 
+/**
+ * Encoder FLAC di Rust. Bentuknya SENGAJA sama dengan `WavEncoderCtor`: satu
+ * loop export, banyak encoder — begitu bentuknya berbeda, `run-export.ts` akan
+ * butuh cabang per format dan "satu jalur render" berhenti berlaku.
+ *
+ * Bedanya cuma satu: setiap method bisa MELEMPAR (flacenc mengembalikan
+ * `Result`), sementara WAV tidak pernah gagal.
+ */
+export interface FlacEncoderCtor {
+  new (sampleRate: number, channels: number, bits: number, ditherSeed: number): FlacEncoderHandleT;
+}
+
+export interface FlacEncoderHandleT {
+  header(): Uint8Array;
+  encode(l: Float32Array, r: Float32Array): Uint8Array;
+  flush(): Uint8Array;
+  patchHeader(): Uint8Array;
+  free(): void;
+}
+
 /** Hasil load — semuanya cloneable kecuali `exports`. */
 export interface LoadedWasm {
   readonly module: WebAssembly.Module;
@@ -150,9 +173,10 @@ async function doLoad(): Promise<LoadedWasm> {
   // URL dibangun runtime, bukan static import: artefak baru ada setelah
   // `pnpm build:wasm`, dan kita tidak mau typecheck/dev-server gagal hanya
   // karena artefak belum dibangun.
-  const base = new URL(`../wasm/${variant}/`, import.meta.url);
-  const glueUrl = new URL('engine.js', base).href;
-  const wasmUrl = new URL('engine_bg.wasm', base).href;
+  // URL dari tabel literal statis — JANGAN dibangun dengan template literal
+  // di sini; Vite tidak bisa menyelesaikannya dan diam-diam mengarahkannya ke
+  // direktori yang salah. Lihat wasm-urls.ts.
+  const { glue: glueUrl, wasm: wasmUrl } = WASM_URLS[variant];
 
   // PENTING: artefak diperiksa DULU, sebelum `import()` glue-nya.
   //
@@ -177,7 +201,14 @@ async function doLoad(): Promise<LoadedWasm> {
       : { initial: MEMORY_INITIAL_PAGES, maximum: MEMORY_MAXIMUM_PAGES },
   );
 
-  glue.initSync({ module, memory });
+  // `initSync` mengembalikan `instance.exports`. Itu penting: HANYA varian mt
+  // yang meng-IMPORT memory, jadi hanya di sana `memory` di atas benar-benar
+  // dipakai. Varian st meng-EKSPOR memory-nya sendiri dan mengabaikan argumen
+  // ini diam-diam — memakai objek `memory` buatan JS untuk membaca hasil render
+  // berarti membaca memori yang tidak pernah disentuh engine: semua nol, tanpa
+  // satu pun error. Gejalanya adalah file export yang senyap sempurna.
+  const inst = glue.initSync({ module, memory }) as { memory?: WebAssembly.Memory } | undefined;
+  const actualMemory = inst?.memory ?? memory;
   glue.initNonRealtime();
 
   const abi = glue.abiVersion();
@@ -199,7 +230,7 @@ async function doLoad(): Promise<LoadedWasm> {
 
   const controlPtr = glue.allocControlBlock();
 
-  return { module, memory, variant, caps, exports: glue, controlPtr };
+  return { module, memory: actualMemory, variant, caps, exports: glue, controlPtr };
 }
 
 /** Ditandai supaya UI bisa membedakan "belum dibangun" dari error sungguhan. */
@@ -214,7 +245,11 @@ export class EngineNotBuiltError extends Error {
 async function fetchWasmBytes(url: string): Promise<ArrayBuffer> {
   let res: Response;
   try {
-    res = await fetch(url);
+    // `cache: 'no-store'`: sebelum artefak dibangun, dev-server menjawab URL ini
+    // dengan SPA fallback (HTML, status 200) — dan respons itu bisa mengendap di
+    // cache HTTP. Setelah artefak ada, browser masih menyajikan HTML basi dan
+    // engine terlihat "tidak pernah dibangun" padahal file-nya sudah ada.
+    res = await fetch(url, { cache: 'no-store' });
   } catch (err) {
     throw new EngineNotBuiltError(err instanceof Error ? err.message : 'fetch gagal');
   }

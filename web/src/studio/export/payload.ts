@@ -61,13 +61,35 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
   const speed = state.speed > 0 ? state.speed : 1;
   const assets = new Map<number, ExportAssetPcm>();
 
+  /**
+   * PENOMORAN ULANG ASSET: id UI → 0,1,2,… untuk engine.
+   *
+   * `AssetId` di Rust adalah `u32` (index ke tabel asset), sedangkan id di UI
+   * dibuat dari timestamp dan besarnya ~1.7e15 — jauh melewati batas u32, jadi
+   * deserialisasi snapshot menolaknya mentah-mentah. Menomori ulang di batas
+   * ini menyelesaikannya tanpa migrasi: project yang sudah tersimpan tetap
+   * memakai id lamanya, dan engine hanya pernah melihat index rapat 0..n-1.
+   *
+   * Rapat juga lebih baik untuk engine: tabel asetnya di-index langsung, bukan
+   * di-hash.
+   */
+  const denseId = new Map<number, number>();
+  const toDense = (uiId: number): number => {
+    let d = denseId.get(uiId);
+    if (d === undefined) {
+      d = denseId.size;
+      denseId.set(uiId, d);
+    }
+    return d;
+  };
+
   const lanes = state.lanes.map((lane) => {
     const clips = lane.clips.filter((clip) => {
       const buf = getBuffer(clip.assetId);
       if (buf === undefined) return false;
       if (!assets.has(clip.assetId)) {
         assets.set(clip.assetId, {
-          assetId: clip.assetId,
+          assetId: toDense(clip.assetId),
           data: flattenBuffer(buf),
           channels: Math.max(1, buf.numberOfChannels),
           frames: buf.length,
@@ -93,7 +115,7 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
       },
       clips: clips.map((c) => ({
         id: c.id,
-        assetId: c.assetId,
+        assetId: toDense(c.assetId),
         start: c.start,
         len: c.len,
         sourceStart: c.sourceStart,

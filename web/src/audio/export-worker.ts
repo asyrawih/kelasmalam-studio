@@ -24,6 +24,7 @@ import { ExportCancelled, runExport, type ExportEncoder } from '../studio/export
 import { createWasmExportEngine } from '../studio/export/wasm-engine';
 import { createEncoder } from '../encoders';
 import { EXPORT_CANCEL } from './sab-layout';
+import { WASM_URLS } from './wasm-urls';
 import type { LoadedWasm, WasmBindgenExports } from './wasm-loader';
 
 export interface ExportWorkerStart {
@@ -65,7 +66,9 @@ self.onmessage = (ev: MessageEvent): void => {
 };
 
 async function run(m: ExportWorkerStart): Promise<void> {
-  const glueUrl = new URL(`../wasm/${m.variant}/engine.js`, import.meta.url).href;
+  // Lihat wasm-urls.ts: template literal di sini akan diarahkan Vite ke
+  // direktori yang salah tanpa error apa pun.
+  const glueUrl = WASM_URLS[m.variant].glue;
   const glue = (await import(/* @vite-ignore */ glueUrl)) as WasmBindgenExports;
   glue.initSync(m.memory ? { module: m.module, memory: m.memory } : { module: m.module });
   glue.initNonRealtime();

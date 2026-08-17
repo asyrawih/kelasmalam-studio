@@ -25,20 +25,26 @@ export class OggVorbisEncoder implements Encoder {
   readonly ext = 'ogg';
 
   private enc: VorbisEncoderInstance | null = null;
-  private tail: Uint8Array = EMPTY;
 
   async init(opts: EncoderInitOptions): Promise<void> {
     // `vorbis-encoder-js` adalah publikasi npm dari ogg-vorbis-encoder-js
     // (higuma) — sumber & API-nya sama; nama npm-nya saja yang berbeda.
-    const mod = (await import('vorbis-encoder-js')) as unknown as {
-      OggVorbisEncoder?: VorbisModule;
-      default?: { OggVorbisEncoder?: VorbisModule } | VorbisModule;
-    };
-    const Ctor =
-      mod.OggVorbisEncoder ??
-      (mod.default as { OggVorbisEncoder?: VorbisModule })?.OggVorbisEncoder ??
-      (mod.default as VorbisModule);
-    if (!Ctor) throw new Error('ogg-vorbis-encoder-js: konstruktor tidak ditemukan');
+    const mod = (await import('vorbis-encoder-js')) as unknown as Record<string, unknown>;
+    // Paketnya CommonJS (`module.exports = { libvorbis, encoder }`) dan
+    // konstruktornya bernama `encoder`, bukan `OggVorbisEncoder` — nama itu
+    // hanya ada di README repo aslinya. Interop ESM Vite/Node juga bisa
+    // menaruhnya di `default`. Semua bentuk dicoba, lalu yang PERTAMA yang
+    // benar-benar sebuah fungsi dipakai: menebak satu bentuk saja pernah
+    // membuat jalur OGG gagal dengan "Ctor is not a constructor".
+    const d = (mod['default'] ?? {}) as Record<string, unknown>;
+    const Ctor = [mod['encoder'], mod['OggVorbisEncoder'], d['encoder'], d['OggVorbisEncoder'], d].find(
+      (c): c is VorbisModule => typeof c === 'function',
+    );
+    if (!Ctor) {
+      throw new Error(
+        'vorbis-encoder-js: konstruktor tidak ditemukan di modul (bentuk export berubah?)',
+      );
+    }
     // quality vorbis: -0.1 .. 1.0 (0.5 ≈ 160 kbps stereo).
     const q = clamp(opts.quality ?? 0.5, -0.1, 1.0);
     this.enc = new Ctor(opts.sampleRate, opts.channels, q);
@@ -56,17 +62,17 @@ export class OggVorbisEncoder implements Encoder {
     return EMPTY;
   }
 
-  finish(): Uint8Array {
-    return this.tail;
-  }
-
-  /** Blob final — dipakai export worker karena paket ini Blob-oriented. */
-  async finishBlob(): Promise<Uint8Array> {
+  /**
+   * ASYNC, dan itu bukan pilihan gaya: paket ini mengembalikan `Blob`, dan satu-
+   * satunya cara membaca isi Blob adalah lewat Promise. Versi sinkron dari
+   * method ini pernah ada di sini dan mengembalikan array kosong — hasilnya file
+   * OGG 0 byte, tanpa satu pun error di mana pun.
+   */
+  async finish(): Promise<Uint8Array> {
     if (!this.enc) return EMPTY;
     const blob = this.enc.finish();
     this.enc = null;
-    this.tail = new Uint8Array(await blob.arrayBuffer());
-    return this.tail;
+    return new Uint8Array(await blob.arrayBuffer());
   }
 }
 

@@ -1,3 +1,4 @@
+import { WASM_URLS } from './wasm-urls';
 /**
  * Import worker — decode file audio → PCM → resample → peak pyramid.
  *
@@ -201,7 +202,7 @@ async function decodeViaWasm(g: WasmBindgenExports, m: ImportMessage): Promise<D
 
 async function ensureGlue(m: ImportMessage): Promise<WasmBindgenExports> {
   if (glue) return glue;
-  const url = new URL(`../wasm/${m.variant}/engine.js`, import.meta.url).href;
+  const url = WASM_URLS[m.variant].glue;
   const g = (await import(/* @vite-ignore */ url)) as WasmBindgenExports;
   g.initSync(m.memory ? { module: m.module, memory: m.memory } : { module: m.module });
   g.initNonRealtime();

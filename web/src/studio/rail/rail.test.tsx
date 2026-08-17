@@ -9,7 +9,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { StudioRail } from './index';
 import { dbToFader, faderToDb, formatDb } from './fader';
-import { computeStats } from './CompileCard';
+import { computeStats, resolveFormat } from './CompileCard';
 import { studioActions, studioStore } from './store-adapter';
 import { defaultEq, DEFAULT_FADE_CURVE, type StudioState } from '../model';
 
@@ -201,5 +201,43 @@ describe('computeStats', () => {
 
   it('speed 2x memotong panjang output', () => {
     expect(computeStats({ ...base, speed: 2 }).outputSeconds).toBeCloseTo(60, 3);
+  });
+
+  it('MP3 memakai bitrate yang dipilih, bukan default', () => {
+    expect(computeStats({ ...base, format: 'MP3' }, 16, 320).bytes).toBeCloseTo(
+      (120 * 320_000) / 8,
+      0,
+    );
+  });
+
+  it('FLAC diberi label estimasi dan lebih kecil dari WAV yang setara', () => {
+    const wav = computeStats({ ...base, format: 'WAV' }, 24);
+    const flac = computeStats({ ...base, format: 'FLAC' }, 24);
+    expect(flac.bytes).toBeLessThan(wav.bytes);
+    expect(flac.label).toContain('estimasi');
+  });
+
+  it('FLAC turun ke 24-bit kalau user memilih F32 — format ini tidak punya float', () => {
+    expect(computeStats({ ...base, format: 'FLAC' }, 32).label).toContain('24-bit');
+  });
+
+  it('OGG memakai bitrate nominal dari quality, bukan bytes-per-sample', () => {
+    const s = computeStats({ ...base, format: 'OGG' }, 16, 0.2);
+    expect(s.bytes).toBeCloseTo((120 * 96_000) / 8, 0);
+    expect(s.label).toContain('q0.2');
+  });
+});
+
+describe('resolveFormat', () => {
+  it('meneruskan format yang punya encoder sendiri', () => {
+    expect(resolveFormat('FLAC')).toBe('FLAC');
+    expect(resolveFormat('MP3')).toBe('MP3');
+    expect(resolveFormat('OGG')).toBe('OGG');
+    expect(resolveFormat('WAV')).toBe('WAV');
+  });
+
+  it('AUTO — dan nilai tak dikenal dari project lama — jatuh ke WAV', () => {
+    expect(resolveFormat('AUTO')).toBe('WAV');
+    expect(resolveFormat('AIFF' as never)).toBe('WAV');
   });
 });

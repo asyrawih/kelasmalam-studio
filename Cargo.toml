@@ -35,6 +35,10 @@ serde        = { version = "1", default-features = false, features = ["derive", 
 postcard     = { version = "1", default-features = false, features = ["alloc"] }
 # WAV writer untuk crate export.
 hound        = "3.5"
+# Encoder FLAC pure-Rust. `default-features = false` WAJIB: fitur default-nya
+# menyalakan `par` (rayon) dan `simd-nightly`, yang keduanya tidak ada di
+# wasm32-unknown-unknown. Tanpa itu build wasm gagal linking.
+flacenc      = { version = "0.5", default-features = false }
 # libm: `core` tidak punya sin/cos. Dipakai crate no_std (dsp, engine).
 libm         = { version = "0.2", default-features = false }
 # serde_json HANYA di crates/wasm-bridge: JSON adalah bahasa yang bisa dibicarakan

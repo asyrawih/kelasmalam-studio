@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { createEncoder, downloadBlob, pickSaveLocation } from '../../encoders';
+import type { EncoderFormat } from '../../encoders';
 import { loadWasm, type LoadedWasm } from '../../audio/wasm-loader';
 import { buildExportPayload, type BufferLookup } from '../export/payload';
 import { ExportCancelled, runExport, type ExportEncoder } from '../export/run-export';
@@ -52,6 +53,7 @@ let wasmCache: LoadedWasm | null = null;
 
 export function useExportAvailability(): ExportAvailability {
   const [wasmOk, setWasmOk] = useState(wasmCache !== null);
+  const [wasmError, setWasmError] = useState<string | null>(null);
   const [hasHost, setHasHost] = useState(host !== null);
 
   useEffect(() => {
@@ -69,9 +71,23 @@ export function useExportAvailability(): ExportAvailability {
         const w = await loadWasm();
         wasmCache = w;
         if (alive) setWasmOk(true);
-      } catch {
-        // Gagal memuat = engine memang belum ada.
-        if (alive) setWasmOk(false);
+      } catch (e: unknown) {
+        // JANGAN menelan errornya. Sebelumnya semua kegagalan dilaporkan sebagai
+        // "artefak tidak ada", padahal artefaknya bisa saja ADA dan sehat —
+        // yang gagal instantiasi, cek ABI, atau layout blok kontrol. Pesan yang
+        // salah membuat orang membangun ulang artefak berkali-kali untuk
+        // masalah yang sama sekali berbeda.
+        // Detailnya (URL, status HTTP, content-type) ikut ditampilkan JUGA
+        // untuk error "belum dibangun". Menggantinya dengan kalimat generik
+        // membuang satu-satunya informasi yang membedakan "file tidak ada" dari
+        // "file ada tapi server menjawab HTML" — dua penyebab dengan perbaikan
+        // yang sama sekali berbeda.
+        // Selalu ke console juga: tooltip terpotong, stack trace tidak.
+        console.error('[export] gagal memuat engine WASM:', e);
+        if (alive) {
+          setWasmOk(false);
+          setWasmError(e instanceof Error ? e.message : String(e));
+        }
       }
     })();
     return () => {
@@ -79,17 +95,37 @@ export function useExportAvailability(): ExportAvailability {
     };
   }, []);
 
-  if (!wasmOk) return { ready: false, reason: NO_WASM };
+  if (!wasmOk) return { ready: false, reason: wasmError ?? NO_WASM };
   if (!hasHost) return { ready: false, reason: NO_HOST };
   return { ready: true, reason: '' };
 }
 
+/** MIME per format — dipakai picker "save as" DAN tipe Blob-nya. */
+const MIME: Record<EncoderFormat, string> = {
+  wav: 'audio/wav',
+  flac: 'audio/flac',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+};
+
+/**
+ * Paket encoder lossy diunduh saat `init()`. Kalau unduhannya gagal (offline,
+ * CDN diblokir, bundle rusak), pesannya harus menyebut FORMAT-nya — "Failed to
+ * fetch dynamically imported module" tidak memberi tahu user bahwa ia cukup
+ * memilih WAV dan semuanya jalan lagi. Format lain tidak ikut rusak: masing-
+ * masing `import()` berdiri sendiri.
+ */
+const LAZY_ENCODER_LABEL: Partial<Record<EncoderFormat, string>> = {
+  mp3: 'Encoder MP3 (lamejs)',
+  ogg: 'Encoder OGG Vorbis (vorbis-encoder-js)',
+};
+
 export interface CompileParams {
-  format: 'wav' | 'mp3';
+  format: EncoderFormat;
   fileName: string;
-  /** WAV: kedalaman bit. Diabaikan untuk MP3. */
+  /** WAV: 16/24/32. FLAC: 16/24. Diabaikan untuk MP3/OGG. */
   bitDepth?: 16 | 24 | 32;
-  /** MP3 kbps; diabaikan untuk WAV. */
+  /** MP3 kbps, atau quality Vorbis. Diabaikan untuk WAV/FLAC. */
   quality?: number;
   onProgress?: (fraction01: number | null) => void;
   /** Selisih preview vs file — UI WAJIB menampilkannya. */
@@ -127,7 +163,7 @@ export async function runCompile(p: CompileParams): Promise<void> {
   }
 
   const ext = p.format;
-  const mime = p.format === 'wav' ? 'audio/wav' : 'audio/mpeg';
+  const mime = MIME[p.format];
   const fileName = `${p.fileName}.${ext}`;
   // Picker DULU, sebelum render: ia butuh user gesture, dan gesture-nya hilang
   // begitu kita menunggu batch pertama. `null` = browser tanpa File System
@@ -135,12 +171,23 @@ export async function runCompile(p: CompileParams): Promise<void> {
   const fileHandle = await pickSaveLocation(fileName, mime, ext);
 
   const encoder = createEncoder(p.format, wasm.exports) as unknown as ExportEncoder;
-  await encoder.init({
-    sampleRate: state.sampleRate,
-    channels: 2,
-    bitDepth: p.bitDepth ?? 16,
-    quality: p.quality,
-  });
+  try {
+    await encoder.init({
+      sampleRate: state.sampleRate,
+      channels: 2,
+      bitDepth: p.bitDepth ?? 16,
+      quality: p.quality,
+    });
+  } catch (e) {
+    const label = LAZY_ENCODER_LABEL[p.format];
+    if (label) {
+      throw new Error(
+        `${label} gagal dimuat: ${e instanceof Error ? e.message : String(e)}. ` +
+          'Format lain (WAV/FLAC) tetap bisa dipakai.',
+      );
+    }
+    throw e;
+  }
 
   try {
     const result = await runExport({
