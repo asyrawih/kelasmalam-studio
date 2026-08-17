@@ -24,8 +24,19 @@ DIST="$ROOT/web/dist"
 
 log() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
-log "Build artefak WASM"
-"$ROOT/scripts/build-wasm.sh"
+# CI sudah membangun artefak lebih dulu supaya tes web punya sesuatu untuk
+# dimuat (tes integrasi Node memakai artefak `st` yang sungguhan). Membangunnya
+# dua kali hanya membuang waktu runner.
+if [ "${SKIP_WASM:-0}" = "1" ]; then
+  log "Lewati build WASM (SKIP_WASM=1)"
+  for v in mt st; do
+    [ -f "$ROOT/web/src/wasm/$v/engine_bg.wasm" ] || {
+      echo "GAGAL: SKIP_WASM=1 tapi artefak $v tidak ada." >&2; exit 1; }
+  done
+else
+  log "Build artefak WASM"
+  "$ROOT/scripts/build-wasm.sh"
+fi
 
 log "Cek budget ukuran"
 "$ROOT/scripts/size-check.sh"

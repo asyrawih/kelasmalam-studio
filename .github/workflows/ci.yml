@@ -88,7 +88,20 @@ jobs:
           curl -sSfL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
           sudo apt-get update && sudo apt-get install -y binaryen
 
-      - run: wasm-pack test --headless --chrome crates/wasm-bridge
+      # RUSTFLAGS di-override untuk langkah ini saja.
+      #
+      # `.cargo/config.toml` memaksa `+atomics` + `--shared-memory` untuk SEMUA
+      # build wasm32 — itu benar untuk artefak `mt`, tapi `wasm-pack test`
+      # mengompilasi harness libtest TANPA `-Z build-std`, jadi objek tesnya
+      # tidak punya atomics dan linker menolak menggabungkannya:
+      #   rust-lld: --shared-memory is disallowed by test-*.rcgu.o
+      # Tes browser di sini menguji logika bridge, bukan jalur SAB, jadi
+      # dijalankan dengan profil non-atomics (sama seperti varian `st`).
+      # Env RUSTFLAGS menggantikan rustflags dari config, bukan menambahinya.
+      - name: wasm-pack test (profil st, tanpa atomics)
+        env:
+          RUSTFLAGS: '-C target-feature=+bulk-memory,+mutable-globals,+simd128'
+        run: wasm-pack test --headless --chrome crates/wasm-bridge
 
       - name: build wasm (mt + st)
         run: ./scripts/build-wasm.sh

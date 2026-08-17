@@ -86,9 +86,13 @@ npx vercel deploy --prebuilt --prod
 
 - **`vercel.json` TIDAK dibaca** pada deploy `--prebuilt`. Rute dan header
   datang dari `.vercel/output/config.json`, yang disalin dari
-  **`deploy/vercel-config.json`** — itu satu-satunya sumber kebenaran. Repo ini
-  sengaja tidak punya `vercel.json` supaya tidak ada dua berkas yang saling
-  bertentangan dan hanya satu yang berlaku.
+  **`deploy/vercel-config.json`** — itu satu-satunya sumber kebenaran untuk
+  header.
+- `vercel.json` di root **hanya** berisi `"ignoreCommand": "exit 0"`, yang
+  membatalkan build yang dipicu integrasi Git Vercel (exit 0 = lewati). Tanpa
+  itu, tiap push memicu DUA jalur: CI yang benar, dan build Vercel sendiri yang
+  pasti gagal karena runner-nya tidak punya Rust. Berkas ini sengaja tidak
+  memuat header apa pun supaya tidak ada dua sumber yang bertentangan.
 - `web/public/_headers` ikut ter-copy tapi **tidak berpengaruh di Vercel**; itu
   untuk Cloudflare Pages / Netlify.
 - Sourcemap mati di produksi (`VITE_SOURCEMAP=1` untuk menyalakannya).

@@ -83,6 +83,13 @@ jobs:
         # sesuatu yang tidak di-deploy. CI penuh (ci.yml) tetap mengujinya.
         run: cargo test --workspace --exclude daw-native-host
 
+      # Artefak WASM dibangun SEBELUM tes web: tes integrasi Node memuat
+      # `web/src/wasm/st/engine_bg.wasm` yang sungguhan, jadi tanpa langkah ini
+      # suite-nya gagal dengan "Does the file exist?" — bukan karena kodenya
+      # salah, tapi karena belum ada yang membangunnya.
+      - name: Build WASM
+        run: ./scripts/build-wasm.sh
+
       - name: Install web deps
         working-directory: web
         run: npm ci
@@ -95,6 +102,8 @@ jobs:
 
       # ── Build + deploy ─────────────────────────────────────────────────────
       - name: Build .vercel/output
+        env:
+          SKIP_WASM: '1' # sudah dibangun di langkah "Build WASM" di atas
         run: ./scripts/vercel-build.sh
 
       - name: Deploy
