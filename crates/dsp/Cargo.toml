@@ -1,0 +1,31 @@
+[package]
+name = "daw-dsp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "DSP primitives untuk DawOnWeb: smoother, biquad, compressor, mixing, resampling, fastmath"
+
+[lib]
+name = "daw_dsp"
+path = "src/lib.rs"
+
+[dependencies]
+# libm dipakai supaya crate tetap no_std-compatible: `core` tidak menyediakan
+# sin/cos/exp/sqrt/pow untuk f32. Sekaligus membuat hasil aritmetika sama
+# persis antara build std dan no_std (determinisme render offline vs realtime).
+libm = { version = "0.2", default-features = false }
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[features]
+default = ["std"]
+# `std` hanya untuk tes & benchmark; build WASM memakai --no-default-features.
+std = []
+
+[[bench]]
+name = "dsp_bench"
+harness = false

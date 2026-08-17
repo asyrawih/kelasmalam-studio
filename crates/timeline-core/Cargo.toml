@@ -1,0 +1,25 @@
+[package]
+name = "daw-timeline"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Model project, dua koordinat space, tempo map, edit non-destruktif, peak pyramid."
+
+[dependencies]
+# serde dipakai HANYA di jalur non-RT (snapshot ke export worker, file project).
+# default-features = false + alloc → tetap no_std-compatible.
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[features]
+default = []
+# `std` hanya menyalakan std di serde (pesan error lebih enak di host tooling).
+# Crate ini sendiri TIDAK pernah butuh std.
+std = ["serde/std"]
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dawonweb.local/schema/project.schema.json",
+  "title": "DawOnWeb Project",
+  "description": "Format file project DawOnWeb (.dow.json). Ini adalah serialisasi serde dari `Project` di crates/timeline-core/src/model.rs — kalau keduanya berbeda, model.rs yang benar dan schema ini yang harus dikejar. Format binary (postcard) untuk snapshot ke worker memakai struct yang SAMA; schema ini hanya mendokumentasikan bentuk JSON-nya.\n\nCATATAN PENTING: file project TIDAK memuat sample audio. Ia hanya memuat referensi asset (`assets[]`) plus hash isinya. Audio disimpan terpisah di OPFS; lihat docs/06-timeline-clips.md.\n\nSemua posisi dan durasi adalah integer sample, tidak pernah detik. Semua level adalah dB, tidak pernah linear.",
+  "type": "object",
+  "required": ["version", "name", "sample_rate", "tempo_map", "tracks", "buses", "master", "assets"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Versi format. Loader menolak nilai > PROJECT_VERSION dan menjalankan tangga migrasi untuk nilai yang lebih kecil (Project::migrate).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": { "type": "string" },
+    "sample_rate": {
+      "description": "Sample rate project. Semua asset di-resample ke nilai ini saat import (windowed-sinc, offline). Kalau device saat load memakai rate lain, project di-resample ulang saat itu juga, bukan saat playback.",
+      "type": "integer",
+      "minimum": 8000,
+      "maximum": 384000
+    },
+    "tempo_map": { "$ref": "#/$defs/TempoMap" },
+    "tracks": { "type": "array", "items": { "$ref": "#/$defs/Track" } },
+    "buses": {
+      "description": "Bus non-master: return reverb/delay, group bus.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Bus" }
+    },
+    "master": { "$ref": "#/$defs/Bus" },
+    "assets": { "type": "array", "items": { "$ref": "#/$defs/AssetRef" } },
+    "master_speed": {
+      "description": "Varispeed global. 1.0 = normal. TIDAK mengubah tempo map — lihat docs/07 §8d.",
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "default": 1.0
+    },
+    "loop_range": {
+      "description": "[start, end) dalam timeline sample.",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/TimelineSample" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "next_id": {
+      "description": "Counter ID monoton. Wajib disimpan: tanpa ini, load lalu tambah clip akan menghasilkan ID yang bentrok dengan clip yang sudah ada.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+
+  "$defs": {
+    "TimelineSample": {
+      "description": "Posisi/durasi dalam TIMELINE space (sample sejak awal lagu). Di JSON hanya integer — type-safety-nya ada di Rust (newtype TimelineSample), bukan di sini.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "SourceSample": {
+      "description": "Posisi/durasi dalam SOURCE space (sample sejak awal asset PCM). JANGAN dicampur dengan TimelineSample; keduanya hanya sama kalau speed_ratio == 1.0.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "Id": { "type": "integer", "minimum": 0 },
+    "Db": { "type": "number", "minimum": -144, "maximum": 24 },
+
+    "TempoMap": {
+      "type": "object",
+      "required": ["tempo", "time_sig"],
+      "additionalProperties": false,
+      "properties": {
+        "tempo": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/TempoSegment" }
+        },
+        "time_sig": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/TimeSigSegment" }
+        },
+        "cached_sr": {
+          "description": "Sample rate yang dipakai saat jangkar dihitung. Diabaikan saat load — rebuild_anchors() selalu dipanggil ulang.",
+          "type": "integer"
+        }
+      }
+    },
+
+    "TempoSegment": {
+      "description": "Segmen tempo konstan. Elemen pertama WAJIB punya tick 0.",
+      "type": "object",
+      "required": ["tick", "micros_per_qn"],
+      "additionalProperties": false,
+      "properties": {
+        "tick": { "type": "integer", "minimum": 0, "description": "Awal segmen dalam PPQ tick (PPQ = 960)." },
+        "sample": {
+          "description": "Jangkar dalam sample. TURUNAN — dihitung ulang saat load. Ikut ditulis hanya supaya file bisa diverifikasi tanpa menjalankan aplikasi.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "micros_per_qn": {
+          "description": "Mikrodetik per quarter note, INTEGER (seperti MIDI tempo meta-event). 120 BPM = 500000, 128 BPM = 468750. Sengaja bukan BPM float: BPM float tidak bisa merepresentasikan tempo bulat secara eksak dan errornya terakumulasi lintas segmen.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000000
+        }
+      }
+    },
+
+    "TimeSigSegment": {
+      "type": "object",
+      "required": ["tick", "numerator", "denominator"],
+      "additionalProperties": false,
+      "properties": {
+        "tick": { "type": "integer", "minimum": 0 },
+        "numerator": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "denominator": {
+          "description": "Harus kekuatan dua.",
+          "type": "integer",
+          "enum": [1, 2, 4, 8, 16, 32, 64]
+        }
+      }
+    },
+
+    "AssetRef": {
+      "description": "Metadata asset. Sample-nya sendiri ada di OPFS (file `assets/<content_hash>.pcm`), bukan di file ini.",
+      "type": "object",
+      "required": ["id", "name", "content_hash", "channels", "frames", "source_sample_rate"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string", "description": "Nama file asli, untuk relink kalau asset hilang." },
+        "content_hash": {
+          "description": "Hash isi (BLAKE3 dipotong 8 byte, sebagai integer u64). Dua import file yang sama menghasilkan SATU asset — deduplikasi terjadi di sini.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "channels": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "frames": {
+          "description": "Panjang SETELAH resample ke sample_rate project.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_sample_rate": {
+          "description": "Sample rate asli file sebelum resample import-time.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+
+    "FadeCurve": {
+      "description": "Linear untuk material berkorelasi (potongan dari take yang sama). EqualPower (sin/cos) untuk material tak berkorelasi (dua take berbeda) — ini yang dipakai crossfade otomatis. Lihat docs/06 §6d.",
+      "type": "string",
+      "enum": ["Linear", "EqualPower", "SCurve", "Logarithmic", "Exponential"]
+    },
+
+    "FadeSpec": {
+      "type": "object",
+      "required": ["len_timeline", "curve"],
+      "additionalProperties": false,
+      "properties": {
+        "len_timeline": {
+          "description": "Panjang fade dalam TIMELINE sample (bukan source). Alasannya: user menggambar handle fade di layar, dan layar adalah timeline space — mengubah speed_ratio tidak boleh mengubah durasi fade yang terlihat. 0 = tanpa fade eksplisit; engine tetap menerapkan micro-fade 3 ms di setiap tepi clip.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "curve": { "$ref": "#/$defs/FadeCurve" }
+      }
+    },
+
+    "Clip": {
+      "description": "Region audio non-destruktif. TIDAK memuat sample — hanya referensi asset + jendela + transform. Semua editing memutasi angka-angka di sini; PCM tidak pernah tersentuh.",
+      "type": "object",
+      "required": ["id", "track", "asset_id", "source_start", "source_len", "timeline_pos", "gain_db", "fade_in", "fade_out", "speed_ratio"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "track": { "$ref": "#/$defs/Id", "description": "Denormalisasi: pemilik clip. Hit-test dan undo butuh ini tanpa harus men-scan semua track." },
+        "asset_id": { "$ref": "#/$defs/Id" },
+        "source_start": { "$ref": "#/$defs/SourceSample", "description": "Offset trim-in di dalam asset." },
+        "source_len": { "$ref": "#/$defs/SourceSample", "description": "Panjang region source yang dipakai. Selalu > 0. Panjang di TIMELINE = source_len / speed_ratio." },
+        "timeline_pos": { "$ref": "#/$defs/TimelineSample" },
+        "gain_db": { "$ref": "#/$defs/Db", "description": "Clip gain. dB adalah nilai kanonik; linear hanya turunan." },
+        "fade_in": { "$ref": "#/$defs/FadeSpec" },
+        "fade_out": { "$ref": "#/$defs/FadeSpec" },
+        "speed_ratio": {
+          "description": "1.0 = kecepatan asli. > 1.0 = lebih cepat DAN lebih pendek di timeline. Lihat docs/07 §8.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1.0
+        },
+        "warp": {
+          "description": "false = varispeed (pitch ikut berubah, mode 'tape'). true = time-stretch pitch-preserved (fase 2).",
+          "type": "boolean",
+          "default": false
+        },
+        "mute": { "type": "boolean", "default": false },
+        "loop_count": { "type": "integer", "minimum": 1, "default": 1 },
+        "insert_chain": {
+          "description": "FX per-clip. Kosong di MVP (lihat rekomendasi docs/06 §6e); field-nya ada sejak v1 supaya tidak butuh migrasi nanti.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Id" }
+        },
+        "name": { "type": "string" },
+        "color": { "description": "Index ke palet design system, bukan RGB — supaya ganti tema tidak mengubah file project.", "type": "integer", "minimum": 0, "maximum": 255 }
+      }
+    },
+
+    "Send": {
+      "type": "object",
+      "required": ["id", "dest", "amount_db"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "dest": { "$ref": "#/$defs/Id" },
+        "amount_db": { "$ref": "#/$defs/Db" },
+        "pre_fader": { "type": "boolean", "default": false },
+        "enabled": { "type": "boolean", "default": true }
+      }
+    },
+
+    "Track": {
+      "type": "object",
+      "required": ["id", "name", "clips", "insert_chain", "sends", "output", "fader_db", "pan", "mute", "solo"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string" },
+        "clips": {
+          "description": "WAJIB tersortir naik berdasarkan timeline_pos. Loader memulihkan invariant ini lewat Project::normalize().",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Clip" }
+        },
+        "insert_chain": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
+        "sends": { "type": "array", "items": { "$ref": "#/$defs/Send" } },
+        "output": { "$ref": "#/$defs/Id" },
+        "fader_db": { "$ref": "#/$defs/Db" },
+        "pan": { "description": "-1 = kiri penuh, 0 = tengah, +1 = kanan penuh. Pan law -3 dB equal-power (sin/cos), lihat docs/07.", "type": "number", "minimum": -1, "maximum": 1 },
+        "mute": { "type": "boolean" },
+        "solo": { "type": "boolean" },
+        "record_arm": { "type": "boolean", "default": false },
+        "color": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "height_px": { "type": "number", "minimum": 24, "default": 88 },
+        "automation": { "type": "array", "items": { "$ref": "#/$defs/Automation" } }
+      }
+    },
+
+    "Bus": {
+      "description": "Bus penjumlah. Master adalah Bus dengan output = null — tidak ada tipe khusus, supaya render_block tidak butuh cabang untuk master.",
+      "type": "object",
+      "required": ["id", "name", "insert_chain", "fader_db", "pan", "mute", "output"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string" },
+        "insert_chain": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
+        "fader_db": { "$ref": "#/$defs/Db" },
+        "pan": { "type": "number", "minimum": -1, "maximum": 1 },
+        "mute": { "type": "boolean" },
+        "output": { "oneOf": [{ "$ref": "#/$defs/Id" }, { "type": "null" }] },
+        "automation": { "type": "array", "items": { "$ref": "#/$defs/Automation" } }
+      }
+    },
+
+    "ParamTarget": {
+      "description": "Serialisasi serde untuk enum bertag eksternal: objek satu-key, mis. {\"TrackFader\": 12} atau {\"FxParam\": [7, 2]}.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "propertyNames": {
+        "enum": ["TrackFader", "TrackPan", "TrackMute", "SendAmount", "BusFader", "ClipGain", "ClipSpeed", "FxParam", "MasterSpeed"]
+      }
+    },
+
+    "AutomationPoint": {
+      "type": "object",
+      "required": ["at", "value", "curve"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/$defs/TimelineSample" },
+        "value": {
+          "description": "Dalam SATUAN NATURAL parameter (dB untuk fader, -1..1 untuk pan). Sengaja bukan 0..1 ternormalisasi: normalisasi bikin file tidak terbaca manusia dan menjadikan perubahan rentang parameter sebagai breaking change.",
+          "type": "number"
+        },
+        "curve": { "type": "string", "enum": ["Hold", "Linear", "Curve"] },
+        "tension": { "type": "number", "minimum": -1, "maximum": 1, "default": 0 }
+      }
+    },
+
+    "Automation": {
+      "type": "object",
+      "required": ["target", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "target": { "$ref": "#/$defs/ParamTarget" },
+        "points": {
+          "description": "Tersortir naik berdasarkan `at`.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/AutomationPoint" }
+        },
+        "enabled": { "type": "boolean", "default": true }
+      }
+    }
+  }
+}

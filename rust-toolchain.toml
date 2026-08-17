@@ -1,0 +1,18 @@
+[toolchain]
+# Nightly WAJIB: `-Z build-std` (rebuild std dengan +atomics) tidak tersedia di
+# stable. Std yang di-ship rustup dikompilasi tanpa atomics — mencampurnya
+# dengan crate ber-atomics = ABI/TLS mismatch. Lihat docs/01 §1b.
+#
+# SYARAT VERSI: harus >= 1.85 (edition 2024). `nightly-2024-11-01` yang dipakai
+# semula TERLALU TUA: dependensi transitif modern (coreaudio-sys lewat cpal,
+# juga clap_lex/getrandom/proptest/jobserver) sudah memakai edition 2024, dan
+# manifest-nya ditolak toolchain pra-1.85. Gejalanya menyesatkan — errornya
+# muncul di manifest dependensi, bukan di kode kita.
+#
+# Kalau harus menambal lewat `Cargo.lock` (pin versi lama), itu tanda pin di
+# bawah ini yang salah, bukan dependensinya. Tambalan Cargo.lock rapuh: satu
+# `cargo update` merusaknya lagi.
+channel = "nightly-2025-06-15"
+components = ["rust-src", "clippy", "rustfmt", "llvm-tools"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

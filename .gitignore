@@ -1,0 +1,31 @@
+# --- Rust ---
+/target
+**/target
+*.profraw
+perf.data*
+flamegraph.svg
+
+# --- artefak WASM (hasil scripts/build-wasm.sh, jangan di-commit) ---
+/web/src/wasm/
+
+# --- Node / pnpm ---
+node_modules/
+.pnpm-store/
+/web/dist/
+/web/.vite/
+*.tsbuildinfo
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+*.swp
+
+# --- lokal ---
+.env
+.env.local
+/tmp/
+*.wav
+!tests/fixtures/*.wav

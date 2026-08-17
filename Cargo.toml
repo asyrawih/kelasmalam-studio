@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dsp",
+    "crates/rt",
+    "crates/timeline-core",
+    "crates/engine",
+    "crates/export",
+    "crates/wasm-bridge",
+    "crates/native-host",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Dependensi bersama: versi ditentukan SEKALI di sini, tiap crate memakai
+# `{ workspace = true }`. Ini mencegah dua versi crate yang sama masuk ke
+# binary WASM (ukuran membengkak) dan bikin bump versi jadi satu baris.
+[workspace.dependencies]
+# --- crate internal (path) ---
+daw-dsp      = { path = "crates/dsp" }
+daw-rt       = { path = "crates/rt" }
+daw-timeline = { path = "crates/timeline-core" }
+daw-engine   = { path = "crates/engine" }
+daw-export   = { path = "crates/export" }
+
+# --- pihak ketiga ---
+# serde: hanya dipakai di jalur non-RT (model project, snapshot).
+serde        = { version = "1", default-features = false, features = ["derive", "alloc"] }
+# postcard dipilih daripada serde_json di jalur WASM: tanpa std::fmt, jauh lebih kecil.
+postcard     = { version = "1", default-features = false, features = ["alloc"] }
+# WAV writer untuk crate export.
+hound        = "3.5"
+# Bridge WASM — HANYA boleh dipakai crates/wasm-bridge.
+wasm-bindgen = "0.2"
+js-sys       = "0.3"
+web-sys      = "0.3"
+console_error_panic_hook = "0.1"
+# Host native dev-only.
+cpal         = "0.15"
+anyhow       = "1"
+# Dev/test.
+criterion    = "0.5"
+proptest     = "1"
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"
+strip         = true
+
+# Dependensi pun dioptimasi penuh — tidak ada yang boleh jadi rem di hot loop.
+[profile.release.package."*"]
+opt-level = 3
+
+# Benchmark & test butuh unwinding (criterion/proptest memakai catch_unwind),
+# jadi profil bench TIDAK memakai panic = "abort".
+[profile.bench]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+debug         = true
+
+# Iterasi dev lebih enak kalau DSP tidak berjalan 50x lebih lambat.
+[profile.dev.package."*"]
+opt-level = 2

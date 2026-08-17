@@ -1,0 +1,72 @@
+/*
+ * Token CyberUI — disalin PERSIS dari blok <helmet><style> di
+ * design/DAW Components.dc.html (selector `.by-theme .cy-root.cy-root`).
+ *
+ * Tidak ada nilai yang boleh diubah, ditambah, atau "diperbaiki" di sini.
+ * Kalau sebuah warna dibutuhkan tapi tidak ada di daftar ini, berarti di
+ * design ia memang ditulis literal (#ff4d4d, #ff7ad9, #6ee7ff, #a78bfa,
+ * #000, #0f0d05, …) dan kita juga menulisnya literal di tempat yang sama.
+ */
+
+:root {
+  --cy-bg: #050505;
+  --cy-surface-1: #0c0c0c;
+  --cy-surface-2: #141414;
+  --cy-surface-3: #1c1c1c37;
+  --cy-overlay: #050505e6;
+  --cy-border: #282520;
+  --cy-border-strong: #4a4335;
+  --cy-grid-line: #161616;
+  --cy-neon-amber: #ffd400;
+  --cy-accent: #ffd400;
+  --cy-accent-alt: #ffb020;
+  --cy-warning: #ffb020;
+  --cy-success: #ffd400;
+  --cy-info: #ffb020;
+  --cy-text: #f2efe6;
+  --cy-text-dim: #a8a294;
+  --cy-text-muted: #6f6a5e;
+  --cy-text-on-accent: #050505;
+  --cy-glow-soft: 0 0 18px #ffd40014;
+  --cy-glow-lime: 0 0 0 1px #ffd40059, 0 0 12px #ffd40040, 0 0 32px #ffd4001f;
+  --cy-neon-magenta: #ffb020;
+  --cy-neon-cyan: #ffd400;
+  --cy-glow-magenta: 0 0 12px #ffb02040;
+
+  /*
+   * DIPAKAI design tapi TIDAK DIDEFINISIKAN di helmet-nya — nilainya hidup di
+   * `ds-base.js` (bundle CyberUI) yang tidak kita miliki. Nilai di bawah adalah
+   * rekonstruksi yang konsisten dengan --cy-glow-*; ini satu-satunya tempat di
+   * seluruh port ini yang berisi tebakan visual.
+   */
+  --cy-glow-filter-soft: drop-shadow(0 0 6px #ffd40059);
+  --cy-text-glow: 0 0 12px #ffd40066;
+
+  /*
+   * Font stack. Design memakai JetBrains Mono + Rajdhani lewat webfont dari
+   * design system. Kita TIDAK bisa mengirim .woff2-nya (tidak ada di repo dan
+   * tidak boleh menambah dependensi), jadi dipakai stack fallback lokal:
+   * kalau font terpasang di mesin user ia terpakai, kalau tidak jatuh ke
+   * padanan terdekat (mono ber-ligature, sans condensed geometris).
+   */
+  --cy-font-mono: 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+  --cy-font-sans: 'Rajdhani', 'Oswald', 'Barlow Semi Condensed', 'Avenir Next Condensed',
+    'Roboto Condensed', system-ui, sans-serif;
+}
+
+/* Dipakai ProgressBar dan indikator `live` di Card — persis dari helmet. */
+.cy-progress__track {
+  background: #000;
+  border: 1px solid var(--cy-border);
+}
+
+@keyframes daw-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}

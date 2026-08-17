@@ -1,0 +1,39 @@
+# Konfigurasi cargo untuk workspace DawOnWeb.
+#
+# PENTING: semua flag di bawah ada di bawah [target.wasm32-unknown-unknown]
+# supaya build native (cargo test / cargo bench / native-host) TIDAK terpengaruh.
+# Flag linker wasm-ld akan langsung menggagalkan build native kalau bocor.
+#
+# Catatan tentang precedence: env var RUSTFLAGS MENGGANTI (bukan menggabung)
+# rustflags dari file ini. scripts/build-wasm.sh memanfaatkan itu untuk membangun
+# varian single-thread (tanpa atomics) — lihat komentar di skrip tersebut.
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+  # +atomics       : mengaktifkan opcode i32.atomic.* (jaminan atomicity/ordering).
+  # +bulk-memory   : data segment pasif — wajib untuk shared memory.
+  # +mutable-globals: stack pointer per-thread.
+  # +simd128       : jalur SIMD di daw-dsp (mix, biquad blok).
+  "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128",
+  # Modul meng-IMPORT memory (dibuat di JS sebagai WebAssembly.Memory {shared:true})
+  # alih-alih mendefinisikannya sendiri.
+  "-C", "link-arg=--import-memory",
+  "-C", "link-arg=--shared-memory",
+  # Shared memory wajib punya batas maksimum. 2 GiB = 32768 page * 64 KiB.
+  "-C", "link-arg=--max-memory=2147483648",
+  # Ruang stack per-thread (worklet + worker), 1 MiB.
+  "-C", "link-arg=-zstack-size=1048576",
+]
+
+[alias]
+# Build engine WASM multi-thread. build-std WAJIB: std bawaan rustup
+# dikompilasi tanpa +atomics.
+wasm-build = "build -p daw-wasm --release --target wasm32-unknown-unknown -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort"
+# Cek cepat tanpa link.
+wasm-check = "check -p daw-wasm --target wasm32-unknown-unknown -Z build-std=std,panic_abort"
+
+[build]
+# Kosongkan target default: `cargo test` di root harus native.
+
+[net]
+git-fetch-with-cli = true

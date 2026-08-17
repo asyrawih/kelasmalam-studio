@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <title>DawOnWeb</title>
+
+    <!--
+      Header COOP/COEP TIDAK bisa dipasang lewat <meta>; ia harus datang dari
+      server (vite.config.ts untuk dev/preview, public/_headers untuk produksi).
+      Kalau hilang, `crossOriginIsolated` false dan aplikasi jalan degraded
+      (docs/01 §1d) — bukan error, tapi latensi command naik ke ~16–30 ms.
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>DawOnWeb membutuhkan JavaScript.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+/*
+ * Reset minimal + import token.
+ *
+ * Tidak ada gaya komponen di sini: seluruh bahasa visual datang dari
+ * `ui/cyber/theme.css` (token dari design) dan dari inline style di tiap panel
+ * yang menyalin design file. File ini hanya menghapus default browser yang
+ * akan mengganggu.
+ */
+
+@import './ui/cyber/theme.css';
+@import './ui/cyber/cyber.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--cy-bg);
+  color: var(--cy-text);
+  font-family: var(--cy-font-mono);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Design menggambar seluruh halaman gelap; scrollbar terang akan menusuk mata. */
+* {
+  scrollbar-color: var(--cy-border-strong) var(--cy-bg);
+  scrollbar-width: thin;
+}
+
+canvas {
+  display: block;
+}
+
+/* Drag fader/knob/clip tidak boleh menyeleksi teks di sekitarnya. */
+[role='slider'],
+canvas {
+  user-select: none;
+  -webkit-user-select: none;
+}

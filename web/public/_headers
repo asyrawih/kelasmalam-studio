@@ -1,0 +1,19 @@
+# Header produksi untuk Cloudflare Pages / Netlify (docs/01 §1d).
+#
+# Tanpa dua header pertama, `crossOriginIsolated === false` dan
+# SharedArrayBuffer tidak tersedia → aplikasi jatuh ke degraded mode.
+# `require-corp` berarti semua sub-resource lintas origin harus opt-in
+# (CORP/CORS): self-host font, gambar, dan artefak WASM.
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+  X-Content-Type-Options: nosniff
+
+/*.wasm
+  Content-Type: application/wasm
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

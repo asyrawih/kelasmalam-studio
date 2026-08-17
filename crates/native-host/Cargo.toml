@@ -1,0 +1,19 @@
+[package]
+name = "daw-native-host"
+description = "Dev-only: memainkan daw-engine lewat speaker asli (cpal) untuk debugging & profiling."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "daw-host"
+path = "src/main.rs"
+
+[dependencies]
+daw-engine = { workspace = true }
+daw-rt = { workspace = true }
+daw-timeline = { workspace = true }
+cpal = { workspace = true }
+anyhow = { workspace = true }

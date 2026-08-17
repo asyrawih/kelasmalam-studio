@@ -1,0 +1,49 @@
+/*
+ * Padanan atribut `style-hover="..."` di design file. DC punya atribut itu
+ * secara native; React tidak, jadi setiap style-hover di design menjadi satu
+ * class di sini dengan properti yang sama persis.
+ */
+
+.cy-hover-accent-bg:hover {
+  background: var(--cy-accent-alt);
+}
+.cy-hover-accent-border:hover {
+  border-color: var(--cy-accent);
+  color: var(--cy-accent);
+}
+.cy-hover-rec:hover {
+  border-color: #ff4d4d;
+}
+.cy-hover-surface-2:hover {
+  background: var(--cy-surface-2);
+}
+.cy-hover-row:hover {
+  border-color: var(--cy-accent);
+  background: var(--cy-surface-2);
+}
+.cy-hover-step:hover {
+  border-color: var(--cy-accent);
+}
+.cy-hover-add:hover {
+  border-color: var(--cy-accent);
+  color: var(--cy-accent);
+}
+
+/* Reset tombol supaya <button> semantik tidak membawa gaya UA. */
+.cy-btn-reset {
+  appearance: none;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* Fokus keyboard: design tidak menggambarnya (mock tanpa a11y), tapi kontrol
+ * yang bisa di-tab wajib punya indikator. Dipakai warna aksen yang sudah ada
+ * supaya tidak memperkenalkan bahasa visual baru. */
+.cy-focusable:focus-visible {
+  outline: 1px solid var(--cy-accent);
+  outline-offset: 1px;
+}

@@ -1,0 +1,18 @@
+[package]
+name = "daw-export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+daw-engine = { workspace = true }
+daw-rt = { workspace = true }
+daw-timeline = { workspace = true }
+hound = { workspace = true }
+
+[features]
+default = []
+# Noise shaping orde-2 di belakang flag — lihat dither.rs untuk alasannya.
+noise-shaping = []

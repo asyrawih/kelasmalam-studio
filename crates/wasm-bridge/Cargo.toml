@@ -1,0 +1,31 @@
+[package]
+name         = "daw-wasm"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+publish      = false
+description  = "Satu-satunya crate yang tahu wasm-bindgen. Dua surface: raw (no_mangle, worklet) + bindgen (main thread & worker)."
+
+[lib]
+name       = "daw_wasm"
+path       = "src/lib.rs"
+# cdylib untuk artefak .wasm; rlib supaya `cargo test` native tetap bisa
+# meng-compile crate ini (jalur non-wasm hanya berisi glue tipis).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+daw-rt       = { workspace = true }
+daw-timeline = { workspace = true }
+daw-engine   = { workspace = true }
+daw-export   = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen             = { workspace = true }
+console_error_panic_hook = { workspace = true, optional = true }
+
+[features]
+default = ["panic-hook"]
+# Panic hook HANYA relevan untuk surface non-RT (main thread / worker).
+# Di jalur realtime tidak boleh ada panic sama sekali (docs/01 §1c).
+panic-hook = ["dep:console_error_panic_hook"]

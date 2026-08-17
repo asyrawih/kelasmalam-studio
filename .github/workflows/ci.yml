@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  WASM_BINDGEN_VERSION: "0.2.95"
+
+jobs:
+  # ---------------------------------------------------------------- native
+  native:
+    name: native (fmt, clippy, test, bench)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml yang menentukan channel + komponen.
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy, rust-src
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+      # Deteksi alokasi di jalur RT (allocator penjaga, docs/01 §1c).
+      - run: cargo test -p daw-engine --features rt-guard
+
+      # Benchmark: simpan baseline PR. Tidak mem-fail build (angka runner
+      # CI berisik), tapi outputnya terlihat di log untuk perbandingan.
+      - name: bench render
+        run: cargo bench -p daw-engine --bench render -- --save-baseline pr
+        continue-on-error: true
+
+      # Aturan mengikat docs/00 §1: crate inti tidak boleh menyentuh wasm-bindgen.
+      - name: no wasm-bindgen in core crates
+        run: |
+          set -euo pipefail
+          for c in daw-dsp daw-rt daw-timeline daw-engine daw-export; do
+            if cargo tree -p "$c" -e normal | grep -q -E 'wasm-bindgen|web-sys|js-sys'; then
+              echo "FAIL: $c bergantung pada wasm-bindgen/web-sys/js-sys" >&2
+              exit 1
+            fi
+          done
+
+  # ------------------------------------------------------------------ wasm
+  wasm:
+    name: wasm (headless test, build, size budget)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+      - uses: browser-actions/setup-chrome@v1
+
+      - name: install tooling
+        run: |
+          set -euo pipefail
+          cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+          cargo install wasm-pack --locked
+          sudo apt-get update && sudo apt-get install -y binaryen
+
+      - run: wasm-pack test --headless --chrome crates/wasm-bridge
+
+      - name: build wasm (mt + st)
+        run: ./scripts/build-wasm.sh
+
+      - name: size budget
+        run: ./scripts/size-check.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: web/src/wasm/
+          retention-days: 7
+
+  # ------------------------------------------------------------------- web
+  web:
+    name: web (test, build)
+    runs-on: ubuntu-latest
+    needs: wasm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Butuh artefak WASM asli: tes sinkronisasi layout SAB Rust↔TS
+      # membaca konstanta dari modul yang benar-benar di-build.
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: web/src/wasm/
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C web test
+      - run: pnpm -C web build
+
+  # ---------------------------------------------------------------- golden
+  golden:
+    name: golden (null test bounce == realtime)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+      # Tes paling berharga: render project referensi lewat dua jalur
+      # (realtime blok-128 vs offline batch) dan bandingkan sample-exact.
+      - run: cargo test -p daw-export --test null_test

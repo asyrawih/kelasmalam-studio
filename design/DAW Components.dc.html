@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+.by-theme .cy-root.cy-root{--cy-bg:#050505;--cy-surface-1:#0c0c0c;--cy-surface-2:#141414;--cy-surface-3:#1c1c1c37;--cy-overlay:#050505e6;--cy-border:#282520;--cy-border-strong:#4a4335;--cy-grid-line:#161616;--cy-neon-amber:#ffd400;--cy-accent:#ffd400;--cy-accent-alt:#ffb020;--cy-warning:#ffb020;--cy-success:#ffd400;--cy-info:#ffb020;--cy-text:#f2efe6;--cy-text-dim:#a8a294;--cy-text-muted:#6f6a5e;--cy-text-on-accent:#050505;--cy-glow-soft:0 0 18px #ffd40014;--cy-glow-lime:0 0 0 1px #ffd40059,0 0 12px #ffd40040,0 0 32px #ffd4001f;--cy-neon-magenta:#ffb020;--cy-neon-cyan:#ffd400;--cy-glow-magenta:0 0 12px #ffb02040}
+.by-theme .cy-progress__track{background:#000;border:1px solid var(--cy-border)}
+@keyframes daw-blink{0%,100%{opacity:1}50%{opacity:.25}}
+</style>
+</helmet>
+<div class="by-theme">
+<x-import component-from-global-scope="CyberUI.CyberProvider" accent="amber" grid="{{ showGrid }}" hint-size="100%,100%">
+<div style="min-height:100vh;background:var(--cy-bg);padding:28px 32px 64px;font-family:var(--cy-font-mono)">
+<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px;border-bottom:1px solid var(--cy-border);padding-bottom:18px;margin-bottom:26px">
+<div>
+<div style="font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--cy-accent);margin-bottom:8px">Component Kit / Audio</div>
+<h1 style="font-family:var(--cy-font-sans);font-size:38px;font-weight:700;letter-spacing:.04em;color:var(--cy-text);margin:0">DAW UI COMPONENTS</h1>
+<p style="color:var(--cy-text-dim);font-size:13px;margin:8px 0 0;max-width:62ch;text-wrap:pretty">Transport, waveform, arrangement, mixer, piano roll, and metering primitives — built on the black + yellow cyber theme.</p>
+</div>
+<div style="display:flex;gap:10px;align-items:center">
+<x-import component-from-global-scope="CyberUI.Badge" tone="accent" dot="{{ true }}" pulse="{{ true }}" hint-size="auto,26px">48 kHz / 24-bit</x-import>
+<x-import component-from-global-scope="CyberUI.Badge" tone="default" hint-size="auto,26px">v0.1</x-import>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px;align-items:start">
+<div style="grid-column:span 12">
+<x-import component-from-global-scope="CyberUI.Card" title="Transport Bar" notched="{{ true }}" glow="{{ true }}" hint-size="100%,150px">
+<div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding-top:4px">
+<div style="display:flex;gap:8px">
+<button onClick="{{ toggle }}" style="width:52px;height:44px;border:1px solid var(--cy-border-strong);background:var(--cy-accent);color:var(--cy-text-on-accent);font-family:var(--cy-font-mono);font-size:14px;cursor:pointer;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);filter:var(--cy-glow-filter-soft)" style-hover="background:var(--cy-accent-alt)">{{ playIcon }}</button>
+<button onClick="{{ stop }}" style="width:52px;height:44px;border:1px solid var(--cy-border-strong);background:var(--cy-surface-2);color:var(--cy-text);font-family:var(--cy-font-mono);font-size:13px;cursor:pointer" style-hover="border-color:var(--cy-accent);color:var(--cy-accent)">■</button>
+<button onClick="{{ toggleRec }}" style="width:52px;height:44px;border:1px solid var(--cy-border-strong);background:var(--cy-surface-2);color:#ff4d4d;font-size:18px;cursor:pointer;font-family:var(--cy-font-mono)" style-hover="border-color:#ff4d4d">●</button>
+<button onClick="{{ toggleLoop }}" style="width:52px;height:44px;border:1px solid var(--cy-border-strong);background:var(--cy-surface-2);color:var(--cy-text-dim);font-size:14px;cursor:pointer;font-family:var(--cy-font-mono)" style-hover="border-color:var(--cy-accent);color:var(--cy-accent)">⟲</button>
+</div>
+<div style="display:flex;align-items:baseline;gap:10px;padding:8px 18px;border:1px solid var(--cy-border);background:#000;min-width:210px">
+<span style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;color:var(--cy-accent);letter-spacing:.06em;text-shadow:var(--cy-text-glow)">{{ posLabel }}</span>
+<span style="font-size:10px;letter-spacing:.18em;color:var(--cy-text-muted);text-transform:uppercase">bar.beat.tick</span>
+</div>
+<div style="display:flex;gap:26px">
+<div>
+<div style="font-size:10px;letter-spacing:.18em;color:var(--cy-text-muted);text-transform:uppercase;margin-bottom:4px">Tempo</div>
+<div style="font-family:var(--cy-font-sans);font-size:22px;font-weight:600;color:var(--cy-text)">{{ bpm }}<span style="font-size:11px;color:var(--cy-text-muted);margin-left:4px">BPM</span></div>
+</div>
+<div>
+<div style="font-size:10px;letter-spacing:.18em;color:var(--cy-text-muted);text-transform:uppercase;margin-bottom:4px">Signature</div>
+<div style="font-family:var(--cy-font-sans);font-size:22px;font-weight:600;color:var(--cy-text)">4 / 4</div>
+</div>
+<div>
+<div style="font-size:10px;letter-spacing:.18em;color:var(--cy-text-muted);text-transform:uppercase;margin-bottom:4px">Key</div>
+<div style="font-family:var(--cy-font-sans);font-size:22px;font-weight:600;color:var(--cy-text)">F min</div>
+</div>
+</div>
+<div style="display:flex;gap:10px;margin-left:auto;align-items:center">
+<x-import component-from-global-scope="CyberUI.Badge" tone="{{ recTone }}" dot="{{ true }}" hint-size="auto,26px">REC ARM</x-import>
+<x-import component-from-global-scope="CyberUI.Badge" tone="accent" hint-size="auto,26px">METRONOME</x-import>
+<x-import component-from-global-scope="CyberUI.Badge" tone="default" hint-size="auto,26px">LATENCY 6.2 ms</x-import>
+</div>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 8">
+<x-import component-from-global-scope="CyberUI.Card" title="Waveform Display" subtitle="LEAD_VOX_TAKE_04.wav" notched="{{ true }}" live="{{ true }}" hint-size="100%,300px">
+<div style="display:flex;justify-content:space-between;font-size:10px;letter-spacing:.16em;color:var(--cy-text-muted);text-transform:uppercase;margin-bottom:8px">
+<span>0:00</span><span>0:12</span><span>0:24</span><span>0:36</span><span>0:48</span>
+</div>
+<div style="position:relative;height:150px;background:#000;border:1px solid var(--cy-border);overflow:hidden">
+<div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 49.6%,#ffd40024 49.6%,#ffd40024 50.4%,transparent 50.4%)"></div>
+<div style="position:absolute;top:0;bottom:0;left:34%;width:22%;background:#ffd4000f;border-left:1px solid #ffd40059;border-right:1px solid #ffd40059"></div>
+<div style="position:absolute;inset:0;display:flex;align-items:center;gap:1px;padding:0 2px">
+<sc-for list="{{ waveMain }}" as="b" hint-placeholder-count="120">
+<div style="flex:1;height:{{ b.h }}%;background:linear-gradient(to bottom,#ffb020,#ffd400 50%,#ffb020);opacity:.9"></div>
+</sc-for>
+</div>
+<div style="position:absolute;top:0;bottom:0;left:{{ pos }}%;width:1px;background:#fff;box-shadow:0 0 10px #ffffffaa">
+<div style="position:absolute;top:0;left:-5px;width:11px;height:8px;background:#fff"></div>
+</div>
+</div>
+<div style="display:flex;gap:10px;margin-top:12px;align-items:center;flex-wrap:wrap">
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="outline" hint-size="auto,32px">ZOOM</x-import>
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="ghost" hint-size="auto,32px">FADE IN</x-import>
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="ghost" hint-size="auto,32px">NORMALIZE</x-import>
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="ghost" hint-size="auto,32px">REVERSE</x-import>
+<span style="margin-left:auto;font-size:11px;color:var(--cy-text-dim)">SEL 00:08.412 → 00:14.006 · 5.594 s</span>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 4;display:grid;gap:18px">
+<x-import component-from-global-scope="CyberUI.Card" title="Clip Thumbnail" notched="{{ true }}" hint-size="100%,140px">
+<div style="position:relative;height:56px;background:#000;border:1px solid var(--cy-border);display:flex;align-items:center;gap:1px;padding:0 3px">
+<sc-for list="{{ waveAlt }}" as="b" hint-placeholder-count="60">
+<div style="flex:1;height:{{ b.h }}%;background:#ffd400;opacity:.75"></div>
+</sc-for>
+</div>
+<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:11px;color:var(--cy-text-dim)">
+<span>KICK_909_A.wav</span><span style="color:var(--cy-accent)">0.62 s</span>
+</div>
+</x-import>
+<x-import component-from-global-scope="CyberUI.Card" title="Master Meter" notched="{{ true }}" hint-size="100%,150px">
+<div style="display:grid;gap:10px;padding-top:2px">
+<div style="display:flex;align-items:center;gap:10px">
+<span style="font-size:11px;color:var(--cy-text-muted);width:14px">L</span>
+<div style="flex:1;height:12px;background:#000;border:1px solid var(--cy-border);position:relative;overflow:hidden">
+<div style="position:absolute;inset:0 auto 0 0;width:{{ meterL }}%;background:linear-gradient(90deg,#ffd400,#ffb020 78%,#ff4d4d)"></div>
+</div>
+<span style="font-size:11px;color:var(--cy-text-dim);width:52px;text-align:right">-6.2 dB</span>
+</div>
+<div style="display:flex;align-items:center;gap:10px">
+<span style="font-size:11px;color:var(--cy-text-muted);width:14px">R</span>
+<div style="flex:1;height:12px;background:#000;border:1px solid var(--cy-border);position:relative;overflow:hidden">
+<div style="position:absolute;inset:0 auto 0 0;width:{{ meterR }}%;background:linear-gradient(90deg,#ffd400,#ffb020 78%,#ff4d4d)"></div>
+</div>
+<span style="font-size:11px;color:var(--cy-text-dim);width:52px;text-align:right">-7.8 dB</span>
+</div>
+<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--cy-text-muted);letter-spacing:.14em">
+<span>-60</span><span>-24</span><span>-12</span><span>-6</span><span>0</span>
+</div>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 12">
+<x-import component-from-global-scope="CyberUI.Card" title="Arrangement / Timeline" subtitle="5 tracks · 32 bars" notched="{{ true }}" hint-size="100%,420px">
+<div style="display:grid;grid-template-columns:210px minmax(0,1fr);border:1px solid var(--cy-border);background:#000">
+<div style="border-right:1px solid var(--cy-border);border-bottom:1px solid var(--cy-border);height:26px;display:flex;align-items:center;padding:0 12px;font-size:10px;letter-spacing:.18em;color:var(--cy-text-muted);text-transform:uppercase">Tracks</div>
+<div style="position:relative;height:26px;border-bottom:1px solid var(--cy-border);display:flex">
+<sc-for list="{{ ruler }}" as="r" hint-placeholder-count="8">
+<div style="flex:1;border-left:1px solid var(--cy-border);font-size:10px;color:var(--cy-text-muted);padding:6px 0 0 6px;letter-spacing:.12em">{{ r.label }}</div>
+</sc-for>
+</div>
+<sc-for list="{{ tracks }}" as="tr" hint-placeholder-count="5">
+<div style="display:grid;grid-template-columns:210px minmax(0,1fr);grid-column:span 2">
+<div onClick="{{ tr.on }}" style="border-right:1px solid var(--cy-border);border-bottom:1px solid var(--cy-border);padding:10px 12px;display:flex;align-items:center;gap:10px;background:var(--cy-surface-1);cursor:pointer" style-hover="background:var(--cy-surface-2)">
+<div style="width:3px;height:30px;background:{{ tr.color }}"></div>
+<div style="flex:1;min-width:0">
+<div style="font-size:12px;color:var(--cy-text);letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ tr.name }}</div>
+<div style="font-size:9px;color:var(--cy-text-muted);letter-spacing:.18em;margin-top:3px">{{ tr.kind }}</div>
+</div>
+<div style="display:flex;gap:4px">
+<span style="width:20px;height:20px;border:1px solid var(--cy-border-strong);display:grid;place-items:center;font-size:9px;color:var(--cy-text-dim)">M</span>
+<span style="width:20px;height:20px;border:1px solid var(--cy-border-strong);display:grid;place-items:center;font-size:9px;color:var(--cy-accent)">S</span>
+</div>
+</div>
+<div style="position:relative;height:52px;border-bottom:1px solid var(--cy-border);background:repeating-linear-gradient(90deg,transparent,transparent calc(12.5% - 1px),var(--cy-grid-line) 12.5%)">
+<sc-for list="{{ tr.clips }}" as="cl" hint-placeholder-count="2">
+<div style="position:absolute;top:6px;bottom:6px;left:{{ cl.l }}%;width:{{ cl.w }}%;background:{{ tr.color }}1f;border:1px solid {{ tr.color }};clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%);overflow:hidden">
+<div style="font-size:9px;letter-spacing:.16em;color:{{ tr.color }};padding:4px 6px;white-space:nowrap">{{ cl.label }}</div>
+<div style="position:absolute;bottom:4px;left:4px;right:4px;height:12px;display:flex;align-items:center;gap:1px">
+<sc-for list="{{ waveAlt }}" as="b" hint-placeholder-count="40">
+<div style="flex:1;height:{{ b.h }}%;background:{{ tr.color }};opacity:.55"></div>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+<div style="display:flex;gap:10px;margin-top:12px;align-items:center;flex-wrap:wrap">
+<x-import component-from-global-scope="CyberUI.Badge" tone="accent" hint-size="auto,26px">SNAP 1/16</x-import>
+<x-import component-from-global-scope="CyberUI.Badge" tone="default" hint-size="auto,26px">GRID: BARS</x-import>
+<x-import component-from-global-scope="CyberUI.Badge" tone="default" hint-size="auto,26px">SELECTED: {{ selId }}</x-import>
+<span style="margin-left:auto;font-size:11px;color:var(--cy-text-dim)">DRAG TO MOVE · ALT-DRAG TO DUPLICATE · CMD-L TO LOOP</span>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 7">
+<x-import component-from-global-scope="CyberUI.Card" title="Mixer / Channel Strips" subtitle="click a fader track to set level" notched="{{ true }}" hint-size="100%,470px">
+<div style="display:flex;gap:10px;overflow:hidden">
+<sc-for list="{{ channels }}" as="ch" hint-placeholder-count="6">
+<div style="flex:1;min-width:0;border:1px solid var(--cy-border);background:var(--cy-surface-1);padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:10px">
+<div style="font-size:11px;letter-spacing:.14em;color:var(--cy-text);white-space:nowrap">{{ ch.name }}</div>
+<div style="font-size:8px;letter-spacing:.1em;color:var(--cy-text-muted);height:20px;text-align:center;line-height:1.3">{{ ch.fx }}</div>
+<div style="width:44px;height:44px;border-radius:50%;border:1px solid var(--cy-border-strong);background:radial-gradient(circle at 50% 32%,#1c1c1c,#000);position:relative;display:grid;place-items:center">
+<div style="position:absolute;width:2px;height:16px;background:var(--cy-accent);top:4px;transform-origin:50% 18px;transform:{{ ch.knob }}"></div>
+<span style="font-size:8px;color:var(--cy-text-muted);margin-top:12px">{{ ch.panLabel }}</span>
+</div>
+<div style="display:flex;gap:6px;align-items:stretch;height:170px">
+<div onClick="{{ ch.onTrack }}" style="position:relative;width:22px;background:#000;border:1px solid var(--cy-border);cursor:pointer">
+<div style="position:absolute;left:50%;top:6px;bottom:6px;width:2px;background:var(--cy-border-strong);transform:translateX(-50%)"></div>
+<div style="position:absolute;left:2px;right:2px;top:{{ ch.top }}%;height:14px;background:linear-gradient(#3a3a3a,#111);border:1px solid var(--cy-accent);margin-top:-7px;filter:var(--cy-glow-filter-soft)"></div>
+</div>
+<div style="width:8px;background:#000;border:1px solid var(--cy-border);position:relative;overflow:hidden">
+<div style="position:absolute;left:0;right:0;bottom:0;height:{{ ch.lv }}%;background:linear-gradient(to top,#ffd400,#ffb020 70%,#ff4d4d)"></div>
+</div>
+</div>
+<div style="font-size:10px;color:var(--cy-accent);font-variant-numeric:tabular-nums">{{ ch.db }} dB</div>
+<div style="display:flex;gap:4px">
+<span style="width:22px;height:20px;border:1px solid var(--cy-border-strong);display:grid;place-items:center;font-size:9px;color:{{ ch.muteColor }}">M</span>
+<span style="width:22px;height:20px;border:1px solid var(--cy-border-strong);display:grid;place-items:center;font-size:9px;color:var(--cy-text-dim)">S</span>
+</div>
+</div>
+</sc-for>
+<div style="width:78px;border:1px solid var(--cy-accent);background:#0f0d05;padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:10px">
+<div style="font-size:11px;letter-spacing:.14em;color:var(--cy-accent)">MASTER</div>
+<div style="font-size:8px;letter-spacing:.1em;color:var(--cy-text-muted);height:20px">LIMITER</div>
+<div style="width:44px;height:44px;border-radius:50%;border:1px solid var(--cy-accent);background:radial-gradient(circle at 50% 32%,#241f08,#000);position:relative;display:grid;place-items:center">
+<div style="position:absolute;width:2px;height:16px;background:var(--cy-accent);top:4px;transform-origin:50% 18px"></div>
+<span style="font-size:8px;color:var(--cy-text-muted);margin-top:12px">C</span>
+</div>
+<div style="display:flex;gap:6px;height:170px">
+<div style="position:relative;width:22px;background:#000;border:1px solid var(--cy-border-strong)">
+<div style="position:absolute;left:2px;right:2px;top:18%;height:14px;background:var(--cy-accent);margin-top:-7px"></div>
+</div>
+<div style="width:8px;background:#000;border:1px solid var(--cy-border);position:relative;overflow:hidden">
+<div style="position:absolute;left:0;right:0;bottom:0;height:{{ meterL }}%;background:linear-gradient(to top,#ffd400,#ffb020 70%,#ff4d4d)"></div>
+</div>
+<div style="width:8px;background:#000;border:1px solid var(--cy-border);position:relative;overflow:hidden">
+<div style="position:absolute;left:0;right:0;bottom:0;height:{{ meterR }}%;background:linear-gradient(to top,#ffd400,#ffb020 70%,#ff4d4d)"></div>
+</div>
+</div>
+<div style="font-size:10px;color:var(--cy-accent)">-0.3 dB</div>
+<div style="font-size:9px;color:var(--cy-text-muted);letter-spacing:.1em">LUFS -9.4</div>
+</div>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 5;display:grid;gap:18px">
+<x-import component-from-global-scope="CyberUI.Card" title="Parametric EQ" subtitle="4-band · analyzer overlay" notched="{{ true }}" hint-size="100%,270px">
+<div style="position:relative;height:160px;background:#000;border:1px solid var(--cy-border);overflow:hidden">
+<div style="position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent,transparent 24px,var(--cy-grid-line) 25px),repeating-linear-gradient(0deg,transparent,transparent 31px,var(--cy-grid-line) 32px)"></div>
+<div style="position:absolute;inset:0;display:flex;align-items:flex-end;gap:1px;padding:0 2px">
+<sc-for list="{{ spectrum }}" as="b" hint-placeholder-count="48">
+<div style="flex:1;height:{{ b.h }}%;background:#ffd4001f;border-top:1px solid #ffd40047"></div>
+</sc-for>
+</div>
+<svg viewBox="0 0 400 160" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+<path d="{{ eqPath }}" fill="none" stroke="#ffd400" stroke-width="2" style="filter:drop-shadow(0 0 6px #ffd400aa)"></path>
+</svg>
+<sc-for list="{{ eqNodes }}" as="n" hint-placeholder-count="4">
+<div style="position:absolute;left:{{ n.x }}%;top:{{ n.y }}%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:{{ n.c }};box-shadow:0 0 10px {{ n.c }}"></div>
+</sc-for>
+</div>
+<div style="display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:var(--cy-text-muted);letter-spacing:.12em">
+<span>30 Hz</span><span>200</span><span>1 k</span><span>5 k</span><span>18 kHz</span>
+</div>
+</x-import>
+<x-import component-from-global-scope="CyberUI.Card" title="Plugin Knobs" subtitle="rotary controls" notched="{{ true }}" hint-size="100%,200px">
+<div style="display:flex;gap:14px;justify-content:space-between">
+<sc-for list="{{ knobs }}" as="kb" hint-placeholder-count="4">
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px">
+<div style="width:62px;height:62px;border-radius:50%;border:1px solid var(--cy-border-strong);background:radial-gradient(circle at 50% 30%,#1e1e1e,#050505 70%);position:relative;filter:var(--cy-glow-filter-soft)">
+<div style="position:absolute;inset:-5px;border-radius:50%;border:1px dashed var(--cy-border)"></div>
+<div style="position:absolute;left:50%;top:6px;width:2px;height:22px;background:var(--cy-accent);transform-origin:50% 25px;transform:{{ kb.rot }};margin-left:-1px;box-shadow:0 0 6px #ffd400"></div>
+</div>
+<div style="font-size:10px;letter-spacing:.16em;color:var(--cy-text-dim)">{{ kb.label }}</div>
+<div style="font-size:11px;color:var(--cy-accent);font-variant-numeric:tabular-nums">{{ kb.pct }}%</div>
+</div>
+</sc-for>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 7">
+<x-import component-from-global-scope="CyberUI.Card" title="Piano Roll" subtitle="808 BASS · velocity shading" notched="{{ true }}" hint-size="100%,320px">
+<div style="display:grid;grid-template-columns:56px minmax(0,1fr);border:1px solid var(--cy-border);background:#000">
+<div>
+<sc-for list="{{ keys }}" as="ky" hint-placeholder-count="12">
+<div style="height:18px;border-bottom:1px solid var(--cy-border);background:{{ ky.bg }};display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-size:8px;letter-spacing:.08em;color:{{ ky.fg }}">{{ ky.name }}</div>
+</sc-for>
+</div>
+<div style="position:relative;height:216px;background:repeating-linear-gradient(0deg,#0a0a0a,#0a0a0a 17px,#161616 18px),repeating-linear-gradient(90deg,transparent,transparent calc(6.25% - 1px),var(--cy-grid-line) 6.25%)">
+<sc-for list="{{ notes }}" as="nt" hint-placeholder-count="8">
+<div style="position:absolute;left:{{ nt.l }}%;width:{{ nt.w }}%;top:{{ nt.top }}px;height:16px;background:#ffd400;opacity:{{ nt.op }};border:1px solid #050505;box-shadow:0 0 8px #ffd40066"></div>
+</sc-for>
+<div style="position:absolute;top:0;bottom:0;left:{{ pos }}%;width:1px;background:#fff;box-shadow:0 0 8px #fff"></div>
+</div>
+</div>
+<div style="display:flex;gap:10px;margin-top:12px;align-items:center">
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="outline" hint-size="auto,32px">DRAW</x-import>
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="ghost" hint-size="auto,32px">QUANTIZE 1/16</x-import>
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="ghost" hint-size="auto,32px">LEGATO</x-import>
+<span style="margin-left:auto;font-size:11px;color:var(--cy-text-dim)">8 notes · scale lock F min</span>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 5">
+<x-import component-from-global-scope="CyberUI.Card" title="Step Sequencer" subtitle="click cells to program · 16 steps" notched="{{ true }}" glow="{{ true }}" hint-size="100%,320px">
+<div style="display:grid;gap:8px">
+<sc-for list="{{ pads }}" as="pd" hint-placeholder-count="5">
+<div style="display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;align-items:center">
+<div style="font-size:10px;letter-spacing:.14em;color:var(--cy-text-dim)">{{ pd.name }}</div>
+<div style="display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px">
+<sc-for list="{{ pd.steps }}" as="st" hint-placeholder-count="16">
+<div onClick="{{ st.toggle }}" style="height:22px;background:{{ st.bg }};border:1px solid {{ st.bd }};cursor:pointer" style-hover="border-color:var(--cy-accent)"></div>
+</sc-for>
+</div>
+</div>
+</sc-for>
+<div style="display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;margin-top:2px">
+<span></span>
+<div style="display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;font-size:8px;color:var(--cy-text-muted);text-align:center">
+<span>1</span><span></span><span></span><span></span><span>5</span><span></span><span></span><span></span><span>9</span><span></span><span></span><span></span><span>13</span><span></span><span></span><span></span>
+</div>
+</div>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 4">
+<x-import component-from-global-scope="CyberUI.Card" title="Sample Browser" subtitle="library" notched="{{ true }}" hint-size="100%,300px">
+<div style="display:grid;gap:4px">
+<sc-for list="{{ library }}" as="it" hint-placeholder-count="6">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--cy-border);background:var(--cy-surface-1);cursor:pointer" style-hover="border-color:var(--cy-accent);background:var(--cy-surface-2)">
+<span style="color:var(--cy-accent);font-size:11px">▶</span>
+<div style="flex:1;min-width:0">
+<div style="font-size:11px;color:var(--cy-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ it.name }}</div>
+<div style="font-size:9px;color:var(--cy-text-muted);margin-top:2px;letter-spacing:.12em">{{ it.meta }}</div>
+</div>
+<span style="font-size:8px;letter-spacing:.14em;color:var(--cy-text-dim);border:1px solid var(--cy-border);padding:2px 5px">{{ it.tag }}</span>
+</div>
+</sc-for>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 4">
+<x-import component-from-global-scope="CyberUI.Card" title="FX Rack" subtitle="LEAD VOX insert chain" notched="{{ true }}" hint-size="100%,300px">
+<div style="display:grid;gap:6px">
+<sc-for list="{{ rack }}" as="fx" hint-placeholder-count="5">
+<div style="display:flex;align-items:center;gap:10px;padding:11px 10px;border:1px solid var(--cy-border);background:var(--cy-surface-1);opacity:{{ fx.opacity }}">
+<x-import component-from-global-scope="CyberUI.Badge" tone="{{ fx.dot }}" dot="{{ true }}" hint-size="auto,22px">{{ fx.name }}</x-import>
+<span style="margin-left:auto;font-size:10px;color:var(--cy-text-dim);letter-spacing:.1em">{{ fx.val }}</span>
+<span style="color:var(--cy-text-muted);font-size:12px">⋮⋮</span>
+</div>
+</sc-for>
+<div style="padding:10px;border:1px dashed var(--cy-border-strong);text-align:center;font-size:10px;letter-spacing:.16em;color:var(--cy-text-muted);cursor:pointer" style-hover="border-color:var(--cy-accent);color:var(--cy-accent)">+ ADD INSERT</div>
+</div>
+</x-import>
+</div>
+<div style="grid-column:span 4;display:grid;gap:18px">
+<x-import component-from-global-scope="CyberUI.Card" title="Automation Lane" subtitle="filter cutoff" notched="{{ true }}" hint-size="100%,180px">
+<div style="position:relative;height:92px;background:#000;border:1px solid var(--cy-border);overflow:hidden">
+<div style="position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent,transparent calc(12.5% - 1px),var(--cy-grid-line) 12.5%)"></div>
+<svg viewBox="0 0 400 92" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+<path d="{{ autoPath }}" fill="none" stroke="#ffb020" stroke-width="2"></path>
+</svg>
+<sc-for list="{{ autoPoints }}" as="ap" hint-placeholder-count="4">
+<div style="position:absolute;left:{{ ap.x }}%;top:{{ ap.y }}%;width:9px;height:9px;margin:-4px 0 0 -4px;background:#ffb020;transform:rotate(45deg)"></div>
+</sc-for>
+</div>
+</x-import>
+<x-import component-from-global-scope="CyberUI.Card" title="Render / Bounce" notched="{{ true }}" hint-size="100%,140px">
+<div style="display:grid;gap:10px">
+<x-import component-from-global-scope="CyberUI.ProgressBar" label="Master · WAV 24-bit" value="{{ 64 }}" showValue="{{ true }}" hint-size="100%,44px"></x-import>
+<div style="display:flex;gap:8px">
+<x-import component-from-global-scope="CyberUI.Button" size="sm" hint-size="auto,32px">EXPORT</x-import>
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="ghost" hint-size="auto,32px">CANCEL</x-import>
+<span style="margin-left:auto;font-size:10px;color:var(--cy-text-muted);align-self:center">ETA 00:11</span>
+</div>
+</div>
+</x-import>
+</div>
+</div>
+</div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1400},&quot;bpm&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:128,&quot;min&quot;:60,&quot;max&quot;:200,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Transport&quot;},&quot;autoplay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Transport&quot;},&quot;showGrid&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Appearance&quot;}}">
+class Component extends DCLogic {
+  state = { playing: false, pos: 22, rec: false, loop: true, bpm: 128, steps: {}, sel: 'lead-vox', faders: {} };
+
+  componentDidMount() {
+    if (this.props.autoplay) this.setState({ playing: true });
+    this.t = setInterval(() => {
+      if (!this.state.playing) return;
+      const step = 0.45 * ((this.props.bpm ?? this.state.bpm) / 128);
+      this.setState(s => ({ pos: s.pos + step > 100 ? (s.loop ? 12 : 0) : s.pos + step }));
+    }, 60);
+  }
+  componentWillUnmount() { clearInterval(this.t); }
+
+  rnd(i) { const x = Math.sin(i * 127.1 + 3.7) * 43758.5453; return x - Math.floor(x); }
+
+  wave(n, seed, shape) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const env = shape === 'perc'
+        ? Math.pow(1 - t, 1.6) * (t < 0.02 ? t / 0.02 : 1)
+        : 0.35 + 0.65 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.05)), 0.55);
+      const j = 0.45 + 0.55 * this.rnd(i + seed * 91);
+      out.push({ h: Math.max(3, Math.round(env * j * 100)), k: i });
+    }
+    return out;
+  }
+
+  fmtTime(p) {
+    const bars = 1 + Math.floor(p / 6.25);
+    const beat = 1 + Math.floor((p % 6.25) / 1.5625);
+    return String(bars).padStart(3, '0') + '.' + beat + '.' + String(1 + Math.floor(this.rnd(Math.floor(p * 4)) * 3)).padStart(2, '0');
+  }
+
+  trackData() {
+    return [
+      { id: 'lead-vox', name: 'LEAD VOX', kind: 'AUDIO', color: '#ffd400', clips: [{ id: 'c1', l: 6, w: 26, label: 'VERSE A' }, { id: 'c2', l: 40, w: 34, label: 'CHORUS' }] },
+      { id: 'drums', name: 'DRUM BUS', kind: 'GROUP', color: '#ffb020', clips: [{ id: 'c3', l: 0, w: 82, label: 'BREAKBEAT LOOP' }] },
+      { id: 'bass', name: '808 BASS', kind: 'MIDI', color: '#ff7ad9', clips: [{ id: 'c4', l: 6, w: 30, label: 'SUB LINE' }, { id: 'c5', l: 44, w: 22, label: 'SUB LINE' }, { id: 'c6', l: 70, w: 14, label: 'FILL' }] },
+      { id: 'pads', name: 'ANALOG PAD', kind: 'MIDI', color: '#6ee7ff', clips: [{ id: 'c7', l: 18, w: 56, label: 'CHORD BED' }] },
+      { id: 'fx', name: 'FX / RISERS', kind: 'AUDIO', color: '#a78bfa', clips: [{ id: 'c8', l: 34, w: 10, label: 'RISE' }, { id: 'c9', l: 66, w: 8, label: 'IMPACT' }] },
+    ];
+  }
+
+  chanData() {
+    return [
+      { id: 'kick', name: 'KICK', f: 82, pan: 0, mute: false, fx: 'COMP · SAT' },
+      { id: 'snare', name: 'SNARE', f: 74, pan: -12, mute: false, fx: 'GATE · VERB' },
+      { id: 'bass', name: '808', f: 88, pan: 0, mute: false, fx: 'SUB · GLUE' },
+      { id: 'pad', name: 'PAD', f: 61, pan: 24, mute: false, fx: 'CHORUS' },
+      { id: 'vox', name: 'VOX', f: 79, pan: 0, mute: false, fx: 'DE-ESS · DLY' },
+      { id: 'fx', name: 'FX', f: 45, pan: -30, mute: true, fx: 'REVERB' },
+    ];
+  }
+
+  eqPath() {
+    const bell = (x, cx, g, w) => g * Math.exp(-Math.pow((x - cx) / w, 2));
+    const pts = [];
+    for (let i = 0; i <= 100; i++) {
+      const y = 50 - (bell(i, 12, 16, 12) + bell(i, 38, 22, 10) - bell(i, 66, 14, 8) + bell(i, 88, 12, 9));
+      pts.push((i * 4) + ',' + (y * 1.6).toFixed(1));
+    }
+    return 'M' + pts.join(' L');
+  }
+
+  padData() {
+    return [
+      { id: 'kick', name: 'KICK', color: '#ffd400', def: [0, 4, 8, 10, 14] },
+      { id: 'snare', name: 'SNARE', color: '#ffb020', def: [4, 12] },
+      { id: 'hat', name: 'HAT', color: '#6ee7ff', def: [2, 6, 10, 14] },
+      { id: 'clap', name: 'CLAP', color: '#ff7ad9', def: [7, 15] },
+      { id: 'perc', name: 'PERC', color: '#a78bfa', def: [3, 11] },
+    ];
+  }
+
+  renderVals() {
+    const s = this.state;
+    const level = (base) => {
+      const drive = s.playing ? 0.55 + 0.45 * this.rnd(Math.floor(s.pos * 3)) : 0.18;
+      return Math.min(100, Math.round(base * drive));
+    };
+    return {
+      playing: s.playing,
+      rec: s.rec,
+      loop: s.loop,
+      bpm: this.props.bpm ?? s.bpm,
+      showGrid: this.props.showGrid ?? true,
+      pos: s.pos,
+      posLabel: this.fmtTime(s.pos),
+      playLabel: s.playing ? 'PAUSE' : 'PLAY',
+      playIcon: s.playing ? '❚❚' : '▶',
+      recTone: s.rec ? 'danger' : 'default',
+      toggle: () => this.setState(sx => ({ playing: !sx.playing })),
+      stop: () => this.setState({ playing: false, pos: 0 }),
+      toggleRec: () => this.setState(sx => ({ rec: !sx.rec })),
+      toggleLoop: () => this.setState(sx => ({ loop: !sx.loop })),
+      waveMain: this.wave(180, 2),
+      waveAlt: this.wave(90, 7, 'perc'),
+      ruler: [1, 5, 9, 13, 17, 21, 25, 29].map(n => ({ k: n, label: String(n) })),
+      tracks: this.trackData().map(t => ({ ...t, on: () => this.setState({ sel: t.id }) })),
+      selId: s.sel,
+      library: [
+        { k: 1, name: 'NEON_KICK_01.wav', meta: '0.6 s · 48k', tag: 'DRUM' },
+        { k: 2, name: 'GLASS_SNARE.wav', meta: '0.4 s · 48k', tag: 'DRUM' },
+        { k: 3, name: 'SUB_808_Fmin.wav', meta: '2.1 s · 48k', tag: 'BASS' },
+        { k: 4, name: 'RISER_LONG.wav', meta: '4.0 s · 48k', tag: 'FX' },
+        { k: 5, name: 'VOX_CHOP_PACK', meta: '24 files', tag: 'FOLDER' },
+        { k: 6, name: 'ANALOG_PAD.preset', meta: 'synth', tag: 'PRESET' },
+      ],
+      rack: [
+        { k: 1, name: 'GATE', on: true, val: 'THR -34 dB' },
+        { k: 2, name: 'COMP 1176', on: true, val: 'RATIO 4:1' },
+        { k: 3, name: 'TAPE SAT', on: true, val: 'DRIVE 38%' },
+        { k: 4, name: 'TAPE DELAY', on: false, val: '1/8 · 22%' },
+        { k: 5, name: 'PLATE VERB', on: true, val: 'SIZE 62%' },
+      ].map(r => ({ ...r, dot: r.on ? 'success' : 'default', opacity: r.on ? 1 : 0.45 })),
+      autoPath: 'M0,70 C60,70 80,20 140,24 C200,28 210,58 260,52 C310,46 330,12 400,18',
+      autoPoints: [{ k: 1, x: 0, y: 78 }, { k: 2, x: 35, y: 27 }, { k: 3, x: 65, y: 58 }, { k: 4, x: 100, y: 20 }],
+      keys: ['B4', 'A#4', 'A4', 'G#4', 'G4', 'F#4', 'F4', 'E4', 'D#4', 'D4', 'C#4', 'C4'].map((n, i) => ({
+        k: n, name: n, black: n.includes('#'),
+        bg: n.includes('#') ? '#0a0a0a' : '#141414',
+        fg: n.includes('#') ? 'var(--cy-text-muted)' : 'var(--cy-text-dim)',
+      })),
+      notes: [
+        { k: 'n1', row: 11, l: 0, w: 12, v: 0.9 }, { k: 'n2', row: 8, l: 12, w: 8, v: 0.7 },
+        { k: 'n3', row: 6, l: 20, w: 16, v: 1 }, { k: 'n4', row: 3, l: 36, w: 8, v: 0.6 },
+        { k: 'n5', row: 11, l: 44, w: 12, v: 0.85 }, { k: 'n6', row: 9, l: 56, w: 6, v: 0.5 },
+        { k: 'n7', row: 6, l: 62, w: 14, v: 0.95 }, { k: 'n8', row: 1, l: 76, w: 20, v: 0.8 },
+      ].map(n => ({ ...n, top: n.row * 18, op: 0.35 + 0.65 * n.v })),
+      pads: this.padData().map(p => ({
+        ...p,
+        steps: Array.from({ length: 16 }, (_, i) => {
+          const on = s.steps[p.id + ':' + i] ?? p.def.includes(i);
+          const live = s.playing && Math.floor(s.pos / 6.25) % 16 === i;
+          return {
+            k: i, on,
+            bg: on ? (live ? '#fff' : p.color) : (live ? '#2a2a2a' : '#0b0b0b'),
+            bd: on ? p.color : 'var(--cy-border)',
+            toggle: () => this.setState(sx => ({ steps: { ...sx.steps, [p.id + ':' + i]: !on } })),
+          };
+        }),
+      })),
+      eqPath: this.eqPath(),
+      eqNodes: [{ k: 1, x: 12, y: 58, c: '#ff7ad9', label: 'LOW' }, { k: 2, x: 38, y: 34, c: '#ffd400', label: 'MID' }, { k: 3, x: 66, y: 66, c: '#6ee7ff', label: 'PRES' }, { k: 4, x: 88, y: 42, c: '#a78bfa', label: 'AIR' }],
+      spectrum: Array.from({ length: 48 }, (_, i) => {
+        const tilt = Math.pow(1 - i / 48, 0.9);
+        const j = 0.35 + 0.65 * this.rnd(i * 7 + (s.playing ? Math.floor(s.pos * 4) : 0));
+        return { k: i, h: Math.max(4, Math.round(tilt * j * 100)) };
+      }),
+      knobs: [
+        { k: 'drive', label: 'DRIVE', val: 62 }, { k: 'tone', label: 'TONE', val: 38 },
+        { k: 'mix', label: 'MIX', val: 80 }, { k: 'width', label: 'WIDTH', val: 45 },
+      ].map(o => ({ ...o, rot: 'rotate(' + (o.val * 2.7 - 135) + 'deg)', pct: o.val })),
+      channels: this.chanData().map((c, i) => {
+        const f = s.faders[c.id] ?? c.f;
+        const lv = s.playing ? Math.round(f * (0.55 + 0.45 * this.rnd(i * 13 + Math.floor(s.pos * 3)))) : Math.round(f * 0.12);
+        return {
+          ...c, f, lv,
+          db: (f >= 78 ? '+' : '-') + Math.abs((f - 78) / 4).toFixed(1),
+          panLabel: c.pan === 0 ? 'C' : (c.pan < 0 ? 'L' : 'R') + Math.abs(c.pan),
+          knob: 'rotate(' + (c.pan * 1.35) + 'deg)',
+          top: 100 - f,
+          muteColor: c.mute ? '#ff4d4d' : 'var(--cy-text-dim)',
+          onTrack: (e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            const v = Math.max(0, Math.min(100, Math.round((1 - (e.clientY - r.top) / r.height) * 100)));
+            this.setState(sx => ({ faders: { ...sx.faders, [c.id]: v } }));
+          },
+        };
+      }),
+      meterL: level(96),
+      meterR: level(88),
+    };
+  }
+}
+</script>
+</body>
+</html>

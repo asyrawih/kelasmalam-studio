@@ -1,0 +1,22 @@
+[package]
+name = "daw-rt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Primitif realtime DawOnWeb: layout SAB, SPSC ring, seqlock, pool, guard alokasi"
+
+[lib]
+name = "daw_rt"
+path = "src/lib.rs"
+
+[dependencies]
+
+[features]
+default = ["std"]
+# `std` hanya untuk tes; build WASM memakai --no-default-features.
+std = []
+# Guard alokasi untuk tes: memasang global allocator pembungkus yang panic
+# kalau ada alokasi di dalam `rt_section!`. Butuh std, tidak pernah ikut rilis.
+rt-guard = ["std"]
