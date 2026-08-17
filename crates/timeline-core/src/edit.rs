@@ -569,8 +569,12 @@ fn set_fade(
 }
 
 fn clampf(v: f32, lo: f32, hi: f32) -> f32 {
-    if !(v == v) {
-        return 0.0; // NaN
+    // `is_nan()` bukan sekadar untuk menyenangkan clippy: `!(v == v)` memang
+    // idiom NaN yang sah, tapi pembacanya harus tahu idiomnya dulu. NaN di sini
+    // dipulangkan jadi 0.0 karena nilai rusak lebih baik dinetralkan daripada
+    // merambat ke gain/fade dan membuat seluruh clip senyap.
+    if v.is_nan() {
+        return 0.0;
     }
     if v < lo {
         lo

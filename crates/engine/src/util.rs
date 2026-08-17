@@ -8,7 +8,10 @@
 /// Akar kuadrat deterministik, akurasi ~1e-6 relatif untuk x > 0.
 #[inline]
 pub fn sqrt(x: f32) -> f32 {
-    if !(x > 0.0) {
+    // `!(x > 0.0)` juga menangkap NaN, dan itu memang disengaja — tapi bentuk
+    // negasi pada tipe yang hanya terurut sebagian menyembunyikan maksud itu.
+    // Dituliskan eksplisit: NaN dan nilai <= 0 sama-sama menghasilkan 0.0.
+    if x.is_nan() || x <= 0.0 {
         return 0.0;
     }
     // Estimasi awal lewat manipulasi eksponen (bagi eksponen dengan 2).

@@ -202,7 +202,7 @@ pub unsafe extern "C" fn engine_new(
     ctl_ptr: *mut u8,
     max_frames: u32,
 ) -> *mut RtEngine {
-    if ctl_ptr.is_null() || sample_rate < 8_000 || sample_rate > 384_000 {
+    if ctl_ptr.is_null() || !(8_000..=384_000).contains(&sample_rate) {
         return core::ptr::null_mut();
     }
     let max_frames = (max_frames as usize).clamp(1, MAX_BLOCK);
@@ -653,10 +653,14 @@ mod tests {
 
     #[test]
     fn blocks_do_not_overlap() {
-        assert!(off::CMD_DATA + 1024 * 16 <= off::PARAM_GEN);
-        assert!(off::PARAM_SLOT_A + off::PARAM_SLOTS * 4 <= off::PARAM_SLOT_B);
-        assert!(off::PARAM_SLOT_B + off::PARAM_SLOTS * 4 <= off::METER_SEQ);
-        assert!(off::METER_DATA + off::METER_COUNT * off::METER_STRIDE <= off::EXPORT_CANCEL);
-        assert!(off::ENGINE_FAULT + 4 <= off::CONTROL_SIZE);
+        // `const _: () = assert!(...)` — dievaluasi saat KOMPILASI. Sebagai
+        // `assert!` runtime, semua operand-nya konstanta sehingga compiler
+        // membuangnya dan tesnya tidak menguji apa pun.
+        const _: () = assert!(off::CMD_DATA + 1024 * 16 <= off::PARAM_GEN);
+        const _: () = assert!(off::PARAM_SLOT_A + off::PARAM_SLOTS * 4 <= off::PARAM_SLOT_B);
+        const _: () = assert!(off::PARAM_SLOT_B + off::PARAM_SLOTS * 4 <= off::METER_SEQ);
+        const _: () =
+            assert!(off::METER_DATA + off::METER_COUNT * off::METER_STRIDE <= off::EXPORT_CANCEL);
+        const _: () = assert!(off::ENGINE_FAULT + 4 <= off::CONTROL_SIZE);
     }
 }

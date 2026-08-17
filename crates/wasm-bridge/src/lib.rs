@@ -46,5 +46,9 @@ pub(crate) fn set_panic_hook() {
     }
 }
 
+// Stub untuk build NON-wasm (mis. `cargo test` di host). Tidak ada yang
+// memanggilnya di sana — itu memang maksudnya — jadi lint "never used"
+// dimatikan di sini, bukan dengan menambah pemanggilan palsu.
 #[cfg(not(all(target_arch = "wasm32", feature = "panic-hook")))]
+#[allow(dead_code)]
 pub(crate) fn set_panic_hook() {}

@@ -44,8 +44,7 @@ pub const TOTAL_SEND_SLOTS: usize = MAX_TRACKS * MAX_SENDS;
 /// Kahn; master (dest == None) selalu terakhir.
 fn topo_sort_buses(p: &Project) -> Result<Vec<u16>, PlanError> {
     let n = p.buses.len();
-    let mut indeg = Vec::new();
-    indeg.resize(n, 0u32);
+    let mut indeg = alloc::vec![0u32; n];
     for b in p.buses.iter() {
         if let Some(d) = b.dest {
             let d = d as usize;
@@ -214,7 +213,6 @@ pub fn build_plan(p: &Project, generation: u32) -> Result<ProcessPlan, PlanError
     });
 
     // 5. Alokasi buffer fisik (linear scan) + remap in-place.
-    let mut steps = steps;
     let buffer_count = allocate_buffers(&mut steps, MAX_BUFFERS)?;
     // Buffer master setelah remap: cari step Meter master terakhir.
     let out_buf = steps

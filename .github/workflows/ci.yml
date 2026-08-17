@@ -83,25 +83,18 @@ jobs:
           # modern menuntut rustc yang lebih baru, jadi instalasinya gagal
           # dengan pesan yang menunjuk crate asing — bukan masalah kode kita.
           cargo +stable install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
-          # wasm-pack: pakai binari siap pakai. Mengompilasinya dari sumber
-          # memakan menit CI untuk sesuatu yang tidak pernah masuk artefak.
-          curl -sSfL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
           sudo apt-get update && sudo apt-get install -y binaryen
 
-      # RUSTFLAGS di-override untuk langkah ini saja.
+      # CATATAN: langkah `wasm-pack test --headless --chrome` DIHAPUS.
       #
-      # `.cargo/config.toml` memaksa `+atomics` + `--shared-memory` untuk SEMUA
-      # build wasm32 — itu benar untuk artefak `mt`, tapi `wasm-pack test`
-      # mengompilasi harness libtest TANPA `-Z build-std`, jadi objek tesnya
-      # tidak punya atomics dan linker menolak menggabungkannya:
-      #   rust-lld: --shared-memory is disallowed by test-*.rcgu.o
-      # Tes browser di sini menguji logika bridge, bukan jalur SAB, jadi
-      # dijalankan dengan profil non-atomics (sama seperti varian `st`).
-      # Env RUSTFLAGS menggantikan rustflags dari config, bukan menambahinya.
-      - name: wasm-pack test (profil st, tanpa atomics)
-        env:
-          RUSTFLAGS: '-C target-feature=+bulk-memory,+mutable-globals,+simd128'
-        run: wasm-pack test --headless --chrome crates/wasm-bridge
+      # `crates/wasm-bridge` tidak punya dev-dependency `wasm-bindgen-test` dan
+      # tidak punya satu pun tes browser, jadi langkah itu tidak pernah bisa
+      # jalan — ia hanya membuat CI merah. Menambahkan tes token sekadar agar
+      # langkahnya hijau berarti CI melaporkan cakupan yang tidak ada.
+      #
+      # Cakupan yang SUNGGUHAN ada sekarang: `web/src/studio/export/
+      # wasm-integration.test.ts` memuat artefak `st` yang benar-benar dibangun
+      # dan menjalankan render + encode sampai menghasilkan berkas.
 
       - name: build wasm (mt + st)
         run: ./scripts/build-wasm.sh
@@ -153,4 +146,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Tes paling berharga: render project referensi lewat dua jalur
       # (realtime blok-128 vs offline batch) dan bandingkan sample-exact.
-      - run: cargo test -p daw-export --test null_test
+      # Null test-nya ada di `crates/engine/src/tests.rs`
+      # (`null_test_block_size_invariance_*`), BUKAN di daw-export sebagai
+      # target tes terpisah — CI sebelumnya menunjuk target yang tidak pernah
+      # ada, jadi job ini selalu merah tanpa pernah menjalankan tesnya.
+      - run: cargo test -p daw-engine null_test -- --nocapture

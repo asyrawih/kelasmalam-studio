@@ -275,11 +275,7 @@ impl Engine {
                 sample_rate,
                 ..Default::default()
             },
-            sched: {
-                let mut v = Vec::new();
-                v.resize(u16::MAX as usize / 8, 0u16);
-                v.into_boxed_slice()
-            },
+            sched: { alloc::vec![0u16; u16::MAX as usize / 8].into_boxed_slice() },
             sched_len: 0,
             sched_cursor: 0,
             max_frames,

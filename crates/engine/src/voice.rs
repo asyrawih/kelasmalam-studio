@@ -279,8 +279,7 @@ impl VoicePool {
             // (deterministik, memudahkan tes null).
             free.push((capacity - 1 - i) as u16);
         }
-        let mut active = Vec::with_capacity(capacity);
-        active.resize(capacity, 0u16);
+        let active = alloc::vec![0u16; capacity];
         let sr = sample_rate as f32;
         VoicePool {
             voices: voices.into_boxed_slice(),

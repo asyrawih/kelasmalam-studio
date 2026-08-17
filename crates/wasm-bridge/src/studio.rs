@@ -243,7 +243,7 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
     } else {
         0.0
     };
-    if master_gain_db < MIN_MASTER_GAIN_DB || master_gain_db > MAX_MASTER_GAIN_DB {
+    if !(MIN_MASTER_GAIN_DB..=MAX_MASTER_GAIN_DB).contains(&master_gain_db) {
         warnings.push(format!(
             "Amplify master {master_gain_db:.1} dB di luar rentang {MIN_MASTER_GAIN_DB:.0}…{MAX_MASTER_GAIN_DB:.0} dB; dipotong ke batas."
         ));

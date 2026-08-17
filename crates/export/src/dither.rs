@@ -72,8 +72,13 @@ impl Tpdf {
         }
     }
 
+    /// Satu sampel dither TPDF: selisih dua sumber uniform independen.
+    ///
+    /// Dinamai `sample()`, bukan `next()`: nama `next` pada tipe yang bukan
+    /// `Iterator` membuat pembaca mengira ini bisa dipakai di `for` atau
+    /// di-`collect`, padahal tidak.
     #[inline(always)]
-    pub fn next(&mut self) -> f32 {
+    pub fn sample(&mut self) -> f32 {
         self.a.next_f32() - self.b.next_f32()
     }
 }
@@ -85,7 +90,7 @@ impl Tpdf {
 pub fn quantize(x: f32, scale: f32, min: f32, max: f32, dither: Option<&mut Tpdf>) -> i32 {
     let mut v = x * scale;
     if let Some(d) = dither {
-        v += d.next();
+        v += d.sample();
     }
     // `round_ties_even` tidak ada di semua versi; round() sudah cukup dan
     // konsisten karena dither sudah men-dekorelasi errornya.
@@ -168,7 +173,7 @@ mod tests {
         let mut sum = 0.0f64;
         let mut n = 0u32;
         for _ in 0..200_000 {
-            let v = d.next();
+            let v = d.sample();
             assert!((-1.0..=1.0).contains(&v));
             sum += v as f64;
             n += 1;

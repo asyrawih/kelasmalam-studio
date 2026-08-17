@@ -180,8 +180,7 @@ pub fn allocate_buffers(steps: &mut [Step], max_buffers: usize) -> Result<u16, P
     lives.sort_by_key(|l| (l.first, l.last));
 
     // 2. Sapuan linear.
-    let mut map: Vec<u16> = Vec::new();
-    map.resize(n_virtual, 0);
+    let mut map: Vec<u16> = alloc::vec![0; n_virtual];
     // active: (last_step, phys) — kecil (<= MAX_BUFFERS), linear scan lebih cepat dari heap.
     let mut active: Vec<(u32, u16)> = Vec::with_capacity(max_buffers);
     let mut free: Vec<u16> = Vec::with_capacity(max_buffers);

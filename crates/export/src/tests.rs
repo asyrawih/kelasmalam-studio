@@ -225,7 +225,7 @@ fn hound_path_decodes_to_the_same_values() {
 #[test]
 fn dither_never_applies_to_float32() {
     let mut d = Tpdf::new(1);
-    let _ = d.next();
+    let _ = d.sample();
     let (l, r) = test_signal(64);
     let with = DitherSettings {
         dither_16: true,
@@ -456,14 +456,12 @@ mod flac_tests {
         let mut off = 0;
         // Ukuran batch yang sengaja bukan kelipatan 4096.
         for step in [1000usize, 4095, 4097, 128, 333] {
-            loop {
-                if off >= l.len() {
-                    break;
-                }
+            // Satu batch per ukuran; `loop { ... break; }` di sini menyesatkan
+            // karena badannya tidak pernah berputar.
+            if off < l.len() {
                 let end = (off + step).min(l.len());
                 w.write_planar(&[&l[off..end], &r[off..end]]).unwrap();
                 off = end;
-                break;
             }
         }
         while off < l.len() {

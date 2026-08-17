@@ -65,7 +65,7 @@ impl TempoSegment {
     /// Konversi BPM dari UI ke integer µs/QN. Pembulatan terjadi **sekali di
     /// sini**, bukan di setiap konversi posisi.
     pub fn micros_from_bpm(bpm: f64) -> u32 {
-        if !(bpm.is_finite() && bpm >= 1.0 && bpm <= 999.0) {
+        if !(bpm.is_finite() && (1.0..=999.0).contains(&bpm)) {
             return DEFAULT_MICROS_PER_QN;
         }
         (60_000_000.0 / bpm + 0.5) as u32

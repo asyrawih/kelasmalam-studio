@@ -310,7 +310,7 @@ impl Clip {
 /// yang kita pakai (-96..+24 dB) karena kita mereduksi eksponen ke `[0,1)` dulu.
 /// Ini jalur non-RT (UI/serialisasi); engine memakai versi cepat di `daw-dsp`.
 fn db_to_lin(db: f32) -> f32 {
-    let x = db as f64 * (2.302_585_092_994_046 / 20.0);
+    let x = db as f64 * (core::f64::consts::LN_10 / 20.0);
     exp_f64(x) as f32
 }
 
@@ -319,7 +319,7 @@ pub fn lin_to_db(x: f32) -> f32 {
     if x <= 1e-7 {
         return -140.0;
     }
-    (ln_f64(x as f64) * (20.0 / 2.302_585_092_994_046)) as f32
+    (ln_f64(x as f64) * (20.0 / core::f64::consts::LN_10)) as f32
 }
 
 fn exp_f64(x: f64) -> f64 {
@@ -748,11 +748,23 @@ impl Project {
                 supported: PROJECT_VERSION,
             });
         }
-        while self.version < PROJECT_VERSION {
-            match self.version {
-                // 0 => { self.migrate_v0_to_v1(); self.version = 1; }
-                v => return Err(MigrationError::Unsupported { found: v }),
-            }
+        // Belum ada satu pun migrasi: versi lama apa pun langsung ditolak.
+        //
+        // Dulu ini `while` (tangga migrasi bertingkat), tapi tanpa satu pun arm
+        // yang menaikkan `self.version`, loop itu tidak pernah berputar dan
+        // clippy benar menandainya. Bentuk `if` mencerminkan yang sebenarnya
+        // terjadi hari ini; ubah kembali jadi `while` begitu migrasi PERTAMA
+        // ditulis — polanya:
+        //     while self.version < PROJECT_VERSION {
+        //         match self.version {
+        //             0 => { self.migrate_v0_to_v1(); self.version = 1; }
+        //             v => return Err(MigrationError::Unsupported { found: v }),
+        //         }
+        //     }
+        if self.version < PROJECT_VERSION {
+            return Err(MigrationError::Unsupported {
+                found: self.version,
+            });
         }
         self.normalize();
         Ok(())
