@@ -4,7 +4,6 @@ export { ClipThumbnail } from './ClipThumbnail';
 export { MasterMeter } from './MasterMeter';
 export { ArrangementTimeline } from './ArrangementTimeline';
 export { MixerStrips } from './MixerStrips';
-export { ParametricEQ } from './ParametricEQ';
 export { PluginKnobs } from './PluginKnobs';
 export { PianoRoll } from './PianoRoll';
 export { StepSequencer } from './StepSequencer';

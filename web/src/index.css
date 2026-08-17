@@ -41,9 +41,66 @@ canvas {
   display: block;
 }
 
+/* ── Audio Studio ────────────────────────────────────────────────────────────
+ * Tiga aturan di bawah disalin dari `<helmet>` design file (`Audio Studio`),
+ * karena ketiganya tidak bisa diungkapkan sebagai inline style:
+ * pseudo-element scrollbar, :focus, dan :hover.
+ */
+
+/* Area timeline menggulir tanpa scrollbar terlihat. */
+[data-tl-scroll]::-webkit-scrollbar {
+  height: 0;
+}
+
+/* Nama lane bisa diedit langsung, tapi tidak terlihat seperti input. */
+input[data-lane-name] {
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-family: var(--cy-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--cy-text);
+  width: 100%;
+  padding: 0;
+}
+
+input[data-lane-name]:focus {
+  color: var(--cy-accent);
+  border-bottom: 1px solid var(--cy-accent);
+}
+
+/* Tombol hapus lane memerah saat disentuh (design: style-hover). */
+.cy-hover-danger:hover {
+  color: #ff4d4d;
+  border-color: #ff4d4d;
+}
+
 /* Drag fader/knob/clip tidak boleh menyeleksi teks di sekitarnya. */
 [role='slider'],
 canvas {
   user-select: none;
   -webkit-user-select: none;
+}
+
+/*
+ * Timeline adalah permukaan DRAG, bukan permukaan teks.
+ *
+ * Tanpa ini, drag playhead/pan/clip ikut men-select label ruler, nama file
+ * clip, dan meta lane — teks jadi ter-highlight biru dan drag-nya terasa
+ * rusak. Aturannya dipasang pada kontainer, bukan global, supaya teks di
+ * luar timeline tetap bisa disalin user.
+ */
+[data-tl-ruler],
+[data-tl-scroll],
+[data-tl-lanes],
+[data-tl-overview] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Kecuali input nama lane — itu memang untuk diketik dan diseleksi. */
+input[data-lane-name] {
+  user-select: text;
+  -webkit-user-select: text;
 }

@@ -1,226 +1,96 @@
 /**
- * Susunan halaman — grid 12 kolom yang sama persis dengan design file.
+ * Audio Studio — halaman aplikasi.
  *
- * Urutan dan span disalin baris per baris dari design:
- *   span 12  Transport Bar
- *   span 8   Waveform Display      | span 4  Clip Thumbnail + Master Meter
- *   span 12  Arrangement / Timeline
- *   span 7   Mixer / Channel Strips| span 5  Parametric EQ + Plugin Knobs
- *   span 7   Piano Roll            | span 5  Step Sequencer
- *   span 4   Sample Browser  | span 4 FX Rack | span 4 Automation + Render
+ * Susunannya mengikuti `design/Audio Studio.dc.html` baris per baris:
+ *   header bar → readout strip → body 2 kolom
+ *   kolom kiri : Card Timeline + Card Clip Detail
+ *   kolom kanan: rail (Transport / MIX / EQ / COMPILE) — milik agent lain
  *
- * Header juga disalin: eyebrow 11px letterspacing .22em warna aksen, judul
- * Rajdhani 38px, paragraf 13px max-width 62ch, dan dua badge di kanan.
- *
- * Engine di-inject lewat prop, bukan dibuat di sini: `AudioContext` hanya boleh
- * lahir di dalam handler gesture user (docs/05 §Safari), dan seluruh UI harus
- * bisa dirender sebelum itu terjadi.
+ * Engine di-import DINAMIS dan boleh gagal: build WASM belum ada di repo, dan
+ * seluruh UI harus tetap render serta interaktif tanpanya. Kalau engine tidak
+ * ada, tidak ada audio yang berbunyi — badge di header berkata "UI ONLY" alih-
+ * alih "READY" — tapi playhead tetap berjalan supaya timeline bisa diuji.
  */
 
-import { useEffect, useState } from 'react';
-import {
-  EngineProvider,
-  attachMeterLoop,
-  createDemoProject,
-  DESIGN_LIBRARY,
-  useUiStore,
-  type UiEngine,
-} from './state';
-import { uiActions } from './state/store';
-import { Badge } from './ui/cyber';
-import {
-  ArrangementTimeline,
-  AutomationLane,
-  ClipThumbnail,
-  FXRack,
-  MasterMeter,
-  MixerStrips,
-  ParametricEQ,
-  PianoRoll,
-  PluginKnobs,
-  RenderBounce,
-  SampleBrowser,
-  StepSequencer,
-  TransportBar,
-  WaveformDisplay,
-} from './ui/panels';
+import { useEffect } from 'react';
+import { StudioRail } from './studio/rail';
+import { ReadoutStrip, StudioHeader, StudioLayout } from './studio/shell';
+import { ReorderableStack } from './studio/shell/ReorderableStack';
+import { studioActions, useStudio } from './studio/store';
+import { ClipDetailPanel, TimelinePanel } from './studio/timeline';
+import { usePersistence } from './studio/persist/usePersistence';
+import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
+import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
 
 export interface AppProps {
   /**
-   * Dipanggil di dalam handler klik. Mengembalikan engine siap pakai, atau
-   * null kalau lapisan audio belum bisa dibangun di lingkungan ini (mis.
-   * build WASM belum ada) — UI tetap jalan dalam mode mirror-only.
+   * Dipanggil sekali untuk mencoba membangun lapisan audio. Mengembalikan
+   * objek apa pun kalau berhasil, atau null/melempar kalau lingkungan ini
+   * belum bisa (mis. WASM belum di-build). UI tidak peduli bentuknya — ia
+   * hanya butuh tahu berhasil atau tidak.
    */
-  readonly createEngine?: () => Promise<UiEngine | null>;
+  readonly createEngine?: () => Promise<unknown>;
+  readonly onClose?: () => void;
+  readonly railWidth?: number;
 }
 
-export function App({ createEngine }: AppProps): JSX.Element {
-  const [engine, setEngine] = useState<UiEngine | null>(null);
-  const audioUnlocked = useUiStore((s) => s.audioUnlocked);
-  const sampleRate = useUiStore((s) => s.project.sampleRate);
-  const engineFault = useUiStore((s) => s.engineFault);
+/** Periode tick playhead. 60 ms = angka yang sama dengan interval di design. */
+const TICK_MS = 60;
 
-  // Seed sekali: isi design supaya UI bisa dibandingkan dengan design file.
+export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element {
+  // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
+  usePreviewPlayback();
+  // Pulihkan project tersimpan + nyalakan autosave.
+  usePersistence(useStudio((s) => s.sampleRate));
+  const hasSelection = useStudio((s) => s.selectedClipId !== null);
+  // Shortcut transport: Space, Backspace/Enter/Home, End, ←/→.
+  useTransportShortcuts();
+  // Coba bangun engine sekali. Kegagalannya adalah informasi, bukan crash.
   useEffect(() => {
-    uiActions.setProject(createDemoProject(sampleRate));
-    uiActions.setLibrary(DESIGN_LIBRARY.map((e) => ({ ...e })));
-    uiActions.selectTrack(0);
-    uiActions.selectClips([1]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Satu rAF loop untuk seluruh aplikasi, dipasang saat engine hidup.
-  useEffect(() => {
-    if (engine === null) return;
-    return attachMeterLoop(engine);
-  }, [engine]);
-
-  const unlock = async (): Promise<void> => {
     if (createEngine === undefined) {
-      uiActions.setAudioUnlocked(true);
+      studioActions.setEngineStatus(false, 'engine tidak disediakan (mode UI-only)');
       return;
     }
-    try {
-      const client = await createEngine();
-      if (client !== null) {
-        setEngine(client);
-        uiActions.resetForSampleRate(client.sampleRate);
-        uiActions.setProject(createDemoProject(client.sampleRate));
-      }
-      uiActions.setAudioUnlocked(true);
-    } catch (err) {
-      uiActions.setEngineFault(err instanceof Error ? err.message : String(err));
-      uiActions.setAudioUnlocked(true);
-    }
-  };
+    let alive = true;
+    void createEngine()
+      .then((engine) => {
+        if (!alive) return;
+        studioActions.setEngineStatus(engine !== null, engine === null ? 'engine tidak tersedia' : null);
+      })
+      .catch((err: unknown) => {
+        if (!alive) return;
+        studioActions.setEngineStatus(false, err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [createEngine]);
+
+  // Playhead berjalan dari timer UI, BUKAN dari clock audio. Selama engine
+  // belum ada ini satu-satunya cara timeline bisa dicoba; begitu engine ada,
+  // sumber posisi harus diganti ke snapshot transport engine.
+  useEffect(() => {
+    const id = setInterval(() => studioActions.tick(TICK_MS), TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   return (
-    <EngineProvider client={engine}>
-      <div
-        style={{
-          minHeight: '100vh',
-          background: 'var(--cy-bg)',
-          padding: '28px 32px 64px',
-          fontFamily: 'var(--cy-font-mono)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            gap: '24px',
-            borderBottom: '1px solid var(--cy-border)',
-            paddingBottom: '18px',
-            marginBottom: '26px',
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: '11px',
-                letterSpacing: '.22em',
-                textTransform: 'uppercase',
-                color: 'var(--cy-accent)',
-                marginBottom: '8px',
-              }}
-            >
-              Component Kit / Audio
-            </div>
-            <h1
-              style={{
-                fontFamily: 'var(--cy-font-sans)',
-                fontSize: '38px',
-                fontWeight: 700,
-                letterSpacing: '.04em',
-                color: 'var(--cy-text)',
-                margin: 0,
-              }}
-            >
-              DAW UI COMPONENTS
-            </h1>
-            <p
-              style={{
-                color: 'var(--cy-text-dim)',
-                fontSize: '13px',
-                margin: '8px 0 0',
-                maxWidth: '62ch',
-                textWrap: 'pretty',
-              }}
-            >
-              Transport, waveform, arrangement, mixer, piano roll, and metering primitives — built on
-              the black + yellow cyber theme.
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {!audioUnlocked ? (
-              <button type="button" className="cy-btn-reset cy-focusable" onClick={() => void unlock()}>
-                <Badge tone="danger" dot pulse>
-                  CLICK TO ENABLE AUDIO
-                </Badge>
-              </button>
-            ) : null}
-            {engineFault !== null ? <Badge tone="danger" dot>{engineFault}</Badge> : null}
-            <Badge tone="accent" dot pulse>
-              {(sampleRate / 1000).toFixed(1)} kHz / 24-bit
-            </Badge>
-            <Badge tone="default">v0.1</Badge>
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(12,minmax(0,1fr))',
-            gap: '18px',
-            alignItems: 'start',
-          }}
-        >
-          <div style={{ gridColumn: 'span 12' }}>
-            <TransportBar />
-          </div>
-
-          <div style={{ gridColumn: 'span 8' }}>
-            <WaveformDisplay />
-          </div>
-          <div style={{ gridColumn: 'span 4', display: 'grid', gap: '18px' }}>
-            <ClipThumbnail />
-            <MasterMeter />
-          </div>
-
-          <div style={{ gridColumn: 'span 12' }}>
-            <ArrangementTimeline />
-          </div>
-
-          <div style={{ gridColumn: 'span 7' }}>
-            <MixerStrips />
-          </div>
-          <div style={{ gridColumn: 'span 5', display: 'grid', gap: '18px' }}>
-            <ParametricEQ />
-            <PluginKnobs />
-          </div>
-
-          <div style={{ gridColumn: 'span 7' }}>
-            <PianoRoll />
-          </div>
-          <div style={{ gridColumn: 'span 5' }}>
-            <StepSequencer />
-          </div>
-
-          <div style={{ gridColumn: 'span 4' }}>
-            <SampleBrowser />
-          </div>
-          <div style={{ gridColumn: 'span 4' }}>
-            <FXRack />
-          </div>
-          <div style={{ gridColumn: 'span 4', display: 'grid', gap: '18px' }}>
-            <AutomationLane />
-            <RenderBounce />
-          </div>
-        </div>
-      </div>
-    </EngineProvider>
+    <StudioLayout
+      railWidth={railWidth}
+      header={<StudioHeader onClose={onClose} />}
+      readouts={<ReadoutStrip />}
+      main={
+        <ReorderableStack
+          items={[
+            { id: 'timeline', node: <TimelinePanel /> },
+            // Clip Detail hanya ada saat ADA clip terpilih. Kartu kosong yang
+            // cuma berbunyi "pilih clip" memakan ruang vertikal permanen dan
+            // mendorong timeline ke atas tanpa memberi apa pun.
+            ...(hasSelection ? [{ id: 'clip-detail' as const, node: <ClipDetailPanel /> }] : []),
+          ]}
+        />
+      }
+      rail={<StudioRail />}
+    />
   );
 }
-
-export default App;

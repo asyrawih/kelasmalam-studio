@@ -124,10 +124,17 @@ async function doLoad(): Promise<LoadedWasm> {
   const glueUrl = new URL('engine.js', base).href;
   const wasmUrl = new URL('engine_bg.wasm', base).href;
 
-  const [glue, bytes] = await Promise.all([
-    import(/* @vite-ignore */ glueUrl) as Promise<WasmBindgenExports>,
-    fetchWasmBytes(wasmUrl),
-  ]);
+  // PENTING: artefak diperiksa DULU, sebelum `import()` glue-nya.
+  //
+  // Kalau `web/src/wasm/` masih kosong, dev-server Vite menjawab request ke
+  // `engine.js` dengan SPA fallback — yaitu index.html ber-MIME text/html.
+  // Browser lalu menolaknya dengan "Loading module was blocked because of a
+  // disallowed MIME type", sebuah pesan yang menyesatkan: seolah ada masalah
+  // konfigurasi server, padahal file-nya memang belum dibangun.
+  // Memeriksa binary-nya lebih dulu membuat kegagalannya jujur dan bisa
+  // ditangani UI (tombol di-disable + tooltip), bukan error merah di console.
+  const bytes = await fetchWasmBytes(wasmUrl);
+  const glue = (await import(/* @vite-ignore */ glueUrl)) as WasmBindgenExports;
 
   const module = await WebAssembly.compile(bytes);
 
@@ -165,12 +172,30 @@ async function doLoad(): Promise<LoadedWasm> {
   return { module, memory, variant, caps, exports: glue, controlPtr };
 }
 
+/** Ditandai supaya UI bisa membedakan "belum dibangun" dari error sungguhan. */
+export class EngineNotBuiltError extends Error {
+  readonly notBuilt = true;
+  constructor(detail: string) {
+    super(`Engine WASM belum dibangun (${detail}). Jalankan \`pnpm build:wasm\`.`);
+    this.name = 'EngineNotBuiltError';
+  }
+}
+
 async function fetchWasmBytes(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url);
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    throw new EngineNotBuiltError(err instanceof Error ? err.message : 'fetch gagal');
+  }
   if (!res.ok) {
-    throw new Error(
-      `Gagal memuat ${url} (${res.status}). Sudah menjalankan \`pnpm build:wasm\`?`,
-    );
+    throw new EngineNotBuiltError(`${url} → HTTP ${res.status}`);
+  }
+  // Dev-server mengembalikan index.html (200, text/html) untuk file yang tidak
+  // ada — jadi status 200 saja BUKAN bukti artefaknya ada.
+  const type = res.headers.get('content-type') ?? '';
+  if (!type.includes('wasm') && !type.includes('octet-stream')) {
+    throw new EngineNotBuiltError(`${url} mengembalikan "${type}", bukan wasm`);
   }
   return res.arrayBuffer();
 }
