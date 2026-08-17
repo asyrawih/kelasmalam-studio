@@ -35,6 +35,11 @@ serde        = { version = "1", default-features = false, features = ["derive", 
 postcard     = { version = "1", default-features = false, features = ["alloc"] }
 # WAV writer untuk crate export.
 hound        = "3.5"
+# libm: `core` tidak punya sin/cos. Dipakai crate no_std (dsp, engine).
+libm         = { version = "0.2", default-features = false }
+# serde_json HANYA di crates/wasm-bridge: JSON adalah bahasa yang bisa dibicarakan
+# TypeScript; postcard tidak. Lihat `wasm-bridge/src/studio.rs`.
+serde_json   = { version = "1", default-features = false, features = ["alloc"] }
 # Bridge WASM — HANYA boleh dipakai crates/wasm-bridge.
 wasm-bindgen = "0.2"
 js-sys       = "0.3"

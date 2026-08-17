@@ -62,6 +62,67 @@ pub fn build_has_simd() -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Snapshot dari model studio (JSON) — docs/03 §3a
+// ---------------------------------------------------------------------------
+
+/// Hasil membangun snapshot: byte postcard + peringatan yang WAJIB ditampilkan.
+///
+/// Dua nilai dalam satu objek, bukan dua panggilan: peringatan lahir dari
+/// pemetaan yang sama dengan byte-nya, dan memisahkannya membuka kemungkinan
+/// UI memakai snapshot tanpa pernah membaca peringatannya.
+#[wasm_bindgen]
+pub struct StudioSnapshot {
+    bytes: Vec<u8>,
+    warnings: Vec<String>,
+    clip_count: u32,
+}
+
+#[wasm_bindgen]
+impl StudioSnapshot {
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+
+    /// Selisih yang TIDAK bisa dinyatakan engine, satu kalimat per baris.
+    /// Kosong = file hasil export identik dengan yang didengar user.
+    pub fn warnings(&self) -> Vec<JsValue> {
+        self.warnings
+            .iter()
+            .map(|w| JsValue::from_str(w))
+            .collect()
+    }
+
+    /// Jumlah clip yang benar-benar akan berbunyi — UI memakainya untuk
+    /// menolak export yang hasilnya pasti senyap.
+    #[wasm_bindgen(js_name = clipCount)]
+    pub fn clip_count(&self) -> u32 {
+        self.clip_count
+    }
+}
+
+/// Bangun snapshot postcard dari model studio TypeScript.
+///
+/// TS tidak bisa menghasilkan postcard dengan cara yang aman (tata letaknya
+/// ditentukan definisi tipe Rust), jadi ia mengirim JSON dan Rust yang
+/// memetakannya. Seluruh pemetaan — beserta daftar selisih antara kedua model —
+/// ada di [`crate::studio`].
+#[wasm_bindgen(js_name = snapshotFromStudioJson)]
+pub fn snapshot_from_studio_json(json: &str) -> Result<StudioSnapshot, JsValue> {
+    crate::set_panic_hook();
+    let mapping = crate::studio::mapping_from_json(json).map_err(|e| JsValue::from_str(&e))?;
+    let clip_count = mapping.project.clips.len() as u32;
+    let bytes = mapping
+        .project
+        .to_bytes()
+        .map_err(|e| JsValue::from_str(&format!("encode snapshot gagal: {e:?}")))?;
+    Ok(StudioSnapshot {
+        bytes,
+        warnings: mapping.warnings,
+        clip_count,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Offline render (export worker) — docs/03 §3a
 // ---------------------------------------------------------------------------
 
@@ -78,6 +139,18 @@ pub struct OfflineRender {
     l: Vec<f32>,
     r: Vec<f32>,
     block: usize,
+    /// PCM asset yang DIMILIKI renderer ini.
+    ///
+    /// `AssetTable` engine menyimpan `*const f32` mentah — ia tidak memiliki
+    /// datanya. Kalau PCM-nya hidup di `Vec` milik pemanggil JS, pointer itu
+    /// menggantung begitu GC/`free()` berjalan dan render membaca memori acak.
+    /// Menaruhnya di sini mengikat masa hidup PCM ke masa hidup renderer, yang
+    /// persis rentang waktu selama pointer itu dipakai.
+    ///
+    /// `Box<[f32]>` (bukan `Vec<Vec<f32>>` yang di-push): menambah elemen ke
+    /// `Vec` luar memindahkan elemen-elemennya, tapi TIDAK memindahkan buffer
+    /// yang ditunjuk `Box` — jadi pointer yang sudah didaftarkan tetap sah.
+    assets: Vec<Box<[f32]>>,
 }
 
 #[wasm_bindgen]
@@ -108,7 +181,59 @@ impl OfflineRender {
             l: vec![0.0; block],
             r: vec![0.0; block],
             block,
+            assets: Vec::new(),
         })
+    }
+
+    /// Daftarkan PCM satu asset SEBELUM render dimulai.
+    ///
+    /// Kenapa ini ada: `OfflineRender::new` hanya menerima snapshot, dan
+    /// snapshot cuma menyebut asset lewat id — tanpa langkah ini setiap clip
+    /// menunjuk slot kosong dan engine merender senyap sempurna, tanpa error.
+    ///
+    /// `data` = semua channel BERURUTAN (planar): channel `c` mulai di
+    /// `c * frames`, sama seperti `importFromPcm`. Datanya DISALIN ke dalam
+    /// renderer; view JS boleh dibuang setelah pemanggilan ini.
+    #[wasm_bindgen(js_name = registerAsset)]
+    pub fn register_asset(
+        &mut self,
+        id: u32,
+        data: &[f32],
+        channels: u32,
+        frames: u32,
+        sample_rate: u32,
+    ) -> Result<(), JsValue> {
+        let ch = channels.clamp(1, u8::MAX as u32) as usize;
+        let n = frames as usize;
+        if data.len() < ch * n {
+            return Err(JsValue::from_str(&format!(
+                "asset {id}: panjang data {} < channels*frames {}",
+                data.len(),
+                ch * n
+            )));
+        }
+        if id > u16::MAX as u32 {
+            return Err(JsValue::from_str(&format!("asset id {id} di luar jangkauan")));
+        }
+
+        let owned: Box<[f32]> = data[..ch * n].to_vec().into_boxed_slice();
+        let asset = daw_engine::voice::Asset {
+            data: owned.as_ptr(),
+            frames: n,
+            channels: ch as u8,
+            sample_rate,
+        };
+        self.assets.push(owned);
+        // SAFETY: `owned` baru saja dipindahkan ke `self.assets` dan tidak
+        // pernah dimutasi, dibuang, atau direalokasi selama renderer hidup —
+        // `Box<[f32]>` tidak pernah memindahkan buffer-nya. Slot juga tidak
+        // pernah di-unregister, jadi pointer valid untuk seluruh masa render.
+        unsafe {
+            self.inner
+                .engine_mut()
+                .register_asset(id as u16, asset);
+        }
+        Ok(())
     }
 
     /// Total frame yang akan dirender.

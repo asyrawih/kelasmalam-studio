@@ -4,9 +4,10 @@
  * Seluruh statistik dihitung dari state store (design meng-hardcode-nya).
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Card, ProgressBar } from '../../ui/cyber';
 import { formatTime, isAudible, type ExportFormat, type StudioState } from '../model';
+import { hasRenderableAudio } from '../preview/audio-preview';
 import { runCompile, useExportAvailability } from './export-bridge';
 import { studioActions, useStudio } from './store-adapter';
 
@@ -15,8 +16,12 @@ const FORMATS: readonly ExportFormat[] = ['AUTO', 'WAV', 'MP3'];
 /** AUTO = WAV: default paling aman (lossless, tanpa dependensi encoder lossy). */
 export const resolveFormat = (f: ExportFormat): 'WAV' | 'MP3' => (f === 'MP3' ? 'MP3' : 'WAV');
 
-/** WAV 16-bit PCM stereo (docs/03 §3b) — kedalaman default export. */
-const WAV_BITS = 16;
+/** Kedalaman bit WAV yang di-encode Rust (docs/03 §3b). */
+const WAV_DEPTHS = [16, 24, 32] as const;
+type WavDepth = (typeof WAV_DEPTHS)[number];
+
+/** WAV 16-bit PCM stereo — kedalaman default export. */
+const WAV_BITS: WavDepth = 16;
 const MP3_KBPS = 192;
 const CHANNELS = 2;
 
@@ -28,7 +33,7 @@ export interface CompileStats {
 }
 
 /** Statistik export dari state nyata. Diekspor supaya bisa dites terpisah. */
-export function computeStats(state: StudioState): CompileStats {
+export function computeStats(state: StudioState, wavBits: WavDepth = WAV_BITS): CompileStats {
   const activeLanes = state.lanes.filter(
     (l) => l.clips.length > 0 && isAudible(l, state.lanes),
   ).length;
@@ -49,14 +54,14 @@ export function computeStats(state: StudioState): CompileStats {
   const fmt = resolveFormat(state.format);
   const bytes =
     fmt === 'WAV'
-      ? 44 + outputSeconds * sr * CHANNELS * (WAV_BITS / 8)
+      ? 44 + outputSeconds * sr * CHANNELS * (wavBits / 8)
       : (outputSeconds * MP3_KBPS * 1000) / 8;
 
   return {
     activeLanes,
     outputSeconds,
     bytes,
-    label: fmt === 'WAV' ? `WAV ${WAV_BITS}-bit` : `MP3 ${MP3_KBPS} kbps`,
+    label: fmt === 'WAV' ? `WAV ${wavBits}-bit` : `MP3 ${MP3_KBPS} kbps`,
   };
 }
 
@@ -82,22 +87,37 @@ export function CompileCard(): JSX.Element {
   // tempat (referensinya stabil — store menyimpan objek itu sendiri).
   const state = useStudio((s) => s);
   const engine = useExportAvailability();
-  const stats = computeStats(state);
+  const [wavBits, setWavBits] = useState<WavDepth>(WAV_BITS);
+  const stats = computeStats(state, wavBits);
   // Progress hidup di store (`exportProgress`, null saat idle) — supaya bagian
   // UI lain bisa ikut menampilkannya. Error export lokal saja.
   const [error, setError] = useState<string | null>(null);
+  // Selisih antara yang didengar user dan yang akan ditulis ke file. Ditampilkan
+  // SELALU kalau ada — export yang diam-diam berbeda dari preview adalah bug
+  // yang paling mahal untuk ditemukan user sendiri (docs/03).
+  const [warnings, setWarnings] = useState<readonly string[]>([]);
+  // Ref, bukan state: pembatalan dibaca dari dalam loop render yang sedang
+  // berjalan, dan nilai dari closure state akan selamanya `false` di sana.
+  const cancelRef = useRef(false);
   const progress = state.exportProgress;
 
   const exporting = progress !== null;
-  const nothingToRender = stats.outputSeconds <= 0;
-  const disabled = !engine.ready || exporting || nothingToRender;
+  // DUA syarat berbeda, dan alasannya harus dibedakan: timeline boleh penuh
+  // clip tapi tidak ada satu pun yang punya PCM (clip demo, atau asset yang
+  // belum selesai di-decode). Menyebut keduanya "tidak ada clip" akan membuat
+  // user mencari-cari clip yang jelas-jelas ada di layar.
+  const noAudibleClip = stats.outputSeconds <= 0;
+  const noPcm = !noAudibleClip && !hasRenderableAudio(state);
+  const disabled = !engine.ready || exporting || noAudibleClip || noPcm;
   const reason = !engine.ready
     ? engine.reason
-    : nothingToRender
+    : noAudibleClip
       ? 'Tidak ada clip yang terdengar untuk di-render.'
-      : exporting
-        ? 'Export sedang berjalan.'
-        : 'Render semua lane jadi satu file dan unduh.';
+      : noPcm
+        ? 'Clip yang terdengar belum punya audio (PCM belum dimuat).'
+        : exporting
+          ? 'Export sedang berjalan.'
+          : 'Render semua lane jadi satu file dan unduh.';
 
   return (
     <Card title="Compile" subtitle="semua lane → satu file" notched>
@@ -128,6 +148,39 @@ export function CompileCard(): JSX.Element {
           })}
         </div>
 
+        {resolveFormat(state.format) === 'WAV' ? (
+          <div
+            role="group"
+            aria-label="Kedalaman bit WAV"
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: '4px' }}
+          >
+            {WAV_DEPTHS.map((d) => {
+              const active = wavBits === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  className="cy-btn-reset cy-hover-accent-border"
+                  aria-pressed={active}
+                  disabled={exporting}
+                  onClick={() => setWavBits(d)}
+                  style={{
+                    height: '24px',
+                    border: '1px solid var(--cy-border)',
+                    background: 'transparent',
+                    color: active ? 'var(--cy-accent)' : 'var(--cy-text-muted)',
+                    fontFamily: 'var(--cy-font-mono)',
+                    fontSize: '9px',
+                    cursor: exporting ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {d === 32 ? 'F32' : `${d}-BIT`}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         <div style={{ display: 'grid', gap: '5px', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
           <StatRow k="lanes aktif" v={String(stats.activeLanes)} />
           <StatRow k="panjang output" v={formatTime(stats.outputSeconds)} />
@@ -144,13 +197,17 @@ export function CompileCard(): JSX.Element {
           title={reason}
           onClick={() => {
             setError(null);
+            setWarnings([]);
+            cancelRef.current = false;
             studioActions.setExportProgress(0);
             void runCompile({
               format: resolveFormat(state.format) === 'MP3' ? 'mp3' : 'wav',
               fileName: state.projectName.replace(/\.[^.]*$/, '') || 'mixdown',
-              endSample: Math.round(stats.outputSeconds * state.sampleRate),
+              bitDepth: wavBits,
               quality: MP3_KBPS,
               onProgress: studioActions.setExportProgress,
+              onWarnings: setWarnings,
+              isCancelled: () => cancelRef.current,
             }).catch((e: unknown) => {
               studioActions.setExportProgress(null);
               setError(e instanceof Error ? e.message : String(e));
@@ -173,6 +230,49 @@ export function CompileCard(): JSX.Element {
         >
           ↓ COMPILE + DOWNLOAD
         </button>
+
+        {exporting ? (
+          <button
+            type="button"
+            className="cy-btn-reset"
+            onClick={() => {
+              cancelRef.current = true;
+            }}
+            style={{
+              width: '100%',
+              height: '26px',
+              border: '1px solid var(--cy-border)',
+              background: 'transparent',
+              color: 'var(--cy-text-dim)',
+              fontFamily: 'var(--cy-font-mono)',
+              fontSize: '10px',
+              letterSpacing: '.14em',
+              cursor: 'pointer',
+            }}
+          >
+            BATALKAN
+          </button>
+        ) : null}
+
+        {warnings.length > 0 ? (
+          <div
+            role="status"
+            style={{
+              display: 'grid',
+              gap: '3px',
+              fontSize: '9px',
+              lineHeight: 1.5,
+              color: '#ffb020',
+              border: '1px solid #ffb02055',
+              padding: '6px',
+            }}
+          >
+            <div style={{ letterSpacing: '.12em' }}>FILE AKAN BERBEDA DARI PREVIEW:</div>
+            {warnings.map((w) => (
+              <div key={w}>· {w}</div>
+            ))}
+          </div>
+        ) : null}
 
         {!engine.ready ? (
           <div

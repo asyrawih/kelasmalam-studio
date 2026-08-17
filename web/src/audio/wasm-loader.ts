@@ -43,6 +43,13 @@ export interface WasmBindgenExports {
     targetRate: number,
     peakBucket: number,
   ): ImportedAssetHandle;
+  /**
+   * Model studio (JSON) → snapshot postcard. Pemetaannya ada di Rust karena
+   * tata letak postcard ditentukan definisi tipe Rust — menuliskannya dari TS
+   * berarti menyalinnya dengan tangan dan merusaknya diam-diam saat tipe
+   * Rust-nya berubah.
+   */
+  snapshotFromStudioJson(json: string): StudioSnapshotHandle;
   OfflineRender: OfflineRenderCtor;
   WavEncoderHandle: WavEncoderCtor;
   WavBits: { Pcm16: number; Pcm24: number; Float32: number };
@@ -76,6 +83,29 @@ export interface OfflineRenderHandle {
   outLPtr(): number;
   outRPtr(): number;
   outCapacity(): number;
+  /**
+   * Daftarkan PCM satu asset SEBELUM `render()` pertama. Snapshot hanya
+   * menyebut asset lewat id; tanpa ini setiap clip menunjuk slot kosong dan
+   * hasil render senyap sempurna — tanpa error.
+   *
+   * `data` planar: channel `c` mulai di `c * frames`. Disalin di sisi Rust.
+   */
+  registerAsset(
+    id: number,
+    data: Float32Array,
+    channels: number,
+    frames: number,
+    sampleRate: number,
+  ): void;
+  free(): void;
+}
+
+/** Snapshot postcard hasil pemetaan model studio (`crates/wasm-bridge/src/studio.rs`). */
+export interface StudioSnapshotHandle {
+  bytes(): Uint8Array;
+  /** Selisih preview vs file yang WAJIB ditampilkan. Kosong = identik. */
+  warnings(): string[];
+  clipCount(): number;
   free(): void;
 }
 

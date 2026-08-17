@@ -23,15 +23,21 @@
  * `AudioBuffer` hasil decode bisa dipakai ulang tanpa decode dua kali.
  */
 
-import {
-  DEFAULT_FADE_CURVE,
-  effectiveSpeed,
-  isAudible,
-  type EqSettings,
-  type StudioClip,
-} from '../model';
+import { isAudible } from '../model';
 import type { StudioAppState } from '../store';
-import { fadeCurveArray, fadeOutGain } from '../timeline/fade';
+import {
+  PARAM_RAMP_SEC,
+  buildProjectGraph,
+  dbToLin,
+  type LaneNodes,
+} from './graph-builder';
+
+/**
+ * Perakitan grafnya sendiri TIDAK ada di sini — lihat `graph-builder.ts`.
+ * Modul ini hanya memiliki AudioContext, cache buffer, dan siklus play/stop.
+ * Export offline memakai pembangun graf yang SAMA, dan itu disengaja.
+ */
+export { applyClipGainEnvelope } from './graph-builder';
 
 type AudioCtor = typeof AudioContext;
 
@@ -50,25 +56,7 @@ const buffers = new Map<number, AudioBuffer>();
 let voices: AudioBufferSourceNode[] = [];
 /** Node non-source (gain lane, filter EQ) — perlu di-disconnect saat stop. */
 let nodes: AudioNode[] = [];
-
-/**
- * Node per lane yang masih hidup, supaya EQ dan fader bisa diubah SAAT
- * BERBUNYI tanpa menjadwalkan ulang apa pun.
- *
- * Ini perbedaan penting: posisi clip harus dijadwalkan ulang kalau berubah,
- * tapi EQ dan gain adalah parameter kontinu — memutar ulang seluruh voice
- * hanya untuk menggeser slider akan terdengar sebagai klik dan lompatan.
- */
-interface LaneNodes {
-  /** Satu filter per band, urutan SAMA dengan `lane.eq.bands` — itu yang
-   *  membuat update parameter bisa dilakukan by-index tanpa mencari-cari. */
-  readonly filters: BiquadFilterNode[];
-  readonly gain: GainNode;
-}
 const laneNodes = new Map<string, LaneNodes>();
-
-/** Ramp pendek supaya perubahan parameter tidak menimbulkan klik. */
-const PARAM_RAMP_SEC = 0.02;
 
 /**
  * AudioContext dibuat malas (lazy) karena browser mewajibkan user gesture.
@@ -102,6 +90,20 @@ export function hasBuffer(assetId: number): boolean {
 
 export function getBuffer(assetId: number): AudioBuffer | undefined {
   return buffers.get(assetId);
+}
+
+/** Akses cache PCM untuk konsumen lain (export offline memakai yang SAMA). */
+export function bufferLookup(): (assetId: number) => AudioBuffer | undefined {
+  return (id) => buffers.get(id);
+}
+
+/** Apakah ada minimal satu clip terdengar yang PCM-nya sudah ada. */
+export function hasRenderableAudio(state: StudioAppState): boolean {
+  for (const lane of state.lanes) {
+    if (!isAudible(lane, state.lanes)) continue;
+    for (const c of lane.clips) if (buffers.has(c.assetId)) return true;
+  }
+  return false;
 }
 
 export function isPreviewAvailable(): boolean {
@@ -151,118 +153,9 @@ export function updateLaneParams(state: StudioAppState): void {
 }
 
 /**
- * Rantai EQ parametrik lane: satu BiquadFilterNode per band, dirangkai
- * berurutan lalu masuk ke `output`. Elemen pertama adalah MASUKAN rantai.
- *
- * Band dengan 0 dB tetap dibuat supaya rantainya seragam dan indeksnya cocok
- * satu-satu dengan `lane.eq.bands` — itulah yang membuat `updateLaneParams`
- * cukup mengubah nilai dan tidak pernah menambah/menghapus node.
- */
-function buildEqChain(audio: AudioContext, eq: EqSettings, output: AudioNode): BiquadFilterNode[] {
-  const filters = eq.bands.map((band) => {
-    const f = audio.createBiquadFilter();
-    f.type = band.kind;
-    f.frequency.value = band.freq;
-    f.Q.value = band.q;
-    f.gain.value = band.gainDb;
-    return f;
-  });
-
-  for (let i = 0; i < filters.length; i++) {
-    const next = filters[i + 1] ?? output;
-    filters[i]!.connect(next);
-  }
-  nodes.push(...filters);
-  return filters;
-}
-
-interface EnvelopeTiming {
-  readonly startAt: number;
-  readonly wallDurationSec: number;
-  readonly transportSpeed: number;
-  /** Sudah berapa detik (timeline) clip ini berjalan saat play ditekan. */
-  readonly clipElapsedSec: number;
-}
-
-/** Jumlah titik kurva yang dikirim ke `setValueCurveAtTime`. 128 titik untuk
- *  fade sepanjang detik sudah jauh di bawah ambang terdengarnya tangga. */
-const FADE_CURVE_POINTS = 128;
-
-/**
- * Gain clip + fade in/out sebagai otomasi pada satu GainNode.
- *
- * Kasus yang mudah salah: play ditekan di TENGAH fade-in. Kalau kita selalu
- * mulai dari 0, potongan yang seharusnya sudah keras akan terdengar mengecil
- * lagi. Karena itu kurva yang dijadwalkan adalah POTONGAN SISA-nya
- * (`from = elapsed/fadeIn`), bukan kurva penuh dari nol.
- *
- * Kurvanya dikirim lewat `setValueCurveAtTime`, bukan `linearRampToValueAtTime`:
- * equal-power berbentuk sin/cos dan tidak bisa dinyatakan sebagai ramp lurus
- * sama sekali. Linear pun lewat jalur yang sama supaya hanya ada satu perilaku
- * penjadwalan yang perlu dipahami.
- */
-export function applyClipGainEnvelope(
-  gain: GainNode,
-  clip: StudioClip,
-  t: EnvelopeTiming,
-): void {
-  const target = dbToLin(clip.gainDb);
-  const { startAt, wallDurationSec, transportSpeed, clipElapsedSec } = t;
-  // Durasi fade disimpan di waktu TIMELINE; jadwal Web Audio memakai jam
-  // dinding. Transport 2× membuat fade 4 detik selesai dalam 2 detik nyata.
-  const fadeInSec = clip.fadeInMs / 1000 / transportSpeed;
-  const fadeOutSec = clip.fadeOutMs / 1000 / transportSpeed;
-  const elapsedWall = clipElapsedSec / transportSpeed;
-  const curve = clip.fadeCurve === 'linear' ? 'linear' : DEFAULT_FADE_CURVE;
-
-  gain.gain.cancelScheduledValues(0);
-
-  // ── Fade in ──
-  // Sisa fade-out juga dihitung dulu: kalau fade-in dan fade-out sampai
-  // bersentuhan, jadwal keduanya tidak boleh tumpang tindih — `setValueCurve`
-  // melempar NotSupportedError kalau ada event lain di dalam rentangnya, dan
-  // exception itu akan membunuh penjadwalan clip-clip berikutnya.
-  const outLen = fadeOutSec > 0 ? Math.min(fadeOutSec, wallDurationSec) : 0;
-  const outStart = wallDurationSec > 0 && outLen > 0 ? startAt + (wallDurationSec - outLen) : Infinity;
-
-  const inRemaining = Math.min(fadeInSec - elapsedWall, outStart - startAt);
-  if (fadeInSec > 0 && inRemaining > 0) {
-    const from = Math.max(0, Math.min(1, elapsedWall / fadeInSec));
-    const to = Math.min(1, from + inRemaining / fadeInSec);
-    // TIDAK ada setValueAtTime di titik yang sama: kurva sudah dimulai dari
-    // nilai yang benar, dan event tambahan di `startAt` justru bentrok.
-    gain.gain.setValueCurveAtTime(
-      fadeCurveArray(curve, 'in', target, FADE_CURVE_POINTS, from, to),
-      startAt,
-      inRemaining,
-    );
-  } else {
-    gain.gain.setValueAtTime(target, startAt);
-  }
-
-  // ── Fade out ──
-  if (outLen > 0) {
-    // Fade out bisa SUDAH berjalan saat play ditekan (playhead di dalamnya):
-    // yang dijadwalkan hanya sisanya, mulai dari posisi yang tepat.
-    const from = 1 - outLen / fadeOutSec;
-    if (outStart > startAt && !(fadeInSec > 0 && inRemaining > 0)) {
-      // Tahan nilai penuh sampai fade-out mulai; tanpa ini titik otomasi
-      // terakhir tertarik lebih awal dan seluruh clip ikut meredup.
-      gain.gain.setValueAtTime(target * fadeOutGain(curve, from), outStart - 1e-4);
-    }
-    gain.gain.setValueCurveAtTime(
-      fadeCurveArray(curve, 'out', target, FADE_CURVE_POINTS, from, 1),
-      outStart,
-      outLen,
-    );
-  }
-}
-
-/**
  * Jadwalkan semua clip yang terdengar, relatif terhadap `playhead`.
- *
- * `speed` diterapkan sebagai `playbackRate` DAN sebagai pembagi waktu jadwal:
- * clip yang mulai 10 detik lagi pada speed 2x harus berbunyi 5 detik lagi.
+ * Perakitannya didelegasikan ke `buildProjectGraph` — jalur yang sama persis
+ * dengan yang dipakai export offline.
  */
 export function play(state: StudioAppState): void {
   stop();
@@ -270,80 +163,19 @@ export function play(state: StudioAppState): void {
   if (audio === null) return;
   void audio.resume().catch(() => undefined);
 
-  const sr = state.sampleRate;
-  const speed = state.speed;
-  const now = audio.currentTime + 0.05; // sedikit lookahead supaya start-nya rapi
-  const playheadSec = state.playhead / sr;
+  const graph = buildProjectGraph(audio, state, {
+    playheadSec: state.playhead / state.sampleRate,
+    startAt: audio.currentTime + 0.05, // sedikit lookahead supaya start-nya rapi
+    getBuffer: (id) => buffers.get(id),
+  });
 
-  for (const lane of state.lanes) {
-    if (!isAudible(lane, state.lanes)) continue;
-    // Kecepatan efektif = kecepatan lane × transport (docs/07 §8d).
-    const rate = effectiveSpeed(lane, speed);
-    const laneRatio = lane.speedRatio;
+  nodes = [...graph.nodes];
+  voices = [...graph.voices];
+  for (const [id, ln] of graph.lanes) laneNodes.set(id, ln);
 
-    // RANTAI PER LANE — dibuat sekali, dipakai semua clip di lane ini:
-    //   clip gain (+fade) → EQ band 1..n → lane gain → out
-    // Urutannya mengikuti signal flow docs/07: gain clip dulu, baru insert
-    // (EQ), baru fader lane.
-    const laneGainNode = audio.createGain();
-    laneGainNode.gain.value = dbToLin(lane.gainDb);
-    const filters = buildEqChain(audio, lane.eq, laneGainNode);
-    laneGainNode.connect(audio.destination);
-    nodes.push(laneGainNode);
-    laneNodes.set(lane.id, { filters, gain: laneGainNode });
-    // Lane tanpa band sama sekali tetap harus berbunyi: masuk langsung ke fader.
-    const eqInput: AudioNode = filters[0] ?? laneGainNode;
-
-    for (const clip of lane.clips) {
-      const buffer = buffers.get(clip.assetId);
-      if (buffer === undefined) continue; // clip demo tanpa PCM asli — dilewati
-
-      const clipStartSec = clip.start / sr;
-      const clipEndSec = (clip.start + clip.len) / sr;
-      if (clipEndSec <= playheadSec) continue; // sudah lewat
-
-      // Offset di dalam source kalau playhead jatuh di tengah clip.
-      // KONVERSI RUANG: `intoClipSec` diukur di TIMELINE, tapi `offset` dan
-      // `duration` milik AudioBufferSourceNode diukur di SOURCE (waktu buffer).
-      // Clip 2× lebih cepat berarti tiap detik timeline memakan dua detik
-      // source — mengabaikan ini membuat clip mulai dari titik yang salah dan
-      // berhenti terlalu cepat/lambat.
-      const intoClipSec = Math.max(0, playheadSec - clipStartSec);
-      const offsetSec = clip.sourceStart / sr + intoClipSec * laneRatio;
-      const remainingTimelineSec = clipEndSec - Math.max(playheadSec, clipStartSec);
-      if (remainingTimelineSec <= 0) continue;
-      const remainingSec = remainingTimelineSec * laneRatio;
-
-      const whenSec = now + Math.max(0, clipStartSec - playheadSec) / speed;
-
-      const src = audio.createBufferSource();
-      src.buffer = buffer;
-      src.playbackRate.value = rate;
-
-      const gain = audio.createGain();
-      applyClipGainEnvelope(gain, clip, {
-        startAt: whenSec,
-        // Durasi di JAM DINDING, bukan timeline: transport 2× membuat clip
-        // 10 detik selesai dalam 5 detik nyata, jadi fade-nya juga separuh.
-        wallDurationSec: remainingTimelineSec / speed,
-        transportSpeed: speed,
-        clipElapsedSec: intoClipSec,
-      });
-
-      src.connect(gain).connect(eqInput);
-      try {
-        src.start(whenSec, offsetSec, remainingSec);
-      } catch {
-        continue; // offset di luar buffer — lewati, jangan bunuh playback lain
-      }
-      src.onended = () => {
-        voices = voices.filter((v) => v !== src);
-      };
-      voices.push(src);
-    }
+  for (const src of voices) {
+    src.onended = () => {
+      voices = voices.filter((v) => v !== src);
+    };
   }
-}
-
-function dbToLin(db: number): number {
-  return db <= -60 ? 0 : 10 ** (db / 20);
 }

@@ -383,6 +383,7 @@ dependencies = [
  "daw-dsp",
  "daw-rt",
  "daw-timeline",
+ "libm",
  "postcard",
  "serde",
 ]
@@ -429,6 +430,8 @@ dependencies = [
  "daw-export",
  "daw-rt",
  "daw-timeline",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
 ]
 

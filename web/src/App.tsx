@@ -16,7 +16,9 @@ import { useEffect } from 'react';
 import { StudioRail } from './studio/rail';
 import { ReadoutStrip, StudioHeader, StudioLayout } from './studio/shell';
 import { ReorderableStack } from './studio/shell/ReorderableStack';
-import { studioActions, useStudio } from './studio/store';
+import { studioActions, studioStore, useStudio } from './studio/store';
+import { registerExportHost } from './studio/rail/export-bridge';
+import { bufferLookup } from './studio/preview/audio-preview';
 import { ClipDetailPanel, TimelinePanel } from './studio/timeline';
 import { usePersistence } from './studio/persist/usePersistence';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
@@ -40,6 +42,16 @@ const TICK_MS = 60;
 export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element {
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
+  // Sambungkan rail ke project + cache PCM. Cache-nya SAMA dengan yang dipakai
+  // preview: kalau export punya cache sendiri, apa yang didengar dan apa yang
+  // ditulis ke file bisa berasal dari audio yang berbeda.
+  useEffect(() => {
+    registerExportHost({
+      state: () => studioStore.getState(),
+      getBuffer: bufferLookup(),
+    });
+    return () => registerExportHost(null);
+  }, []);
   // Pulihkan project tersimpan + nyalakan autosave.
   usePersistence(useStudio((s) => s.sampleRate));
   const hasSelection = useStudio((s) => s.selectedClipId !== null);

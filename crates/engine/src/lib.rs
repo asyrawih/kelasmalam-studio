@@ -483,6 +483,7 @@ impl Engine {
                     gain_db: c.gain_db,
                     fade_in: c.fade_in,
                     fade_out: c.fade_out,
+                    fade_curve: c.fade_curve,
                     speed: c.speed,
                 });
             }
@@ -531,6 +532,7 @@ impl Engine {
                 gain_db: c.gain_db,
                 fade_in: c.fade_in,
                 fade_out: c.fade_out,
+                fade_curve: c.fade_curve,
                 speed: c.speed,
             });
         }
@@ -618,6 +620,7 @@ impl Engine {
                         gain_db: c.gain_db,
                         fade_in: c.fade_in,
                         fade_out: c.fade_out,
+                        fade_curve: c.fade_curve,
                         speed: c.speed,
                     });
                 }

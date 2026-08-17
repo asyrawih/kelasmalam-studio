@@ -148,10 +148,22 @@ pub struct ClipDesc {
     /// micro-fade 2–5 ms di kedua tepi meskipun nilainya 0.
     pub fade_in: u64,
     pub fade_out: u64,
+    /// Bentuk kurva untuk KEDUA fade clip: 0 = linear, 1 = equal-power
+    /// (`sin(t·π/2)`). Bukan kosmetik — dua fade linear yang saling silang
+    /// menjumlahkan amplitudo, dan karena loudness mengikuti DAYA, di tengah
+    /// transisi dayanya jadi 2×0.5² = 0.5 (turun ~3 dB) dan terdengar melubang.
+    /// UI menjadikan equal-power default untuk clip baru, jadi engine harus
+    /// bisa menyatakannya — kalau tidak, file hasil export akan berbeda dari
+    /// yang didengar user tepat di titik yang paling diperhatikannya.
+    pub fade_curve: u8,
     /// Rasio baca source per sample timeline (1.0 = normal). Resampling
     /// memakai cubic Hermite (daw_dsp::hermite4).
     pub speed: f64,
 }
+
+/// Nilai sah untuk [`ClipDesc::fade_curve`].
+pub const FADE_LINEAR: u8 = 0;
+pub const FADE_EQUAL_POWER: u8 = 1;
 
 impl Default for ClipDesc {
     fn default() -> Self {
@@ -164,6 +176,7 @@ impl Default for ClipDesc {
             gain_db: 0.0,
             fade_in: 0,
             fade_out: 0,
+            fade_curve: FADE_LINEAR,
             speed: 1.0,
         }
     }

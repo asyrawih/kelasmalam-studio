@@ -59,10 +59,19 @@ RUSTFLAGS_ST="-C target-feature=+bulk-memory,+mutable-globals,+simd128"
 
 BUILD_STD_ARGS=(-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort)
 
-WASM_OPT_ARGS_MT=(-O4 --enable-simd --enable-threads --enable-bulk-memory
-                  --enable-mutable-globals --strip-debug --strip-producers --strip-dwarf)
-WASM_OPT_ARGS_ST=(-O4 --enable-simd --enable-bulk-memory
-                  --enable-mutable-globals --strip-debug --strip-producers --strip-dwarf)
+# `-all` = izinkan SEMUA fitur wasm saat validasi/optimasi.
+#
+# Kenapa bukan daftar fitur eksplisit: rustc terus menambah fitur yang
+# di-emit secara default (yang menjatuhkan build ini: `nontrapping-float-to-int`
+# dari `i64.trunc_sat_f64_u`, dipakai konversi f64→u64 biasa). Mendaftar fitur
+# satu per satu berarti build ini rusak lagi setiap kali toolchain naik, dengan
+# pesan error yang tidak menyebut penyebabnya. `-all` hanya mengizinkan
+# wasm-opt MEMBACA fitur tersebut; ia tidak membuat output memakai fitur yang
+# tidak ada di input.
+WASM_OPT_ARGS_MT=(-O4 -all --enable-threads
+                  --strip-debug --strip-producers --strip-dwarf)
+WASM_OPT_ARGS_ST=(-O4 -all --disable-threads
+                  --strip-debug --strip-producers --strip-dwarf)
 
 # build_variant <nama> <outdir> <rustflags> <wasm-opt args...>
 build_variant() {

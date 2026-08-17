@@ -16,10 +16,37 @@ use alloc::vec::Vec;
 
 use daw_dsp::{db_to_lin, hermite4};
 
+use crate::snapshot::{FADE_EQUAL_POWER, FADE_LINEAR};
+
 /// Panjang micro-fade default (ms). Spesifikasi: 2–5 ms.
 pub const MICRO_FADE_MS: f32 = 3.0;
+
 /// Fade-out saat voice dicuri / transport berhenti / loop wrap (ms).
 pub const STEAL_FADE_MS: f32 = 2.0;
+
+/// Gain fade pada posisi `t` (0 = sunyi, 1 = penuh) untuk kurva `curve`.
+///
+/// Rumusnya WAJIB sama persis dengan `fadeInGain` di
+/// `web/src/studio/timeline/fade.ts` — kalau tidak, transisi yang didengar user
+/// di preview dan yang tertulis ke file akan berbeda. Ujung-ujungnya dijepit
+/// EKSPLISIT ke 0 dan 1: `sinf` yang meleset satu ULP di t=1 menjadi ekor yang
+/// tidak pernah benar-benar diam.
+#[inline]
+pub fn fade_gain(curve: u8, t: f32) -> f32 {
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t >= 1.0 {
+        return 1.0;
+    }
+    if curve == FADE_EQUAL_POWER {
+        // sinf dipanggil hanya SELAMA fade (beberapa ms per tepi clip), bukan
+        // sepanjang clip — biayanya tidak terasa di anggaran blok.
+        libm::sinf(t * core::f32::consts::FRAC_PI_2)
+    } else {
+        t
+    }
+}
 
 /// Asset PCM. Read-only di jalur RT; datanya hidup di shared linear memory dan
 /// dibagi antara worklet dan worker export tanpa disalin (docs/03 §3a).
@@ -106,6 +133,8 @@ pub struct VoiceStart {
     pub gain_db: f32,
     pub fade_in: u64,
     pub fade_out: u64,
+    /// 0 = linear, 1 = equal-power. Lihat `ClipDesc::fade_curve`.
+    pub fade_curve: u8,
     pub speed: f64,
 }
 
@@ -130,6 +159,7 @@ pub struct Voice {
     played: u64,
     fade_in: u64,
     fade_out: u64,
+    fade_curve: u8,
     /// Sisa sample fade-out paksa (steal/stop/loop).
     kill_remaining: u32,
     kill_len: u32,
@@ -155,6 +185,7 @@ impl Voice {
             played: 0,
             fade_in: 0,
             fade_out: 0,
+            fade_curve: FADE_LINEAR,
             kill_remaining: 0,
             kill_len: 0,
             pending: None,
@@ -180,6 +211,7 @@ impl Voice {
         // Micro-fade WAJIB: fade user boleh 0, engine tetap memasang 2–5 ms.
         self.fade_in = s.fade_in.max(micro);
         self.fade_out = s.fade_out.max(micro);
+        self.fade_curve = s.fade_curve;
         self.kill_remaining = 0;
         self.kill_len = 0;
         self.pending = None;
@@ -197,11 +229,11 @@ impl Voice {
     fn clip_env(&self, played: u64) -> f32 {
         let mut e = 1.0f32;
         if played < self.fade_in {
-            e *= played as f32 / self.fade_in as f32;
+            e *= fade_gain(self.fade_curve, played as f32 / self.fade_in as f32);
         }
         let to_end = self.total_len.saturating_sub(played);
         if to_end < self.fade_out && self.fade_out > 0 {
-            e *= to_end as f32 / self.fade_out as f32;
+            e *= fade_gain(self.fade_curve, to_end as f32 / self.fade_out as f32);
         }
         e
     }
@@ -507,11 +539,77 @@ mod tests {
             gain_db: 0.0,
             fade_in: 0,
             fade_out: 0,
+            fade_curve: 0,
             speed: 1.0,
         });
         let v = &p.voices[p.active[0] as usize];
         assert_eq!(v.fade_in, (MICRO_FADE_MS * 0.001 * 48_000.0) as u64);
         assert_eq!(v.fade_out, v.fade_in);
+    }
+
+    /// Equal-power ADA supaya dua fade yang saling silang menjaga daya total
+    /// tetap 1. Kalau ini pecah, transisi lagu hasil export akan melubang di
+    /// tengah persis seperti fade linear — bug yang cuma terdengar, tidak
+    /// terlihat di mana pun.
+    #[test]
+    fn equal_power_fade_keeps_total_power_constant() {
+        for i in 0..=100 {
+            let t = i as f32 / 100.0;
+            let in_g = fade_gain(FADE_EQUAL_POWER, t);
+            let out_g = fade_gain(FADE_EQUAL_POWER, 1.0 - t);
+            assert!(
+                (in_g * in_g + out_g * out_g - 1.0).abs() < 1e-4,
+                "t={t} in={in_g} out={out_g}"
+            );
+        }
+        // Linear justru TIDAK konstan — itulah alasan kedua kurva ada.
+        let mid = fade_gain(FADE_LINEAR, 0.5);
+        assert!((2.0 * mid * mid - 0.5).abs() < 1e-6);
+    }
+
+    /// Ujung fade harus TEPAT 0 dan 1 untuk kedua kurva: nilai "hampir nol" di
+    /// akhir fade-out terdengar sebagai ekor yang tidak pernah diam.
+    #[test]
+    fn fade_endpoints_are_exact() {
+        for curve in [FADE_LINEAR, FADE_EQUAL_POWER] {
+            assert_eq!(fade_gain(curve, 0.0), 0.0);
+            assert_eq!(fade_gain(curve, 1.0), 1.0);
+            assert_eq!(fade_gain(curve, -0.5), 0.0);
+            assert_eq!(fade_gain(curve, 2.0), 1.0);
+        }
+    }
+
+    /// Amplop equal-power harus di ATAS linear di tengah fade — kalau kurva
+    /// tidak benar-benar terpasang di voice, keduanya akan sama persis.
+    #[test]
+    fn voice_applies_the_curve_it_was_given() {
+        let mut lin = Voice::idle();
+        let mut eqp = Voice::idle();
+        let start = VoiceStart {
+            track: 0,
+            asset: 0,
+            source_offset: 0,
+            remaining: 48_000,
+            total_len: 48_000,
+            played: 0,
+            gain_db: 0.0,
+            fade_in: 24_000,
+            fade_out: 0,
+            fade_curve: FADE_LINEAR,
+            speed: 1.0,
+        };
+        lin.start(&start, 0, 0);
+        eqp.start(
+            &VoiceStart {
+                fade_curve: FADE_EQUAL_POWER,
+                ..start
+            },
+            0,
+            0,
+        );
+        let (a, b) = (lin.clip_env(12_000), eqp.clip_env(12_000));
+        assert!((a - 0.5).abs() < 1e-6, "linear di tengah fade = 0.5, dapat {a}");
+        assert!((b - core::f32::consts::FRAC_1_SQRT_2).abs() < 1e-4, "equal-power = 1/√2, dapat {b}");
     }
 
     #[test]
@@ -527,6 +625,7 @@ mod tests {
             gain_db: 0.0,
             fade_in: 0,
             fade_out: 0,
+            fade_curve: 0,
             speed: 1.0,
         };
         for _ in 0..10 {

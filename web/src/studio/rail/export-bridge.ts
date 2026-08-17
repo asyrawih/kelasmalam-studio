@@ -1,34 +1,33 @@
 /**
  * Jembatan rail → pipeline export (docs/03 §3a, §3d).
  *
- * Jalur nyatanya: snapshot project (postcard, dihasilkan Rust) →
- * `EngineClient.startExport()` → `audio/export-worker.ts` (engine KEDUA) →
- * `encoders/` → `downloadBlob()`.
+ * Jalur nyatanya, dan inilah bayaran dari seluruh arsitektur: model studio →
+ * `snapshotFromStudioJson` (Rust) → `OfflineRender` yang memanggil
+ * `Engine::render_block` YANG SAMA dengan playback → `encoders/` →
+ * `downloadBlob()`. Tidak ada `OfflineAudioContext`, tidak ada jalur DSP kedua.
  *
- * Dua prasyarat BELUM ada di repo:
- *   1. artefak WASM belum dibangun → `loadWasm()` gagal;
- *   2. tanpa engine tidak ada snapshot project untuk dikirim ke worker.
- *
- * Karena itu rail mendeteksinya dan me-*disable* tombol COMPILE dengan alasan
- * jujur. Tidak ada animasi progress palsu.
- *
- * Untuk mengaktifkannya nanti, shell cukup memanggil `registerExportHost({...})`
- * satu kali; tidak ada komponen rail yang perlu berubah.
+ * Yang tersisa sebagai prasyarat cuma satu: artefak WASM harus sudah dibangun.
+ * Kalau belum, `loadWasm()` gagal dan tombol COMPILE di-*disable* dengan alasan
+ * jujur — tidak ada animasi progress palsu.
  */
 
 import { useEffect, useState } from 'react';
-import type { ExportProgress, ExportRequest } from '../../audio/engine-client';
-import { downloadBlob, pickSaveLocation } from '../../encoders';
+import { createEncoder, downloadBlob, pickSaveLocation } from '../../encoders';
+import { loadWasm, type LoadedWasm } from '../../audio/wasm-loader';
+import { buildExportPayload, type BufferLookup } from '../export/payload';
+import { ExportCancelled, runExport, type ExportEncoder } from '../export/run-export';
+import { createWasmExportEngine } from '../export/wasm-engine';
+import type { StudioState } from '../model';
 
-/** Yang harus disediakan shell begitu engine hidup. */
+/**
+ * Yang harus disediakan shell begitu engine hidup: state project saat ini dan
+ * cara mendapatkan PCM-nya. PCM diambil dari cache yang SAMA dengan preview
+ * (`audio-preview.bufferLookup()`) — kalau export punya cache sendiri, apa yang
+ * didengar dan apa yang ditulis bisa berasal dari audio yang berbeda.
+ */
 export interface ExportHost {
-  /** Snapshot postcard project saat ini. */
-  snapshot(): Uint8Array;
-  sampleRate: number;
-  startExport(
-    req: ExportRequest,
-    onProgress?: (p: ExportProgress) => void,
-  ): { cancel(): void; readonly done: Promise<Blob | null> };
+  state(): StudioState;
+  getBuffer: BufferLookup;
 }
 
 let host: ExportHost | null = null;
@@ -47,10 +46,12 @@ export interface ExportAvailability {
 
 const NO_WASM =
   'Engine belum dibangun (artefak WASM tidak ada). Export akan aktif setelah engine di-build.';
-const NO_HOST = 'Engine belum terhubung ke rail — tidak ada snapshot project untuk di-render.';
+const NO_HOST = 'Engine belum terhubung ke rail — tidak ada project untuk di-render.';
+
+let wasmCache: LoadedWasm | null = null;
 
 export function useExportAvailability(): ExportAvailability {
-  const [wasmOk, setWasmOk] = useState(false);
+  const [wasmOk, setWasmOk] = useState(wasmCache !== null);
   const [hasHost, setHasHost] = useState(host !== null);
 
   useEffect(() => {
@@ -65,8 +66,8 @@ export function useExportAvailability(): ExportAvailability {
     let alive = true;
     void (async () => {
       try {
-        const mod = await import('../../audio/wasm-loader');
-        await mod.loadWasm();
+        const w = await loadWasm();
+        wasmCache = w;
         if (alive) setWasmOk(true);
       } catch {
         // Gagal memuat = engine memang belum ada.
@@ -86,10 +87,28 @@ export function useExportAvailability(): ExportAvailability {
 export interface CompileParams {
   format: 'wav' | 'mp3';
   fileName: string;
-  endSample: number;
+  /** WAV: kedalaman bit. Diabaikan untuk MP3. */
+  bitDepth?: 16 | 24 | 32;
   /** MP3 kbps; diabaikan untuk WAV. */
   quality?: number;
   onProgress?: (fraction01: number | null) => void;
+  /** Selisih preview vs file — UI WAJIB menampilkannya. */
+  onWarnings?: (warnings: readonly string[]) => void;
+  /** Dicek sekali per batch. */
+  isCancelled?: () => boolean;
+}
+
+/**
+ * Tulis ke lokasi yang dipilih user. Kalau gagal di tengah jalan (disk penuh,
+ * izin dicabut), error-nya dibiarkan naik: file separuh jadi di disk yang
+ * dilaporkan sebagai sukses jauh lebih buruk daripada pesan error.
+ */
+async function writeToDisk(handle: FileSystemFileHandle, blob: Blob): Promise<void> {
+  const writable = await (
+    handle as unknown as { createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> }
+  ).createWritable();
+  await writable.write(blob);
+  await writable.close();
 }
 
 /**
@@ -98,33 +117,46 @@ export interface CompileParams {
  */
 export async function runCompile(p: CompileParams): Promise<void> {
   if (!host) throw new Error(NO_HOST);
+  const wasm = wasmCache ?? (await loadWasm());
+  wasmCache = wasm;
+
+  const state = host.state();
+  const payload = buildExportPayload(state, host.getBuffer);
+  if (payload.endSample <= 0 || payload.assets.length === 0) {
+    throw new Error('Tidak ada clip dengan audio untuk di-render.');
+  }
+
   const ext = p.format;
   const mime = p.format === 'wav' ? 'audio/wav' : 'audio/mpeg';
   const fileName = `${p.fileName}.${ext}`;
+  // Picker DULU, sebelum render: ia butuh user gesture, dan gesture-nya hilang
+  // begitu kita menunggu batch pertama. `null` = browser tanpa File System
+  // Access API (atau user batal) → jalur anchor+Blob.
   const fileHandle = await pickSaveLocation(fileName, mime, ext);
 
-  const req: ExportRequest = {
-    snapshot: host.snapshot(),
-    startSample: 0,
-    endSample: p.endSample,
-    format: p.format,
-    fileName,
-    ...(p.format === 'wav' ? { bitDepth: 16 as const } : { quality: p.quality ?? 192 }),
-    ...(fileHandle ? { fileHandle } : {}),
-  };
-
-  const session = host.startExport(req, (prog: ExportProgress) => {
-    if (prog.stage === 'done' || prog.stage === 'cancelled' || prog.stage === 'error') {
-      p.onProgress?.(null);
-      return;
-    }
-    p.onProgress?.(prog.total > 0 ? Math.min(1, prog.rendered / prog.total) : 0);
+  const encoder = createEncoder(p.format, wasm.exports) as unknown as ExportEncoder;
+  await encoder.init({
+    sampleRate: state.sampleRate,
+    channels: 2,
+    bitDepth: p.bitDepth ?? 16,
+    quality: p.quality,
   });
 
   try {
-    const blob = await session.done;
-    // `null` = sudah ditulis langsung ke disk lewat File System Access API.
-    if (blob) downloadBlob(blob, fileName);
+    const result = await runExport({
+      payload,
+      sampleRate: state.sampleRate,
+      engine: createWasmExportEngine(wasm),
+      encoder,
+      onProgress: p.onProgress,
+      onWarnings: p.onWarnings,
+      isCancelled: p.isCancelled,
+    });
+    if (fileHandle) await writeToDisk(fileHandle, result.blob);
+    else downloadBlob(result.blob, fileName);
+  } catch (e) {
+    // Batal bukan kegagalan — jangan tampilkan sebagai error merah.
+    if (!(e instanceof ExportCancelled)) throw e;
   } finally {
     p.onProgress?.(null);
   }

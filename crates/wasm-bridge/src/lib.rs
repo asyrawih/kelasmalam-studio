@@ -24,6 +24,7 @@
 
 pub mod bindgen;
 pub mod raw;
+pub mod studio;
 
 /// Versi ABI antara JS dan WASM. Dinaikkan setiap kali tanda tangan fungsi di
 /// [`raw`] atau layout SAB berubah. JS memverifikasinya saat load

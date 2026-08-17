@@ -19,6 +19,8 @@ daw-rt       = { workspace = true }
 daw-timeline = { workspace = true }
 daw-engine   = { workspace = true }
 daw-export   = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen             = { workspace = true }
