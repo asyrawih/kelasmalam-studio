@@ -370,7 +370,12 @@ mod tests {
             scalar_impl::add_scaled_ramp(&mut a, &src, 0.25, 0.9);
             add_scaled_ramp(&mut b, &src, 0.25, 0.9);
             for i in 0..n {
-                assert!((a[i] - b[i]).abs() < 1e-5, "n={n} i={i}: {} vs {}", a[i], b[i]);
+                assert!(
+                    (a[i] - b[i]).abs() < 1e-5,
+                    "n={n} i={i}: {} vs {}",
+                    a[i],
+                    b[i]
+                );
             }
         }
     }

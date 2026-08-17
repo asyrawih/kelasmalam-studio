@@ -147,8 +147,18 @@ fn null_test_block_size_invariance_with_fx() {
     let (a_l, a_r) = render_all(&mut build(8, true, true, 1024), total, 128);
     let (b_l, b_r) = render_all(&mut build(8, true, true, 1024), total, 1024);
     for i in 0..total {
-        assert!((a_l[i] - b_l[i]).abs() < 1e-6, "L @{i}: {} {}", a_l[i], b_l[i]);
-        assert!((a_r[i] - b_r[i]).abs() < 1e-6, "R @{i}: {} {}", a_r[i], b_r[i]);
+        assert!(
+            (a_l[i] - b_l[i]).abs() < 1e-6,
+            "L @{i}: {} {}",
+            a_l[i],
+            b_l[i]
+        );
+        assert!(
+            (a_r[i] - b_r[i]).abs() < 1e-6,
+            "R @{i}: {} {}",
+            a_r[i],
+            b_r[i]
+        );
     }
 }
 

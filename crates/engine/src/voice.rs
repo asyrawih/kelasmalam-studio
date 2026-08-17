@@ -608,8 +608,14 @@ mod tests {
             0,
         );
         let (a, b) = (lin.clip_env(12_000), eqp.clip_env(12_000));
-        assert!((a - 0.5).abs() < 1e-6, "linear di tengah fade = 0.5, dapat {a}");
-        assert!((b - core::f32::consts::FRAC_1_SQRT_2).abs() < 1e-4, "equal-power = 1/√2, dapat {b}");
+        assert!(
+            (a - 0.5).abs() < 1e-6,
+            "linear di tengah fade = 0.5, dapat {a}"
+        );
+        assert!(
+            (b - core::f32::consts::FRAC_1_SQRT_2).abs() < 1e-4,
+            "equal-power = 1/√2, dapat {b}"
+        );
     }
 
     #[test]

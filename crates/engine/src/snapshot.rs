@@ -226,7 +226,10 @@ mod tests {
         p.tracks.push(TrackDesc {
             gain_db: -3.0,
             pan: 0.25,
-            sends: alloc::vec![SendDesc { bus: 0, amount: 0.5 }],
+            sends: alloc::vec![SendDesc {
+                bus: 0,
+                amount: 0.5
+            }],
             ..Default::default()
         });
         p.clips.push(ClipDesc {

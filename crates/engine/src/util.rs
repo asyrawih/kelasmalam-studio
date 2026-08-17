@@ -30,7 +30,10 @@ mod tests {
             let x = i as f32 * 0.01;
             let got = sqrt(x);
             let want = x.sqrt();
-            assert!((got - want).abs() <= 1e-5 * (1.0 + want), "x={x} {got} {want}");
+            assert!(
+                (got - want).abs() <= 1e-5 * (1.0 + want),
+                "x={x} {got} {want}"
+            );
         }
         assert_eq!(sqrt(0.0), 0.0);
         assert_eq!(sqrt(-1.0), 0.0);

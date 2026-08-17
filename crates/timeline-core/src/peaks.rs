@@ -118,7 +118,10 @@ pub fn build_pyramid(pcm: &[f32]) -> Pyramid {
     let n0 = pcm.len().div_ceil(s0);
     let mut b0: Vec<MinMax> = Vec::with_capacity(n0);
     for chunk in pcm.chunks(s0) {
-        let mut mm = MinMax { min: f32::INFINITY, max: f32::NEG_INFINITY };
+        let mut mm = MinMax {
+            min: f32::INFINITY,
+            max: f32::NEG_INFINITY,
+        };
         for &v in chunk {
             // Perbandingan manual, bukan f32::min/max: `min`/`max` bukan bagian
             // dari `core` (no_std), dan versi manual ini juga lebih cepat karena
@@ -132,7 +135,10 @@ pub fn build_pyramid(pcm: &[f32]) -> Pyramid {
         }
         b0.push(sanitize(mm));
     }
-    levels.push(Level { stride: LEVEL_STRIDES[0], buckets: b0 });
+    levels.push(Level {
+        stride: LEVEL_STRIDES[0],
+        buckets: b0,
+    });
 
     // --- level 1..n: dibangun dari level sebelumnya ---
     for li in 1..LEVEL_STRIDES.len() {
@@ -146,10 +152,16 @@ pub fn build_pyramid(pcm: &[f32]) -> Pyramid {
             }
             cur.push(mm);
         }
-        levels.push(Level { stride: LEVEL_STRIDES[li], buckets: cur });
+        levels.push(Level {
+            stride: LEVEL_STRIDES[li],
+            buckets: cur,
+        });
     }
 
-    Pyramid { source_frames: pcm.len() as u64, levels }
+    Pyramid {
+        source_frames: pcm.len() as u64,
+        levels,
+    }
 }
 
 #[inline]
@@ -166,7 +178,10 @@ fn sanitize(mm: MinMax) -> MinMax {
 impl Pyramid {
     /// Perkiraan memori pyramid dalam byte — dipakai budget asset pool.
     pub fn bytes(&self) -> usize {
-        self.levels.iter().map(|l| l.buckets.len() * core::mem::size_of::<MinMax>()).sum()
+        self.levels
+            .iter()
+            .map(|l| l.buckets.len() * core::mem::size_of::<MinMax>())
+            .sum()
     }
 
     /// Pilih level terbaik untuk `samples_per_px`: level dengan stride terbesar
@@ -277,7 +292,10 @@ mod tests {
         if from >= to {
             return MinMax::EMPTY;
         }
-        let mut mm = MinMax { min: f32::INFINITY, max: f32::NEG_INFINITY };
+        let mut mm = MinMax {
+            min: f32::INFINITY,
+            max: f32::NEG_INFINITY,
+        };
         for &v in &pcm[from..to] {
             if v < mm.min {
                 mm.min = v;
@@ -298,8 +316,14 @@ mod tests {
         let p = build_pyramid(&ramp(100_000));
         assert_eq!(p.levels.len(), 3);
         assert_eq!(p.levels[0].buckets.len(), 100_000usize.div_ceil(64));
-        assert_eq!(p.levels[1].buckets.len(), p.levels[0].buckets.len().div_ceil(8));
-        assert_eq!(p.levels[2].buckets.len(), p.levels[1].buckets.len().div_ceil(8));
+        assert_eq!(
+            p.levels[1].buckets.len(),
+            p.levels[0].buckets.len().div_ceil(8)
+        );
+        assert_eq!(
+            p.levels[2].buckets.len(),
+            p.levels[1].buckets.len().div_ceil(8)
+        );
     }
 
     #[test]
@@ -338,7 +362,12 @@ mod tests {
         };
         assert_eq!(g.timeline_len(), 200_000);
         let mut out = vec![MinMax::EMPTY; 100];
-        p.read_clip_range(&g, TimelineSample::new(0), TimelineSample::new(200_000), &mut out);
+        p.read_clip_range(
+            &g,
+            TimelineSample::new(0),
+            TimelineSample::new(200_000),
+            &mut out,
+        );
         // Harus setara membaca SELURUH source di 100 kolom.
         let direct = p.read_range(SourceSample::new(0), SourceSample::new(400_000), 100);
         assert_eq!(out, direct);
@@ -347,10 +376,15 @@ mod tests {
     #[test]
     fn empty_and_out_of_bounds_are_safe() {
         let p = build_pyramid(&ramp(1000));
-        assert_eq!(p.read_range(SourceSample::new(500), SourceSample::new(500), 4), vec![MinMax::EMPTY; 4]);
+        assert_eq!(
+            p.read_range(SourceSample::new(500), SourceSample::new(500), 4),
+            vec![MinMax::EMPTY; 4]
+        );
         let r = p.read_range(SourceSample::new(900), SourceSample::new(99_999), 8);
         assert_eq!(r.len(), 8);
-        assert!(p.read_range(SourceSample::new(0), SourceSample::new(1000), 0).is_empty());
+        assert!(p
+            .read_range(SourceSample::new(0), SourceSample::new(1000), 0)
+            .is_empty());
     }
 
     #[test]
@@ -358,7 +392,10 @@ mod tests {
         let mut pcm = ramp(1000);
         pcm[10] = f32::NAN;
         let p = build_pyramid(&pcm);
-        assert!(p.levels[0].buckets.iter().all(|b| b.min.is_finite() && b.max.is_finite()));
+        assert!(p.levels[0]
+            .buckets
+            .iter()
+            .all(|b| b.min.is_finite() && b.max.is_finite()));
     }
 
     proptest! {

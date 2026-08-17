@@ -111,20 +111,39 @@ pub fn build_plan(p: &Project, generation: u32) -> Result<ProcessPlan, PlanError
         next_vbuf += 1;
 
         steps.push(Step::ClearBuf { buf: vt });
-        steps.push(Step::RenderClips { track: unit, dst: vt });
+        steps.push(Step::RenderClips {
+            track: unit,
+            dst: vt,
+        });
         if t.eq.iter().any(|b| b.enabled) {
-            steps.push(Step::Fx { node: eq_node(unit), buf: vt });
+            steps.push(Step::Fx {
+                node: eq_node(unit),
+                buf: vt,
+            });
         }
         if t.comp.enabled {
-            steps.push(Step::Fx { node: comp_node(unit), buf: vt });
+            steps.push(Step::Fx {
+                node: comp_node(unit),
+                buf: vt,
+            });
         }
-        steps.push(Step::Fader { track: unit, buf: vt });
+        steps.push(Step::Fader {
+            track: unit,
+            buf: vt,
+        });
         // Meter track = post-fader, pre-pan (itu yang dilihat user di channel strip).
-        steps.push(Step::Meter { slot: unit, buf: vt });
+        steps.push(Step::Meter {
+            slot: unit,
+            buf: vt,
+        });
 
         if audible {
             let dst = t.dest_bus.min((n_buses.saturating_sub(1)) as u16);
-            steps.push(Step::PanAdd { src: vt, dst, pan: unit });
+            steps.push(Step::PanAdd {
+                src: vt,
+                dst,
+                pan: unit,
+            });
             // Send POST-fader: dibaca dari buffer track yang sudah ter-fader,
             // sebelum buffer itu dipakai ulang track berikutnya.
             for (si, s) in t.sends.iter().take(MAX_SENDS).enumerate() {
@@ -147,27 +166,52 @@ pub fn build_plan(p: &Project, generation: u32) -> Result<ProcessPlan, PlanError
         let bd = &p.buses[b as usize];
         let unit = bus_unit(b as usize);
         if bd.eq.iter().any(|x| x.enabled) {
-            steps.push(Step::Fx { node: eq_node(unit), buf: b });
+            steps.push(Step::Fx {
+                node: eq_node(unit),
+                buf: b,
+            });
         }
         if bd.comp.enabled {
-            steps.push(Step::Fx { node: comp_node(unit), buf: b });
+            steps.push(Step::Fx {
+                node: comp_node(unit),
+                buf: b,
+            });
         }
-        steps.push(Step::Fader { track: unit, buf: b });
+        steps.push(Step::Fader {
+            track: unit,
+            buf: b,
+        });
         let dst = bd.dest.unwrap_or(master);
-        steps.push(Step::PanAdd { src: b, dst, pan: unit });
+        steps.push(Step::PanAdd {
+            src: b,
+            dst,
+            pan: unit,
+        });
     }
 
     // 4. Master chain.
     let md = &p.buses[master as usize];
     let munit = bus_unit(master as usize);
     if md.eq.iter().any(|x| x.enabled) {
-        steps.push(Step::Fx { node: eq_node(munit), buf: master });
+        steps.push(Step::Fx {
+            node: eq_node(munit),
+            buf: master,
+        });
     }
     if md.comp.enabled {
-        steps.push(Step::Fx { node: comp_node(munit), buf: master });
+        steps.push(Step::Fx {
+            node: comp_node(munit),
+            buf: master,
+        });
     }
-    steps.push(Step::Fader { track: munit, buf: master });
-    steps.push(Step::Meter { slot: MASTER_METER_SLOT, buf: master });
+    steps.push(Step::Fader {
+        track: munit,
+        buf: master,
+    });
+    steps.push(Step::Meter {
+        slot: MASTER_METER_SLOT,
+        buf: master,
+    });
 
     // 5. Alokasi buffer fisik (linear scan) + remap in-place.
     let mut steps = steps;
@@ -206,8 +250,14 @@ mod tests {
         };
         // bus 0 = master, bus 1 = reverb, bus 2 = delay
         p.buses.push(BusDesc::default());
-        p.buses.push(BusDesc { dest: Some(0), ..Default::default() });
-        p.buses.push(BusDesc { dest: Some(0), ..Default::default() });
+        p.buses.push(BusDesc {
+            dest: Some(0),
+            ..Default::default()
+        });
+        p.buses.push(BusDesc {
+            dest: Some(0),
+            ..Default::default()
+        });
         for _ in 0..MAX_TRACKS {
             let mut t = TrackDesc {
                 dest_bus: 0,
@@ -217,8 +267,14 @@ mod tests {
                 b.enabled = true;
             }
             t.comp.enabled = true;
-            t.sends.push(SendDesc { bus: 1, amount: 0.2 });
-            t.sends.push(SendDesc { bus: 2, amount: 0.1 });
+            t.sends.push(SendDesc {
+                bus: 1,
+                amount: 0.2,
+            });
+            t.sends.push(SendDesc {
+                bus: 2,
+                amount: 0.1,
+            });
             p.tracks.push(t);
         }
         p
@@ -238,8 +294,14 @@ mod tests {
             sample_rate: 48_000,
             ..Default::default()
         };
-        p.buses.push(BusDesc { dest: Some(1), ..Default::default() });
-        p.buses.push(BusDesc { dest: Some(0), ..Default::default() });
+        p.buses.push(BusDesc {
+            dest: Some(1),
+            ..Default::default()
+        });
+        p.buses.push(BusDesc {
+            dest: Some(0),
+            ..Default::default()
+        });
         // Tidak ada master (semua punya dest) → BadPlan sebelum cek siklus.
         assert!(build_plan(&p, 1).is_err());
     }

@@ -96,28 +96,66 @@ pub enum EditCmd {
     // --- op yang dipanggil UI ---
     /// Geser tepi kiri ke `new_start` (timeline space). Mundur = memperpanjang,
     /// dibatasi oleh awal asset.
-    TrimLeft { clip: ClipId, new_start: TimelineSample },
+    TrimLeft {
+        clip: ClipId,
+        new_start: TimelineSample,
+    },
     /// Geser tepi kanan ke `new_end` (eksklusif, timeline space).
-    TrimRight { clip: ClipId, new_end: TimelineSample },
+    TrimRight {
+        clip: ClipId,
+        new_end: TimelineSample,
+    },
     /// Pecah jadi dua clip yang berbagi `asset_id` yang sama.
-    SplitAt { clip: ClipId, at: TimelineSample, new_id: ClipId },
-    MoveClip { clip: ClipId, to_track: TrackId, to_pos: TimelineSample },
-    SetGain { clip: ClipId, gain_db: f32 },
-    SetFade { clip: ClipId, side: FadeSide, spec: FadeSpec },
-    Duplicate { clip: ClipId, new_id: ClipId, to_track: TrackId, at: TimelineSample },
-    Delete { clip: ClipId },
+    SplitAt {
+        clip: ClipId,
+        at: TimelineSample,
+        new_id: ClipId,
+    },
+    MoveClip {
+        clip: ClipId,
+        to_track: TrackId,
+        to_pos: TimelineSample,
+    },
+    SetGain {
+        clip: ClipId,
+        gain_db: f32,
+    },
+    SetFade {
+        clip: ClipId,
+        side: FadeSide,
+        spec: FadeSpec,
+    },
+    Duplicate {
+        clip: ClipId,
+        new_id: ClipId,
+        to_track: TrackId,
+        at: TimelineSample,
+    },
+    Delete {
+        clip: ClipId,
+    },
 
     // --- varian yang hanya muncul sebagai inverse ---
     /// Kembalikan satu clip ke keadaan tersimpan. Inverse universal untuk semua
     /// op yang memutasi tepat satu clip tanpa efek samping ke tetangga.
-    RestoreClip { state: Box<Clip> },
+    RestoreClip {
+        state: Box<Clip>,
+    },
     /// Kembalikan seluruh isi satu track. Inverse untuk op dengan efek samping
     /// (Push/Crossfade menyentuh clip tetangga).
-    RestoreTrackClips { track: TrackId, clips: Vec<Clip> },
+    RestoreTrackClips {
+        track: TrackId,
+        clips: Vec<Clip>,
+    },
     /// Sisipkan clip kembali (inverse dari Delete).
-    Insert { track: TrackId, clip: Box<Clip> },
+    Insert {
+        track: TrackId,
+        clip: Box<Clip>,
+    },
     /// Hapus tanpa mencatat apa pun (inverse dari Duplicate/Split).
-    Remove { clip: ClipId },
+    Remove {
+        clip: ClipId,
+    },
     /// Beberapa command berurutan; inverse-nya adalah inverse tiap elemen
     /// dalam **urutan terbalik**.
     Batch(Vec<EditCmd>),
@@ -133,12 +171,19 @@ impl EditCmd {
             EditCmd::TrimLeft { clip, new_start } => trim_left(p, *clip, *new_start),
             EditCmd::TrimRight { clip, new_end } => trim_right(p, *clip, *new_end),
             EditCmd::SplitAt { clip, at, new_id } => split_at(p, *clip, *at, *new_id),
-            EditCmd::MoveClip { clip, to_track, to_pos } => move_clip(p, *clip, *to_track, *to_pos, policy),
+            EditCmd::MoveClip {
+                clip,
+                to_track,
+                to_pos,
+            } => move_clip(p, *clip, *to_track, *to_pos, policy),
             EditCmd::SetGain { clip, gain_db } => set_gain(p, *clip, *gain_db),
             EditCmd::SetFade { clip, side, spec } => set_fade(p, *clip, *side, *spec),
-            EditCmd::Duplicate { clip, new_id, to_track, at } => {
-                duplicate(p, *clip, *new_id, *to_track, *at, policy)
-            }
+            EditCmd::Duplicate {
+                clip,
+                new_id,
+                to_track,
+                at,
+            } => duplicate(p, *clip, *new_id, *to_track, *at, policy),
             EditCmd::Delete { clip } => delete(p, *clip),
 
             EditCmd::RestoreClip { state } => restore_clip(p, state),
@@ -171,17 +216,25 @@ fn locate(p: &Project, id: ClipId) -> Result<(usize, usize), EditError> {
 }
 
 fn track_index(p: &Project, id: TrackId) -> Result<usize, EditError> {
-    p.tracks.iter().position(|t| t.id == id).ok_or(EditError::NoSuchTrack(id))
+    p.tracks
+        .iter()
+        .position(|t| t.id == id)
+        .ok_or(EditError::NoSuchTrack(id))
 }
 
 /// Inverse "kembalikan clip ini apa adanya".
 fn snapshot_inverse(c: &Clip) -> EditCmd {
-    EditCmd::RestoreClip { state: Box::new(c.clone()) }
+    EditCmd::RestoreClip {
+        state: Box::new(c.clone()),
+    }
 }
 
 /// Inverse "kembalikan seluruh track ini apa adanya".
 fn snapshot_track_inverse(p: &Project, ti: usize) -> EditCmd {
-    EditCmd::RestoreTrackClips { track: p.tracks[ti].id, clips: p.tracks[ti].clips.clone() }
+    EditCmd::RestoreTrackClips {
+        track: p.tracks[ti].id,
+        clips: p.tracks[ti].clips.clone(),
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -311,7 +364,12 @@ fn timeline_to_source_unclamped(
 ///
 /// Split tepat di tepi ditolak ([`EditError::SplitOutOfRange`]) — hasilnya akan
 /// berupa clip nol-panjang.
-fn split_at(p: &mut Project, id: ClipId, at: TimelineSample, new_id: ClipId) -> Result<EditCmd, EditError> {
+fn split_at(
+    p: &mut Project,
+    id: ClipId,
+    at: TimelineSample,
+    new_id: ClipId,
+) -> Result<EditCmd, EditError> {
     let (ti, ci) = locate(p, id)?;
     let c = &p.tracks[ti].clips[ci];
     if at <= c.timeline_pos || at >= c.timeline_end() {
@@ -349,7 +407,9 @@ fn split_at(p: &mut Project, id: ClipId, at: TimelineSample, new_id: ClipId) -> 
     // Inverse: hapus clip kanan, lalu kembalikan clip kiri ke keadaan semula.
     Ok(EditCmd::Batch(vec![
         EditCmd::Remove { clip: new_id },
-        EditCmd::RestoreClip { state: Box::new(original) },
+        EditCmd::RestoreClip {
+            state: Box::new(original),
+        },
     ]))
 }
 
@@ -379,7 +439,10 @@ fn move_clip(
     let inv = if ti == dst_ti {
         EditCmd::Batch(vec![snapshot_track_inverse(p, ti)])
     } else {
-        EditCmd::Batch(vec![snapshot_track_inverse(p, dst_ti), snapshot_track_inverse(p, ti)])
+        EditCmd::Batch(vec![
+            snapshot_track_inverse(p, dst_ti),
+            snapshot_track_inverse(p, ti),
+        ])
     };
 
     let mut c = p.tracks[ti].clips.remove(ci);
@@ -435,7 +498,10 @@ fn delete(p: &mut Project, id: ClipId) -> Result<EditCmd, EditError> {
     // masih ada di history undo, ia memegang satu-satunya referensi ke clip —
     // dan karenanya mem-*pin* asset-nya. GC asset hanya berjalan pada asset yang
     // refcount-nya 0 DAN tidak muncul di history. Lihat docs/06 §6a.
-    Ok(EditCmd::Insert { track, clip: Box::new(c) })
+    Ok(EditCmd::Insert {
+        track,
+        clip: Box::new(c),
+    })
 }
 
 fn insert_clip(p: &mut Project, track: TrackId, clip: Clip) -> Result<EditCmd, EditError> {
@@ -459,7 +525,9 @@ fn restore_clip(p: &mut Project, state: &Clip) -> Result<EditCmd, EditError> {
         p.tracks[dst].clips.push(state.clone());
         p.tracks[dst].sort_clips();
     }
-    Ok(EditCmd::RestoreClip { state: Box::new(prev) })
+    Ok(EditCmd::RestoreClip {
+        state: Box::new(prev),
+    })
 }
 
 fn restore_track(p: &mut Project, track: TrackId, clips: &[Clip]) -> Result<EditCmd, EditError> {
@@ -483,7 +551,12 @@ fn set_gain(p: &mut Project, id: ClipId, gain_db: f32) -> Result<EditCmd, EditEr
     Ok(inv)
 }
 
-fn set_fade(p: &mut Project, id: ClipId, side: FadeSide, spec: FadeSpec) -> Result<EditCmd, EditError> {
+fn set_fade(
+    p: &mut Project,
+    id: ClipId,
+    side: FadeSide,
+    spec: FadeSpec,
+) -> Result<EditCmd, EditError> {
     let (ti, ci) = locate(p, id)?;
     let inv = snapshot_inverse(&p.tracks[ti].clips[ci]);
     let c = &mut p.tracks[ti].clips[ci];
@@ -545,7 +618,9 @@ fn resolve_overlaps(p: &mut Project, ti: usize, moved: ClipId, policy: OverlapPo
             }
         }
         OverlapPolicy::Crossfade => {
-            let Some(mi) = p.tracks[ti].clip_index(moved) else { return };
+            let Some(mi) = p.tracks[ti].clip_index(moved) else {
+                return;
+            };
             // Tetangga kiri: ia fade-out, `moved` fade-in, sepanjang overlap.
             if mi > 0 {
                 let (l_end, l_len) = {
@@ -554,7 +629,10 @@ fn resolve_overlaps(p: &mut Project, ti: usize, moved: ClipId, policy: OverlapPo
                 };
                 let m_pos = p.tracks[ti].clips[mi].timeline_pos;
                 if l_end > m_pos {
-                    let ov = l_end.distance_from(m_pos).min(l_len).min(p.tracks[ti].clips[mi].timeline_len());
+                    let ov = l_end
+                        .distance_from(m_pos)
+                        .min(l_len)
+                        .min(p.tracks[ti].clips[mi].timeline_len());
                     set_xfade(&mut p.tracks[ti].clips[mi - 1], FadeSide::Out, ov);
                     set_xfade(&mut p.tracks[ti].clips[mi], FadeSide::In, ov);
                 }
@@ -567,7 +645,10 @@ fn resolve_overlaps(p: &mut Project, ti: usize, moved: ClipId, policy: OverlapPo
                     (r.timeline_pos, r.timeline_len())
                 };
                 if m_end > r_pos {
-                    let ov = m_end.distance_from(r_pos).min(r_len).min(p.tracks[ti].clips[mi].timeline_len());
+                    let ov = m_end
+                        .distance_from(r_pos)
+                        .min(r_len)
+                        .min(p.tracks[ti].clips[mi].timeline_len());
                     set_xfade(&mut p.tracks[ti].clips[mi], FadeSide::Out, ov);
                     set_xfade(&mut p.tracks[ti].clips[mi + 1], FadeSide::In, ov);
                 }
@@ -610,11 +691,20 @@ pub struct History {
 
 impl History {
     pub fn new(limit: usize) -> Self {
-        Self { done: Vec::new(), undone: Vec::new(), limit: limit.max(1) }
+        Self {
+            done: Vec::new(),
+            undone: Vec::new(),
+            limit: limit.max(1),
+        }
     }
 
     /// Terapkan `cmd`, catat inverse-nya, buang redo stack.
-    pub fn exec(&mut self, p: &mut Project, cmd: EditCmd, policy: OverlapPolicy) -> Result<(), EditError> {
+    pub fn exec(
+        &mut self,
+        p: &mut Project,
+        cmd: EditCmd,
+        policy: OverlapPolicy,
+    ) -> Result<(), EditError> {
         let inv = cmd.apply(p, policy)?;
         self.undone.clear();
         self.done.push((cmd, inv));
@@ -625,14 +715,18 @@ impl History {
     }
 
     pub fn undo(&mut self, p: &mut Project, policy: OverlapPolicy) -> Result<bool, EditError> {
-        let Some((cmd, inv)) = self.done.pop() else { return Ok(false) };
+        let Some((cmd, inv)) = self.done.pop() else {
+            return Ok(false);
+        };
         inv.apply(p, policy)?;
         self.undone.push((cmd, inv));
         Ok(true)
     }
 
     pub fn redo(&mut self, p: &mut Project, policy: OverlapPolicy) -> Result<bool, EditError> {
-        let Some((cmd, _)) = self.undone.pop() else { return Ok(false) };
+        let Some((cmd, _)) = self.undone.pop() else {
+            return Ok(false);
+        };
         let inv = cmd.apply(p, policy)?;
         self.done.push((cmd, inv));
         Ok(true)
@@ -694,7 +788,13 @@ mod tests {
         let tid = TrackId::new(100);
         let mut t = Track::new(tid, "A", master);
         let cid = ClipId::new(200);
-        let mut c = Clip::new(cid, tid, AssetId::new(1), TimelineSample::new(48_000), 96_000);
+        let mut c = Clip::new(
+            cid,
+            tid,
+            AssetId::new(1),
+            TimelineSample::new(48_000),
+            96_000,
+        );
         c.fade_in = FadeSpec::new(4800, FadeCurve::Linear);
         c.fade_out = FadeSpec::new(4800, FadeCurve::Linear);
         t.clips.push(c);
@@ -709,13 +809,19 @@ mod tests {
         let inv = cmd.apply(&mut p, policy).expect("apply gagal");
         assert_ne!(p, before, "command {cmd:?} tidak mengubah apa pun");
         inv.apply(&mut p, policy).expect("inverse gagal");
-        assert_eq!(p, before, "inverse dari {cmd:?} tidak mengembalikan project");
+        assert_eq!(
+            p, before,
+            "inverse dari {cmd:?} tidak mengembalikan project"
+        );
     }
 
     #[test]
     fn trim_left_roundtrip() {
         roundtrip(
-            EditCmd::TrimLeft { clip: ClipId::new(200), new_start: TimelineSample::new(60_000) },
+            EditCmd::TrimLeft {
+                clip: ClipId::new(200),
+                new_start: TimelineSample::new(60_000),
+            },
             OverlapPolicy::Crossfade,
         );
     }
@@ -723,7 +829,10 @@ mod tests {
     #[test]
     fn trim_right_roundtrip() {
         roundtrip(
-            EditCmd::TrimRight { clip: ClipId::new(200), new_end: TimelineSample::new(100_000) },
+            EditCmd::TrimRight {
+                clip: ClipId::new(200),
+                new_end: TimelineSample::new(100_000),
+            },
             OverlapPolicy::Crossfade,
         );
     }
@@ -751,7 +860,12 @@ mod tests {
                 },
                 OverlapPolicy::Crossfade,
             ),
-            (EditCmd::Delete { clip: ClipId::new(200) }, OverlapPolicy::Reject),
+            (
+                EditCmd::Delete {
+                    clip: ClipId::new(200),
+                },
+                OverlapPolicy::Reject,
+            ),
             (
                 EditCmd::Duplicate {
                     clip: ClipId::new(200),
@@ -761,7 +875,13 @@ mod tests {
                 },
                 OverlapPolicy::Reject,
             ),
-            (EditCmd::SetGain { clip: ClipId::new(200), gain_db: -6.0 }, OverlapPolicy::Reject),
+            (
+                EditCmd::SetGain {
+                    clip: ClipId::new(200),
+                    gain_db: -6.0,
+                },
+                OverlapPolicy::Reject,
+            ),
             (
                 EditCmd::SetFade {
                     clip: ClipId::new(200),
@@ -779,9 +899,13 @@ mod tests {
     fn split_preserves_total_source_coverage() {
         let (mut p, _, cid) = fixture();
         let at = TimelineSample::new(96_000);
-        EditCmd::SplitAt { clip: cid, at, new_id: ClipId::new(999) }
-            .apply(&mut p, OverlapPolicy::Crossfade)
-            .unwrap();
+        EditCmd::SplitAt {
+            clip: cid,
+            at,
+            new_id: ClipId::new(999),
+        }
+        .apply(&mut p, OverlapPolicy::Crossfade)
+        .unwrap();
         let clips = &p.tracks[0].clips;
         assert_eq!(clips.len(), 2);
         assert_eq!(clips[0].source_len + clips[1].source_len, 96_000);
@@ -801,21 +925,34 @@ mod tests {
         let (mut p, _, cid) = fixture();
         // fade_in = 4800; split di +1000 → jatuh DI DALAM fade-in.
         let at = TimelineSample::new(49_000);
-        EditCmd::SplitAt { clip: cid, at, new_id: ClipId::new(999) }
-            .apply(&mut p, OverlapPolicy::Crossfade)
-            .unwrap();
+        EditCmd::SplitAt {
+            clip: cid,
+            at,
+            new_id: ClipId::new(999),
+        }
+        .apply(&mut p, OverlapPolicy::Crossfade)
+        .unwrap();
         let clips = &p.tracks[0].clips;
         assert_eq!(clips[0].timeline_len(), 1000);
-        assert_eq!(clips[0].fade_in.len_timeline, 1000, "fade harus dipotong ke panjang clip");
-        assert!(clips[1].fade_in.is_none(), "sisa fade tidak boleh bocor ke clip kanan");
+        assert_eq!(
+            clips[0].fade_in.len_timeline, 1000,
+            "fade harus dipotong ke panjang clip"
+        );
+        assert!(
+            clips[1].fade_in.is_none(),
+            "sisa fade tidak boleh bocor ke clip kanan"
+        );
     }
 
     #[test]
     fn trim_past_fade_clamps_it() {
         let (mut p, _, cid) = fixture();
-        EditCmd::TrimRight { clip: cid, new_end: TimelineSample::new(50_000) }
-            .apply(&mut p, OverlapPolicy::Reject)
-            .unwrap();
+        EditCmd::TrimRight {
+            clip: cid,
+            new_end: TimelineSample::new(50_000),
+        }
+        .apply(&mut p, OverlapPolicy::Reject)
+        .unwrap();
         let c = &p.tracks[0].clips[0];
         assert_eq!(c.timeline_len(), 2000);
         assert!(c.fade_in.len_timeline + c.fade_out.len_timeline <= 2000);
@@ -826,18 +963,28 @@ mod tests {
     fn zero_length_results_are_rejected() {
         let (mut p, _, cid) = fixture();
         assert_eq!(
-            EditCmd::TrimLeft { clip: cid, new_start: TimelineSample::new(144_000) }
-                .apply(&mut p, OverlapPolicy::Reject),
+            EditCmd::TrimLeft {
+                clip: cid,
+                new_start: TimelineSample::new(144_000)
+            }
+            .apply(&mut p, OverlapPolicy::Reject),
             Err(EditError::ZeroLength)
         );
         assert_eq!(
-            EditCmd::TrimRight { clip: cid, new_end: TimelineSample::new(48_000) }
-                .apply(&mut p, OverlapPolicy::Reject),
+            EditCmd::TrimRight {
+                clip: cid,
+                new_end: TimelineSample::new(48_000)
+            }
+            .apply(&mut p, OverlapPolicy::Reject),
             Err(EditError::ZeroLength)
         );
         assert_eq!(
-            EditCmd::SplitAt { clip: cid, at: TimelineSample::new(48_000), new_id: ClipId::new(9) }
-                .apply(&mut p, OverlapPolicy::Reject),
+            EditCmd::SplitAt {
+                clip: cid,
+                at: TimelineSample::new(48_000),
+                new_id: ClipId::new(9)
+            }
+            .apply(&mut p, OverlapPolicy::Reject),
             Err(EditError::SplitOutOfRange)
         );
     }
@@ -847,8 +994,11 @@ mod tests {
         let (mut p, _, cid) = fixture();
         p.tracks[0].clips[0].source_start = SourceSample::new(0);
         assert_eq!(
-            EditCmd::TrimLeft { clip: cid, new_start: TimelineSample::new(0) }
-                .apply(&mut p, OverlapPolicy::Reject),
+            EditCmd::TrimLeft {
+                clip: cid,
+                new_start: TimelineSample::new(0)
+            }
+            .apply(&mut p, OverlapPolicy::Reject),
             Err(EditError::OutOfSource)
         );
     }
@@ -857,15 +1007,24 @@ mod tests {
     fn failed_apply_leaves_project_untouched() {
         let (mut p, _, cid) = fixture();
         let before = p.clone();
-        let _ = EditCmd::TrimLeft { clip: cid, new_start: TimelineSample::new(999_999) }
-            .apply(&mut p, OverlapPolicy::Reject);
+        let _ = EditCmd::TrimLeft {
+            clip: cid,
+            new_start: TimelineSample::new(999_999),
+        }
+        .apply(&mut p, OverlapPolicy::Reject);
         assert_eq!(p, before);
     }
 
     #[test]
     fn overlap_reject_refuses() {
         let (mut p, tid, _) = fixture();
-        let c2 = Clip::new(ClipId::new(300), tid, AssetId::new(1), TimelineSample::new(200_000), 48_000);
+        let c2 = Clip::new(
+            ClipId::new(300),
+            tid,
+            AssetId::new(1),
+            TimelineSample::new(200_000),
+            48_000,
+        );
         p.tracks[0].clips.push(c2);
         p.tracks[0].sort_clips();
         let r = EditCmd::MoveClip {
@@ -888,12 +1047,19 @@ mod tests {
             48_000,
         ));
         p.tracks[0].sort_clips();
-        EditCmd::MoveClip { clip: ClipId::new(300), to_track: tid, to_pos: TimelineSample::new(50_000) }
-            .apply(&mut p, OverlapPolicy::Push)
-            .unwrap();
+        EditCmd::MoveClip {
+            clip: ClipId::new(300),
+            to_track: tid,
+            to_pos: TimelineSample::new(50_000),
+        }
+        .apply(&mut p, OverlapPolicy::Push)
+        .unwrap();
         let a = &p.tracks[0].clips[0];
         let b = &p.tracks[0].clips[1];
-        assert!(b.timeline_pos >= a.timeline_end(), "push harus menghilangkan overlap");
+        assert!(
+            b.timeline_pos >= a.timeline_end(),
+            "push harus menghilangkan overlap"
+        );
     }
 
     #[test]
@@ -907,9 +1073,13 @@ mod tests {
             48_000,
         ));
         p.tracks[0].sort_clips();
-        EditCmd::MoveClip { clip: ClipId::new(300), to_track: tid, to_pos: TimelineSample::new(140_000) }
-            .apply(&mut p, OverlapPolicy::Crossfade)
-            .unwrap();
+        EditCmd::MoveClip {
+            clip: ClipId::new(300),
+            to_track: tid,
+            to_pos: TimelineSample::new(140_000),
+        }
+        .apply(&mut p, OverlapPolicy::Crossfade)
+        .unwrap();
         let a = p.tracks[0].clip(ClipId::new(200)).unwrap();
         let b = p.tracks[0].clip(ClipId::new(300)).unwrap();
         assert_eq!(a.fade_out.curve, FadeCurve::EqualPower);
@@ -923,16 +1093,32 @@ mod tests {
         let (mut p, tid, cid) = fixture();
         let before = p.clone();
         let mut h = History::new(64);
-        h.exec(&mut p, EditCmd::SetGain { clip: cid, gain_db: -12.0 }, OverlapPolicy::Crossfade).unwrap();
         h.exec(
             &mut p,
-            EditCmd::SplitAt { clip: cid, at: TimelineSample::new(96_000), new_id: ClipId::new(900) },
+            EditCmd::SetGain {
+                clip: cid,
+                gain_db: -12.0,
+            },
             OverlapPolicy::Crossfade,
         )
         .unwrap();
         h.exec(
             &mut p,
-            EditCmd::MoveClip { clip: ClipId::new(900), to_track: TrackId::new(101), to_pos: TimelineSample::new(0) },
+            EditCmd::SplitAt {
+                clip: cid,
+                at: TimelineSample::new(96_000),
+                new_id: ClipId::new(900),
+            },
+            OverlapPolicy::Crossfade,
+        )
+        .unwrap();
+        h.exec(
+            &mut p,
+            EditCmd::MoveClip {
+                clip: ClipId::new(900),
+                to_track: TrackId::new(101),
+                to_pos: TimelineSample::new(0),
+            },
             OverlapPolicy::Crossfade,
         )
         .unwrap();
@@ -949,10 +1135,15 @@ mod tests {
     fn deleted_clip_asset_stays_pinned_by_history() {
         let (mut p, _, cid) = fixture();
         let mut h = History::new(64);
-        h.exec(&mut p, EditCmd::Delete { clip: cid }, OverlapPolicy::Reject).unwrap();
+        h.exec(&mut p, EditCmd::Delete { clip: cid }, OverlapPolicy::Reject)
+            .unwrap();
         assert_eq!(p.asset_refcount(AssetId::new(1)), 0);
         assert_eq!(p.unreferenced_assets(), alloc::vec![AssetId::new(1)]);
-        assert_eq!(h.pinned_assets(), alloc::vec![AssetId::new(1)], "asset harus di-pin sampai undo dibuang");
+        assert_eq!(
+            h.pinned_assets(),
+            alloc::vec![AssetId::new(1)],
+            "asset harus di-pin sampai undo dibuang"
+        );
     }
 
     proptest! {

@@ -32,7 +32,7 @@ use daw_timeline::TimelineSample;
 
 use crate::fx::FxRack;
 use crate::graph::{
-    bus_unit, build_plan, send_slot, track_unit, MASTER_METER_SLOT, TOTAL_SEND_SLOTS, TOTAL_UNITS,
+    build_plan, bus_unit, send_slot, track_unit, MASTER_METER_SLOT, TOTAL_SEND_SLOTS, TOTAL_UNITS,
 };
 use crate::meter::MeterBank;
 use crate::plan::{PlanError, ProcessPlan, Step};
@@ -735,8 +735,10 @@ impl Engine {
             self.meters.set_gain_reduction(u, self.fx.gain_reduction(u));
         }
         if let Some(m) = self.project.master_bus() {
-            self.meters
-                .set_gain_reduction(MASTER_METER_SLOT, self.fx.gain_reduction(bus_unit(m as usize)));
+            self.meters.set_gain_reduction(
+                MASTER_METER_SLOT,
+                self.fx.gain_reduction(bus_unit(m as usize)),
+            );
         }
 
         // Flush denormal sekali per blok, bukan per sample (docs/02 §2b).
@@ -844,14 +846,7 @@ impl Engine {
 }
 
 #[inline]
-fn add_scaled_ramp_pair(
-    dl: &mut [f32],
-    dr: &mut [f32],
-    sl: &[f32],
-    sr: &[f32],
-    g0: f32,
-    g1: f32,
-) {
+fn add_scaled_ramp_pair(dl: &mut [f32], dr: &mut [f32], sl: &[f32], sr: &[f32], g0: f32, g1: f32) {
     if g0 == g1 {
         add_scaled(dl, sl, g0);
         add_scaled(dr, sr, g0);

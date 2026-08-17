@@ -28,7 +28,17 @@ macro_rules! id_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
         #[derive(
-            Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default, Serialize, Deserialize,
+            Copy,
+            Clone,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            Debug,
+            Default,
+            Serialize,
+            Deserialize,
         )]
         #[serde(transparent)]
         pub struct $name(pub u64);
@@ -51,12 +61,18 @@ macro_rules! id_type {
     };
 }
 
-id_type!(AssetId, "Referensi ke PCM di asset pool (WASM linear memory / OPFS).");
+id_type!(
+    AssetId,
+    "Referensi ke PCM di asset pool (WASM linear memory / OPFS)."
+);
 id_type!(ClipId, "Identitas clip, stabil sepanjang hidup project.");
 id_type!(TrackId, "Identitas track.");
 id_type!(BusId, "Identitas bus (termasuk master).");
 id_type!(SendId, "Identitas send.");
-id_type!(FxId, "Identitas instance efek di dalam sebuah insert chain.");
+id_type!(
+    FxId,
+    "Identitas instance efek di dalam sebuah insert chain."
+);
 
 // -------------------------------------------------------------------------
 // Fade
@@ -101,10 +117,16 @@ pub struct FadeSpec {
 }
 
 impl FadeSpec {
-    pub const NONE: Self = Self { len_timeline: 0, curve: FadeCurve::Linear };
+    pub const NONE: Self = Self {
+        len_timeline: 0,
+        curve: FadeCurve::Linear,
+    };
 
     pub const fn new(len_timeline: u64, curve: FadeCurve) -> Self {
-        Self { len_timeline, curve }
+        Self {
+            len_timeline,
+            curve,
+        }
     }
 
     #[inline]
@@ -188,7 +210,13 @@ fn one_u32() -> u32 {
 }
 
 impl Clip {
-    pub fn new(id: ClipId, track: TrackId, asset_id: AssetId, at: TimelineSample, source_len: u64) -> Self {
+    pub fn new(
+        id: ClipId,
+        track: TrackId,
+        asset_id: AssetId,
+        at: TimelineSample,
+        source_len: u64,
+    ) -> Self {
         Self {
             id,
             track,
@@ -429,7 +457,11 @@ impl Track {
     }
 
     /// Clip yang bersinggungan dengan `[from, to)` — dasar virtualisasi viewport.
-    pub fn clips_in_range(&self, from: TimelineSample, to: TimelineSample) -> impl Iterator<Item = &Clip> {
+    pub fn clips_in_range(
+        &self,
+        from: TimelineSample,
+        to: TimelineSample,
+    ) -> impl Iterator<Item = &Clip> {
         self.clips
             .iter()
             .filter(move |c| c.timeline_end() > from && c.timeline_pos < to)
@@ -711,7 +743,10 @@ impl Project {
     /// tahu tentang versi lain selain tetangganya.
     pub fn migrate(&mut self) -> Result<(), MigrationError> {
         if self.version > PROJECT_VERSION {
-            return Err(MigrationError::TooNew { found: self.version, supported: PROJECT_VERSION });
+            return Err(MigrationError::TooNew {
+                found: self.version,
+                supported: PROJECT_VERSION,
+            });
         }
         while self.version < PROJECT_VERSION {
             match self.version {
@@ -777,14 +812,26 @@ mod tests {
 
     #[test]
     fn muted_clip_is_silent() {
-        let mut c = Clip::new(ClipId::new(1), TrackId::new(1), AssetId::new(1), TimelineSample::new(0), 1000);
+        let mut c = Clip::new(
+            ClipId::new(1),
+            TrackId::new(1),
+            AssetId::new(1),
+            TimelineSample::new(0),
+            1000,
+        );
         c.mute = true;
         assert_eq!(c.gain_linear(), 0.0);
     }
 
     #[test]
     fn clamp_fades_shrinks_proportionally() {
-        let mut c = Clip::new(ClipId::new(1), TrackId::new(1), AssetId::new(1), TimelineSample::new(0), 1000);
+        let mut c = Clip::new(
+            ClipId::new(1),
+            TrackId::new(1),
+            AssetId::new(1),
+            TimelineSample::new(0),
+            1000,
+        );
         c.fade_in = FadeSpec::new(800, FadeCurve::Linear);
         c.fade_out = FadeSpec::new(800, FadeCurve::Linear);
         c.clamp_fades();
@@ -796,7 +843,13 @@ mod tests {
     fn migrate_rejects_future_versions() {
         let mut p = Project::new("x", 48_000);
         p.version = 99;
-        assert_eq!(p.migrate(), Err(MigrationError::TooNew { found: 99, supported: PROJECT_VERSION }));
+        assert_eq!(
+            p.migrate(),
+            Err(MigrationError::TooNew {
+                found: 99,
+                supported: PROJECT_VERSION
+            })
+        );
     }
 
     #[test]
@@ -804,7 +857,13 @@ mod tests {
         let mut p = Project::new("x", 48_000);
         let tid = TrackId::new(10);
         let mut t = Track::new(tid, "t", p.master.id);
-        let mut c = Clip::new(ClipId::new(77), tid, AssetId::new(1), TimelineSample::new(0), 1000);
+        let mut c = Clip::new(
+            ClipId::new(77),
+            tid,
+            AssetId::new(1),
+            TimelineSample::new(0),
+            1000,
+        );
         c.speed_ratio = 0.0;
         t.clips.push(c);
         p.tracks.push(t);
@@ -818,8 +877,18 @@ mod tests {
         let a = Automation {
             target: ParamTarget::MasterSpeed,
             points: alloc::vec![
-                AutomationPoint { at: TimelineSample::new(0), value: 0.0, curve: CurveKind::Linear, tension: 0.0 },
-                AutomationPoint { at: TimelineSample::new(100), value: 10.0, curve: CurveKind::Linear, tension: 0.0 },
+                AutomationPoint {
+                    at: TimelineSample::new(0),
+                    value: 0.0,
+                    curve: CurveKind::Linear,
+                    tension: 0.0
+                },
+                AutomationPoint {
+                    at: TimelineSample::new(100),
+                    value: 10.0,
+                    curve: CurveKind::Linear,
+                    tension: 0.0
+                },
             ],
             enabled: true,
         };

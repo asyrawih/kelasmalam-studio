@@ -231,9 +231,17 @@ mod tests {
         let mut steps = alloc::vec![
             Step::ClearBuf { buf: 0 }, // master
             Step::ClearBuf { buf: 1 },
-            Step::PanAdd { src: 1, dst: 0, pan: 0 },
+            Step::PanAdd {
+                src: 1,
+                dst: 0,
+                pan: 0
+            },
             Step::ClearBuf { buf: 2 },
-            Step::PanAdd { src: 2, dst: 0, pan: 1 },
+            Step::PanAdd {
+                src: 2,
+                dst: 0,
+                pan: 1
+            },
             Step::Meter { slot: 32, buf: 0 },
         ];
         let n = allocate_buffers(&mut steps, MAX_BUFFERS).unwrap();

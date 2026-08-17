@@ -17,8 +17,8 @@ pub mod flac;
 pub mod offline;
 pub mod wav;
 
-pub use offline::{OfflineRenderer, DEFAULT_BATCH_BLOCKS};
 pub use flac::{FlacBits, FlacSpec, FlacStreamWriter};
+pub use offline::{OfflineRenderer, DEFAULT_BATCH_BLOCKS};
 pub use wav::{DitherSettings, WavFormat, WavSpec, WavStreamWriter, CHUNK_BYTES};
 
 #[cfg(test)]

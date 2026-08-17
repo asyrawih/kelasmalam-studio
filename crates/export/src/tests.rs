@@ -95,7 +95,11 @@ fn roundtrip_pcm24() {
 #[test]
 fn roundtrip_float32_is_bit_exact() {
     let (l, r) = test_signal(4096);
-    let bytes = encode_all(&[&l, &r], spec(WavFormat::Float32), DitherSettings::default());
+    let bytes = encode_all(
+        &[&l, &r],
+        spec(WavFormat::Float32),
+        DitherSettings::default(),
+    );
     let (dl, dr, s) = decode(&bytes);
     assert_eq!(s.sample_format, hound::SampleFormat::Float);
     // f32 tidak pernah di-dither dan tidak dikuantisasi → identik bit-per-bit.
@@ -176,7 +180,12 @@ fn streaming_does_not_reallocate_after_first_chunk() {
             w.release_chunk();
         }
     }
-    assert_eq!(w.grow_events(), 0, "Vec chunk tumbuh {} kali", w.grow_events());
+    assert_eq!(
+        w.grow_events(),
+        0,
+        "Vec chunk tumbuh {} kali",
+        w.grow_events()
+    );
 }
 
 /// Export byte-reproducible: seed yang sama → file yang sama persis.

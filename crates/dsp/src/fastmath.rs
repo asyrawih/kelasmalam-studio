@@ -66,8 +66,6 @@ pub fn fast_log2(x: f32) -> f32 {
     exp as f32 + p * core::f32::consts::LOG2_E
 }
 
-
-
 /// `2^x` cepat.
 ///
 /// Bagian bulat dikerjakan dengan menyusun eksponen f32 langsung (satu shift),

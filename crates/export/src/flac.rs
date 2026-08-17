@@ -89,7 +89,8 @@ pub const HEADER_BYTES: usize = 4 + 4 + 34;
 
 fn header_bytes(info: &StreamInfo) -> Result<Vec<u8>, FlacError> {
     let mut sink = MemSink::<u8>::new();
-    info.write(&mut sink).map_err(|e| err("tulis STREAMINFO", e))?;
+    info.write(&mut sink)
+        .map_err(|e| err("tulis STREAMINFO", e))?;
     let payload = sink.into_inner();
     // 272 bit = 34 byte, dijamin oleh `StreamInfo::count_bits`. Kalau ini pernah
     // gagal, penukaran part pertama Blob di run-export akan merusak file.
@@ -263,13 +264,9 @@ impl FlacStreamWriter {
         pair.fill_interleaved(&self.pending[range])
             .map_err(|e| err("isi FrameBuf", e))?;
 
-        let frame = encode_fixed_size_frame(
-            &self.config,
-            &self.framebuf,
-            self.frame_number,
-            &self.info,
-        )
-        .map_err(|e| err("encode frame FLAC", e))?;
+        let frame =
+            encode_fixed_size_frame(&self.config, &self.framebuf, self.frame_number, &self.info)
+                .map_err(|e| err("encode frame FLAC", e))?;
         self.frame_number += 1;
 
         let mut sink = MemSink::<u8>::new();

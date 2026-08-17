@@ -189,7 +189,9 @@ impl SpscProducer {
         // boleh memindahkan store index ke *sebelum* store payload; audio thread
         // lalu melihat index maju, membaca slot, dan mendapat isi lama/sampah.
         // Ini kelas bug paling menyakitkan: benar 99.9% waktu, korup sesekali.
-        self.s.write_idx().store(w.wrapping_add(1), Ordering::Release);
+        self.s
+            .write_idx()
+            .store(w.wrapping_add(1), Ordering::Release);
         true
     }
 }
@@ -210,10 +212,7 @@ impl SpscConsumer {
     pub unsafe fn from_raw(base: *mut u8) -> Self {
         // SAFETY: kontrak diteruskan ke pemanggil.
         let s = unsafe { Shared::from_raw(base) };
-        SpscConsumer {
-            s,
-            cached_write: 0,
-        }
+        SpscConsumer { s, cached_write: 0 }
     }
 
     /// Ambil satu command, atau `None` kalau kosong.
@@ -248,7 +247,9 @@ impl SpscConsumer {
         // Release, store index boleh dipindah ke *sebelum* pembacaan payload
         // di atas; producer lalu menimpa slot yang isinya belum sempat kita
         // baca. Ini adalah sisi cermin dari Release di `push`.
-        self.s.read_idx().store(r.wrapping_add(1), Ordering::Release);
+        self.s
+            .read_idx()
+            .store(r.wrapping_add(1), Ordering::Release);
         Some(cmd)
     }
 
@@ -317,7 +318,8 @@ mod tests {
         let mut sab = new_sab();
         let base = sab.0.as_mut_ptr();
         // SAFETY: satu producer + satu consumer, buffer hidup selama tes.
-        let (mut p, mut c) = unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
+        let (mut p, mut c) =
+            unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
 
         assert!(c.pop().is_none());
         for i in 0..100u32 {
@@ -337,7 +339,8 @@ mod tests {
         let mut sab = new_sab();
         let base = sab.0.as_mut_ptr();
         // SAFETY: lihat di atas.
-        let (mut p, mut c) = unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
+        let (mut p, mut c) =
+            unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
 
         for i in 0..CMD_CAPACITY {
             assert!(p.push(Command::new(1, i as u16, 0, 0)), "i = {i}");
@@ -355,7 +358,8 @@ mod tests {
         let mut sab = new_sab();
         let base = sab.0.as_mut_ptr();
         // SAFETY: lihat di atas.
-        let (mut p, mut c) = unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
+        let (mut p, mut c) =
+            unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
 
         for round in 0..10u32 {
             for i in 0..CMD_CAPACITY as u32 {
@@ -372,7 +376,8 @@ mod tests {
         let mut sab = new_sab();
         let base = sab.0.as_mut_ptr();
         // SAFETY: lihat di atas.
-        let (mut p, mut c) = unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
+        let (mut p, mut c) =
+            unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
 
         for i in 0..50u32 {
             p.push(Command::new(1, 0, i, 0));
@@ -392,7 +397,8 @@ mod tests {
         let mut sab = new_sab();
         let base = sab.0.as_mut_ptr();
         // SAFETY: lihat di atas.
-        let (mut p, mut c) = unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
+        let (mut p, mut c) =
+            unsafe { (SpscProducer::from_raw(base), SpscConsumer::from_raw(base)) };
         for i in 0..10u32 {
             p.push(Command::new(1, 0, i, 0));
         }

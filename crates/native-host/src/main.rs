@@ -80,11 +80,7 @@ fn main() -> Result<()> {
 /// Bangun stream output dan mulai memutar. Stream sengaja di-`std::mem::forget`
 /// agar tetap hidup setelah fungsi ini kembali (host ini memang berjalan sampai
 /// proses dibunuh).
-fn run<T>(
-    device: &cpal::Device,
-    config: &StreamConfig,
-    err_tx: mpsc::Sender<String>,
-) -> Result<()>
+fn run<T>(device: &cpal::Device, config: &StreamConfig, err_tx: mpsc::Sender<String>) -> Result<()>
 where
     T: cpal::SizedSample + cpal::FromSample<f32>,
 {

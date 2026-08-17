@@ -73,7 +73,13 @@ impl Coeffs {
     /// Semua input di-clamp ke rentang yang waras (frekuensi ke
     /// `[1 Hz, 0.49 * sr]`, Q ke `[0.05, 40]`) supaya tidak ada jalur yang bisa
     /// menghasilkan NaN dan meracuni state filter selamanya.
-    pub fn design(kind: FilterKind, sample_rate: f32, freq_hz: f32, q: f32, gain_db: f32) -> Coeffs {
+    pub fn design(
+        kind: FilterKind,
+        sample_rate: f32,
+        freq_hz: f32,
+        q: f32,
+        gain_db: f32,
+    ) -> Coeffs {
         let sr = if sample_rate > 0.0 {
             sample_rate
         } else {
@@ -117,14 +123,7 @@ impl Coeffs {
             }
             FilterKind::BandPass => {
                 // Constant 0 dB peak gain (varian kedua RBJ).
-                (
-                    alpha,
-                    0.0,
-                    -alpha,
-                    1.0 + alpha,
-                    -2.0 * cos_w0,
-                    1.0 - alpha,
-                )
+                (alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cos_w0, 1.0 - alpha)
             }
             FilterKind::Notch => (
                 1.0,
@@ -196,7 +195,11 @@ impl Coeffs {
             a1: a1 * inv,
             a2: a2 * inv,
         };
-        if c.b0.is_finite() && c.b1.is_finite() && c.b2.is_finite() && c.a1.is_finite() && c.a2.is_finite()
+        if c.b0.is_finite()
+            && c.b1.is_finite()
+            && c.b2.is_finite()
+            && c.a1.is_finite()
+            && c.a2.is_finite()
         {
             c
         } else {
@@ -316,7 +319,10 @@ mod tests {
         assert!(c.magnitude_at(SR, SR / 2.0) < 1e-3);
         // -3 dB di cutoff untuk Q = 1/sqrt(2)
         let m = c.magnitude_at(SR, 1_000.0);
-        assert!((m - core::f32::consts::FRAC_1_SQRT_2).abs() < 0.02, "m = {m}");
+        assert!(
+            (m - core::f32::consts::FRAC_1_SQRT_2).abs() < 0.02,
+            "m = {m}"
+        );
     }
 
     #[test]

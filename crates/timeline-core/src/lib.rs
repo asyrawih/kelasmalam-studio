@@ -38,17 +38,17 @@ pub mod peaks;
 pub mod tempo;
 
 pub use coords::{
-    px_to_sample, sample_to_px, source_to_timeline, timeline_to_source,
-    timeline_to_source_frac, ClipGeometry, SourceSample, TimelineSample, Viewport,
+    px_to_sample, sample_to_px, source_to_timeline, timeline_to_source, timeline_to_source_frac,
+    ClipGeometry, SourceSample, TimelineSample, Viewport,
 };
 pub use edit::{EditCmd, EditError, FadeSide, History, OverlapPolicy};
 // CATATAN: `model::Send` sengaja TIDAK di-re-export di root. Namanya bertabrakan
 // dengan `core::marker::Send` di namespace tipe, dan `use daw_timeline::*` akan
 // diam-diam mem-*shadow* trait auto itu. Pakai `daw_timeline::model::Send`.
 pub use model::{
-    lin_to_db, AssetId, AssetRef, Automation, AutomationPoint, Bus, BusId, Clip, ClipId,
-    CurveKind, FadeCurve, FadeSpec, FxId, MigrationError, ParamTarget, Project, SendId, Track,
-    TrackId, PROJECT_VERSION,
+    lin_to_db, AssetId, AssetRef, Automation, AutomationPoint, Bus, BusId, Clip, ClipId, CurveKind,
+    FadeCurve, FadeSpec, FxId, MigrationError, ParamTarget, Project, SendId, Track, TrackId,
+    PROJECT_VERSION,
 };
 pub use peaks::{MinMax, Pyramid, LEVEL_STRIDES};
 pub use tempo::{Grid, TempoMap, TempoSegment, TimeSigSegment, PPQ};

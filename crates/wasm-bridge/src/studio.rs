@@ -186,7 +186,11 @@ fn clamp_band(b: &EqBandJson) -> EqBandSettings {
     };
     let freq = if b.freq.is_finite() { b.freq } else { 20.0 };
     let q = if b.q.is_finite() { b.q } else { 1.0 };
-    let gain_db = if b.gain_db.is_finite() { b.gain_db } else { 0.0 };
+    let gain_db = if b.gain_db.is_finite() {
+        b.gain_db
+    } else {
+        0.0
+    };
     EqBandSettings {
         kind,
         freq_hz: freq.clamp(20.0, 20_000.0),
@@ -592,8 +596,7 @@ mod tests {
             );
         }
 
-        let mut renderer =
-            OfflineRenderer::new(engine, TimelineSample(0), TimelineSample(24_000));
+        let mut renderer = OfflineRenderer::new(engine, TimelineSample(0), TimelineSample(24_000));
         let mut l = vec![0.0f32; 24_000];
         let mut r = vec![0.0f32; 24_000];
         let n = renderer.render_batch(1000, &mut l, &mut r);
@@ -601,7 +604,10 @@ mod tests {
 
         // Ada bunyi sama sekali — inilah yang gagal kalau asset tidak terdaftar.
         let peak = l.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
-        assert!(peak > 0.4, "output senyap (peak {peak}) — asset tidak sampai ke engine");
+        assert!(
+            peak > 0.4,
+            "output senyap (peak {peak}) — asset tidak sampai ke engine"
+        );
 
         // LEVEL harus sama dengan preview, bukan 3 dB lebih pelan: hukum pan
         // equal-power engine di tengah menurunkan 3,01 dB, sementara preview
@@ -609,12 +615,20 @@ mod tests {
         // karena 0.354, kompensasinya hilang — dan tidak ada yang akan
         // menyadarinya selain dari telinga.
         // Bagian TENGAH clip harus utuh 0.5 (di luar jangkauan fade).
-        assert!((l[12_000] - 0.5).abs() < 1e-3, "tengah clip = {}", l[12_000]);
+        assert!(
+            (l[12_000] - 0.5).abs() < 1e-3,
+            "tengah clip = {}",
+            l[12_000]
+        );
         assert!((r[12_000] - 0.5).abs() < 1e-3);
 
         // Tepi-tepinya harus jauh lebih pelan: fade user + micro-fade wajib.
         assert!(l[0].abs() < 0.05, "awal clip tidak di-fade: {}", l[0]);
-        assert!(l[23_999].abs() < 0.05, "akhir clip tidak di-fade: {}", l[23_999]);
+        assert!(
+            l[23_999].abs() < 0.05,
+            "akhir clip tidak di-fade: {}",
+            l[23_999]
+        );
     }
 
     /// Amplify master → fader bus master. Bukan ke gain track: kalau ia bocor
@@ -683,7 +697,11 @@ mod tests {
                     "clips": [{{ "id": "c", "assetId": 0, "start": 0, "len": 24000,
                                  "fadeInMs": 10, "fadeOutMs": 10 }}] }}] }}"#
             );
-            let bytes = mapping_from_json(&json).unwrap().project.to_bytes().unwrap();
+            let bytes = mapping_from_json(&json)
+                .unwrap()
+                .project
+                .to_bytes()
+                .unwrap();
             let mut engine = Engine::from_snapshot(&bytes, 48_000).unwrap();
 
             let frames = 48_000usize;
@@ -714,7 +732,10 @@ mod tests {
 
         // -6,02 dB = tepat setengah amplitudo.
         let half = mid_sample(-6.020_6);
-        assert!((half - unity * 0.5).abs() < 2e-3, "-6 dB → {half}, unity {unity}");
+        assert!(
+            (half - unity * 0.5).abs() < 2e-3,
+            "-6 dB → {half}, unity {unity}"
+        );
 
         // Batas atas panel: +12 dB atas material 0,5 = 1,99 — jauh DI ATAS
         // 0 dBFS, dengan sengaja. Tidak ada limiter maupun soft-clip di jalur
@@ -723,8 +744,14 @@ mod tests {
         // ~1.0, ada yang diam-diam menjepit di master — dan panel Amplify
         // sedang menjanjikan sebaliknya ke user.
         let loud = mid_sample(MAX_MASTER_GAIN_DB as f64);
-        assert!((loud - unity * 3.981_07).abs() < 5e-3, "+12 dB → {loud}, unity {unity}");
-        assert!(loud > 1.5, "master boost tidak boleh dijepit diam-diam: {loud}");
+        assert!(
+            (loud - unity * 3.981_07).abs() < 5e-3,
+            "+12 dB → {loud}, unity {unity}"
+        );
+        assert!(
+            loud > 1.5,
+            "master boost tidak boleh dijepit diam-diam: {loud}"
+        );
     }
 
     #[test]

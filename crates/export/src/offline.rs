@@ -118,12 +118,17 @@ impl OfflineRenderer {
         let mut done_blocks = 0usize;
 
         while done_blocks < blocks && produced < cap && produced < remaining_total {
-            let n = self.block.min(cap - produced).min(remaining_total - produced);
+            let n = self
+                .block
+                .min(cap - produced)
+                .min(remaining_total - produced);
             if n == 0 {
                 break;
             }
-            self.engine
-                .render_block(&mut out_l[produced..produced + n], &mut out_r[produced..produced + n]);
+            self.engine.render_block(
+                &mut out_l[produced..produced + n],
+                &mut out_r[produced..produced + n],
+            );
             produced += n;
             done_blocks += 1;
         }

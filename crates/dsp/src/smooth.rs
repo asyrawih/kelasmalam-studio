@@ -42,7 +42,11 @@ impl Smoother {
     pub fn set_time(&mut self, sample_rate: f32, tau_ms: f32) {
         // Sample rate/tau yang tidak masuk akal tidak boleh menghasilkan NaN
         // di audio thread — lebih baik di-clamp ke perilaku "instan".
-        let sr = if sample_rate > 0.0 { sample_rate } else { 48_000.0 };
+        let sr = if sample_rate > 0.0 {
+            sample_rate
+        } else {
+            48_000.0
+        };
         let tau_s = clampf(tau_ms, 0.0, 60_000.0) * 1.0e-3;
         self.coeff = if tau_s <= 0.0 {
             1.0

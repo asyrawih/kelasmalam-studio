@@ -262,8 +262,7 @@ mod tests {
         });
 
         // SAFETY: reader boleh banyak; hanya membaca.
-        let r =
-            unsafe { SeqReader::from_raw(seq_ptr as *const u32, data_ptr as *const Meter) };
+        let r = unsafe { SeqReader::from_raw(seq_ptr as *const u32, data_ptr as *const Meter) };
         let mut ok = 0usize;
         for _ in 0..200_000 {
             if let Some(v) = r.read() {

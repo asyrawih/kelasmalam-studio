@@ -87,10 +87,7 @@ impl StudioSnapshot {
     /// Selisih yang TIDAK bisa dinyatakan engine, satu kalimat per baris.
     /// Kosong = file hasil export identik dengan yang didengar user.
     pub fn warnings(&self) -> Vec<JsValue> {
-        self.warnings
-            .iter()
-            .map(|w| JsValue::from_str(w))
-            .collect()
+        self.warnings.iter().map(|w| JsValue::from_str(w)).collect()
     }
 
     /// Jumlah clip yang benar-benar akan berbunyi — UI memakainya untuk
@@ -214,7 +211,9 @@ impl OfflineRender {
             )));
         }
         if id > u16::MAX as u32 {
-            return Err(JsValue::from_str(&format!("asset id {id} di luar jangkauan")));
+            return Err(JsValue::from_str(&format!(
+                "asset id {id} di luar jangkauan"
+            )));
         }
 
         let owned: Box<[f32]> = data[..ch * n].to_vec().into_boxed_slice();
@@ -230,9 +229,7 @@ impl OfflineRender {
         // `Box<[f32]>` tidak pernah memindahkan buffer-nya. Slot juga tidak
         // pernah di-unregister, jadi pointer valid untuk seluruh masa render.
         unsafe {
-            self.inner
-                .engine_mut()
-                .register_asset(id as u16, asset);
+            self.inner.engine_mut().register_asset(id as u16, asset);
         }
         Ok(())
     }
@@ -301,7 +298,12 @@ pub struct WavEncoderHandle {
 #[wasm_bindgen]
 impl WavEncoderHandle {
     #[wasm_bindgen(constructor)]
-    pub fn new(sample_rate: u32, channels: u32, bits: WavBits, dither_seed: u32) -> WavEncoderHandle {
+    pub fn new(
+        sample_rate: u32,
+        channels: u32,
+        bits: WavBits,
+        dither_seed: u32,
+    ) -> WavEncoderHandle {
         let format = match bits {
             WavBits::Pcm16 => WavFormat::Pcm16,
             WavBits::Pcm24 => WavFormat::Pcm24,

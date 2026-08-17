@@ -49,7 +49,11 @@ pub struct TempoSegment {
 
 impl TempoSegment {
     pub const fn new(tick: u64, micros_per_qn: u32) -> Self {
-        Self { tick, sample: 0, micros_per_qn }
+        Self {
+            tick,
+            sample: 0,
+            micros_per_qn,
+        }
     }
 
     /// BPM sebagai f64 — **hanya untuk ditampilkan di UI**, tidak pernah dipakai
@@ -80,21 +84,37 @@ pub struct TimeSigSegment {
 
 impl TimeSigSegment {
     pub const fn new(tick: u64, numerator: u16, denominator: u16) -> Self {
-        Self { tick, numerator, denominator }
+        Self {
+            tick,
+            numerator,
+            denominator,
+        }
     }
 
     /// Panjang satu bar dalam tick.
     #[inline]
     pub fn ticks_per_bar(&self) -> u64 {
-        let den = if self.denominator == 0 { 4 } else { self.denominator as u64 };
-        let num = if self.numerator == 0 { 4 } else { self.numerator as u64 };
+        let den = if self.denominator == 0 {
+            4
+        } else {
+            self.denominator as u64
+        };
+        let num = if self.numerator == 0 {
+            4
+        } else {
+            self.numerator as u64
+        };
         (PPQ * 4 / den) * num
     }
 
     /// Panjang satu beat (satu satuan penyebut) dalam tick.
     #[inline]
     pub fn ticks_per_beat(&self) -> u64 {
-        let den = if self.denominator == 0 { 4 } else { self.denominator as u64 };
+        let den = if self.denominator == 0 {
+            4
+        } else {
+            self.denominator as u64
+        };
         PPQ * 4 / den
     }
 }
@@ -189,7 +209,8 @@ impl TempoMap {
             Err(i) => self.tempo.insert(i, TempoSegment::new(tick, micros)),
         }
         if self.tempo[0].tick != 0 {
-            self.tempo.insert(0, TempoSegment::new(0, DEFAULT_MICROS_PER_QN));
+            self.tempo
+                .insert(0, TempoSegment::new(0, DEFAULT_MICROS_PER_QN));
         }
         let sr = self.cached_sr;
         self.rebuild_anchors(sr);
@@ -267,11 +288,7 @@ impl TempoMap {
         let mut bar = 1u64;
         for w in 0..self.time_sig.len() {
             let sig = self.time_sig[w];
-            let seg_end = self
-                .time_sig
-                .get(w + 1)
-                .map(|s| s.tick)
-                .unwrap_or(u64::MAX);
+            let seg_end = self.time_sig.get(w + 1).map(|s| s.tick).unwrap_or(u64::MAX);
             let tpb = sig.ticks_per_bar().max(1);
             if tick < seg_end {
                 let n = (tick - sig.tick) / tpb;
@@ -404,11 +421,23 @@ mod tests {
     fn snap_to_bar_and_triplet() {
         let m = TempoMap::constant(120.0, 48_000);
         // 1 bar = 96000 sample. 50000 → bar 1 (96000 lebih dekat? tidak: 50000-0=50000, 96000-50000=46000)
-        assert_eq!(snap(TimelineSample::new(50_000), Grid::Bar, &m, 48_000).raw(), 96_000);
-        assert_eq!(snap(TimelineSample::new(40_000), Grid::Bar, &m, 48_000).raw(), 0);
+        assert_eq!(
+            snap(TimelineSample::new(50_000), Grid::Bar, &m, 48_000).raw(),
+            96_000
+        );
+        assert_eq!(
+            snap(TimelineSample::new(40_000), Grid::Bar, &m, 48_000).raw(),
+            0
+        );
         // 1/8 triplet = 960*4*2/(8*3) = 320 tick.
-        assert_eq!(Grid::Triplet(8).ticks(&TimeSigSegment::new(0, 4, 4)), Some(320));
-        assert_eq!(Grid::Div(16).ticks(&TimeSigSegment::new(0, 4, 4)), Some(240));
+        assert_eq!(
+            Grid::Triplet(8).ticks(&TimeSigSegment::new(0, 4, 4)),
+            Some(320)
+        );
+        assert_eq!(
+            Grid::Div(16).ticks(&TimeSigSegment::new(0, 4, 4)),
+            Some(240)
+        );
     }
 
     #[test]
