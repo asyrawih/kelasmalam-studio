@@ -13,7 +13,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  WASM_BINDGEN_VERSION: "0.2.95"
 
 jobs:
   # ---------------------------------------------------------------- native
@@ -82,7 +81,15 @@ jobs:
           # yang dipin di rust-toolchain.toml). Dependensi transitif perkakas
           # modern menuntut rustc yang lebih baru, jadi instalasinya gagal
           # dengan pesan yang menunjuk crate asing — bukan masalah kode kita.
-          cargo +stable install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+          # Versi dibaca dari Cargo.lock, TIDAK ditulis ulang di sini.
+          # Sebelumnya angkanya di-hardcode (0.2.95) dan tertinggal jauh dari
+          # crate-nya (0.2.127); glue yang dihasilkan lalu tidak cocok dengan
+          # section __wbindgen di .wasm, dan wasm-bindgen gagal dengan pesan
+          # yang menyuruh menginstal ulang versi yang benar. Satu sumber
+          # kebenaran menghapus seluruh kelas kegagalan itu.
+          WANT="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen dari Cargo.lock: $WANT"
+          cargo +stable install wasm-bindgen-cli --version "$WANT" --locked
           sudo apt-get update && sudo apt-get install -y binaryen
 
       # CATATAN: langkah `wasm-pack test --headless --chrome` DIHAPUS.
