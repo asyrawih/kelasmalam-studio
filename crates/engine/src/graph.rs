@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use daw_rt::{MAX_BUFFERS, MAX_TRACKS};
 
+use crate::fx::plan_chains;
 use crate::plan::{allocate_buffers, PlanError, ProcessPlan, Step};
 use crate::snapshot::{Project, MAX_BUSES, MAX_SENDS};
 
@@ -88,6 +89,12 @@ pub fn build_plan(p: &Project, generation: u32) -> Result<ProcessPlan, PlanError
     let master = p.master_bus().ok_or(PlanError::BadPlan)?;
     let order = topo_sort_buses(p)?;
 
+    // Penomoran node FX dihitung SATU kali di `plan_chains`, dan `Engine`
+    // memanggil fungsi murni yang sama untuk membangun raknya. Kalau keduanya
+    // menghitung sendiri-sendiri, `Step::Fx { node }` bisa menunjuk efek yang
+    // berbeda dari yang dimaksud — tanpa error apa pun.
+    let fx = plan_chains(p)?;
+
     // Buffer virtual: 0..n_buses = akumulator bus (hidup panjang), sisanya
     // buffer track sekali pakai. Linear scan yang nanti memadatkannya.
     let n_buses = p.buses.len();
@@ -123,6 +130,16 @@ pub fn build_plan(p: &Project, generation: u32) -> Result<ProcessPlan, PlanError
         if t.comp.enabled {
             steps.push(Step::Fx {
                 node: comp_node(unit),
+                buf: vt,
+            });
+        }
+        // Insert chain user, SELALU diemit — termasuk yang ter-bypass.
+        // Menghilangkan step-nya saat bypass akan memotong ekor delay/reverb
+        // tepat saat tombol ditekan; bypass ditangani di dalam node sebagai
+        // peredaman input, jadi ekornya meluruh alami (lihat `fx::FxSlot`).
+        for e in fx.entries_for(unit) {
+            steps.push(Step::Fx {
+                node: e.node,
                 buf: vt,
             });
         }
@@ -176,6 +193,12 @@ pub fn build_plan(p: &Project, generation: u32) -> Result<ProcessPlan, PlanError
                 buf: b,
             });
         }
+        for e in fx.entries_for(unit) {
+            steps.push(Step::Fx {
+                node: e.node,
+                buf: b,
+            });
+        }
         steps.push(Step::Fader {
             track: unit,
             buf: b,
@@ -200,6 +223,15 @@ pub fn build_plan(p: &Project, generation: u32) -> Result<ProcessPlan, PlanError
     if md.comp.enabled {
         steps.push(Step::Fx {
             node: comp_node(munit),
+            buf: master,
+        });
+    }
+    // Master ditangani terpisah dari loop bus di atas (`b == master` di-skip
+    // di sana), jadi emisi chain-nya HARUS diulang di sini. Melewatkannya
+    // membuat FX master ter-mapping dengan benar tapi tidak pernah berbunyi.
+    for e in fx.entries_for(munit) {
+        steps.push(Step::Fx {
+            node: e.node,
             buf: master,
         });
     }

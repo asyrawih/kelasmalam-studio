@@ -227,10 +227,34 @@ impl Effect for Eq4 {
         }
     }
 
-    /// Kosong sampai jalur param block hidup (Fase 3). Setting EQ hari ini
-    /// datang dari snapshot lewat `set_all`, dan menimpanya dengan nol dari
-    /// konteks kosong akan mematikan seluruh EQ.
-    fn prepare(&mut self, _p: &ParamCtx<'_>) {}
+    /// Baca setting dari parameter, kalau ada yang ter-latch.
+    ///
+    /// Konteks KOSONG berarti node ini adalah EQ bawaan unit, yang settingnya
+    /// datang dari snapshot lewat `set_all` — menimpanya dengan nol akan
+    /// mematikan seluruh EQ. Node di insert chain user punya `params`, dan
+    /// itulah satu-satunya cara mengkonfigurasinya.
+    fn prepare(&mut self, p: &ParamCtx<'_>) {
+        if p.is_empty() {
+            return;
+        }
+        for i in 0..EQ_BANDS {
+            let b = i * 5;
+            let next = EqBandSettings {
+                kind: p.at_or(b, 4.0) as u8,
+                freq_hz: p.at_or(b + 1, 1_000.0),
+                q: p.at_or(b + 2, 0.707),
+                gain_db: p.at_or(b + 3, 0.0),
+                enabled: p.at_or(b + 4, 0.0) >= 0.5,
+            };
+            // Hanya menandai dirty saat benar-benar berubah: `prepare` berjalan
+            // tiap blok, dan mendesain ulang koefisien 375 kali per detik untuk
+            // nilai yang sama adalah pemborosan yang terukur pada rak besar.
+            if self.settings[i] != next {
+                self.settings[i] = next;
+                self.dirty = true;
+            }
+        }
+    }
 
     #[inline]
     fn process(&mut self, _mem: &mut [f32], l: &mut [f32], r: &mut [f32]) {

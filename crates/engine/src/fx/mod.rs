@@ -36,6 +36,7 @@ pub mod comp;
 mod conformance;
 pub mod desc;
 pub mod eq;
+pub mod layout;
 pub mod params;
 pub mod registry;
 
@@ -43,11 +44,15 @@ pub use arena::{FxArena, MemHandle, FX_ARENA_FLOATS};
 pub use comp::CompNode;
 pub use desc::{Category, EffectDesc, ParamDesc, Smoothing, Taper, Unit};
 pub use eq::Eq4;
+pub use layout::{plan_chains, ChainEntry, FxLayout, BUILTIN_NODES};
 pub use params::{param_map_json, PARAMS_PER_TRACK};
 pub use registry::{FxKind, FxNode, CATALOG};
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+
+use daw_dsp::Smoother;
+use daw_rt::MAX_BLOCK;
 
 /// Nilai parameter yang sudah di-latch untuk satu node, plus konteks waktunya.
 ///
@@ -196,46 +201,149 @@ pub trait Effect: Sized {
     }
 }
 
-/// Satu slot terpasang di rak: node plus region arenanya.
+/// Waktu ramp bypass.
+///
+/// Bukan 3 ms seperti micro-fade tepi clip: 3 ms terdengar sebagai klik pada
+/// jalur KERING yang masuk kembali, karena yang berubah bukan awal sebuah nada
+/// melainkan level sinyal yang sedang berbunyi.
+pub const BYPASS_FADE_MS: f32 = 10.0;
+
+/// Satu slot terpasang di rak: node, memorinya, parameternya, dan bypass-nya.
 pub struct FxSlot {
     pub node: FxNode,
     pub mem: MemHandle,
+    /// Nilai parameter, diindeks urutan `EffectDesc::params`.
+    pub params: Vec<f32>,
+    bypassed: bool,
+    /// Gain masuk ke node. Bypass menyala → meluncur ke 0.
+    in_gain: Smoother,
+    /// Gain jalur kering yang dilewatkan. Bypass menyala → meluncur ke 1.
+    dry_gain: Smoother,
+    /// Sisa frame sebelum node boleh benar-benar dilewati.
+    tail_left: u32,
+    sleeping: bool,
+}
+
+impl FxSlot {
+    fn new(node: FxNode, mem: MemHandle, params: Vec<f32>, sample_rate: f32) -> Self {
+        // tau = fade/3 → 95% tercapai dalam BYPASS_FADE_MS.
+        let tau = BYPASS_FADE_MS / 3.0;
+        FxSlot {
+            node,
+            mem,
+            params,
+            bypassed: false,
+            in_gain: Smoother::new(sample_rate, tau, 1.0),
+            dry_gain: Smoother::new(sample_rate, tau, 0.0),
+            tail_left: 0,
+            sleeping: false,
+        }
+    }
+
+    /// Nyalakan/matikan bypass.
+    ///
+    /// Yang diredam adalah INPUT node, bukan keluarannya, sementara jalur
+    /// kering dilewatkan kembali. Crossfade wet→dry yang lazim akan memotong
+    /// ekor reverb tepat saat tombol ditekan; dengan meredam input, ekornya
+    /// meluruh alami dan totalnya tidak pernah diskontinu.
+    pub fn set_bypass(&mut self, on: bool) {
+        if on == self.bypassed {
+            return;
+        }
+        self.bypassed = on;
+        self.in_gain.set_target(if on { 0.0 } else { 1.0 });
+        self.dry_gain.set_target(if on { 1.0 } else { 0.0 });
+        if !on {
+            self.sleeping = false;
+        }
+    }
+
+    pub fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
+
+    /// Node tidur = sudah ter-bypass DAN ekornya habis. Biayanya satu cabang.
+    pub fn is_sleeping(&self) -> bool {
+        self.sleeping
+    }
 }
 
 /// Tabel FX datar. Node diindeks `Step::Fx { node }`.
 pub struct FxRack {
     slots: Box<[FxSlot]>,
     arena: FxArena,
+    /// Salinan jalur kering selama transisi bypass. Efek tidak pernah
+    /// bersarang, jadi satu buffer cukup untuk seluruh rak.
+    dry: Box<[f32]>,
     sample_rate: f32,
 }
 
-/// Jumlah node per unit pada tata letak sekarang: EQ lalu kompresor.
-pub const SLOTS_PER_UNIT: usize = 2;
-
 impl FxRack {
-    /// Rak bawaan: dua node per unit (EQ, kompresor), dialokasi SEKALI.
-    ///
-    /// Arena-nya kosong karena kedua efek bawaan tidak butuh memori delay.
-    /// Efek berbasis delay mendapat arenanya lewat [`FxRack::with_arena`].
+    /// Rak bawaan tanpa chain user: dua node per unit (EQ, kompresor).
     pub fn new(units: usize, sample_rate: f32) -> Self {
-        Self::with_arena(units, sample_rate, FxArena::empty())
-    }
-
-    pub fn with_arena(units: usize, sample_rate: f32, arena: FxArena) -> Self {
-        let mut v = Vec::with_capacity(units * SLOTS_PER_UNIT);
+        let mut slots: Vec<FxSlot> = Vec::with_capacity(units * layout::BUILTIN_PER_UNIT);
         for _ in 0..units {
-            v.push(FxSlot {
-                node: FxNode::Eq(Eq4::new(sample_rate, &mut [])),
-                mem: MemHandle::EMPTY,
-            });
-            v.push(FxSlot {
-                node: FxNode::Comp(CompNode::new(sample_rate, &mut [])),
-                mem: MemHandle::EMPTY,
-            });
+            slots.push(FxSlot::new(
+                FxNode::Eq(Eq4::new(sample_rate, &mut [])),
+                MemHandle::EMPTY,
+                Vec::new(),
+                sample_rate,
+            ));
+            slots.push(FxSlot::new(
+                FxNode::Comp(CompNode::new(sample_rate, &mut [])),
+                MemHandle::EMPTY,
+                Vec::new(),
+                sample_rate,
+            ));
         }
         FxRack {
-            slots: v.into_boxed_slice(),
+            slots: slots.into_boxed_slice(),
+            arena: FxArena::empty(),
+            dry: alloc::vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
+            sample_rate,
+        }
+    }
+
+    /// Bangun rak dari penomoran [`FxLayout`]. NON-RT.
+    ///
+    /// `arena` sudah dibagikan `FxLayout::assign_memory`, jadi handle di tiap
+    /// entri berlaku untuk arena yang dipindahkan ke sini.
+    pub fn build(layout: &FxLayout, sample_rate: f32, mut arena: FxArena) -> Self {
+        let mut slots: Vec<FxSlot> = Vec::with_capacity(layout.total_nodes());
+        // Blok bawaan dulu, padat, supaya `unit*2` tetap berlaku.
+        for _ in 0..(layout::BUILTIN_NODES / layout::BUILTIN_PER_UNIT) {
+            slots.push(FxSlot::new(
+                FxNode::Eq(Eq4::new(sample_rate, &mut [])),
+                MemHandle::EMPTY,
+                Vec::new(),
+                sample_rate,
+            ));
+            slots.push(FxSlot::new(
+                FxNode::Comp(CompNode::new(sample_rate, &mut [])),
+                MemHandle::EMPTY,
+                Vec::new(),
+                sample_rate,
+            ));
+        }
+        for e in layout.entries.iter() {
+            let node = {
+                let block = arena.block(e.mem);
+                FxNode::make(e.kind, sample_rate, block)
+            };
+            let mut slot = FxSlot::new(node, e.mem, e.params.clone(), sample_rate);
+            if e.bypass {
+                slot.set_bypass(true);
+                // Dipasang sudah ter-bypass: mulai dari nilai akhir, jangan
+                // meluncur dari aktif ke bypass di blok pertama.
+                slot.in_gain.set_immediate(0.0);
+                slot.dry_gain.set_immediate(1.0);
+            }
+            slots.push(slot);
+        }
+        FxRack {
+            slots: slots.into_boxed_slice(),
             arena,
+            dry: alloc::vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
             sample_rate,
         }
     }
@@ -255,23 +363,57 @@ impl FxRack {
         self.slots.get_mut(node as usize).map(|s| &mut s.node)
     }
 
+    pub fn slot_mut(&mut self, node: u16) -> Option<&mut FxSlot> {
+        self.slots.get_mut(node as usize)
+    }
+
     /// Jalankan satu node pada buffer yang diberikan.
     ///
     /// Ada sebagai metode, bukan `get_mut(..).process(..)` di pemanggil, karena
-    /// node dan arenanya sama-sama milik `self`: memisahkan pinjamannya harus
-    /// terjadi di dalam sini, di mana destrukturisasi `self` membuat keduanya
-    /// jadi field yang lepas satu sama lain.
+    /// node, arena, dan buffer kering sama-sama milik `self`: memisahkan
+    /// pinjamannya harus terjadi di dalam sini.
     #[inline]
     pub fn process_node(&mut self, node: u16, l: &mut [f32], r: &mut [f32]) {
-        let FxRack { slots, arena, .. } = self;
-        if let Some(slot) = slots.get_mut(node as usize) {
-            let mem = arena.block(slot.mem);
+        let FxRack {
+            slots, arena, dry, ..
+        } = self;
+        let Some(slot) = slots.get_mut(node as usize) else {
+            return;
+        };
+        if slot.sleeping {
+            return;
+        }
+        let mem = arena.block(slot.mem);
+
+        // Jalur cepat: sepenuhnya aktif. Ini 99% blok, jadi ia tidak boleh
+        // membayar apa pun untuk mekanisme bypass.
+        if !slot.bypassed && slot.in_gain.is_settled() {
             slot.node.process(mem, l, r);
+            return;
+        }
+
+        let n = l.len().min(r.len()).min(MAX_BLOCK);
+        let (dl, dr) = dry.split_at_mut(MAX_BLOCK);
+        dl[..n].copy_from_slice(&l[..n]);
+        dr[..n].copy_from_slice(&r[..n]);
+        for i in 0..n {
+            let g = slot.in_gain.next();
+            l[i] *= g;
+            r[i] *= g;
+        }
+        slot.node.process(mem, l, r);
+        for i in 0..n {
+            let d = slot.dry_gain.next();
+            l[i] += dl[i] * d;
+            r[i] += dr[i] * d;
         }
     }
 
     pub fn eq_mut(&mut self, unit: u16) -> Option<&mut Eq4> {
-        match self.slots.get_mut(unit as usize * SLOTS_PER_UNIT) {
+        match self
+            .slots
+            .get_mut(unit as usize * layout::BUILTIN_PER_UNIT)
+        {
             Some(FxSlot {
                 node: FxNode::Eq(e),
                 ..
@@ -281,7 +423,10 @@ impl FxRack {
     }
 
     pub fn comp_mut(&mut self, unit: u16) -> Option<&mut CompNode> {
-        match self.slots.get_mut(unit as usize * SLOTS_PER_UNIT + 1) {
+        match self
+            .slots
+            .get_mut(unit as usize * layout::BUILTIN_PER_UNIT + 1)
+        {
             Some(FxSlot {
                 node: FxNode::Comp(c),
                 ..
@@ -292,16 +437,18 @@ impl FxRack {
 
     /// GR blok terakhir untuk unit tsb (0.0 kalau bukan kompresor).
     pub fn gain_reduction(&self, unit: u16) -> f32 {
-        match self.slots.get(unit as usize * SLOTS_PER_UNIT + 1) {
+        match self.slots.get(unit as usize * layout::BUILTIN_PER_UNIT + 1) {
             Some(s) => s.node.gain_reduction_db(),
             None => 0.0,
         }
     }
 
-    /// Perkiraan biaya seluruh rak, flop per frame stereo.
+    /// Perkiraan biaya seluruh rak, flop per frame stereo. Node tidur tidak
+    /// dihitung — itu yang membuat rak besar tetap terjangkau.
     pub fn cost_flops(&self) -> u32 {
         self.slots
             .iter()
+            .filter(|s| !s.sleeping)
             .map(|s| s.node.cost_flops())
             .fold(0u32, |a, b| a.saturating_add(b))
     }
@@ -316,28 +463,47 @@ impl FxRack {
     }
 
     /// Sekali di AWAL tiap blok penuh (bukan sub-blok).
-    ///
-    /// `prepare` dipanggil dengan konteks kosong selama jalur param block
-    /// belum hidup — tiap efek mempertahankan setting bertipenya alih-alih
-    /// ditimpa nol. Begitu `Engine::latch_params` ada, satu-satunya yang
-    /// berubah di sini adalah slice yang dimasukkan ke `ParamCtx`.
     pub fn begin_block(&mut self) {
         let sr = self.sample_rate;
         let FxRack { slots, arena, .. } = self;
-        let ctx = ParamCtx::empty(sr);
         for s in slots.iter_mut() {
+            if s.sleeping {
+                continue;
+            }
             let mem = arena.block(s.mem);
             s.node.begin_block(mem);
+            let ctx = ParamCtx::new(&s.params, sr, sr * 0.5);
             s.node.prepare(&ctx);
         }
     }
 
-    /// Sekali di AKHIR tiap blok penuh. Membuang denormal dari state IIR.
-    pub fn end_block(&mut self) {
+    /// Sekali di AKHIR tiap blok penuh.
+    ///
+    /// Di sinilah slot yang sudah ter-bypass dan ekornya habis ditidurkan.
+    /// Tanpa langkah ini, sebuah rak berisi ratusan node membayar penuh untuk
+    /// efek yang sudah lama dimatikan user.
+    pub fn end_block(&mut self, frames: u32) {
+        let sr = self.sample_rate;
         let FxRack { slots, arena, .. } = self;
         for s in slots.iter_mut() {
+            if s.sleeping {
+                continue;
+            }
             let mem = arena.block(s.mem);
             s.node.end_block(mem);
+
+            if s.bypassed && s.in_gain.is_settled() {
+                if s.tail_left == 0 {
+                    s.tail_left = s.node.tail_frames(sr).max(1);
+                }
+                s.tail_left = s.tail_left.saturating_sub(frames);
+                if s.tail_left == 0 {
+                    s.node.reset(mem);
+                    s.sleeping = true;
+                }
+            } else {
+                s.tail_left = 0;
+            }
         }
     }
 
@@ -347,6 +513,10 @@ impl FxRack {
         for s in slots.iter_mut() {
             let mem = arena.block(s.mem);
             s.node.reset(mem);
+            s.tail_left = 0;
+            // Slot yang di-bypass tetap bypass, tapi bangun kembali supaya ia
+            // ikut meredam input lagi kalau user mematikannya nanti.
+            s.sleeping = false;
         }
     }
 }

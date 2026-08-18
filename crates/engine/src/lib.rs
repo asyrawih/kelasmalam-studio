@@ -30,7 +30,7 @@ use daw_dsp::{add_scaled, clear, db_to_lin};
 use daw_rt::{Command, MAX_BLOCK, MAX_BUFFERS, MAX_TRACKS, MAX_VOICES};
 use daw_timeline::TimelineSample;
 
-use crate::fx::{params, FxRack};
+use crate::fx::{params, plan_chains, FxArena, FxRack};
 use crate::graph::{
     build_plan, bus_unit, send_slot, track_unit, MASTER_METER_SLOT, TOTAL_SEND_SLOTS, TOTAL_UNITS,
 };
@@ -218,21 +218,35 @@ impl EventQueue {
     }
 }
 
+/// Plan render dan rak FX yang menyertainya.
+///
+/// Digabung jadi SATU nilai karena `Step::Fx { node }` mengindeks rak: kalau
+/// keduanya bisa ditukar terpisah, akan ada jendela di mana plan baru menunjuk
+/// nomor node yang belum ada di rak lama. Menukarnya bersama membuat jendela
+/// itu tidak bisa terbentuk.
+///
+/// Panjang rak sekarang ikut project (chain user berbeda-beda), jadi ia juga
+/// harus melewati antrian pensiun yang sama — audio thread tidak boleh men-drop
+/// rak, karena drop berarti dealloc.
+pub struct RenderConfig {
+    pub plan: ProcessPlan,
+    pub rack: FxRack,
+}
+
 /// Satu-satunya pemilik state audio. Tidak ada `Rc`/`Arc`/`Mutex` di dalamnya;
 /// worklet memegang pointer mentah hasil `Box::into_raw` dan hanya SATU thread
 /// yang pernah menyentuhnya (invariant desain, didokumentasikan di wasm-bridge).
 pub struct Engine {
-    plan: ProcessPlan,
-    /// Plan baru yang dibangun sisi non-RT, menunggu di-swap di awal blok.
-    incoming: Option<ProcessPlan>,
-    /// Plan pensiun. Audio thread TIDAK men-drop plan (drop = dealloc); ia
-    /// menaruhnya di sini dan sisi non-RT yang mengambil & men-drop-nya.
-    retired: [Option<ProcessPlan>; RETIRE_SLOTS],
+    config: RenderConfig,
+    /// Konfigurasi baru yang dibangun sisi non-RT, menunggu di-swap di awal blok.
+    incoming: Option<RenderConfig>,
+    /// Konfigurasi pensiun. Audio thread TIDAK men-drop-nya (drop = dealloc);
+    /// ia menaruhnya di sini dan sisi non-RT yang mengambil & men-drop-nya.
+    retired: [Option<RenderConfig>; RETIRE_SLOTS],
     generation: u32,
 
     scratch: Scratch,
     mixer: Mixer,
-    fx: FxRack,
     voices: VoicePool,
     assets: AssetTable,
     meters: MeterBank,
@@ -249,6 +263,8 @@ pub struct Engine {
     sched_cursor: usize,
 
     max_frames: usize,
+    /// Sample rate aktif. Tidak pernah dipaksa 48 kHz (docs/05 §Safari).
+    sample_rate: f32,
     loop_enabled: bool,
     xruns: u32,
 }
@@ -259,13 +275,15 @@ impl Engine {
         let max_frames = max_frames.clamp(1, MAX_BLOCK);
         let sr = sample_rate as f32;
         Engine {
-            plan: ProcessPlan::silent(),
+            config: RenderConfig {
+                plan: ProcessPlan::silent(),
+                rack: FxRack::new(TOTAL_UNITS, sr),
+            },
             incoming: None,
             retired: [None, None, None, None],
             generation: 0,
             scratch: Scratch::new(MAX_BUFFERS, max_frames),
             mixer: Mixer::new(TOTAL_UNITS, TOTAL_SEND_SLOTS, sr),
-            fx: FxRack::new(TOTAL_UNITS, sr),
             voices: VoicePool::new(MAX_VOICES, sample_rate),
             assets: AssetTable::new(MAX_ASSETS),
             meters: MeterBank::new(),
@@ -279,6 +297,7 @@ impl Engine {
             sched_len: 0,
             sched_cursor: 0,
             max_frames,
+            sample_rate: sr,
             loop_enabled: false,
             xruns: 0,
         }
@@ -371,6 +390,16 @@ impl Engine {
         self.generation = self.generation.wrapping_add(1);
         let plan = build_plan(&project, self.generation).map_err(EngineError::Plan)?;
 
+        // Rak dibangun dari penomoran yang SAMA dengan yang dipakai plan:
+        // keduanya memanggil `plan_chains(&project)`, fungsi murni atas input
+        // yang sama, jadi keduanya tidak bisa menyimpang.
+        let mut layout = plan_chains(&project).map_err(EngineError::Plan)?;
+        let mut arena = FxArena::new(layout.total_mem_frames(self.sample_rate));
+        layout
+            .assign_memory(self.sample_rate, &mut arena)
+            .map_err(EngineError::Plan)?;
+        let rack = FxRack::build(&layout, self.sample_rate, arena);
+
         // Parameter mixer + FX.
         for (i, t) in project.tracks.iter().enumerate() {
             let u = track_unit(i);
@@ -385,10 +414,10 @@ impl Engine {
                     g.set_immediate(s.amount);
                 }
             }
-            if let Some(eq) = self.fx.eq_mut(u) {
+            if let Some(eq) = self.config.rack.eq_mut(u) {
                 eq.set_all(&t.eq);
             }
-            if let Some(c) = self.fx.comp_mut(u) {
+            if let Some(c) = self.config.rack.comp_mut(u) {
                 c.set_settings(&t.comp);
             }
         }
@@ -399,10 +428,10 @@ impl Engine {
                 p.set_pan(b.pan);
                 p.snap();
             }
-            if let Some(eq) = self.fx.eq_mut(u) {
+            if let Some(eq) = self.config.rack.eq_mut(u) {
                 eq.set_all(&b.eq);
             }
-            if let Some(c) = self.fx.comp_mut(u) {
+            if let Some(c) = self.config.rack.comp_mut(u) {
                 c.set_settings(&b.comp);
             }
         }
@@ -417,9 +446,9 @@ impl Engine {
         self.transport.loop_range = project.loop_range;
         self.loop_enabled = project.loop_range.is_some();
         self.project = project;
-        self.fx.reset_all();
+        self.config.rack.reset_all();
         self.voices.reset();
-        let _ = self.install_plan(plan);
+        let _ = self.install_config(RenderConfig { plan, rack });
         self.rewind_schedule();
         Ok(())
     }
@@ -428,37 +457,37 @@ impl Engine {
         &self.project
     }
 
-    /// Menyerahkan plan baru ke engine. Swap terjadi di awal blok berikutnya.
-    /// Mengembalikan `Err(plan)` kalau daftar pensiun penuh — pemanggil (non-RT)
-    /// harus memanggil `take_retired()` dulu.
-    pub fn install_plan(&mut self, plan: ProcessPlan) -> Result<(), ProcessPlan> {
-        if plan.validate(MAX_BUFFERS).is_err() {
-            return Err(plan);
+    /// Menyerahkan konfigurasi baru ke engine. Swap terjadi di awal blok
+    /// berikutnya. Mengembalikan `Err(config)` kalau daftar pensiun penuh —
+    /// pemanggil (non-RT) harus memanggil `take_retired()` dulu.
+    pub fn install_config(&mut self, config: RenderConfig) -> Result<(), RenderConfig> {
+        if config.plan.validate(MAX_BUFFERS).is_err() {
+            return Err(config);
         }
         if self.incoming.is_some() && self.retired.iter().all(|s| s.is_some()) {
-            return Err(plan);
+            return Err(config);
         }
         if let Some(old) = self.incoming.take() {
             if self.retire(old).is_err() {
-                return Err(plan);
+                return Err(config);
             }
         }
-        self.incoming = Some(plan);
+        self.incoming = Some(config);
         Ok(())
     }
 
-    fn retire(&mut self, plan: ProcessPlan) -> Result<(), ProcessPlan> {
+    fn retire(&mut self, config: RenderConfig) -> Result<(), RenderConfig> {
         for slot in self.retired.iter_mut() {
             if slot.is_none() {
-                *slot = Some(plan);
+                *slot = Some(config);
                 return Ok(());
             }
         }
-        Err(plan)
+        Err(config)
     }
 
-    /// Dipanggil sisi NON-RT: mengambil plan pensiun untuk di-drop di sana.
-    pub fn take_retired(&mut self) -> Option<ProcessPlan> {
+    /// Dipanggil sisi NON-RT: mengambil konfigurasi pensiun untuk di-drop di sana.
+    pub fn take_retired(&mut self) -> Option<RenderConfig> {
         for slot in self.retired.iter_mut() {
             if slot.is_some() {
                 return slot.take();
@@ -468,7 +497,11 @@ impl Engine {
     }
 
     pub fn plan(&self) -> &ProcessPlan {
-        &self.plan
+        &self.config.plan
+    }
+
+    pub fn rack(&self) -> &FxRack {
+        &self.config.rack
     }
 
     /// # Safety
@@ -500,7 +533,7 @@ impl Engine {
         // Diskontinuitas total: voice di-fade-out singkat, state IIR di-reset,
         // lalu clip yang menaungi posisi baru dimulai di tengah.
         self.voices.reset();
-        self.fx.reset_all();
+        self.config.rack.reset_all();
         self.queue.clear();
         self.rewind_schedule();
     }
@@ -717,7 +750,7 @@ impl Engine {
         let can_retire = self.retired.iter().any(|s| s.is_none());
         if can_retire && self.incoming.is_some() {
             if let Some(next) = self.incoming.take() {
-                let old = core::mem::replace(&mut self.plan, next);
+                let old = core::mem::replace(&mut self.config, next);
                 if self.retire(old).is_err() {
                     self.xruns = self.xruns.wrapping_add(1);
                 }
@@ -725,7 +758,7 @@ impl Engine {
         }
 
         self.meters.begin_block(frames as u32);
-        self.fx.begin_block();
+        self.config.rack.begin_block();
 
         let mut offset = 0usize;
         while offset < frames {
@@ -792,32 +825,34 @@ impl Engine {
         // Gain reduction kompresor → meter.
         for i in 0..self.project.tracks.len().min(MAX_TRACKS) {
             let u = track_unit(i);
-            self.meters.set_gain_reduction(u, self.fx.gain_reduction(u));
+            self.meters.set_gain_reduction(u, self.config.rack.gain_reduction(u));
         }
         if let Some(m) = self.project.master_bus() {
             self.meters.set_gain_reduction(
                 MASTER_METER_SLOT,
-                self.fx.gain_reduction(bus_unit(m as usize)),
+                self.config.rack.gain_reduction(bus_unit(m as usize)),
             );
         }
 
         // Flush denormal sekali per blok, bukan per sample (docs/02 §2b).
         self.mixer.flush_denormals();
+        // Di sini pula slot ter-bypass yang ekornya sudah habis ditidurkan.
+        self.config.rack.end_block(frames as u32);
     }
 
     /// Menjalankan ProcessPlan untuk satu span [offset, offset+n).
     fn render_span(&mut self, out_l: &mut [f32], out_r: &mut [f32], offset: usize, n: usize) {
         // Destrukturisasi supaya borrow checker melihat field-field terpisah.
         let Engine {
-            plan,
+            config,
             scratch,
             mixer,
-            fx,
             voices,
             assets,
             meters,
             ..
         } = self;
+        let RenderConfig { plan, rack: fx } = config;
 
         let count = plan.buffer_count;
         for step in plan.steps.iter() {

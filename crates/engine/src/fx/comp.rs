@@ -127,10 +127,14 @@ pub struct CompNode {
     comp: Compressor,
     /// GR maksimum (dB, positif) di blok terakhir — dibaca meter.rs.
     pub last_gr_db: f32,
+    /// Setting terakhir yang dipasang, supaya `prepare` tidak menghitung ulang
+    /// koefisien tiap blok untuk nilai yang tidak berubah.
+    current: CompSettings,
 }
 
 impl CompNode {
     pub fn set_settings(&mut self, s: &CompSettings) {
+        self.current = *s;
         self.comp.set_params(&CompParams {
             threshold_db: s.threshold_db,
             ratio: s.ratio,
@@ -164,11 +168,30 @@ impl Effect for CompNode {
         CompNode {
             comp: Compressor::new(sample_rate),
             last_gr_db: 0.0,
+            current: CompSettings::default(),
         }
     }
 
-    /// Kosong sampai jalur param block hidup (Fase 3) — lihat catatan di `eq.rs`.
-    fn prepare(&mut self, _p: &ParamCtx<'_>) {}
+    /// Baca setting dari parameter — lihat catatan di `eq.rs` soal konteks kosong.
+    fn prepare(&mut self, p: &ParamCtx<'_>) {
+        if p.is_empty() {
+            return;
+        }
+        let next = CompSettings {
+            threshold_db: p.at_or(0, -18.0),
+            ratio: p.at_or(1, 3.0),
+            knee_db: p.at_or(2, 6.0),
+            attack_ms: p.at_or(3, 10.0),
+            release_ms: p.at_or(4, 120.0),
+            makeup_db: p.at_or(5, 0.0),
+            detector: p.at_or(6, 0.0) as u8,
+            auto_makeup: p.at_or(7, 0.0) >= 0.5,
+            enabled: p.at_or(8, 0.0) >= 0.5,
+        };
+        if self.current != next {
+            self.set_settings(&next);
+        }
+    }
 
     /// GR dilaporkan sebagai MAKSIMUM dalam blok penuh, jadi akumulatornya
     /// dinolkan di sini dan bukan di `process` — `process` dipanggil beberapa

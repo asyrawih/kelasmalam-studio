@@ -75,6 +75,31 @@ impl Default for CompSettings {
     }
 }
 
+/// Panjang maksimum insert chain user per unit.
+///
+/// Batas keras, bukan saran. Anggaran CPU docs/02 memberi ~15 poin persen
+/// headroom di atas 32 track × (EQ + kompresor); satu REVERB saja ~1.6 poin
+/// per instance, jadi chain tanpa batas bisa melewatinya dari satu track.
+/// Chain yang lebih panjang dilaporkan sebagai peringatan di `map_project`,
+/// bukan dipotong diam-diam.
+pub const MAX_CHAIN_LEN: usize = 4;
+
+/// Satu efek terpasang di insert chain.
+///
+/// `params` diindeks berdasarkan URUTAN di `EffectDesc::params`, bukan nama.
+/// Itu yang membuat menambah efek ke-7 tidak mengubah format snapshot sama
+/// sekali: efek baru cuma berarti `kind` baru dan `params` yang panjangnya
+/// berbeda. Nama parameternya hidup di katalog, yang dibaca UI.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct FxSlotDesc {
+    /// Diskriminan `daw_engine::fx::FxKind`.
+    pub kind: u16,
+    /// Bypass. Node tetap diproses (ekornya harus meluruh), input-nya yang
+    /// diredam — lihat `fx::FxSlot`.
+    pub bypass: bool,
+    pub params: Vec<f32>,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SendDesc {
     pub bus: u16,
@@ -93,6 +118,9 @@ pub struct TrackDesc {
     pub sends: Vec<SendDesc>,
     pub eq: [EqBandSettings; EQ_BANDS],
     pub comp: CompSettings,
+    /// Insert chain user, dijalankan SETELAH EQ dan kompresor bawaan.
+    #[serde(default)]
+    pub chain: Vec<FxSlotDesc>,
 }
 
 impl Default for TrackDesc {
@@ -106,6 +134,7 @@ impl Default for TrackDesc {
             sends: Vec::new(),
             eq: [EqBandSettings::default(); EQ_BANDS],
             comp: CompSettings::default(),
+            chain: Vec::new(),
         }
     }
 }
@@ -118,6 +147,9 @@ pub struct BusDesc {
     pub dest: Option<u16>,
     pub eq: [EqBandSettings; EQ_BANDS],
     pub comp: CompSettings,
+    /// Insert chain user. Master adalah bus, jadi master FX lewat sini juga.
+    #[serde(default)]
+    pub chain: Vec<FxSlotDesc>,
 }
 
 impl Default for BusDesc {
@@ -128,6 +160,7 @@ impl Default for BusDesc {
             dest: None,
             eq: [EqBandSettings::default(); EQ_BANDS],
             comp: CompSettings::default(),
+            chain: Vec::new(),
         }
     }
 }

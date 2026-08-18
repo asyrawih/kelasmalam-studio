@@ -125,6 +125,10 @@ pub enum PlanError {
     OutOfBuffers,
     /// Graph bus mengandung siklus.
     Cycle,
+    /// Anggaran arena FX habis. Ditolak sebelum plan dipasang dan dilaporkan
+    /// ke UI — BUKAN dialokasi di jalur RT (docs/02 §2a), sama seperti
+    /// `OutOfBuffers`.
+    OutOfFxMemory,
     BadPlan,
 }
 

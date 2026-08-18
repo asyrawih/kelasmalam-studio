@@ -30,8 +30,11 @@
 //! preview tanpa memberi tahu adalah kegagalan yang paling mahal untuk
 //! ditemukan user (docs/03).
 
+use std::collections::BTreeMap;
+
 use daw_engine::snapshot::{
-    BusDesc, ClipDesc, EqBandSettings, Project, TrackDesc, EQ_BANDS, FADE_EQUAL_POWER, FADE_LINEAR,
+    BusDesc, ClipDesc, EqBandSettings, FxSlotDesc, Project, TrackDesc, EQ_BANDS, FADE_EQUAL_POWER,
+    FADE_LINEAR, MAX_CHAIN_LEN,
 };
 
 use serde::Deserialize;
@@ -87,6 +90,9 @@ pub struct StudioProjectJson {
     pub master_gain_db: f32,
     #[serde(default)]
     pub lanes: Vec<LaneJson>,
+    /// Insert chain master.
+    #[serde(default)]
+    pub master_chain: Vec<FxJson>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,8 +110,35 @@ pub struct LaneJson {
     pub speed_ratio: f64,
     #[serde(default)]
     pub eq: EqJson,
+    /// Insert chain lane, dijalankan setelah EQ bawaan.
+    #[serde(default)]
+    pub chain: Vec<FxJson>,
     #[serde(default)]
     pub clips: Vec<ClipJson>,
+}
+
+/// Satu efek di insert chain.
+///
+/// Parameternya BERNAMA, bukan berurutan. Itu yang membuat menambah efek ke-7
+/// tidak mengubah bentuk JSON sama sekali: efek baru cuma berarti `kind` baru
+/// dan nama-nama parameter baru, yang keduanya sudah dideklarasikan katalog.
+/// Nama yang tidak dikenal dilaporkan sebagai peringatan — bukan diabaikan
+/// diam-diam, karena "diabaikan diam-diam" persis cara `clip.stem` hilang dari
+/// file export tanpa ada yang tahu.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FxJson {
+    /// Id efek dari katalog: `"eq4"`, `"comp"`, …
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default = "true_bool")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub params: BTreeMap<String, f32>,
+}
+
+fn true_bool() -> bool {
+    true
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -215,6 +248,57 @@ fn nonneg(x: f64) -> f64 {
 ///
 /// `end_sample` (ruang OUTPUT, sesudah transport speed) dipakai hanya untuk
 /// membuang clip yang seluruhnya di luar rentang render.
+/// Petakan satu insert chain dari JSON ke deskriptor snapshot.
+///
+/// `owner` cuma dipakai untuk menyusun kalimat peringatan, supaya user tahu
+/// lane mana yang bermasalah — bukan "ada efek yang tidak dikenal" tanpa
+/// menyebut di mana.
+fn map_chain(owner: &str, chain: &[FxJson], warnings: &mut Vec<String>) -> Vec<FxSlotDesc> {
+    if chain.len() > MAX_CHAIN_LEN {
+        warnings.push(format!(
+            "{owner} punya {} efek; engine hanya memproses {MAX_CHAIN_LEN} pertama.",
+            chain.len()
+        ));
+    }
+    let mut out = Vec::new();
+    for fx in chain.iter().take(MAX_CHAIN_LEN) {
+        let Some(desc) = daw_engine::fx::CATALOG.iter().find(|d| d.id == fx.kind) else {
+            warnings.push(format!(
+                "Efek \"{}\" di {owner} tidak dikenal engine; dilewati.",
+                fx.kind
+            ));
+            continue;
+        };
+
+        // Nilai disusun menurut URUTAN katalog; yang tidak dikirim memakai
+        // default deskriptor, bukan nol — nol adalah nilai yang sah untuk
+        // sebagian parameter dan akan terdengar sebagai setelan yang salah.
+        let mut params = Vec::with_capacity(desc.params.len());
+        for pd in desc.params {
+            let v = fx.params.get(pd.id).copied().unwrap_or(pd.default);
+            params.push(pd.clamp(v));
+        }
+
+        for name in fx.params.keys() {
+            if desc.param_index(name).is_none() {
+                warnings.push(format!(
+                    "Efek {} di {owner} mengirim parameter `{name}` yang tidak dikenal; diabaikan.",
+                    desc.name
+                ));
+            }
+        }
+
+        out.push(FxSlotDesc {
+            kind: desc.kind,
+            // JSON menyimpan `enabled` (cara user berpikir); snapshot menyimpan
+            // `bypass` (cara engine berpikir). Dibalik di sini, satu kali.
+            bypass: !fx.enabled,
+            params,
+        });
+    }
+    out
+}
+
 pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
     let mut warnings: Vec<String> = Vec::new();
 
@@ -250,6 +334,7 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
     }
     let buses = vec![BusDesc {
         gain_db: master_gain_db.clamp(MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB),
+        chain: map_chain("Master", &src.master_chain, &mut warnings),
         ..BusDesc::default()
     }];
     let mut tracks: Vec<TrackDesc> = Vec::new();
@@ -297,6 +382,11 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
             sends: Vec::new(),
             eq,
             comp: Default::default(),
+            chain: map_chain(
+                &format!("Lane \"{}\"", lane.id),
+                &lane.chain,
+                &mut warnings,
+            ),
         });
 
         if !audible {
@@ -766,5 +856,155 @@ mod tests {
         let m = mapping_from_json(json).unwrap();
         assert_eq!(m.warnings.len(), 1);
         assert!(m.warnings[0].contains("band EQ"));
+    }
+
+    // ── Insert chain ──────────────────────────────────────────────────────
+
+    /// Lane berisi satu clip — `map_project` menolak project tanpa clip yang
+    /// terdengar, dan penolakan itu memang perilaku yang benar.
+    fn lane_with_chain(chain_json: &str) -> Mapping {
+        let json = format!(
+            r#"{{ "sampleRate": 48000, "speed": 1,
+                  "lanes": [{{ "id": "L1", "gainDb": 0, "speedRatio": 1,
+                               "chain": {chain_json},
+                               "clips": [{{ "id": "c", "assetId": 0,
+                                            "start": 0, "len": 1000 }}] }}] }}"#
+        );
+        mapping_from_json(&json).unwrap()
+    }
+
+    #[test]
+    fn chain_longer_than_cap_is_reported_not_dropped_silently() {
+        let one = r#"{ "kind": "eq4" }"#;
+        let many: Vec<&str> = core::iter::repeat(one).take(MAX_CHAIN_LEN + 2).collect();
+        let m = lane_with_chain(&format!("[{}]", many.join(",")));
+        assert_eq!(m.project.tracks[0].chain.len(), MAX_CHAIN_LEN);
+        assert!(
+            m.warnings.iter().any(|w| w.contains("hanya memproses")),
+            "chain kepanjangan dipotong tanpa peringatan: {:?}",
+            m.warnings
+        );
+    }
+
+    #[test]
+    fn unknown_fx_kind_is_reported_not_dropped_silently() {
+        let m = lane_with_chain(r#"[{ "kind": "flux-capacitor" }]"#);
+        assert!(m.project.tracks[0].chain.is_empty());
+        assert!(
+            m.warnings.iter().any(|w| w.contains("tidak dikenal engine")),
+            "efek asing hilang tanpa peringatan: {:?}",
+            m.warnings
+        );
+    }
+
+    /// Parameter yang salah nama adalah cara paling mudah setelan hilang tanpa
+    /// jejak: JSON-nya sah, efeknya terpasang, dan nilainya tidak pernah
+    /// dipakai.
+    #[test]
+    fn unknown_param_name_is_reported() {
+        let m = lane_with_chain(r#"[{ "kind": "eq4", "params": { "cutoff": 500 } }]"#);
+        assert_eq!(m.project.tracks[0].chain.len(), 1);
+        assert!(
+            m.warnings.iter().any(|w| w.contains("`cutoff`")),
+            "parameter asing diabaikan diam-diam: {:?}",
+            m.warnings
+        );
+    }
+
+    /// Parameter yang tidak dikirim memakai default KATALOG, bukan nol — nol
+    /// adalah nilai yang sah untuk sebagian parameter dan akan terdengar
+    /// sebagai setelan yang salah.
+    #[test]
+    fn missing_params_fall_back_to_catalog_defaults() {
+        let m = lane_with_chain(r#"[{ "kind": "eq4", "params": { "b1_freq": 500 } }]"#);
+        let slot = &m.project.tracks[0].chain[0];
+        let desc = daw_engine::fx::CATALOG.iter().find(|d| d.id == "eq4").unwrap();
+        assert_eq!(slot.params.len(), desc.params.len());
+        assert_eq!(slot.params[1], 500.0);
+        for (i, pd) in desc.params.iter().enumerate() {
+            if i != 1 {
+                assert_eq!(slot.params[i], pd.default, "param {} bukan default", pd.id);
+            }
+        }
+    }
+
+    /// JSON menyimpan `enabled` (cara user berpikir), snapshot menyimpan
+    /// `bypass` (cara engine berpikir). Terbalik satu kali di satu tempat.
+    #[test]
+    fn enabled_false_becomes_bypass_true() {
+        let m = lane_with_chain(r#"[{ "kind": "eq4", "enabled": false }]"#);
+        assert!(m.project.tracks[0].chain[0].bypass);
+        let m = lane_with_chain(r#"[{ "kind": "eq4" }]"#);
+        assert!(!m.project.tracks[0].chain[0].bypass, "default harus aktif");
+    }
+
+    #[test]
+    fn master_chain_lands_on_the_master_bus() {
+        let json = r#"{ "sampleRate": 48000, "speed": 1,
+            "lanes": [{ "id": "L1", "gainDb": 0, "speedRatio": 1,
+                        "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 1000 }] }],
+            "masterChain": [{ "kind": "comp" }] }"#;
+        let m = mapping_from_json(json).unwrap();
+        assert_eq!(m.project.buses[0].chain.len(), 1);
+    }
+
+    /// **Kegagalan paling mungkin di jalur ini bukan panic, melainkan SENYAP —
+    /// atau, untuk FX, tidak terfilter.**
+    ///
+    /// Chain yang ter-mapping dengan benar tapi tidak pernah dieksekusi
+    /// menghasilkan file yang valid sempurna dan tidak terfilter sempurna.
+    /// Tanpa tes ini, `Step::Fx` yang kelewat tidak terlihat di mana pun —
+    /// dan itu persis yang terjadi pada chain master sampai tes engine
+    /// menangkapnya.
+    #[test]
+    fn json_to_audio_end_to_end_with_fx_actually_changes_the_sound() {
+        use daw_engine::voice::Asset;
+        use daw_engine::Engine;
+        use daw_export::OfflineRenderer;
+        use daw_timeline::TimelineSample;
+
+        // Highpass 1 kHz pada materi DC murni: kalau chain-nya berjalan,
+        // yang tersisa mendekati nol.
+        let json = r#"{
+          "sampleRate": 48000, "speed": 1,
+          "lanes": [{ "id": "l", "gainDb": 0, "speedRatio": 1,
+            "chain": [{ "kind": "eq4", "params": {
+                "b1_kind": 1, "b1_freq": 1000, "b1_q": 0.707, "b1_on": 1 } }],
+            "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 24000,
+                        "fadeInMs": 0, "fadeOutMs": 0, "fadeCurve": "linear" }] }]
+        }"#;
+        let mapping = mapping_from_json(json).unwrap();
+        assert_eq!(mapping.project.tracks[0].chain.len(), 1, "chain tidak ter-mapping");
+
+        let bytes = mapping.project.to_bytes().unwrap();
+        let mut engine = Engine::from_snapshot(&bytes, 48_000).unwrap();
+
+        let frames = 48_000usize;
+        let pcm: Vec<f32> = vec![0.5f32; frames * 2];
+        // SAFETY: `pcm` hidup lebih lama dari `renderer` di scope ini.
+        unsafe {
+            engine.register_asset(
+                0,
+                Asset {
+                    data: pcm.as_ptr(),
+                    frames,
+                    channels: 2,
+                    sample_rate: 48_000,
+                },
+            );
+        }
+
+        let mut renderer = OfflineRenderer::new(engine, TimelineSample(0), TimelineSample(24_000));
+        let mut l = vec![0.0f32; 24_000];
+        let mut r = vec![0.0f32; 24_000];
+        assert_eq!(renderer.render_batch(1000, &mut l, &mut r), 24_000);
+
+        // Sesudah transien highpass mereda, DC harus habis.
+        let tail = &l[12_000..];
+        let peak = tail.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+        assert!(
+            peak < 0.05,
+            "highpass tidak dieksekusi — DC 0.5 masih tersisa {peak}"
+        );
     }
 }

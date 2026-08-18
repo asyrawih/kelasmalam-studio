@@ -283,7 +283,10 @@ fn retired_plans_are_dropped_off_the_render_thread() {
     let mut f = build(2, false, false, 128);
     let p = f.engine.project().clone();
     let plan = crate::graph::build_plan(&p, 99).unwrap();
-    f.engine.install_plan(plan).ok();
+    // Rak ikut dipensiunkan bersama plan: panjangnya ikut project, jadi ia
+    // juga tidak boleh di-drop di audio thread.
+    let rack = crate::fx::FxRack::new(crate::graph::TOTAL_UNITS, 48_000.0);
+    f.engine.install_config(RenderConfig { plan, rack }).ok();
     let mut l = alloc::vec![0.0f32; 128];
     let mut r = alloc::vec![0.0f32; 128];
     f.engine.render_block(&mut l, &mut r);
@@ -396,4 +399,200 @@ fn gain_changes_ramp_instead_of_stepping() {
     let tail = rms(&l[448..]);
     assert!(head > tail, "tidak turun sama sekali: {head} -> {tail}");
     assert!(head > 1.0e-4, "turun seketika, bukan di-ramp: {head}");
+}
+
+// ── Insert chain user (track & master) ────────────────────────────────────
+
+use crate::snapshot::FxSlotDesc;
+
+/// RMS setelah rerata dibuang.
+///
+/// Aset uji sengaja ber-DC 0.5 (lihat `make_asset`), jadi RMS polos didominasi
+/// komponen DC dan nyaris tidak bergerak walau lowpass memotong seluruh nada.
+/// Yang menunjukkan kerja filter adalah energi AC-nya.
+fn ac_rms(v: &[f32]) -> f32 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    let mean = v.iter().map(|x| *x as f64).sum::<f64>() / v.len() as f64;
+    let s: f64 = v.iter().map(|x| (*x as f64 - mean).powi(2)).sum();
+    (s / v.len() as f64).sqrt() as f32
+}
+
+/// Parameter EQ dengan band 1 sebagai lowpass tajam, sisanya mati.
+/// Urutannya mengikuti `Eq4::DESC.params`: [kind, freq, q, gain, on] × 4.
+fn eq_lowpass_params(freq: f32) -> Vec<f32> {
+    let mut v = alloc::vec![0.0f32; 20];
+    v[0] = 0.0; // LowPass
+    v[1] = freq;
+    v[2] = 0.707;
+    v[3] = 0.0;
+    v[4] = 1.0; // on
+    for b in 1..4 {
+        let o = b * 5;
+        v[o] = 4.0; // Peaking
+        v[o + 1] = 1_000.0;
+        v[o + 2] = 0.707;
+        v[o + 3] = 0.0;
+        v[o + 4] = 0.0; // off
+    }
+    v
+}
+
+fn with_track_chain(chain: Vec<FxSlotDesc>) -> Fixture {
+    let mut f = build(1, false, false, 128);
+    let mut p = f.engine.project().clone();
+    p.tracks[0].chain = chain;
+    f.engine.load_project(p).expect("plan valid");
+    f.engine.play();
+    f
+}
+
+fn with_master_chain(chain: Vec<FxSlotDesc>) -> Fixture {
+    let mut f = build(1, false, false, 128);
+    let mut p = f.engine.project().clone();
+    p.buses[0].chain = chain;
+    f.engine.load_project(p).expect("plan valid");
+    f.engine.play();
+    f
+}
+
+/// Chain yang ter-mapping dengan benar tapi tidak pernah DIEKSEKUSI
+/// menghasilkan audio yang valid sempurna dan tidak terfilter sempurna —
+/// tidak ada error di mana pun. Ini tes yang membuat `Step::Fx` yang kelewat
+/// jadi terlihat.
+#[test]
+fn a_track_chain_actually_changes_the_audio() {
+    let mut plain = with_track_chain(Vec::new());
+    let (pl, _) = render_all(&mut plain, 8192, 128);
+
+    let mut filtered = with_track_chain(alloc::vec![FxSlotDesc {
+        kind: 0, // EQ
+        bypass: false,
+        params: eq_lowpass_params(120.0),
+    }]);
+    let (fl, _) = render_all(&mut filtered, 8192, 128);
+
+    let a = ac_rms(&pl[4096..]);
+    let b = ac_rms(&fl[4096..]);
+    assert!(a > 1.0e-3, "referensi senyap, tes tidak bermakna");
+    assert!(
+        b < a * 0.5,
+        "lowpass 120 Hz pada materi 220 Hz tidak mengubah apa pun: {a} -> {b}"
+    );
+}
+
+/// Master adalah bus, jadi master FX lewat jalur emisi yang sama persis.
+#[test]
+fn a_master_chain_actually_changes_the_audio() {
+    let mut plain = with_master_chain(Vec::new());
+    let (pl, _) = render_all(&mut plain, 8192, 128);
+
+    let mut filtered = with_master_chain(alloc::vec![FxSlotDesc {
+        kind: 0,
+        bypass: false,
+        params: eq_lowpass_params(120.0),
+    }]);
+    let (fl, _) = render_all(&mut filtered, 8192, 128);
+
+    let a = ac_rms(&pl[4096..]);
+    let b = ac_rms(&fl[4096..]);
+    assert!(a > 1.0e-3);
+    assert!(b < a * 0.5, "master chain tidak dieksekusi: {a} -> {b}");
+}
+
+/// Efek yang dipasang dalam keadaan bypass harus melewatkan sinyal apa adanya.
+#[test]
+fn a_bypassed_chain_effect_passes_signal_through() {
+    let mut plain = with_track_chain(Vec::new());
+    let (pl, _) = render_all(&mut plain, 8192, 128);
+
+    let mut bypassed = with_track_chain(alloc::vec![FxSlotDesc {
+        kind: 0,
+        bypass: true,
+        params: eq_lowpass_params(120.0),
+    }]);
+    let (bl, _) = render_all(&mut bypassed, 8192, 128);
+
+    let a = ac_rms(&pl[4096..]);
+    let b = ac_rms(&bl[4096..]);
+    assert!(
+        (a - b).abs() < a * 0.02,
+        "bypass tidak transparan: {a} vs {b}"
+    );
+}
+
+/// Chain kosong tidak boleh mengubah apa pun — kalau berubah, berarti ada node
+/// yang diemit padahal tidak ada efek terpasang.
+#[test]
+fn an_empty_chain_is_bit_identical_to_no_chain() {
+    let mut a = build(2, true, true, 128);
+    let (al, ar) = render_all(&mut a, 4096, 128);
+
+    let mut b = build(2, true, true, 128);
+    let p = b.engine.project().clone();
+    b.engine.load_project(p).expect("plan valid");
+    b.engine.play();
+    let (bl, br) = render_all(&mut b, 4096, 128);
+
+    assert_eq!(al, bl);
+    assert_eq!(ar, br);
+}
+
+/// Invarian yang menjadi alasan `plan_chains` ada: plan dan rak harus sepakat
+/// soal penomoran node. Kalau tidak, `Step::Fx { node }` menjalankan efek yang
+/// berbeda dari yang dimaksud — tanpa error apa pun.
+#[test]
+fn the_plan_and_the_rack_agree_on_node_numbering() {
+    let chain = alloc::vec![
+        FxSlotDesc { kind: 0, bypass: false, params: eq_lowpass_params(500.0) },
+        FxSlotDesc { kind: 1, bypass: false, params: alloc::vec![-24.0, 8.0, 6.0, 10.0, 120.0, 0.0, 0.0, 0.0, 1.0] },
+    ];
+    let mut f = with_track_chain(chain);
+    // `install_config` menunda swap ke awal blok berikutnya, jadi konfigurasi
+    // baru belum terpasang sampai satu blok benar-benar dirender.
+    render_all(&mut f, 128, 128);
+
+    let layout = crate::fx::plan_chains(f.engine.project()).unwrap();
+    assert_eq!(layout.entries.len(), 2);
+
+    // Tiap node yang disebut plan harus ada di rak.
+    let rack_len = f.engine.rack().len();
+    assert_eq!(rack_len, layout.total_nodes());
+    for step in f.engine.plan().steps.iter() {
+        if let crate::plan::Step::Fx { node, .. } = *step {
+            assert!(
+                (node as usize) < rack_len,
+                "plan menyebut node {node}, rak cuma punya {rack_len}"
+            );
+        }
+    }
+    // Dan tiap entri chain harus benar-benar diemit sebagai step.
+    for e in &layout.entries {
+        assert!(
+            f.engine.plan().steps.iter().any(
+                |s| matches!(*s, crate::plan::Step::Fx { node, .. } if node == e.node)
+            ),
+            "entri chain node {} tidak pernah diemit",
+            e.node
+        );
+    }
+}
+
+/// Chain harus selamat lewat postcard — kalau tidak, apa yang di-export berbeda
+/// dari apa yang dimuat.
+#[test]
+fn chains_survive_a_postcard_roundtrip() {
+    let f = with_track_chain(alloc::vec![FxSlotDesc {
+        kind: 0,
+        bypass: true,
+        params: eq_lowpass_params(333.0),
+    }]);
+    let p = f.engine.project().clone();
+    let bytes = p.to_bytes().expect("serialisasi");
+    let back = Project::from_bytes(&bytes).expect("deserialisasi");
+    assert_eq!(p, back);
+    assert_eq!(back.tracks[0].chain.len(), 1);
+    assert!(back.tracks[0].chain[0].bypass);
+    assert_eq!(back.tracks[0].chain[0].params.len(), 20);
 }
