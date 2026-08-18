@@ -98,9 +98,9 @@ describe('serialisasi project', () => {
   });
 
   it('blok Clip Detail yang dilipat ikut tersimpan', () => {
-    studioActions.toggleClipDetailSection('beat');
+    studioActions.toggleClipDetailSection('stem');
     const back = deserialize(serialize(studioStore.getState()));
-    expect(back!.clipDetailSections).toMatchObject({ beat: false, stem: false, fade: false });
+    expect(back!.clipDetailSections).toMatchObject({ stem: true, fade: false });
   });
 
   it('project lama tanpa clipDetailSections memakai default, bukan objek kosong', () => {

@@ -280,13 +280,63 @@ tombol BAKE padanya berarti ia gagal justru saat build WASM belum ada.
 
 ---
 
+## Kontrol BEAT & LOOP ada di bar sticky, bukan di Clip Detail
+
+`timeline/BeatBar.tsx` — menempel di atas halaman (`position: sticky; top: 0`).
+
+Dulu ia satu blok lipat di dalam Clip Detail. Masalahnya: ini kontrol yang
+dipakai BERULANG-ULANG sambil melihat timeline — ganti panjang loop, geser satu
+loop, LOOP PLAY, ×2 — dan Clip Detail bisa berada jauh di bawah layar. Menggulir
+bolak-balik untuk menekan tombol yang sama setiap beberapa detik adalah biaya
+yang tidak perlu dibayar.
+
+`StudioLayout` sengaja TIDAK memberi body-nya scroller sendiri: dokumen yang
+menggulir, dan `sticky` bekerja terhadapnya. Memberi body `overflow: auto` akan
+mematikan sticky tanpa gejala lain selain "bar-nya tidak menempel".
+
+### Susunannya kelompok mendatar, bukan baris penuh-lebar
+
+Empat kelompok bersebelahan: **GRID · VIEW · LOOP · CUT**, masing-masing dengan
+angkanya sendiri tepat di bawah kontrolnya.
+
+Susunan pertama adalah empat baris penuh-lebar dengan label 62 px di kiri dan
+pembacaan angka didorong ke ujung kanan pakai `marginLeft: auto`. Di layar lebar
+itu berarti setiap baris punya lubang kosong ratusan piksel di tengah, dan mata
+harus melintasinya untuk menghubungkan tombol dengan angkanya. Empat baris juga
+membuat bar sticky ini tinggi — padahal ia menempel di atas dan memakan ruang
+timeline terus-menerus.
+
+`flex-wrap` + `flex-basis` per kelompok membuatnya turun jadi dua lajur lalu satu
+lajur di layar sempit, **tanpa satu pun media query**. GRID tidak punya pemisah;
+sisanya diberi garis kiri tipis — garis sudah cukup untuk memisahkan kelompok
+tanpa menambah border ke bar yang sudah padat.
+
+CUT sengaja jadi kelompok sendiri di ujung: yang di sebelah kirinya
+MENDENGARKAN, yang di sini MENGUBAH clip. `LOOP CUT` tidak boleh berdesakan
+dengan tombol yang cuma memutar.
+
+### State-nya dibagi lewat context
+
+`timeline/beat-context.tsx`. Kontrolnya di topbar, tapi yang MEMAKAI hasilnya —
+grid di waveform, jendela geser, tarikan untuk menaruh loop — ada di Clip Detail.
+Keduanya cabang pohon yang berbeda.
+
+Context, bukan store: `bars`, `zoom`, dan posisi region adalah pilihan sementara
+sebelum menekan tombol, bukan bagian dari karya. Yang benar-benar milik project
+(BPM manual, offset downbeat, region yang diaudisi) memang sudah di store.
+
+"Clip yang dipajang" (sticky + `fallbackClip`) juga pindah ke context, karena
+topbar dan Clip Detail WAJIB menunjuk clip yang sama. Dua tempat yang
+menghitungnya sendiri-sendiri suatu saat akan berbeda tanpa ada yang memberi
+tahu.
+
 ## Blok yang bisa dilipat
 
-Clip Detail tumbuh sampai empat blok (BEAT & LOOP, REMOVE, FADE, plus baris
-aksi) dan tinggi penuhnya menutupi timeline — tempat pekerjaan sebenarnya
-terjadi. `DetailSection.tsx` melipatnya.
+Tinggi penuh Clip Detail menutupi timeline — tempat pekerjaan sebenarnya
+terjadi. `DetailSection.tsx` melipat blok REMOVE dan FADE. (`beat` sudah tidak
+ada di sini; lihat bagian di atas.)
 
-Default: **BEAT & LOOP terbuka, REMOVE dan FADE terlipat**. Pilihannya ikut
+Default: **keduanya terlipat**. Pilihannya ikut
 disimpan (`StudioAppState.clipDetailSections`, field opsional di
 `PersistedProject`, tanpa menaikkan `SCHEMA_VERSION`) — seperti `panelOrder` dan
 `eqMode`. Melipat blok adalah keputusan tata letak yang dibuat sekali, dan
@@ -312,6 +362,8 @@ sudah di layar.
 | `web/src/studio/timeline/beat-draw.ts` | penggambar grid + playhead (dipakai dua tampilan) |
 | `web/src/studio/timeline/ScrollingWave.tsx` | jendela geser rAF, playhead di tengah |
 | `web/src/studio/timeline/DetailSection.tsx` | blok yang bisa dilipat + ringkasannya |
+| `web/src/studio/timeline/BeatBar.tsx` | bar BEAT & LOOP yang menempel di atas |
+| `web/src/studio/timeline/beat-context.tsx` | state beat + clip yang dipajang, dibagi bersama |
 | `web/src/studio/timeline/stem.ts` | normalisasi & pembacaan `StudioClip.stem` |
 | `web/src/studio/preview/stem-chain.ts` | rantai mid/side di Web Audio |
 | `web/src/studio/timeline/stem-bake.ts` | render offline → asset baru |

@@ -15,7 +15,14 @@
  * lurus. Konversi ke timeline hanya terjadi di `applyLoopCut`.
  */
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 
 import { Button } from '../../ui/cyber';
 import { useCanvasDraw } from '../../ui/lib/canvas';
@@ -445,12 +452,71 @@ const ROW: React.CSSProperties = {
   gap: '8px',
   flexWrap: 'wrap',
 };
-const LABEL: React.CSSProperties = {
-  fontSize: '9px',
-  letterSpacing: '.16em',
-  color: 'var(--cy-text-muted)',
-  width: '62px',
-};
+
+/**
+ * Satu KELOMPOK kontrol, disusun mendatar bersebelahan.
+ *
+ * Susunan sebelumnya empat baris penuh-lebar dengan label 62 px di kiri dan
+ * pembacaan angka didorong ke ujung kanan pakai `marginLeft: auto`. Di layar
+ * lebar itu berarti tiap baris punya lubang kosong ratusan piksel di tengah, dan
+ * mata harus melintasinya untuk menghubungkan tombol dengan angkanya. Empat
+ * baris juga membuat bar sticky ini tinggi — padahal ia menempel di atas dan
+ * memakan ruang timeline terus-menerus.
+ *
+ * Sekarang tiga kelompok bersebelahan, masing-masing dengan angkanya SENDIRI di
+ * bawahnya. `flex-wrap` + `flex-basis` membuatnya turun jadi dua lajur lalu satu
+ * lajur di layar sempit, tanpa satu pun media query.
+ */
+function Group({
+  label,
+  basis,
+  min,
+  first = false,
+  children,
+}: {
+  readonly label: string;
+  readonly basis: number;
+  readonly min: number;
+  readonly first?: boolean;
+  readonly children: ReactNode;
+}): JSX.Element {
+  return (
+    <div
+      data-beat-group={label}
+      style={{
+        flex: `1 1 ${basis}px`,
+        minWidth: `${min}px`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        // Pemisah, bukan kotak: garis tipis sudah cukup untuk memisahkan
+        // kelompok tanpa menambah empat border baru ke bar yang sudah padat.
+        borderLeft: first ? 'none' : '1px solid var(--cy-border)',
+        paddingLeft: first ? 0 : '14px',
+      }}
+    >
+      <span style={{ fontSize: '9px', letterSpacing: '.18em', color: 'var(--cy-text-muted)' }}>
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/** Pembacaan angka/keterangan milik kelompoknya, tepat di bawah kontrolnya. */
+function Caption({
+  children,
+  accent = false,
+}: {
+  readonly children: ReactNode;
+  readonly accent?: boolean;
+}): JSX.Element {
+  return (
+    <span style={{ fontSize: '10px', color: accent ? '#6ee7ff' : 'var(--cy-text-dim)' }}>
+      {children}
+    </span>
+  );
+}
 
 /** Kontrol grid + loop cut, dipasang di bawah kotak waveform. */
 export function BeatControls({
@@ -479,72 +545,80 @@ export function BeatControls({
     region === null ? 0 : samplesToSec(region.sourceStart - clip.sourceStart, sampleRate);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <div style={ROW}>
-        <span style={LABEL}>BEAT</span>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', flexWrap: 'wrap' }}>
+      <Group label="GRID" basis={310} min={300} first>
         {assetId === undefined ? (
-          <span style={{ fontSize: '10px', color: 'var(--cy-text-dim)' }}>
-            clip ini belum punya audio
-          </span>
+          <Caption>clip ini belum punya audio</Caption>
         ) : (
           <>
-            <NumField
-              label="BPM"
-              value={grid?.bpm ?? null}
-              suffix="BPM"
-              onCommit={(n) =>
-                studioActions.setAssetBeatGrid(assetId, {
-                  bpm: n === null ? null : Math.min(MAX_GRID_BPM, Math.max(MIN_GRID_BPM, n)),
-                })
-              }
-            />
-            <Button
-              size="sm"
-              variant="ghost"
-              title="anggap dua kali lebih cepat"
-              onClick={() => studioActions.shiftAssetTempoOctave(assetId, 1)}
-            >
-              ×2
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              title="anggap dua kali lebih lambat"
-              onClick={() => studioActions.shiftAssetTempoOctave(assetId, -1)}
-            >
-              ÷2
-            </Button>
-            <span style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}>
-              DOWNBEAT
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={grid === null}
-              title="geser grid ke kiri (Shift = 1 ms)"
-              onClick={(e) => nudgeOffset(-(e.shiftKey ? OFFSET_STEP_FINE_SEC : OFFSET_STEP_SEC))}
-            >
-              ◀
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={grid === null}
-              title="geser grid ke kanan (Shift = 1 ms)"
-              onClick={(e) => nudgeOffset(e.shiftKey ? OFFSET_STEP_FINE_SEC : OFFSET_STEP_SEC)}
-            >
-              ▶
-            </Button>
-            <Button
-              size="sm"
-              variant={grid?.manual === true ? 'outline' : 'ghost'}
-              disabled={grid?.manual !== true}
-              title="buang koreksi manual, kembali ke hasil deteksi"
-              onClick={() => studioActions.resetAssetBeatGrid(assetId)}
-            >
-              AUTO
-            </Button>
-            <span style={{ fontSize: '10px', color: 'var(--cy-text-dim)' }}>
+            <div style={ROW}>
+              <NumField
+                label="BPM"
+                value={grid?.bpm ?? null}
+                suffix="BPM"
+                onCommit={(n) =>
+                  studioActions.setAssetBeatGrid(assetId, {
+                    bpm: n === null ? null : Math.min(MAX_GRID_BPM, Math.max(MIN_GRID_BPM, n)),
+                  })
+                }
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                title="anggap dua kali lebih cepat"
+                onClick={() => studioActions.shiftAssetTempoOctave(assetId, 1)}
+                style={{ padding: '0 8px' }}
+              >
+                ×2
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                title="anggap dua kali lebih lambat"
+                onClick={() => studioActions.shiftAssetTempoOctave(assetId, -1)}
+                style={{ padding: '0 8px' }}
+              >
+                ÷2
+              </Button>
+              <Button
+                size="sm"
+                variant={grid?.manual === true ? 'outline' : 'ghost'}
+                disabled={grid?.manual !== true}
+                title="buang koreksi manual, kembali ke hasil deteksi"
+                onClick={() => studioActions.resetAssetBeatGrid(assetId)}
+                style={{ padding: '0 8px' }}
+              >
+                AUTO
+              </Button>
+            </div>
+            <div style={ROW}>
+              <span
+                style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}
+              >
+                DOWNBEAT
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={grid === null}
+                title="geser grid ke kiri (Shift = 1 ms)"
+                onClick={(e) => nudgeOffset(-(e.shiftKey ? OFFSET_STEP_FINE_SEC : OFFSET_STEP_SEC))}
+                style={{ padding: '0 8px' }}
+              >
+                ◀
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={grid === null}
+                title="geser grid ke kanan (Shift = 1 ms)"
+                onClick={(e) => nudgeOffset(e.shiftKey ? OFFSET_STEP_FINE_SEC : OFFSET_STEP_SEC)}
+                style={{ padding: '0 8px' }}
+              >
+                ▶
+              </Button>
+            </div>
+            <Caption>
               {grid === null
                 ? asset?.tempoPending === true
                   ? 'menganalisis tempo…'
@@ -552,165 +626,164 @@ export function BeatControls({
                 : grid.manual
                   ? 'grid manual'
                   : 'grid dari deteksi'}
-            </span>
+            </Caption>
           </>
         )}
-      </div>
+      </Group>
 
-      <div style={ROW}>
-        <span style={LABEL}>VIEW</span>
-        <Button
-          size="sm"
-          variant={beat.zoom === 'full' ? 'outline' : 'ghost'}
-          title="tampilkan seluruh clip, diam"
-          onClick={() => beat.setZoom('full')}
-          style={{ padding: '0 10px' }}
-        >
-          FULL
-        </Button>
-        {/* Label angka saja, TANPA kata "BAR" — baris LOOP di bawah sudah punya
-            tombol "1 BAR"…"16 BAR", dan dua baris tombol yang terbaca sama
-            persis membuat mata (dan tangan) memilih baris yang salah. */}
-        {ZOOM_BAR_PRESETS.map((n) => (
+      <Group label="VIEW" basis={230} min={215}>
+        <div style={ROW}>
           <Button
-            key={n}
             size="sm"
-            variant={beat.zoom === n ? 'outline' : 'ghost'}
-            title={`jendela ${n} bar yang bergeser mengikuti playhead`}
-            onClick={() => beat.setZoom(n)}
+            variant={beat.zoom === 'full' ? 'outline' : 'ghost'}
+            title="tampilkan seluruh clip, diam"
+            onClick={() => beat.setZoom('full')}
             style={{ padding: '0 10px' }}
           >
-            {n}
+            FULL
           </Button>
-        ))}
-        <span style={{ fontSize: '10px', color: 'var(--cy-text-dim)' }}>
+          {/* Label angka saja, TANPA kata "BAR" — kelompok LOOP di sebelah sudah
+              punya tombol "1 BAR"…"16 BAR", dan dua deret yang terbaca sama
+              persis membuat mata (dan tangan) memilih deret yang salah. */}
+          {ZOOM_BAR_PRESETS.map((n) => (
+            <Button
+              key={n}
+              size="sm"
+              variant={beat.zoom === n ? 'outline' : 'ghost'}
+              title={`jendela ${n} bar yang bergeser mengikuti playhead`}
+              onClick={() => beat.setZoom(n)}
+              style={{ padding: '0 10px' }}
+            >
+              {n}
+            </Button>
+          ))}
+        </div>
+        <Caption>
           {beat.zoom === 'full'
-            ? 'bar terlihat — FULL: waveform diam, klik/tarik untuk menaruh loop'
+            ? 'bar terlihat — FULL: waveform diam'
             : grid === null
               ? `tanpa BPM — jendela ${FALLBACK_WINDOW_SEC} detik`
-              : 'bar terlihat — tarik waveform untuk menaruh loop (Shift = per ketukan)'}
-        </span>
-        <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
+              : 'bar terlihat — tarik waveform untuk menaruh loop'}
+        </Caption>
+        <Caption>
           {beat.windowLen === null
-            ? '—'
+            ? 'jendela: seluruh clip'
             : `jendela ${samplesToSec(beat.windowLen, sampleRate).toFixed(2)} s`}
-        </span>
-      </div>
+        </Caption>
+      </Group>
 
-      <div style={ROW}>
-        <span style={LABEL}>LOOP</span>
-        {LOOP_BAR_PRESETS.map((n) => (
+      <Group label="LOOP" basis={520} min={480}>
+        <div style={ROW}>
+          {LOOP_BAR_PRESETS.map((n) => (
+            <Button
+              key={n}
+              size="sm"
+              variant={Math.abs(beat.bars - n) < 1e-6 ? 'outline' : 'ghost'}
+              disabled={grid === null}
+              title={
+                n < 1
+                  ? `${formatBars(n)} bar = ${formatBeats(n)} — untuk roll dan stutter`
+                  : `${formatBars(n)} bar`
+              }
+              onClick={() => beat.setBars(n)}
+              style={{ padding: '0 8px' }}
+            >
+              {formatBars(n)} BAR
+            </Button>
+          ))}
+        </div>
+        <div style={ROW}>
           <Button
-            key={n}
             size="sm"
-            variant={Math.abs(beat.bars - n) < 1e-6 ? 'outline' : 'ghost'}
-            disabled={grid === null}
-            title={
-              n < 1
-                ? `${formatBars(n)} bar = ${formatBeats(n)} — untuk roll dan stutter`
-                : `${formatBars(n)} bar`
-            }
-            onClick={() => beat.setBars(n)}
+            variant="ghost"
+            disabled={grid === null || region === null}
+            title="loop sebelumnya — geser sepanjang region itu sendiri"
+            onClick={() => beat.shiftBars(-1)}
             style={{ padding: '0 8px' }}
           >
-            {formatBars(n)} BAR
+            ◀
           </Button>
-        ))}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={grid === null || region === null}
-          title="loop sebelumnya — geser sepanjang region itu sendiri"
-          onClick={() => beat.shiftBars(-1)}
-          style={{ padding: '0 8px' }}
-        >
-          ◀
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={grid === null || region === null}
-          title="loop berikutnya — geser sepanjang region itu sendiri"
-          onClick={() => beat.shiftBars(1)}
-          style={{ padding: '0 8px' }}
-        >
-          ▶
-        </Button>
-        <Button
-          size="sm"
-          variant={beat.looping ? 'solid' : 'outline'}
-          disabled={grid === null || region === null}
-          title={
-            beat.looping
-              ? 'berhenti mengulang'
-              : 'putar HANYA region ini, berulang — mute/solo lane diabaikan selama audisi'
-          }
-          onClick={() => {
-            if (beat.looping) {
-              studioActions.stopClipLoop();
-              return;
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={grid === null || region === null}
+            title="loop berikutnya — geser sepanjang region itu sendiri"
+            onClick={() => beat.shiftBars(1)}
+            style={{ padding: '0 8px' }}
+          >
+            ▶
+          </Button>
+          <Button
+            size="sm"
+            variant={beat.looping ? 'solid' : 'outline'}
+            disabled={grid === null || region === null}
+            title={
+              beat.looping
+                ? 'berhenti mengulang'
+                : 'putar HANYA region ini, berulang — mute/solo lane diabaikan selama audisi'
             }
-            if (region === null) return;
-            studioActions.startClipLoop(clip.id, region.sourceStart, region.sourceLen);
-          }}
-        >
-          {beat.looping ? 'STOP LOOP' : 'LOOP PLAY'}
-        </Button>
-        <span
-          style={{
-            marginLeft: 'auto',
-            fontSize: '10px',
-            color: beat.looping ? '#6ee7ff' : 'var(--cy-text-dim)',
-          }}
-        >
+            onClick={() => {
+              if (beat.looping) {
+                studioActions.stopClipLoop();
+                return;
+              }
+              if (region === null) return;
+              studioActions.startClipLoop(clip.id, region.sourceStart, region.sourceLen);
+            }}
+          >
+            {beat.looping ? 'STOP LOOP' : 'LOOP PLAY'}
+          </Button>
+        </div>
+        <Caption accent={beat.looping}>
           {region === null
             ? '—'
             : beat.looping
               ? `mengulang ${formatBars(beat.bars)} bar · ${regionSec.toFixed(2)} s`
               : `region ${regionAtSec.toFixed(2)} s → ${(regionAtSec + regionSec).toFixed(2)} s`}
-        </span>
-      </div>
+        </Caption>
+      </Group>
 
-      {/* Baris terpisah dari LOOP: yang di atas MENDENGARKAN, yang di sini
-          MENGUBAH clip. Dulu keduanya berdesakan di satu baris, dan sejak
-          preset panjangnya jadi delapan, LOOP CUT terdorong ke ujung — terlalu
-          dekat dengan tombol yang cuma memutar, padahal ia merusak. */}
-      <div style={ROW}>
-        <span style={LABEL}>CUT</span>
-        <span style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}>
-          ULANG
-        </span>
-        <NumField
-          label="Jumlah pengulangan"
-          value={beat.repeat}
-          width={44}
-          suffix="×"
-          onCommit={(n) => beat.setRepeat(n ?? 1)}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={grid === null || region === null}
-          title={
-            grid === null
-              ? 'butuh BPM — deteksi belum selesai atau tidak ketemu'
-              : 'potong clip jadi region loop, lalu ulangi'
-          }
-          onClick={() => {
-            if (region === null) return;
-            studioActions.beatLoopCut(clip.id, {
-              sourceStart: region.sourceStart,
-              sourceLen: region.sourceLen,
-              repeat: region.repeat,
-              assetFrames: asset?.frames,
-            });
-            onCut(
-              `loop ${formatBars(beat.bars)} bar × ${region.repeat} — ${(regionSec * region.repeat).toFixed(1)} s`,
-            );
-          }}
-        >
-          LOOP CUT
-        </Button>
+      {/* Kelompok terakhir sengaja dipisah dari LOOP: yang di sebelah kiri
+          MENDENGARKAN, yang di sini MENGUBAH clip. Dulu keduanya berdesakan di
+          satu baris dan LOOP CUT terdorong ke ujung — terlalu dekat dengan
+          tombol yang cuma memutar, padahal ia merusak. */}
+      <Group label="CUT" basis={260} min={250}>
+        <div style={ROW}>
+          <span style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}>
+            ULANG
+          </span>
+          <NumField
+            label="Jumlah pengulangan"
+            value={beat.repeat}
+            width={44}
+            suffix="×"
+            onCommit={(n) => beat.setRepeat(n ?? 1)}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={grid === null || region === null}
+            title={
+              grid === null
+                ? 'butuh BPM — deteksi belum selesai atau tidak ketemu'
+                : 'potong clip jadi region loop, lalu ulangi'
+            }
+            onClick={() => {
+              if (region === null) return;
+              studioActions.beatLoopCut(clip.id, {
+                sourceStart: region.sourceStart,
+                sourceLen: region.sourceLen,
+                repeat: region.repeat,
+                assetFrames: asset?.frames,
+              });
+              onCut(
+                `loop ${formatBars(beat.bars)} bar × ${region.repeat} — ${(regionSec * region.repeat).toFixed(1)} s`,
+              );
+            }}
+          >
+            LOOP CUT
+          </Button>
+        </div>
         <label
           style={{
             display: 'flex',
@@ -729,10 +802,8 @@ export function BeatControls({
           />
           SNAP SPLIT
         </label>
-        <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
-          {region === null ? '—' : `hasil: ${(regionSec * region.repeat).toFixed(2)} s`}
-        </span>
-      </div>
+        <Caption>{region === null ? '—' : `hasil: ${(regionSec * region.repeat).toFixed(2)} s`}</Caption>
+      </Group>
     </div>
   );
 }

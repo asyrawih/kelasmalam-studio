@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerBuffer } from '../preview/audio-preview';
 import { studioActions, studioStore, type StudioAsset } from '../store';
 import { ClipDetailPanel } from './ClipDetailPanel';
+import { BeatProvider } from './beat-context';
 import { buildEnvelope } from './envelope';
 
 const SR = 48_000;
@@ -69,12 +70,24 @@ function setup(channels = 2): void {
   studioActions.toggleClipDetailSection('stem');
 }
 
+/**
+ * Clip Detail sekarang mengambil "clip yang dipajang" + state beat dari
+ * `BeatProvider`.
+ */
+function Studio(): JSX.Element {
+  return (
+    <BeatProvider>
+      <ClipDetailPanel />
+    </BeatProvider>
+  );
+}
+
 beforeEach(() => setup());
 afterEach(cleanup);
 
 describe('tombol REMOVE', () => {
   it('REMOVE VOCAL membuang bagian tengah dan bisa dimatikan lagi', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     const btn = screen.getByRole('button', { name: 'VOCAL' });
     fireEvent.click(btn);
     expect(selected().stem?.vocal).toBe(0);
@@ -84,28 +97,28 @@ describe('tombol REMOVE', () => {
   });
 
   it('tiga bagian bisa dibuang sendiri-sendiri', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.click(screen.getByRole('button', { name: 'BASS' }));
     fireEvent.click(screen.getByRole('button', { name: 'INSTRUMENT' }));
     expect(selected().stem).toMatchObject({ vocal: 1, bass: 0, other: 0 });
   });
 
   it('RESET mengembalikan semuanya', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.click(screen.getByRole('button', { name: 'VOCAL' }));
     fireEvent.click(screen.getByRole('button', { name: 'RESET' }));
     expect(selected().stem).toBeUndefined();
   });
 
   it('ringkasan menyebutkan apa yang dibuang', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText('clip utuh')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'VOCAL' }));
     expect(screen.getByText('−VOCAL')).toBeTruthy();
   });
 
   it('slider halus bisa membuang sebagian', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.click(screen.getByRole('button', { name: /HALUS/ }));
     fireEvent.change(screen.getByLabelText('BUANG VOCAL'), { target: { value: '0.6' } });
     expect(selected().stem!.vocal).toBeCloseTo(0.4, 6);
@@ -113,12 +126,12 @@ describe('tombol REMOVE', () => {
 
   it('clip MONO diberi peringatan, bukan dibiarkan menebak', () => {
     setup(1);
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText(/clip ini MONO/)).toBeTruthy();
   });
 
   it('clip stereo tidak diberi peringatan mono', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.queryByText(/clip ini MONO/)).toBeNull();
   });
 });
@@ -170,7 +183,7 @@ describe('BAKE', () => {
     }
     (globalThis as { OfflineAudioContext?: unknown }).OfflineAudioContext = FakeOffline;
 
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.click(screen.getByRole('button', { name: 'VOCAL' }));
     fireEvent.click(screen.getByRole('button', { name: /HALUS/ }));
     const before = selected().assetId;
@@ -187,7 +200,7 @@ describe('BAKE', () => {
   });
 
   it('tanpa OfflineAudioContext, BAKE gagal dengan alasan yang terbaca', async () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.click(screen.getByRole('button', { name: 'VOCAL' }));
     fireEvent.click(screen.getByRole('button', { name: /HALUS/ }));
     fireEvent.click(screen.getByRole('button', { name: 'BAKE' }));

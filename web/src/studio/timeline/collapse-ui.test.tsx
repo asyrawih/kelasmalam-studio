@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { studioActions, studioStore } from '../store';
 import { ClipDetailPanel } from './ClipDetailPanel';
+import { BeatProvider } from './beat-context';
 
 const SR = 48_000;
 
@@ -34,6 +35,18 @@ function clipId0(): string {
   return studioStore.getState().lanes[0]!.clips[0]!.id;
 }
 
+/**
+ * Clip Detail sekarang mengambil "clip yang dipajang" + state beat dari
+ * `BeatProvider`.
+ */
+function Studio(): JSX.Element {
+  return (
+    <BeatProvider>
+      <ClipDetailPanel />
+    </BeatProvider>
+  );
+}
+
 beforeEach(() => {
   studioActions.__resetForTest();
   const lane = studioStore.getState().lanes[0]!;
@@ -47,17 +60,17 @@ afterEach(cleanup);
 describe('Clip Detail selalu terpasang', () => {
   it('tanpa seleksi pun tetap memajang sebuah clip — panel tidak pernah kosong', () => {
     act(() => studioActions.clearClipSelection());
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     // Panel yang muncul-hilang mendorong timeline naik-turun di bawah kursor,
     // sehingga klik berikutnya mendarat di tempat yang berbeda dari yang
     // dilihat mata. Selama project punya clip, panel ini selalu berisi.
     expect(screen.queryByText('PILIH CLIP DI TIMELINE')).toBeNull();
-    expect(document.querySelector('[data-detail-section="beat"]')).not.toBeNull();
+    expect(document.querySelector('[data-detail-section="stem"]')).not.toBeNull();
     expect(screen.getByText('TIDAK TERPILIH')).toBeTruthy();
   });
 
   it('TETAP menampilkan clip terakhir setelah seleksi dilepas', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     const label = studioStore.getState().lanes[0]!.clips[0]!.label;
     expect(screen.getByText(label)).toBeTruthy();
 
@@ -68,11 +81,11 @@ describe('Clip Detail selalu terpasang', () => {
     expect(screen.getByText(label)).toBeTruthy();
     expect(screen.getByText('TIDAK TERPILIH')).toBeTruthy();
     // Isinya tetap ada, jadi tingginya tidak berubah.
-    expect(document.querySelector('[data-detail-section="beat"]')).not.toBeNull();
+    expect(document.querySelector('[data-detail-section="stem"]')).not.toBeNull();
   });
 
   it('penanda TIDAK TERPILIH hilang lagi begitu clip dipilih ulang', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     act(() => studioActions.clearClipSelection());
     expect(screen.getByText('TIDAK TERPILIH')).toBeTruthy();
     act(() => studioActions.selectClip(clipId0()));
@@ -91,14 +104,14 @@ describe('Clip Detail selalu terpasang', () => {
       }),
     );
     act(() => studioActions.selectClip(clipId0()));
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     const shown = studioStore.getState().lanes[0]!.clips.find((c) => c.id !== 'sisa')!;
 
     act(() => studioActions.removeClip(shown.id));
     // Tinggi panel tidak boleh berubah tepat setelah menekan X — timeline di
     // bawahnya akan melompat, persis masalah yang sama dengan kotak seleksi.
     expect(screen.queryByText('PILIH CLIP DI TIMELINE')).toBeNull();
-    expect(document.querySelector('[data-detail-section="beat"]')).not.toBeNull();
+    expect(document.querySelector('[data-detail-section="stem"]')).not.toBeNull();
     // Dan yang dipajang bukan clip yang baru dihapus.
     expect(screen.queryByText(shown.label)).toBeNull();
   });
@@ -116,7 +129,7 @@ describe('Clip Detail selalu terpasang', () => {
     act(() => studioActions.setPlayhead(61 * SR)); // di dalam 'JAUH'
     const first = studioStore.getState().lanes[0]!.clips.find((c) => c.id !== 'jauh')!;
     act(() => studioActions.selectClip(first.id));
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     act(() => studioActions.removeClip(first.id));
     expect(screen.getByText('JAUH')).toBeTruthy();
   });
@@ -125,14 +138,14 @@ describe('Clip Detail selalu terpasang', () => {
     for (const c of studioStore.getState().lanes.flatMap((l) => l.clips)) {
       act(() => studioActions.removeClip(c.id));
     }
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText('PILIH CLIP DI TIMELINE')).toBeTruthy();
   });
 
   it('badge hilang begitu clip yang dipajang memang dipilih', () => {
     const id = clipId0();
     act(() => studioActions.clearClipSelection());
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText('TIDAK TERPILIH')).toBeTruthy();
     act(() => studioActions.selectClip(id));
     expect(screen.queryByText('TIDAK TERPILIH')).toBeNull();
@@ -140,9 +153,8 @@ describe('Clip Detail selalu terpasang', () => {
 });
 
 describe('blok Clip Detail', () => {
-  it('default: BEAT terbuka, REMOVE dan FADE terlipat', () => {
-    render(<ClipDetailPanel />);
-    expect(header('beat').getAttribute('aria-expanded')).toBe('true');
+  it('default: REMOVE dan FADE terlipat', () => {
+    render(<Studio />);
     expect(header('stem').getAttribute('aria-expanded')).toBe('false');
     expect(header('fade').getAttribute('aria-expanded')).toBe('false');
     // Isi blok yang terlipat memang tidak ada di DOM, bukan sekadar tersembunyi.
@@ -150,7 +162,7 @@ describe('blok Clip Detail', () => {
   });
 
   it('mengkliknya membuka dan menutup, dan pilihannya tersimpan di store', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.click(header('stem'));
     expect(studioStore.getState().clipDetailSections.stem).toBe(true);
     expect(screen.getByRole('button', { name: 'VOCAL' })).toBeTruthy();
@@ -161,26 +173,26 @@ describe('blok Clip Detail', () => {
   });
 
   it('blok terlipat tetap menyatakan bahwa stem sedang dibuang', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText('clip utuh')).toBeTruthy();
     studioActions.setClipStem(clipId(), { vocal: 0 });
     cleanup();
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText('−VOCAL')).toBeTruthy();
   });
 
   it('blok terlipat tetap menyatakan fade yang aktif', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText('tanpa fade')).toBeTruthy();
     studioActions.updateClip(clipId(), { fadeInMs: 2000, fadeOutMs: 500 });
     cleanup();
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText(/IN 2\.00 s · OUT 0\.50 s/)).toBeTruthy();
   });
 
   it('ringkasan TIDAK diulang saat blok-nya terbuka', () => {
     studioActions.updateClip(clipId(), { fadeInMs: 2000, fadeOutMs: 500 });
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(screen.getByText(/IN 2\.00 s · OUT 0\.50 s/)).toBeTruthy();
     fireEvent.click(header('fade'));
     expect(screen.queryByText(/IN 2\.00 s · OUT 0\.50 s/)).toBeNull();

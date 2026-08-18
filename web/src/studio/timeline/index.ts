@@ -1,6 +1,8 @@
 export { TimelinePanel } from './TimelinePanel';
 export { ClipDetailPanel } from './ClipDetailPanel';
 export { DetailSection } from './DetailSection';
+export { BeatBar } from './BeatBar';
+export { BeatProvider, useBeatShared, fallbackClip, type BeatShared, type ShownClip } from './beat-context';
 export {
   BeatControls,
   BeatOverlay,

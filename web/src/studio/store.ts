@@ -270,19 +270,24 @@ export interface StudioAppState extends StudioState {
   readonly maxDurationSec: number | null;
 }
 
-/** Blok yang bisa dilipat di dalam Clip Detail. */
-export type ClipDetailSectionId = 'beat' | 'stem' | 'fade';
+/**
+ * Blok yang bisa dilipat di dalam Clip Detail.
+ *
+ * `beat` sudah TIDAK ADA di sini: kontrol BEAT & LOOP pindah ke bar sticky di
+ * atas halaman (`timeline/BeatBar.tsx`) karena ia dipakai berulang-ulang sambil
+ * melihat timeline. Project lama yang menyimpan `beat` tetap terbaca — nilainya
+ * hanya tidak dipakai lagi.
+ */
+export type ClipDetailSectionId = 'stem' | 'fade';
 
 /**
- * BEAT terbuka, sisanya terlipat.
+ * Semuanya terlipat.
  *
- * Bukan "semua terbuka": panel ini sudah tumbuh sampai empat blok dan tinggi
- * penuhnya menutupi timeline. Yang dipilih terbuka adalah blok yang paling
- * sering disentuh; dua lainnya tetap menampilkan RINGKASAN saat terlipat, jadi
- * tidak ada yang hilang tanpa jejak — hanya satu klik lebih jauh.
+ * Bukan "semua terbuka": tinggi penuh panel ini menutupi timeline, dan blok yang
+ * terlipat tetap menampilkan RINGKASAN keadaannya — jadi tidak ada yang hilang
+ * tanpa jejak, hanya satu klik lebih jauh.
  */
 export const DEFAULT_CLIP_DETAIL_SECTIONS: Readonly<Record<ClipDetailSectionId, boolean>> = {
-  beat: true,
   stem: false,
   fade: false,
 };

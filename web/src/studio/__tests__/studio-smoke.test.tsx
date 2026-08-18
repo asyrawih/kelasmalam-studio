@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
 import { DEFAULT_FADE_CURVE, findClip, samplesToSec } from '../model';
 import { studioActions, studioStore } from '../store';
-import { ClipDetailPanel, LaneHeaders, OverviewStrip, TimelinePanel } from '../timeline';
+import { BeatBar, BeatProvider, ClipDetailPanel, LaneHeaders, OverviewStrip, TimelinePanel } from '../timeline';
 import { ReadoutStrip, StudioHeader } from '../shell';
 
 const RECT = {
@@ -88,7 +88,8 @@ describe('panel sendiri-sendiri', () => {
     ['StudioHeader', () => <StudioHeader />],
     ['ReadoutStrip', ReadoutStrip],
     ['TimelinePanel', TimelinePanel],
-    ['ClipDetailPanel', ClipDetailPanel],
+    ['ClipDetailPanel', () => <BeatProvider><ClipDetailPanel /></BeatProvider>],
+    ['BeatBar', () => <BeatProvider><BeatBar /></BeatProvider>],
     ['LaneHeaders', LaneHeaders],
     ['OverviewStrip', () => <OverviewStrip viewLeftPct={0} viewWidthPct={100} />],
   ];

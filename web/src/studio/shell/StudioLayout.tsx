@@ -33,6 +33,15 @@ const RAIL_MAX_FRACTION = '44%';
 export interface StudioLayoutProps {
   readonly header: ReactNode;
   readonly readouts: ReactNode;
+  /**
+   * Bar yang MENEMPEL di atas halaman (BEAT & LOOP).
+   *
+   * Halaman ini sengaja tidak punya scroller sendiri — dokumen yang menggulir,
+   * dan `position: sticky` di dalam bar itu bekerja terhadap dokumen. Membuat
+   * body ber-`overflow: auto` di sini akan mematikan sticky-nya tanpa gejala
+   * lain selain "bar-nya tidak menempel".
+   */
+  readonly beatBar?: ReactNode;
   readonly main: ReactNode;
   readonly rail: ReactNode;
   /** Lebar maksimum kolom kanan (design: prop `railWidth`). */
@@ -42,6 +51,7 @@ export interface StudioLayoutProps {
 export function StudioLayout({
   header,
   readouts,
+  beatBar,
   main,
   rail,
   railWidth = DEFAULT_RAIL_WIDTH,
@@ -60,11 +70,12 @@ export function StudioLayout({
         fontFamily: 'var(--cy-font-mono)',
         display: 'grid',
         gridTemplateColumns: 'minmax(0,1fr)',
-        gridTemplateRows: 'auto auto minmax(0,1fr)',
+        gridTemplateRows: 'auto auto auto minmax(0,1fr)',
       }}
     >
       {header}
       {readouts}
+      {beatBar}
       <div
         style={{
           display: 'grid',

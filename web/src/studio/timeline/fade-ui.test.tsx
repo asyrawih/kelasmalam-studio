@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { findClip, type StudioClip } from '../model';
 import { studioActions, studioStore } from '../store';
 import { ClipDetailPanel } from './ClipDetailPanel';
+import { BeatProvider } from './beat-context';
 
 const SR = 48_000;
 /** jsdom melaporkan semua elemen 0×0; beri lebar supaya fraksi drag terhitung. */
@@ -31,6 +32,18 @@ function selectedClip(): StudioClip {
   const hit = findClip(s.lanes, s.selectedClipId);
   if (hit === null) throw new Error('tidak ada clip terpilih');
   return hit.clip;
+}
+
+/**
+ * Clip Detail sekarang mengambil "clip yang dipajang" + state beat dari
+ * `BeatProvider`.
+ */
+function Studio(): JSX.Element {
+  return (
+    <BeatProvider>
+      <ClipDetailPanel />
+    </BeatProvider>
+  );
 }
 
 beforeEach(() => {
@@ -62,40 +75,40 @@ function drag(el: HTMLElement, clientX: number): void {
 
 describe('handle fade di waveform', () => {
   it('menarik handle kiri ke dalam memperpanjang fade-in', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     drag(handle('in'), 100); // 25% dari 400px → 25% dari 10 s
     expect(selectedClip().fadeInMs).toBe(2500);
   });
 
   it('menarik handle kanan ke dalam memperpanjang fade-out', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     drag(handle('out'), 300); // 25% diukur dari kanan
     expect(selectedClip().fadeOutMs).toBe(2500);
   });
 
   it('fade tidak bisa menembus fade sisi seberang', () => {
     studioActions.updateClip(selectedClip().id, { fadeOutMs: 7000 });
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     drag(handle('in'), 320); // minta 8 s, headroom cuma 3 s
     expect(selectedClip().fadeInMs).toBe(3000);
     expect(selectedClip().fadeOutMs).toBe(7000); // sisi lain TIDAK ikut berubah
   });
 
   it('drag keluar batas kiri tidak menghasilkan nilai negatif', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     drag(handle('in'), -200);
     expect(selectedClip().fadeInMs).toBe(0);
   });
 
   it('dobel-klik mengembalikan fade ke nol', () => {
     studioActions.updateClip(selectedClip().id, { fadeInMs: 4000 });
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.doubleClick(handle('in'));
     expect(selectedClip().fadeInMs).toBe(0);
   });
 
   it('panah menggeser 0.1 s, dengan Shift 0.01 s', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.keyDown(handle('in'), { key: 'ArrowRight' });
     expect(selectedClip().fadeInMs).toBe(100);
     fireEvent.keyDown(handle('in'), { key: 'ArrowRight', shiftKey: true });
@@ -107,14 +120,14 @@ describe('handle fade di waveform', () => {
 
   it('pembacaan tampil dalam detik dua desimal, bukan milidetik', () => {
     studioActions.updateClip(selectedClip().id, { fadeInMs: 4250 });
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     expect(document.querySelector('[data-fade-readout]')?.textContent).toContain('4.25 s');
   });
 });
 
 describe('kontrol pendukung', () => {
   it('preset per sisi hanya mengubah sisinya sendiri', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     const blocks = screen.getAllByTitle(/fade in 8 detik/i);
     fireEvent.click(blocks[0]!);
     expect(selectedClip().fadeInMs).toBe(8000);
@@ -123,7 +136,7 @@ describe('kontrol pendukung', () => {
 
   it('preset yang tidak muat dinonaktifkan, bukan diam-diam dipotong', () => {
     studioActions.updateClip(selectedClip().id, { fadeOutMs: 9000 });
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     // Sisa ruang cuma 1 s: preset 1s masih boleh, 8s tidak.
     const btns = screen.getAllByRole('button') as HTMLButtonElement[];
     const at = (text: string, nth: number): HTMLButtonElement =>
@@ -133,7 +146,7 @@ describe('kontrol pendukung', () => {
   });
 
   it('field detik menerima nilai pecahan', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     const field = screen.getByLabelText('FADE IN (detik)');
     fireEvent.change(field, { target: { value: '6.5' } });
     fireEvent.blur(field);
@@ -141,7 +154,7 @@ describe('kontrol pendukung', () => {
   });
 
   it('toggle kurva menulis ke clip', () => {
-    render(<ClipDetailPanel />);
+    render(<Studio />);
     fireEvent.click(screen.getByText('LINEAR'));
     expect(selectedClip().fadeCurve).toBe('linear');
     fireEvent.click(screen.getByText('EQUAL-POWER'));

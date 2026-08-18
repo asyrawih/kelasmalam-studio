@@ -19,7 +19,7 @@ import { ReorderableStack } from './studio/shell/ReorderableStack';
 import { studioActions, studioStore, useStudio } from './studio/store';
 import { registerExportHost } from './studio/rail/export-bridge';
 import { bufferLookup } from './studio/preview/audio-preview';
-import { ClipDetailPanel, TimelinePanel } from './studio/timeline';
+import { BeatBar, BeatProvider, ClipDetailPanel, TimelinePanel } from './studio/timeline';
 import { usePersistence } from './studio/persist/usePersistence';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
@@ -86,31 +86,34 @@ export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element
   }, []);
 
   return (
-    <StudioLayout
-      railWidth={railWidth}
-      header={<StudioHeader onClose={onClose} />}
-      readouts={<ReadoutStrip />}
-      main={
-        <ReorderableStack
-          overlayAside={<StudioRail />}
-          items={[
-            { id: 'timeline', node: <TimelinePanel /> },
-            // Clip Detail SELALU ada, juga saat tidak ada yang terpilih.
-            //
-            // Dulu ia hanya dipasang saat ada seleksi, dengan alasan menghemat
-            // ruang vertikal. Itu keliru begitu seleksi jadi sesuatu yang
-            // sering berubah: panel yang muncul-hilang mendorong timeline naik
-            // turun di bawah kursor, jadi klik berikutnya mendarat di tempat
-            // yang berbeda dari yang dilihat mata. Tata letak yang bergerak
-            // sendiri jauh lebih mahal daripada satu kartu berisi judul.
-            //
-            // Tanpa seleksi, panel ini menyusut jadi satu baris judul
-            // ("PILIH CLIP DI TIMELINE") — tingginya tetap, dan itulah intinya.
-            { id: 'clip-detail', node: <ClipDetailPanel /> },
-          ]}
-        />
-      }
-      rail={<StudioRail />}
-    />
+    <BeatProvider>
+      <StudioLayout
+        railWidth={railWidth}
+        header={<StudioHeader onClose={onClose} />}
+        readouts={<ReadoutStrip />}
+        beatBar={<BeatBar />}
+        main={
+          <ReorderableStack
+            overlayAside={<StudioRail />}
+            items={[
+              { id: 'timeline', node: <TimelinePanel /> },
+              // Clip Detail SELALU ada, juga saat tidak ada yang terpilih.
+              //
+              // Dulu ia hanya dipasang saat ada seleksi, dengan alasan menghemat
+              // ruang vertikal. Itu keliru begitu seleksi jadi sesuatu yang
+              // sering berubah: panel yang muncul-hilang mendorong timeline naik
+              // turun di bawah kursor, jadi klik berikutnya mendarat di tempat
+              // yang berbeda dari yang dilihat mata. Tata letak yang bergerak
+              // sendiri jauh lebih mahal daripada satu kartu berisi judul.
+              //
+              // Tanpa seleksi, panel ini menyusut jadi satu baris judul
+              // ("PILIH CLIP DI TIMELINE") — tingginya tetap, dan itulah intinya.
+              { id: 'clip-detail', node: <ClipDetailPanel /> },
+            ]}
+          />
+        }
+        rail={<StudioRail />}
+      />
+    </BeatProvider>
   );
 }

@@ -23,12 +23,10 @@ import { Button, Card } from '../../ui/cyber';
 import { useCanvasDraw } from '../../ui/lib/canvas';
 import {
   DEFAULT_FADE_CURVE,
-  findClip,
   formatTime,
   samplesToSec,
   type FadeCurve,
   type StudioClip,
-  type StudioLane,
 } from '../model';
 import { studioActions, useStudio, type StudioAsset } from '../store';
 import {
@@ -41,13 +39,8 @@ import {
   secToMs,
   type FadeSide,
 } from './fade';
-import {
-  BeatControls,
-  BeatOverlay,
-  LoopRegionPicker,
-  formatBars,
-  useBeatState,
-} from './BeatSection';
+import { BeatOverlay, LoopRegionPicker, formatBars } from './BeatSection';
+import { useBeatShared } from './beat-context';
 import { DetailSection } from './DetailSection';
 import { computeNormalizeGain, NORMALIZE_TARGET_DB } from './normalize';
 import { ScrollingWave } from './ScrollingWave';
@@ -62,30 +55,6 @@ const KEY_STEP_SEC = 0.1;
 const KEY_STEP_FINE_SEC = 0.01;
 
 const fmtSec = (ms: number): string => `${msToSec(ms).toFixed(2)} s`;
-
-/**
- * Clip mana yang dipajang saat tidak ada yang terpilih dan clip terakhir sudah
- * hilang.
- *
- * Yang di bawah PLAYHEAD lebih dulu — itu clip yang paling mungkin sedang
- * dipikirkan user, dan pilihannya bisa ditebak dari layar. Kalau playhead
- * berada di ruang kosong, ambil clip paling awal. `null` hanya kalau project
- * benar-benar tidak punya clip; di keadaan itu timeline juga kosong dan tidak
- * ada yang bisa melompat.
- */
-function fallbackClip(
-  lanes: readonly StudioLane[],
-  playhead: number,
-): { lane: StudioLane; clip: StudioClip } | null {
-  let earliest: { lane: StudioLane; clip: StudioClip } | null = null;
-  for (const lane of lanes) {
-    for (const clip of lane.clips) {
-      if (playhead >= clip.start && playhead < clip.start + clip.len) return { lane, clip };
-      if (earliest === null || clip.start < earliest.clip.start) earliest = { lane, clip };
-    }
-  }
-  return earliest;
-}
 
 /** Input durasi fade dalam DETIK; diterapkan saat blur/Enter, bukan tiap ketikan. */
 function SecField({
@@ -402,9 +371,7 @@ function FadeControls({
 }
 
 export function ClipDetailPanel(): JSX.Element {
-  const lanes = useStudio((s) => s.lanes);
   const assets = useStudio((s) => s.assets);
-  const selectedClipId = useStudio((s) => s.selectedClipId);
   const sampleRate = useStudio((s) => s.sampleRate);
   const playhead = useStudio((s) => s.playhead);
   const engineReady = useStudio((s) => s.engineReady);
@@ -438,21 +405,10 @@ export function ClipDetailPanel(): JSX.Element {
    * terbuka. Yang penting, keadaannya DIKATAKAN — mengedit clip yang tidak
    * tersorot di timeline harus terlihat jelas, bukan ketahuan belakangan.
    */
-  const stickyId = useRef<string | null>(null);
-  if (selectedClipId !== null) stickyId.current = selectedClipId;
-  // Di-resolve ulang dari `lanes`, bukan disimpan sebagai objek: clip-nya bisa
-  // ikut berubah (atau dihapus) selama ia dipajang.
-  let sel = findClip(lanes, selectedClipId ?? stickyId.current);
-  if (sel === null) {
-    // Clip yang dipajang baru saja DIHAPUS. Kalau panel dibiarkan mengempis di
-    // sini, tingginya berubah tepat setelah menekan X — dan timeline di bawahnya
-    // melompat, persis masalah yang sama dengan kotak seleksi. Jadi panel jatuh
-    // ke clip lain yang masih ada, bukan ke keadaan kosong.
-    sel = fallbackClip(lanes, playhead);
-    if (sel !== null) stickyId.current = sel.clip.id;
-  }
-  /** true kalau yang dipajang memang sedang terpilih di timeline. */
-  const isSelected = sel !== null && sel.clip.id === selectedClipId;
+  // Clip yang dipajang + state beat datang dari `BeatProvider`: bar BEAT & LOOP
+  // di topbar memakai keduanya, dan dua tempat yang menghitungnya sendiri suatu
+  // saat akan berbeda tanpa ada yang memberi tahu.
+  const { shown: sel, isSelected, beat } = useBeatShared();
   const startSec = sel === null ? 0 : samplesToSec(sel.clip.start, sampleRate);
   const lenSec = sel === null ? 0 : samplesToSec(sel.clip.len, sampleRate);
   const canSplit =
@@ -465,12 +421,6 @@ export function ClipDetailPanel(): JSX.Element {
   const clip = sel?.clip;
   const clipMs = clip === undefined ? 0 : samplesToFadeMs(clip.len, sampleRate);
   const speedRatio = sel?.lane.speedRatio ?? 1;
-  const beat = useBeatState(
-    clip,
-    clip === undefined ? undefined : assets[clip.assetId],
-    sampleRate,
-    speedRatio,
-  );
 
   /**
    * JENDELA yang digambar di kotak waveform.
@@ -546,12 +496,6 @@ export function ClipDetailPanel(): JSX.Element {
    * stem yang dibuang sama-sama MENGUBAH SUARA, dan user harus bisa tahu itu
    * tanpa membuka apa pun.
    */
-  const beatSummary =
-    beat.grid === null
-      ? 'BPM belum terdeteksi'
-      : `${beat.grid.bpm.toFixed(1)} BPM · loop ${formatBars(beat.bars)} bar${
-          beat.looping ? ' · MENGULANG' : ''
-        }`;
   const fadeSummary =
     clip === undefined || (clip.fadeInMs === 0 && clip.fadeOutMs === 0)
       ? 'tanpa fade'
@@ -859,22 +803,6 @@ export function ClipDetailPanel(): JSX.Element {
                   : 'edit di sini hanya mempengaruhi clip terpilih')}
             </span>
           </div>
-
-          <DetailSection
-            id="beat"
-            title="BEAT & LOOP"
-            summary={beatSummary}
-            open={sections.beat}
-            onToggle={() => studioActions.toggleClipDetailSection('beat')}
-          >
-            <BeatControls
-              beat={beat}
-              clip={clip}
-              asset={assets[clip.assetId]}
-              sampleRate={sampleRate}
-              onCut={setNote}
-            />
-          </DetailSection>
 
           <DetailSection
             id="stem"
