@@ -33,12 +33,20 @@
 pub mod arena;
 pub mod comp;
 #[cfg(test)]
+mod behaviour;
+#[cfg(test)]
 mod conformance;
 pub mod desc;
+pub mod echo;
 pub mod eq;
+pub mod filter;
+pub mod flanger;
 pub mod layout;
 pub mod params;
+pub mod pitch;
 pub mod registry;
+pub mod reverb;
+pub mod spiral;
 
 pub use arena::{FxArena, MemHandle, FX_ARENA_FLOATS};
 pub use comp::CompNode;
@@ -123,6 +131,36 @@ impl<'a> ParamCtx<'a> {
             f
         }
     }
+}
+
+/// Panjang grid refresh koefisien, dalam sample.
+///
+/// Efek yang mendesain ulang koefisien harus melakukannya pada posisi sample
+/// ABSOLUT, bukan di batas blok pemanggil. Kalau di batas blok, refresh jatuh
+/// 8× lebih sering pada render 128-frame dibanding 1024-frame, dan hasilnya
+/// berhenti bit-identical — `conformance::every_effect_is_resumable_across_sub_blocks`
+/// menolaknya. 32 sample juga menaikkan laju refresh ke 1500 Hz, yang memang
+/// dibutuhkan filter yang disapu cepat.
+pub const GRID: u32 = 32;
+
+/// Berapa sample boleh diproses sebelum grid berikutnya, dan apakah sample
+/// pertama potongan ini jatuh TEPAT di grid.
+///
+/// ```ignore
+/// let mut off = 0;
+/// while off < n {
+///     let (take, refresh) = grid_take(self.n_since, n - off, GRID);
+///     if refresh { self.refresh(); }
+///     self.run(&mut l[off..off + take], &mut r[off..off + take]);
+///     self.n_since = self.n_since.wrapping_add(take as u32);
+///     off += take;
+/// }
+/// ```
+#[inline]
+pub fn grid_take(n_since: u32, remaining: usize, grid: u32) -> (usize, bool) {
+    let phase = n_since % grid;
+    let take = ((grid - phase) as usize).min(remaining).max(1);
+    (take, phase == 0)
 }
 
 /// Kontrak yang diimplementasi setiap efek.
@@ -658,5 +696,50 @@ mod chain_tests {
         let rack = FxRack::chain(&[(FxKind::Comp, false)], 48_000.0);
         let want: Vec<f32> = FxKind::Comp.desc().params.iter().map(|p| p.default).collect();
         assert_eq!(rack.slots[0].params, want);
+    }
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+
+    /// Batas potongan harus jatuh di posisi sample ABSOLUT yang sama, tak
+    /// peduli bagaimana pemanggil memecah bloknya. Itulah seluruh gunanya.
+    #[test]
+    fn grid_boundaries_do_not_depend_on_block_size() {
+        fn refresh_points(blocks: &[usize]) -> Vec<u32> {
+            let mut n_since = 0u32;
+            let mut pts = Vec::new();
+            let mut abs = 0u32;
+            for b in blocks {
+                let mut off = 0usize;
+                while off < *b {
+                    let (take, refresh) = grid_take(n_since, *b - off, GRID);
+                    if refresh {
+                        pts.push(abs);
+                    }
+                    n_since = n_since.wrapping_add(take as u32);
+                    abs += take as u32;
+                    off += take;
+                }
+            }
+            pts
+        }
+        let whole = refresh_points(&[1024]);
+        let split = refresh_points(&[128; 8]);
+        let ragged = refresh_points(&[100, 300, 24, 600]);
+        assert_eq!(whole, split, "grid bergeser saat blok dipecah 8×128");
+        assert_eq!(whole, ragged, "grid bergeser pada pemecahan tidak rata");
+        assert_eq!(whole.len(), 1024 / GRID as usize);
+    }
+
+    #[test]
+    fn grid_take_never_returns_zero() {
+        for n_since in 0..70u32 {
+            for remaining in 1..70usize {
+                let (take, _) = grid_take(n_since, remaining, GRID);
+                assert!(take >= 1 && take <= remaining, "take={take}");
+            }
+        }
     }
 }

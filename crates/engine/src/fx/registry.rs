@@ -148,11 +148,23 @@ macro_rules! fx_registry {
 fx_registry! {
     0 => Eq   : super::eq::Eq4;
     1 => Comp : super::comp::CompNode;
+    2 => Filter : super::filter::FilterFx;
+    3 => Echo : super::echo::EchoFx;
+    4 => Spiral : super::spiral::SpiralFx;
+    5 => Flanger : super::flanger::FlangerFx;
+    6 => Reverb : super::reverb::ReverbFx, boxed;
+    7 => Pitch : super::pitch::PitchFx;
 }
 
 // Diskriminan ikut ke snapshot: menggesernya menafsirkan ulang project lama.
 const _: () = assert!(FxKind::Eq as u16 == 0);
 const _: () = assert!(FxKind::Comp as u16 == 1);
+const _: () = assert!(FxKind::Filter as u16 == 2);
+const _: () = assert!(FxKind::Echo as u16 == 3);
+const _: () = assert!(FxKind::Spiral as u16 == 4);
+const _: () = assert!(FxKind::Flanger as u16 == 5);
+const _: () = assert!(FxKind::Reverb as u16 == 6);
+const _: () = assert!(FxKind::Pitch as u16 == 7);
 
 // Ukuran enum bagian dari kontrak, bukan kebetulan: rak bisa berisi ratusan
 // node, jadi tiap byte dikali ratusan. Kalau assert ini pecah, kandidat
