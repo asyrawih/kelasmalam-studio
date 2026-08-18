@@ -1,0 +1,208 @@
+/**
+ * BEAT GRID — matematika murni "di mana ketukannya", tanpa React dan tanpa
+ * Web Audio, supaya bisa dites langsung.
+ *
+ * Bahannya sudah lama ada tapi belum pernah dipakai: `crates/analysis` mengukur
+ * BPM DAN fase ketukan (`beat_offset_sec`), dan keduanya sudah sampai ke
+ * `StudioAsset.tempo` — lalu berhenti di sana. docs/10 menyebutnya sendiri
+ * "bahan untuk snap-to-beat". Modul ini yang memakainya.
+ *
+ * DUA HAL YANG PERLU DIPAHAMI SEBELUM MENGUBAH FILE INI:
+ *
+ * 1. GRID MILIK ASSET, BUKAN CLIP. Ketukan adalah sifat materi rekamannya;
+ *    dua clip dari lagu yang sama punya grid yang sama. Karena itu semua posisi
+ *    di sini SOURCE-space (sample di dalam asset), bukan timeline-space.
+ *    Konversi ke timeline hanya terjadi di titik pemotongan, dengan
+ *    `lane.speedRatio` — aturan dua-koordinat docs/07 §8d.
+ *
+ * 2. NOMOR BAR-NYA ARBITER. Yang dideteksi Rust adalah fase KETUKAN, bukan
+ *    fase birama — tidak ada yang tahu ketukan mana yang "satu". Jadi bar 1
+ *    didefinisikan sebagai bar yang dimulai di ketukan pertama, dan itulah
+ *    kenapa offset bisa digeser user sampai sejauh SATU BAR penuh (bukan satu
+ *    ketukan): menggeser downbeat ke tempat yang benar memang butuh sebanyak
+ *    itu.
+ */
+
+import type { Samples } from '../model';
+import type { StudioAsset } from '../store';
+import { correctedBpm } from './playhead-tempo';
+
+/** Birama tetap 4/4 untuk sekarang. Dijadikan field di `BeatGrid` supaya
+ *  penambahan 3/4 nanti tidak perlu menyisir ulang seluruh pemakainya. */
+export const BEATS_PER_BAR = 4;
+
+/** Rentang BPM yang boleh diketik manual. Lebih lebar dari `BPM_MIN/MAX`
+ *  detektor (60–200): user boleh tahu lebih banyak daripada mesin. */
+export const MIN_GRID_BPM = 30;
+export const MAX_GRID_BPM = 300;
+
+/**
+ * Batas jumlah garis yang dikembalikan `beatLinesIn`. Clip 10 menit pada 174
+ * BPM punya ±1700 ketukan — masih wajar; yang dijaga di sini adalah grid rusak
+ * (BPM sangat tinggi × durasi panjang) yang bisa membekukan tab lewat satu
+ * loop. Penggambar TETAP harus menipiskan sendiri kalau garisnya lebih rapat
+ * dari beberapa piksel.
+ */
+export const MAX_BEAT_LINES = 8192;
+
+export interface BeatGrid {
+  readonly bpm: number;
+  /**
+   * Posisi ketukan pertama (detik, SOURCE-space), sudah dinormalkan ke
+   * `[0, satu bar)`. Grid itu periodik, jadi nilai di luar rentang itu tidak
+   * menghasilkan grid yang berbeda — hanya nomor bar yang bergeser.
+   */
+  readonly offsetSec: number;
+  readonly beatsPerBar: number;
+  /** true kalau BPM atau offset-nya berasal dari user, bukan dari deteksi. */
+  readonly manual: boolean;
+}
+
+export interface BeatLine {
+  /** Posisi di SOURCE-space. */
+  readonly at: Samples;
+  /** Indeks ketukan dari ketukan pertama (0 = ketukan pertama). */
+  readonly beat: number;
+  /** Indeks bar, 0-based. Lihat catatan "nomor bar-nya arbiter" di atas. */
+  readonly bar: number;
+  /** true di ketukan pertama tiap bar. */
+  readonly downbeat: boolean;
+}
+
+export function clampGridBpm(bpm: number): number {
+  if (!Number.isFinite(bpm)) return MIN_GRID_BPM;
+  return Math.min(MAX_GRID_BPM, Math.max(MIN_GRID_BPM, bpm));
+}
+
+/** Detik per ketukan. Satu-satunya tempat 60/bpm ditulis. */
+export function secPerBeat(grid: BeatGrid): number {
+  return 60 / grid.bpm;
+}
+
+export function samplesPerBeat(grid: BeatGrid, sr: number): number {
+  return (60 / grid.bpm) * sr;
+}
+
+export function samplesPerBar(grid: BeatGrid, sr: number): number {
+  return samplesPerBeat(grid, sr) * grid.beatsPerBar;
+}
+
+/**
+ * Grid yang berlaku untuk sebuah asset, atau null kalau memang belum ada
+ * jawabannya.
+ *
+ * Override user MENANG atas deteksi, tapi tidak MENGHAPUSNYA — `bpmOverride`
+ * saja yang diisi tetap memakai `beatOffsetSec` hasil deteksi, dan tombol AUTO
+ * bisa mengembalikan keduanya. Itu sebabnya keduanya field terpisah dan bukan
+ * satu objek `BeatGrid` yang menimpa.
+ *
+ * Koreksi oktaf (×2 / ÷2) dibaca lewat `correctedBpm` yang sudah ada — rumusnya
+ * tidak boleh ditulis dua kali.
+ */
+export function resolveBeatGrid(asset: StudioAsset | undefined): BeatGrid | null {
+  if (asset === undefined) return null;
+  const detected = correctedBpm(asset);
+  const raw = asset.bpmOverride ?? detected;
+  if (raw === null || !Number.isFinite(raw) || raw <= 0) return null;
+
+  const bpm = clampGridBpm(raw);
+  const beatsPerBar = BEATS_PER_BAR;
+  const rawOffset = asset.beatOffsetOverride ?? asset.tempo?.beatOffsetSec ?? 0;
+  // Dinormalkan ke satu BAR, bukan satu ketukan: menggeser downbeat ke tempat
+  // yang benar butuh rentang sebesar bar. Modulo dua langkah supaya nilai
+  // negatif (nudge ke kiri melewati nol) tetap jatuh di rentang positif.
+  const barSec = (60 / bpm) * beatsPerBar;
+  const offsetSec = Number.isFinite(rawOffset) ? ((rawOffset % barSec) + barSec) % barSec : 0;
+
+  return {
+    bpm,
+    offsetSec,
+    beatsPerBar,
+    manual: asset.bpmOverride !== null || asset.beatOffsetOverride !== null,
+  };
+}
+
+/** Indeks ketukan (pecahan) di posisi source tertentu. Bisa negatif. */
+export function beatIndexAt(at: Samples, grid: BeatGrid, sr: number): number {
+  return (at - grid.offsetSec * sr) / samplesPerBeat(grid, sr);
+}
+
+/** Posisi source dari sebuah indeks ketukan. Kebalikan `beatIndexAt`. */
+export function sourceAtBeat(beat: number, grid: BeatGrid, sr: number): Samples {
+  return Math.round(grid.offsetSec * sr + beat * samplesPerBeat(grid, sr));
+}
+
+/**
+ * Semua garis grid di dalam region `[from, from + len)`.
+ *
+ * Setengah-terbuka di ujung kanan, alasannya sama dengan `computePlayheadTempo`:
+ * garis persis di batas milik region berikutnya, kalau tidak ia tergambar dua
+ * kali di sambungan dua clip.
+ */
+export function beatLinesIn(
+  grid: BeatGrid,
+  sr: number,
+  from: Samples,
+  len: Samples,
+): readonly BeatLine[] {
+  const out: BeatLine[] = [];
+  if (len <= 0) return out;
+  const spb = samplesPerBeat(grid, sr);
+  if (!Number.isFinite(spb) || spb <= 0) return out;
+
+  const end = from + len;
+  let beat = Math.ceil(beatIndexAt(from, grid, sr));
+  // Pembulatan pecahan bisa membuat ketukan yang duduk PERSIS di `from`
+  // terlewat; mundur satu lalu buang yang benar-benar di luar jauh lebih murah
+  // daripada mengarang epsilon.
+  if (sourceAtBeat(beat - 1, grid, sr) >= from) beat -= 1;
+
+  for (; out.length < MAX_BEAT_LINES; beat++) {
+    const at = sourceAtBeat(beat, grid, sr);
+    if (at >= end) break;
+    if (at < from) continue;
+    // `%` JavaScript mengembalikan sisa bertanda untuk beat negatif — dinormalkan
+    // supaya downbeat tetap jatuh di tempat yang sama di kiri titik nol.
+    const phase = ((beat % grid.beatsPerBar) + grid.beatsPerBar) % grid.beatsPerBar;
+    out.push({
+      at,
+      beat,
+      bar: Math.floor(beat / grid.beatsPerBar),
+      downbeat: phase === 0,
+    });
+  }
+  return out;
+}
+
+export type BeatDivision = 'beat' | 'bar';
+
+/**
+ * Titik grid terdekat dari sebuah posisi source, dengan langkah SEBEBAS APA PUN
+ * dalam satuan ketukan.
+ *
+ * Pecahan diperlukan sejak loop bisa lebih pendek dari satu bar: loop 1/4 bar
+ * yang hanya boleh mendarat di awal bar tidak akan pernah bisa ditaruh di
+ * ketukan 2, 3, atau 4 — yang justru seluruh gunanya loop sependek itu.
+ *
+ * Tidak di-clamp — pemanggil yang tahu batas asset/clip-nya.
+ */
+export function snapSourceToGrid(
+  at: Samples,
+  grid: BeatGrid,
+  sr: number,
+  stepBeats: number,
+): Samples {
+  const step = Number.isFinite(stepBeats) && stepBeats > 0 ? stepBeats : 1;
+  const idx = Math.round(beatIndexAt(at, grid, sr) / step) * step;
+  return sourceAtBeat(idx, grid, sr);
+}
+
+/** Bentuk lama: menempel ke ketukan atau ke bar. */
+export function snapSourceToBeat(
+  at: Samples,
+  grid: BeatGrid,
+  sr: number,
+  div: BeatDivision,
+): Samples {
+  return snapSourceToGrid(at, grid, sr, div === 'bar' ? grid.beatsPerBar : 1);
+}

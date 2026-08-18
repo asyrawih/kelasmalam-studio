@@ -187,15 +187,22 @@ describe('Amplify master (preview)', () => {
     );
   });
 
-  it('peak master dibaca dari tap sesudah amplify, dan hilang lagi saat stop', async () => {
-    const { play, stop, readMasterPeak } = await import('./audio-preview');
+  it('peak master dibaca dari tap sesudah amplify, dan hilang saat dibongkar', async () => {
+    const { play, stop, teardown, readMasterPeak } = await import('./audio-preview');
     const { studioStore, studioActions } = await import('../store');
     studioActions.__resetForTest();
 
     expect(readMasterPeak()).toBeNull(); // belum berbunyi = belum terukur
     play(studioStore.getState());
     expect(readMasterPeak()).toBeCloseTo(TAP_PEAK, 6);
+
+    // `stop()` TIDAK lagi membongkar master: pemutar audisi menyambung ke sana
+    // dan hidupnya tidak terikat transport. Membongkarnya di stop berarti
+    // menekan STOP di timeline membisukan loop yang sedang didengarkan.
     stop();
+    expect(readMasterPeak()).toBeCloseTo(TAP_PEAK, 6);
+
+    teardown();
     expect(readMasterPeak()).toBeNull();
   });
 

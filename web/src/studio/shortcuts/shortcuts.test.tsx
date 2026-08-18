@@ -14,16 +14,58 @@ function press(key: string, target?: EventTarget, init: KeyboardEventInit = {}):
   (target ?? window).dispatchEvent(ev);
 }
 
+function release(key: string, target?: EventTarget, init: KeyboardEventInit = {}): void {
+  const ev = new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true, ...init });
+  (target ?? window).dispatchEvent(ev);
+}
+
 describe('useTransportShortcuts', () => {
   beforeEach(() => {
     studioActions.__resetForTest();
   });
 
-  it('Space men-toggle play dari mana saja', () => {
+  it('Space men-toggle play dari mana saja — saat DILEPAS', () => {
+    render(<Harness />);
+    const before = studioStore.getState().playing;
+    // Selama ditahan, spasi adalah alat tangan untuk pan timeline; transport
+    // tidak boleh berubah sampai jelas bahwa ia cuma diketuk.
+    press(' ');
+    expect(studioStore.getState().playing).toBe(before);
+    release(' ');
+    expect(studioStore.getState().playing).toBe(!before);
+  });
+
+  it('Space yang dipakai untuk pan TIDAK ikut men-toggle play', async () => {
+    const { markSpacePan } = await import('./space-pan');
     render(<Harness />);
     const before = studioStore.getState().playing;
     press(' ');
+    markSpacePan(); // ClipArea memanggilnya saat pan benar-benar dimulai
+    release(' ');
+    expect(studioStore.getState().playing).toBe(before);
+  });
+
+  it('auto-repeat saat ditahan tidak menumpuk toggle', () => {
+    render(<Harness />);
+    const before = studioStore.getState().playing;
+    press(' ');
+    press(' ');
+    press(' ');
+    release(' ');
     expect(studioStore.getState().playing).toBe(!before);
+  });
+
+  it('kehilangan fokus jendela membatalkan keadaan tahan', async () => {
+    const { isSpaceHeld } = await import('./space-pan');
+    render(<Harness />);
+    press(' ');
+    expect(isSpaceHeld()).toBe(true);
+    window.dispatchEvent(new Event('blur'));
+    expect(isSpaceHeld()).toBe(false);
+    // Dan keyup yang datang belakangan tidak lagi menyalakan transport.
+    const before = studioStore.getState().playing;
+    release(' ');
+    expect(studioStore.getState().playing).toBe(before);
   });
 
   it('Backspace mengembalikan playhead ke awal', () => {

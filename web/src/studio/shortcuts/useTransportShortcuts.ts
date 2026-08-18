@@ -14,6 +14,7 @@
 import { useEffect } from 'react';
 
 import { studioActions, studioStore } from '../store';
+import { pressSpace, releaseSpace, resetSpace } from './space-pan';
 
 /** True kalau target event adalah tempat mengetik. */
 function isTextEntry(target: EventTarget | null): boolean {
@@ -35,7 +36,9 @@ export function useTransportShortcuts(): void {
           // Space juga meng-'klik' tombol yang sedang fokus — cegah itu,
           // supaya menekan Space setelah klik PLAY tidak men-toggle dua kali.
           e.preventDefault();
-          studioActions.togglePlay();
+          // Play-nya di KEYUP, bukan di sini: selama ditahan, spasi adalah alat
+          // tangan untuk pan timeline. Lihat `space-pan.ts`.
+          pressSpace();
           break;
         }
         case 'Backspace':
@@ -104,8 +107,23 @@ export function useTransportShortcuts(): void {
       }
     };
 
+    const onKeyUp = (e: KeyboardEvent): void => {
+      if (e.key !== ' ') return;
+      if (isTextEntry(e.target)) return;
+      e.preventDefault();
+      // Hanya ketukan MURNI yang jadi play; kalau spasi barusan dipakai untuk
+      // menggeser timeline, transport tidak boleh ikut berubah.
+      if (releaseSpace()) studioActions.togglePlay();
+    };
+
     // capture: true — handler ini menang lebih dulu dari handler komponen.
     window.addEventListener('keydown', onKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+    window.addEventListener('keyup', onKeyUp, { capture: true });
+    window.addEventListener('blur', resetSpace);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      window.removeEventListener('keyup', onKeyUp, { capture: true });
+      window.removeEventListener('blur', resetSpace);
+    };
   }, []);
 }

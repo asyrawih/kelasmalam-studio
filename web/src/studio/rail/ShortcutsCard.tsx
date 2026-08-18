@@ -17,7 +17,14 @@ export interface ShortcutDoc {
   readonly keys: readonly string[];
   readonly label: string;
   /** Kelompok, untuk pemisah visual. */
-  readonly group: 'transport' | 'edit';
+  /**
+   * `pointer` = gerakan tetikus, bukan tombol keyboard. Dipisah karena
+   * `shortcuts-doc.test.tsx` memverifikasi bahwa setiap shortcut KEYBOARD yang
+   * didokumentasikan benar-benar ditangani — gerakan pointer tidak bisa diuji
+   * dengan cara itu, dan memaksakannya hanya akan melumpuhkan penjaga yang
+   * berguna itu.
+   */
+  readonly group: 'transport' | 'edit' | 'pointer';
 }
 
 export const SHORTCUTS: readonly ShortcutDoc[] = [
@@ -31,6 +38,9 @@ export const SHORTCUTS: readonly ShortcutDoc[] = [
   { keys: ['X'], label: 'Hapus clip terpilih', group: 'edit' },
   { keys: ['C'], label: 'Copy clip', group: 'edit' },
   { keys: ['V'], label: 'Paste clip di playhead', group: 'edit' },
+  { keys: ['Drag'], label: 'Kotak seleksi di area kosong', group: 'pointer' },
+  { keys: ['Shift', 'Klik'], label: 'Tambah/buang dari seleksi', group: 'pointer' },
+  { keys: ['Space', 'Drag'], label: 'Geser tampilan timeline', group: 'pointer' },
 ];
 
 function Key({ children }: { readonly children: string }): JSX.Element {

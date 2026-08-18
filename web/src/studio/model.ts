@@ -63,6 +63,93 @@ export interface StudioClip {
    * berarti migrasi untuk nilai yang tidak mahal disimpan.
    */
   seed: number;
+  /**
+   * Pembuangan stem (vokal / bass / instrumen). OPSIONAL — project lama tidak
+   * punya field ini, dan `undefined` diperlakukan sama dengan `STEM_BYPASS`
+   * oleh `isStemBypass`. Dinormalkan sekali di pintu masuk lewat
+   * `normalizeClipStem` (`timeline/stem.ts`).
+   */
+  stem?: StemMix;
+}
+
+/**
+ * PEMISAHAN STEM ALA MID/SIDE — bukan stem separation ML.
+ *
+ * Yang bisa dilakukan tanpa FFT dan tanpa model adalah menguraikan sinyal jadi
+ * tiga bagian yang menjumlah kembali PERSIS ke aslinya:
+ *
+ *   M = (L+R)/2                 S = (L-R)/2
+ *   bass  = LP(M, bassSplitHz)                    → yang di tengah dan rendah
+ *   vocal = LP(M - bass, voiceTopHz)              → yang di tengah dan menengah
+ *   other = (M - bass - vocal) + S                → sisi + treble tengah
+ *
+ * Tiap angka di bawah adalah SEBERAPA BANYAK BAGIAN ITU DISISAKAN, 0..1.
+ * Semua 1 = bypass, dan bypass-nya transparan secara aritmetika, bukan sekadar
+ * "kira-kira sama" — lihat `preview/stem-chain.ts`.
+ *
+ * BATASNYA HARUS DIKATAKAN, BUKAN DISEMBUNYIKAN: materi MONO tidak punya `S`,
+ * jadi "buang vokal" di sana akan ikut membuang instrumen di pita yang sama,
+ * dan vokal yang di-reverb lebar tidak berada di tengah sehingga tidak ikut
+ * terbuang. Ini alat karaoke, bukan Demucs.
+ */
+export interface StemMix {
+  /** Bagian tengah di pita suara. */
+  readonly vocal: number;
+  /** Bagian tengah di bawah `bassSplitHz`. */
+  readonly bass: number;
+  /** Sisi (stereo) + tengah di atas `voiceTopHz`. */
+  readonly other: number;
+  /** Batas bass ↔ suara (Hz). */
+  readonly bassSplitHz: number;
+  /** Batas atas pita suara (Hz). */
+  readonly voiceTopHz: number;
+}
+
+export type StemId = 'vocal' | 'bass' | 'other';
+
+/** Semua bagian utuh. Nilai default untuk clip baru dan hasil BAKE. */
+export const STEM_BYPASS: StemMix = {
+  vocal: 1,
+  bass: 1,
+  other: 1,
+  bassSplitHz: 180,
+  voiceTopHz: 6000,
+};
+
+export const STEM_MIN_BASS_HZ = 60;
+export const STEM_MAX_BASS_HZ = 300;
+export const STEM_MIN_VOICE_TOP_HZ = 2000;
+export const STEM_MAX_VOICE_TOP_HZ = 12_000;
+
+/**
+ * true kalau rantai stem tidak perlu dibangun sama sekali.
+ *
+ * Dipakai `graph-builder` sebagai gerbang: clip biasa tidak boleh membayar dua
+ * puluh node Web Audio untuk pemrosesan yang hasilnya sama dengan tidak
+ * memproses apa pun. Frekuensi TIDAK ikut diperiksa — mengubah crossover saat
+ * semua bagian disisakan penuh memang tidak mengubah apa-apa.
+ */
+export function isStemBypass(s: StemMix | undefined): boolean {
+  return s === undefined || (s.vocal >= 1 && s.bass >= 1 && s.other >= 1);
+}
+
+/** Jaga nilai stem tetap sah — dipanggil di store dan saat load project. */
+export function clampStemMix(s: StemMix): StemMix {
+  const amt = (v: number): number => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1);
+  const hz = (v: number, lo: number, hi: number, fallback: number): number =>
+    Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+  return {
+    vocal: amt(s.vocal),
+    bass: amt(s.bass),
+    other: amt(s.other),
+    bassSplitHz: hz(s.bassSplitHz, STEM_MIN_BASS_HZ, STEM_MAX_BASS_HZ, STEM_BYPASS.bassSplitHz),
+    voiceTopHz: hz(
+      s.voiceTopHz,
+      STEM_MIN_VOICE_TOP_HZ,
+      STEM_MAX_VOICE_TOP_HZ,
+      STEM_BYPASS.voiceTopHz,
+    ),
+  };
 }
 
 export interface StudioLane {
@@ -253,7 +340,25 @@ export function timelineLenFor(sourceLen: Samples, speedRatio: number): Samples 
 }
 
 export const LANE_COLORS = ['#ffd400', '#ffb020', '#a07a10', '#6f6a5e'];
-export const LANE_HEIGHT_PX = 64;
+/**
+ * Tinggi baris lane. Tiga pilihan, bukan satu angka mati.
+ *
+ * 64 px — nilai lama, dan terlalu pendek untuk mengedit: waveform di dalamnya
+ * hanya setinggi ±40 px, sehingga transien tidak terbaca dan sasaran klik clip
+ * pendek jadi sempit. Default sekarang MEDIUM. SMALL tetap ada karena project
+ * dengan banyak lane butuh melihat semuanya sekaligus.
+ */
+export type LaneHeightId = 'S' | 'M' | 'L';
+export const LANE_HEIGHTS: Readonly<Record<LaneHeightId, number>> = { S: 64, M: 96, L: 144 };
+export const DEFAULT_LANE_HEIGHT: LaneHeightId = 'M';
+export const LANE_HEIGHT_IDS: readonly LaneHeightId[] = ['S', 'M', 'L'];
+
+/** Tinggi lama. Dipertahankan hanya untuk pemakai yang belum ikut diubah. */
+export const LANE_HEIGHT_PX = LANE_HEIGHTS.S;
+
+export function laneHeightPx(id: LaneHeightId | undefined): number {
+  return LANE_HEIGHTS[id ?? DEFAULT_LANE_HEIGHT] ?? LANE_HEIGHTS[DEFAULT_LANE_HEIGHT];
+}
 
 export interface StudioState {
   projectName: string;

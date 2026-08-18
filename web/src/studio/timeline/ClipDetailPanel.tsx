@@ -40,7 +40,18 @@ import {
   secToMs,
   type FadeSide,
 } from './fade';
+import {
+  BeatControls,
+  BeatOverlay,
+  LoopRegionPicker,
+  formatBars,
+  useBeatState,
+} from './BeatSection';
+import { DetailSection } from './DetailSection';
 import { computeNormalizeGain, NORMALIZE_TARGET_DB } from './normalize';
+import { ScrollingWave } from './ScrollingWave';
+import { StemSection } from './StemSection';
+import { stemOf, stemSummary } from './stem';
 import { clipDetailGradient, drawClipWave } from './waveform';
 
 /** Tinggi kotak waveform; handle diletakkan relatif terhadap ini. */
@@ -372,10 +383,43 @@ export function ClipDetailPanel(): JSX.Element {
   const sampleRate = useStudio((s) => s.sampleRate);
   const playhead = useStudio((s) => s.playhead);
   const engineReady = useStudio((s) => s.engineReady);
+  const playing = useStudio((s) => s.playing);
   const [note, setNote] = useState<string | null>(null);
   const [dragSide, setDragSide] = useState<FadeSide | null>(null);
+  /**
+   * Pusat jendela yang dipaksa oleh tarikan (SOURCE-space), null = ikut yang
+   * berbunyi.
+   *
+   * Menarik waveform di sini TIDAK lagi menyentuh playhead timeline. Itu inti
+   * perbaikannya: Clip Detail punya pemutar dan posisinya sendiri, dan
+   * mengatur loop di satu clip tidak boleh menggeser tempat lagu di lane lain
+   * sedang berbunyi.
+   */
+  const [dragCenter, setDragCenter] = useState<number | null>(null);
+  const sections = useStudio((s) => s.clipDetailSections);
+  const selectedCount = useStudio((s) => s.selectedClipIds.length);
 
-  const sel = findClip(lanes, selectedClipId);
+  /**
+   * Clip yang DITAMPILKAN — bertahan setelah seleksi dilepas.
+   *
+   * Alasannya bukan kenyamanan, tapi tata letak: panel ini boleh diletakkan di
+   * ATAS timeline, dan kalau isinya mengempis tiap kali seleksi kosong, timeline
+   * di bawahnya melompat. Itu terjadi puluhan kali saat menarik KOTAK SELEKSI —
+   * persis ketika posisi timeline harus diam, karena kotak yang sedang ditarik
+   * diukur terhadapnya.
+   *
+   * Jadi panel tetap menampilkan clip terakhir dan menandainya "TIDAK TERPILIH".
+   * Perilakunya sama dengan Clip View di Ableton: yang terakhir dibuka tetap
+   * terbuka. Yang penting, keadaannya DIKATAKAN — mengedit clip yang tidak
+   * tersorot di timeline harus terlihat jelas, bukan ketahuan belakangan.
+   */
+  const stickyId = useRef<string | null>(null);
+  if (selectedClipId !== null) stickyId.current = selectedClipId;
+  // Di-resolve ulang dari `lanes`, bukan disimpan sebagai objek: clip-nya bisa
+  // ikut berubah (atau dihapus) selama ia dipajang.
+  const sel = findClip(lanes, selectedClipId ?? stickyId.current);
+  /** true kalau yang dipajang memang sedang terpilih di timeline. */
+  const isSelected = sel !== null && sel.clip.id === selectedClipId;
   const startSec = sel === null ? 0 : samplesToSec(sel.clip.start, sampleRate);
   const lenSec = sel === null ? 0 : samplesToSec(sel.clip.len, sampleRate);
   const canSplit =
@@ -387,6 +431,106 @@ export function ClipDetailPanel(): JSX.Element {
 
   const clip = sel?.clip;
   const clipMs = clip === undefined ? 0 : samplesToFadeMs(clip.len, sampleRate);
+  const speedRatio = sel?.lane.speedRatio ?? 1;
+  const beat = useBeatState(
+    clip,
+    clip === undefined ? undefined : assets[clip.assetId],
+    sampleRate,
+    speedRatio,
+  );
+
+  /**
+   * JENDELA yang digambar di kotak waveform.
+   *
+   * Saat audisi berjalan, kotaknya menampilkan HANYA region yang berulang —
+   * itu yang membuat "2 bar" bisa benar-benar dilihat, bukan jadi sorotan
+   * setipis rambut di dalam lagu lima menit. Di luar audisi, jendelanya adalah
+   * seluruh clip seperti biasa.
+   */
+  const follow = beat.windowLen !== null;
+  const loopZoom = !follow && beat.looping && beat.region !== null;
+  /** Fade disembunyikan di kedua tampilan sempit — lihat catatan di bawah. */
+  const zoomed = follow || loopZoom;
+  const viewStart = loopZoom && beat.region !== null ? beat.region.sourceStart : (clip?.sourceStart ?? 0);
+  const viewLen = loopZoom && beat.region !== null ? beat.region.sourceLen : (clip?.sourceLen ?? 0);
+
+  /**
+   * Menarik waveform di jendela geser.
+   *
+   * Satu tarikan mengerjakan dua hal sekaligus, dan memang harus begitu:
+   * playhead mengikuti tangan secara MULUS (kalau ia ikut menempel ke bar,
+   * gambarnya tersentak-sentak dan tidak terasa seperti menarik apa pun),
+   * sedangkan awal region MENEMPEL ke bar (loop yang mulai di tengah ketukan
+   * tidak ada gunanya). Jadi yang bergerak halus dan yang menempel adalah dua
+   * hal berbeda di layar, dan keduanya terlihat.
+   *
+   * Audio dibisukan selama tarikan lewat `beginScrub`/`endScrub` — jalur yang
+   * sama dengan scrub playhead di timeline. Tanpa itu, tiap `pointermove`
+   * menjadwalkan ulang voice dan yang terdengar hanya deretan klik.
+   */
+  const scrubTo = (
+    phase: 'start' | 'move' | 'end',
+    sourceAt: number,
+    fine: boolean,
+  ): void => {
+    if (clip === undefined) return;
+    const limit = clip.sourceStart + clip.sourceLen;
+    const at = Math.max(clip.sourceStart, Math.min(limit, sourceAt));
+    if (phase === 'start') {
+      beat.setRegionDragging(true);
+      setDragCenter(at);
+      return;
+    }
+    setDragCenter(at);
+    beat.moveTo(at, fine);
+    if (phase !== 'end') return;
+    // Baru di sini perpindahannya sampai ke pemutar audisi — satu penjadwalan
+    // ulang per tarikan, bukan satu per pixel.
+    beat.setRegionDragging(false);
+    // Dilepas: kalau audisi sedang berjalan, jendela kembali MENGIKUTI-nya —
+    // loop sudah dijadwalkan ulang di region baru, dan membekukan tampilan di
+    // titik tempat jari berhenti akan membuatnya berhenti cocok dengan yang
+    // terdengar. Kalau tidak ada audisi, tampilan tinggal di tempat: itulah
+    // gunanya menarik, menentukan posisi lalu memeriksanya.
+    if (beat.looping) setDragCenter(null);
+  };
+
+  // Tampilan beku dilepas saat audisi menyala dan saat pindah clip: keduanya
+  // membuat "pusat jendela yang dipilih tangan" kehilangan artinya.
+  const auditioning = beat.looping;
+  const clipId = clip?.id;
+  useEffect(() => {
+    if (auditioning) setDragCenter(null);
+  }, [auditioning]);
+  useEffect(() => {
+    setDragCenter(null);
+  }, [clipId]);
+
+  /**
+   * Ringkasan tiap blok yang terlipat.
+   *
+   * Ini yang membuat melipat bukan berarti menyembunyikan: fade yang aktif dan
+   * stem yang dibuang sama-sama MENGUBAH SUARA, dan user harus bisa tahu itu
+   * tanpa membuka apa pun.
+   */
+  const beatSummary =
+    beat.grid === null
+      ? 'BPM belum terdeteksi'
+      : `${beat.grid.bpm.toFixed(1)} BPM · loop ${formatBars(beat.bars)} bar${
+          beat.looping ? ' · MENGULANG' : ''
+        }`;
+  const fadeSummary =
+    clip === undefined || (clip.fadeInMs === 0 && clip.fadeOutMs === 0)
+      ? 'tanpa fade'
+      : `IN ${fmtSec(clip.fadeInMs)} · OUT ${fmtSec(clip.fadeOutMs)} · ${
+          clip.fadeCurve === 'linear' ? 'LINEAR' : 'EQUAL-POWER'
+        }`;
+
+  /** Playhead di SOURCE-space, null kalau tidak sedang berada di clip ini. */
+  const playheadSource =
+    clip !== undefined && playhead >= clip.start && playhead < clip.start + clip.len
+      ? clip.sourceStart + (playhead - clip.start) * speedRatio
+      : null;
   const curve: FadeCurve = clip?.fadeCurve === 'linear' ? 'linear' : DEFAULT_FADE_CURVE;
 
   /** Semua jalur (drag, keyboard, preset, ketik) lewat satu pintu ber-clamp. */
@@ -419,17 +563,49 @@ export function ClipDetailPanel(): JSX.Element {
             fontFamily: 'var(--cy-font-sans)',
             fontSize: '17px',
             fontWeight: 600,
-            color: sel === null ? 'var(--cy-text-muted)' : sel.lane.color,
+            color: sel === null ? 'var(--cy-text-muted)' : isSelected ? sel.lane.color : 'var(--cy-text-dim)',
             letterSpacing: '.04em',
           }}
         >
           {sel === null ? 'PILIH CLIP DI TIMELINE' : sel.clip.label}
         </span>
+        {sel !== null && !isSelected ? (
+          <span
+            style={{
+              fontSize: '9px',
+              letterSpacing: '.14em',
+              color: 'var(--cy-text-muted)',
+              border: '1px solid var(--cy-border-strong)',
+              padding: '1px 6px',
+            }}
+            title="clip ini tidak sedang tersorot di timeline, tapi edit di sini tetap berlaku untuknya"
+          >
+            TIDAK TERPILIH
+          </span>
+        ) : null}
         <span style={{ fontSize: '10px', letterSpacing: '.12em', color: 'var(--cy-text-dim)' }}>
           {sel === null
             ? '—'
             : `${sel.lane.name} · ${formatTime(startSec)} → ${formatTime(startSec + lenSec)} · ${lenSec.toFixed(1)} s`}
         </span>
+        {/* Penanda seleksi ganda. Editor di bawah SELALU bekerja untuk satu
+            clip — beat, loop, stem, fade tidak punya arti untuk empat clip
+            sekaligus. Menyatakannya di sini jauh lebih jujur daripada membiarkan
+            user mengira perubahannya berlaku untuk semuanya. */}
+        {selectedCount > 1 && isSelected ? (
+          <span
+            style={{
+              fontSize: '9px',
+              letterSpacing: '.14em',
+              color: 'var(--cy-accent)',
+              border: '1px solid var(--cy-accent)',
+              padding: '1px 6px',
+            }}
+            title="edit di panel ini hanya berlaku untuk clip yang ditandai putih di timeline"
+          >
+            {selectedCount} CLIP TERPILIH
+          </span>
+        ) : null}
         <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--cy-text-muted)' }}>
           {(sel === null ? 0 : sel.clip.len).toLocaleString('en-US')} samples
         </span>
@@ -450,35 +626,107 @@ export function ClipDetailPanel(): JSX.Element {
           >
             {/* Garis tengah ikut digambar di canvas (warna sama), jadi tidak
                 ada lagi overlay DOM terpisah yang bisa desinkron dengannya. */}
-            <DetailWave
-              asset={assets[clip.assetId]}
-              sourceStart={clip.sourceStart}
-              sourceLen={clip.sourceLen}
+            {/* DUA PENGGAMBAR YANG SALING MENIADAKAN.
+                FULL: waveform diam di canvas sendiri (mahal, jarang berubah),
+                grid + playhead di canvas overlay yang bergerak 16×/detik.
+                Jendela geser: semuanya di SATU canvas rAF, karena di sana
+                waveform-nya memang ikut bergerak tiap frame. */}
+            {follow && beat.windowLen !== null ? (
+              <ScrollingWave
+                asset={assets[clip.assetId]}
+                grid={beat.grid}
+                sampleRate={sampleRate}
+                clipSourceStart={clip.sourceStart}
+                clipSourceLen={clip.sourceLen}
+                clipStart={clip.start}
+                speedRatio={speedRatio}
+                windowLen={beat.windowLen}
+                playhead={playhead}
+                playing={playing}
+                auditioning={beat.looping}
+                center={dragCenter}
+                // Region SELALU digambar, bukan hanya saat berbunyi: seluruh
+                // gunanya menarik waveform adalah melihat di mana loop-nya akan
+                // jatuh sebelum menekan LOOP PLAY.
+                region={beat.region}
+                regionLive={beat.looping}
+                onScrub={scrubTo}
+              />
+            ) : (
+              <>
+                <DetailWave
+                  asset={assets[clip.assetId]}
+                  sourceStart={viewStart}
+                  sourceLen={viewLen}
+                />
+                {/* Fade disembunyikan saat jendelanya di-zoom: handle-nya
+                    diletakkan sebagai fraksi CLIP, jadi di tampilan sempit ia
+                    akan menunjuk tempat yang bukan tempatnya. Lebih baik hilang
+                    daripada bohong. */}
+                {zoomed ? null : <FadeOverlay curve={curve} inFrac={inFrac} outFrac={outFrac} />}
+                <BeatOverlay
+                  grid={beat.grid}
+                  region={loopZoom ? null : beat.region}
+                  sourceStart={viewStart}
+                  sourceLen={viewLen}
+                  sampleRate={sampleRate}
+                  playheadSource={playheadSource}
+                />
+              </>
+            )}
+            {/* Penangkap pointer duduk DI BAWAH handle fade (zIndex 1 vs 2):
+                menaruh awal loop tidak boleh merebut drag yang dimaksudkan
+                untuk fade, dan keduanya berbagi kotak yang sama. */}
+            <LoopRegionPicker
+              enabled={beat.grid !== null && !zoomed}
+              onPick={(frac, fine) => beat.moveTo(clip.sourceStart + frac * clip.sourceLen, fine)}
             />
-            <FadeOverlay curve={curve} inFrac={inFrac} outFrac={outFrac} />
-            <FadeHandle
-              side="in"
-              fracOfClip={inFrac}
-              valueMs={clip.fadeInMs}
-              dragging={dragSide === 'in'}
-              onFocus={() => setDragSide('in')}
-              onDrag={(f) => setFade('in', f * clipMs)}
-              onReset={() => setFade('in', 0)}
-              onNudge={(d) => setFade('in', clip.fadeInMs + secToMs(d))}
-            />
-            <FadeHandle
-              side="out"
-              fracOfClip={outFrac}
-              valueMs={clip.fadeOutMs}
-              dragging={dragSide === 'out'}
-              onFocus={() => setDragSide('out')}
-              onDrag={(f) => setFade('out', f * clipMs)}
-              onReset={() => setFade('out', 0)}
-              onNudge={(d) => setFade('out', clip.fadeOutMs + secToMs(d))}
-            />
+            {zoomed ? null : (
+              <>
+                <FadeHandle
+                  side="in"
+                  fracOfClip={inFrac}
+                  valueMs={clip.fadeInMs}
+                  dragging={dragSide === 'in'}
+                  onFocus={() => setDragSide('in')}
+                  onDrag={(f) => setFade('in', f * clipMs)}
+                  onReset={() => setFade('in', 0)}
+                  onNudge={(d) => setFade('in', clip.fadeInMs + secToMs(d))}
+                />
+                <FadeHandle
+                  side="out"
+                  fracOfClip={outFrac}
+                  valueMs={clip.fadeOutMs}
+                  dragging={dragSide === 'out'}
+                  onFocus={() => setDragSide('out')}
+                  onDrag={(f) => setFade('out', f * clipMs)}
+                  onReset={() => setFade('out', 0)}
+                  onNudge={(d) => setFade('out', clip.fadeOutMs + secToMs(d))}
+                />
+              </>
+            )}
             {/* Pembacaan langsung dalam DETIK — satuan yang dipakai orang untuk
                 menilai transisi. Selalu terlihat, bukan hanya saat drag: nilai
                 yang hilang begitu pointer dilepas tidak bisa dibandingkan. */}
+            {zoomed ? (
+              <div
+                data-loop-badge
+                style={{
+                  position: 'absolute',
+                  left: '6px',
+                  top: '6px',
+                  fontFamily: 'var(--cy-font-mono)',
+                  fontSize: '10px',
+                  letterSpacing: '.12em',
+                  color: '#6ee7ff',
+                  background: '#050505cc',
+                  padding: '2px 6px',
+                  pointerEvents: 'none',
+                }}
+              >
+                {beat.looping ? `LOOP ${formatBars(beat.bars)} BAR` : `VIEW ${beat.zoom} BAR`}
+              </div>
+            ) : null}
             <div
               data-fade-readout
               style={{
@@ -496,8 +744,18 @@ export function ClipDetailPanel(): JSX.Element {
                 pointerEvents: 'none',
               }}
             >
-              <span>IN {fmtSec(clip.fadeInMs)}</span>
-              <span>OUT {fmtSec(clip.fadeOutMs)}</span>
+              {zoomed ? (
+                <span>
+                  {follow && beat.windowLen !== null
+                    ? `jendela ${samplesToSec(beat.windowLen, sampleRate).toFixed(2)} s`
+                    : `region ${samplesToSec(viewLen, sampleRate).toFixed(2)} s`}
+                </span>
+              ) : (
+                <>
+                  <span>IN {fmtSec(clip.fadeInMs)}</span>
+                  <span>OUT {fmtSec(clip.fadeOutMs)}</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -547,14 +805,53 @@ export function ClipDetailPanel(): JSX.Element {
               size="sm"
               variant="ghost"
               disabled={!canSplit}
-              onClick={() => studioActions.splitClipAtPlayhead(clip.id)}
+              title={
+                beat.snap && beat.grid !== null
+                  ? 'belah di ketukan terdekat dari playhead'
+                  : 'belah tepat di playhead'
+              }
+              onClick={() =>
+                studioActions.splitClipAt(
+                  clip.id,
+                  beat.snap && beat.grid !== null ? beat.snapTimeline(playhead) : playhead,
+                )
+              }
             >
               SPLIT AT PLAYHEAD
             </Button>
             <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
-              {note ?? 'edit di sini hanya mempengaruhi clip terpilih'}
+              {note ??
+                (selectedCount > 1
+                  ? `edit di sini hanya mempengaruhi ${clip?.label ?? 'clip'} — bukan ${selectedCount - 1} clip lainnya`
+                  : 'edit di sini hanya mempengaruhi clip terpilih')}
             </span>
           </div>
+
+          <DetailSection
+            id="beat"
+            title="BEAT & LOOP"
+            summary={beatSummary}
+            open={sections.beat}
+            onToggle={() => studioActions.toggleClipDetailSection('beat')}
+          >
+            <BeatControls
+              beat={beat}
+              clip={clip}
+              asset={assets[clip.assetId]}
+              sampleRate={sampleRate}
+              onCut={setNote}
+            />
+          </DetailSection>
+
+          <DetailSection
+            id="stem"
+            title="REMOVE"
+            summary={stemSummary(stemOf(clip)) ?? 'clip utuh'}
+            open={sections.stem}
+            onToggle={() => studioActions.toggleClipDetailSection('stem')}
+          >
+            <StemSection clip={clip} onNote={setNote} />
+          </DetailSection>
 
           {/*
             Preset diberikan PER SISI, bukan ke "fade yang terakhir disentuh".
@@ -563,16 +860,14 @@ export function ClipDetailPanel(): JSX.Element {
             tertimpa adalah fade yang sudah ia setel. Dua baris lima tombol
             kecil jauh lebih murah daripada satu keadaan tersembunyi.
           */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-              marginTop: '12px',
-              paddingTop: '10px',
-              borderTop: '1px solid var(--cy-border)',
-            }}
+          <DetailSection
+            id="fade"
+            title="FADE"
+            summary={fadeSummary}
+            open={sections.fade}
+            onToggle={() => studioActions.toggleClipDetailSection('fade')}
           >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <FadeControls
               side="in"
               clip={clip}
@@ -622,6 +917,7 @@ export function ClipDetailPanel(): JSX.Element {
               </span>
             </div>
           </div>
+          </DetailSection>
         </>
       ) : null}
     </Card>

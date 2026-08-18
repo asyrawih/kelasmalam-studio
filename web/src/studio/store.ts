@@ -18,12 +18,17 @@
  */
 
 import { useSyncExternalStore } from 'react';
+
+import { clampGridBpm } from './analysis/beat-grid';
 import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SPEED, type EqMode, timelineLenFor, MAX_LANE_SPEED, MIN_LANE_SPEED,
   EQ_PRESETS,
   cloneEq,
   defaultEq,
   clampEqBand,
+  DEFAULT_LANE_HEIGHT,
   LANE_COLORS,
+  STEM_BYPASS,
+  clampStemMix,
   findClip,
   samplesToSec,
   secToSamples,
@@ -31,14 +36,18 @@ import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SP
   type EqPreset,
   type EqSettings,
   type ExportFormat,
+  type LaneHeightId,
   type RailTab,
   type Samples,
   type Speed,
   type StudioClip,
+  type StemMix,
   type StudioLane,
   type StudioState,
 } from './model';
 import { createDemoStudio, createInitialStudio } from './demo';
+import { applyLoopCut, type LoopCutSpec } from './timeline/beat-cut';
+import { normalizeClipStem } from './timeline/stem';
 import type { Envelope } from './timeline/envelope';
 
 /**
@@ -108,6 +117,60 @@ export interface StudioAsset {
    * perkakas DJ menyediakan ×2 / ÷2 untuk alasan yang sama.
    */
   readonly tempoOctave: number;
+  /**
+   * BPM yang DIKETIK user. null = pakai hasil deteksi (× koreksi oktaf).
+   *
+   * Terpisah dari `tempo.bpm` dan bukan menimpanya: deteksi tetap tersimpan
+   * supaya tombol AUTO benar-benar bisa mengembalikan keadaan semula. Dibaca
+   * lewat `resolveBeatGrid` di `analysis/beat-grid.ts` — jangan dibaca langsung.
+   */
+  readonly bpmOverride: number | null;
+  /**
+   * Posisi ketukan pertama (detik, SOURCE-space) menurut user. null = pakai
+   * `tempo.beatOffsetSec`.
+   *
+   * Ada karena yang dideteksi mesin adalah fase KETUKAN, bukan fase birama —
+   * tidak ada cara otomatis untuk tahu ketukan mana yang "satu", dan grid yang
+   * downbeat-nya meleset tidak bisa dipakai memotong apa pun.
+   */
+  readonly beatOffsetOverride: number | null;
+}
+
+/**
+ * Satu clip di papan salin, beserta lane-nya RELATIF terhadap clip paling kiri.
+ *
+ * Offset lane disimpan supaya menyalin empat clip dari dua lane lalu mem-paste-
+ * nya tetap menghasilkan bentuk yang sama — bukan tumpukan di satu lane.
+ */
+export interface ClipboardEntry {
+  readonly clip: StudioClip;
+  /** Selisih indeks lane terhadap clip pertama (yang paling kiri, lane teratas). */
+  readonly laneOffset: number;
+  /** Selisih posisi terhadap clip pertama, dalam sample. */
+  readonly startOffset: Samples;
+}
+
+/** Posisi awal sebuah clip saat drag dimulai. Dipakai `moveClips`. */
+export interface ClipOrigin {
+  readonly id: string;
+  readonly start: Samples;
+  readonly laneIndex: number;
+}
+
+/** Region audisi di dalam sebuah clip, SOURCE-space. */
+export interface ClipLoop {
+  readonly clipId: string;
+  readonly sourceStart: Samples;
+  readonly sourceLen: Samples;
+}
+
+/** `ClipLoop` + batasnya di timeline dan clip/lane pemiliknya. */
+export interface ClipLoopRange extends ClipLoop {
+  readonly lane: StudioLane;
+  readonly clip: StudioClip;
+  /** TIMELINE-space. */
+  readonly start: Samples;
+  readonly end: Samples;
 }
 
 /**
@@ -136,10 +199,33 @@ export interface StudioAppState extends StudioState {
    * deretan klik. Begitu dilepas, flag turun dan posisi baru langsung berlaku.
    */
   readonly draggingClip: boolean;
+  /**
+   * SELURUH clip yang terpilih. `selectedClipId` adalah yang PRIMER — clip yang
+   * ditampilkan Clip Detail — dan selalu termasuk di sini selama tidak kosong.
+   *
+   * Dua field, bukan satu, karena keduanya menjawab pertanyaan berbeda: aksi
+   * massal (geser, hapus, salin) butuh himpunannya, sedangkan editor di Clip
+   * Detail hanya masuk akal untuk SATU clip. Menyatukannya berarti salah satu
+   * dari keduanya harus menebak, dan tebakan itu yang akan salah.
+   *
+   * Invariannya ditegakkan di `withDerived`, bukan di tiap aksi.
+   */
+  readonly selectedClipIds: readonly string[];
   /** Clip hasil COPY, siap di-paste. Bukan PCM — hanya metadata. */
-  readonly clipboard: StudioClip | null;
+  readonly clipboard: readonly ClipboardEntry[] | null;
   /** Ulangi dari awal saat mencapai akhir materi. */
   readonly loop: boolean;
+  /**
+   * AUDISI LOOP: satu region di dalam satu clip yang diputar berulang, sendirian.
+   *
+   * State SESI, bukan bagian dari karya — karena itu di sini, bukan di
+   * `StudioState`, dan tidak ikut disimpan. Ia menjawab "coba dengar 2 bar ini
+   * berulang-ulang", pertanyaan yang selalu datang SEBELUM user memutuskan
+   * memotong. Region-nya sendiri disimpan di SOURCE-space: batas timeline-nya
+   * diturunkan lewat `clipLoopRange`, supaya menggeser clip atau mengubah
+   * kecepatan lane tidak membuat loop menunjuk materi yang berbeda.
+   */
+  readonly clipLoop: ClipLoop | null;
   /**
    * Ujung MATERI (clip terjauh), tanpa ekor kosong dan tanpa minimum.
    * Berbeda dari `duration`, yang selalu punya ruang sisa untuk menaruh clip
@@ -166,11 +252,40 @@ export interface StudioAppState extends StudioState {
   readonly maximizedPanel: PanelId | null;
   /** Tampilan EQ yang dipilih user. Preferensi UI, tidak mempengaruhi audio. */
   readonly eqMode: EqMode;
+  /**
+   * Blok mana saja di Clip Detail yang sedang terbuka.
+   *
+   * Ikut disimpan, seperti `panelOrder` dan `eqMode`: melipat blok adalah
+   * keputusan tata letak yang dibuat sekali, dan memaksanya diulang setiap
+   * refresh mengembalikan persis kepadatan yang ingin dihindari. Berbeda dari
+   * `maximizedPanel`, yang sengaja TIDAK disimpan karena ia menyembunyikan
+   * segalanya dan bisa membingungkan kalau muncul tanpa diingat.
+   */
+  readonly clipDetailSections: Readonly<Record<ClipDetailSectionId, boolean>>;
+  /** Tinggi baris lane. Preferensi tata letak, ikut disimpan. */
+  readonly laneHeight: LaneHeightId;
   /** Batas bawah panjang timeline (detik), diatur manual. */
   readonly minDurationSec: number;
   /** Batas atas panjang timeline (detik). null = ikut konten (otomatis). */
   readonly maxDurationSec: number | null;
 }
+
+/** Blok yang bisa dilipat di dalam Clip Detail. */
+export type ClipDetailSectionId = 'beat' | 'stem' | 'fade';
+
+/**
+ * BEAT terbuka, sisanya terlipat.
+ *
+ * Bukan "semua terbuka": panel ini sudah tumbuh sampai empat blok dan tinggi
+ * penuhnya menutupi timeline. Yang dipilih terbuka adalah blok yang paling
+ * sering disentuh; dua lainnya tetap menampilkan RINGKASAN saat terlipat, jadi
+ * tidak ada yang hilang tanpa jejak — hanya satu klik lebih jauh.
+ */
+export const DEFAULT_CLIP_DETAIL_SECTIONS: Readonly<Record<ClipDetailSectionId, boolean>> = {
+  beat: true,
+  stem: false,
+  fade: false,
+};
 
 /** Panel yang bisa diurutkan ulang. Dua tumpukan terpisah: kolom kiri & rail. */
 export type PanelId =
@@ -215,12 +330,16 @@ let state: StudioAppState = withDerived({
   scrubbing: false,
   draggingClip: false,
   clipboard: null,
+  selectedClipIds: [],
   loop: true,
+  clipLoop: null,
   contentEnd: 0,
   panelOrder: DEFAULT_PANEL_ORDER,
   railOrder: DEFAULT_RAIL_ORDER,
   maximizedPanel: null,
   eqMode: 'curve',
+  clipDetailSections: DEFAULT_CLIP_DETAIL_SECTIONS,
+  laneHeight: DEFAULT_LANE_HEIGHT,
   minDurationSec: MIN_DURATION_SEC,
   maxDurationSec: null,
   engineError: null,
@@ -268,6 +387,29 @@ function reconcileOrder(
 }
 
 /**
+ * Batas TIMELINE dari region audisi, atau null kalau tidak ada / clip-nya sudah
+ * hilang.
+ *
+ * Diturunkan setiap kali dipakai, bukan disimpan: kalau batas timeline ikut
+ * disimpan, menggeser clip atau mengubah kecepatan lane akan membuat loop
+ * menunjuk materi yang berbeda dari yang disorot di layar — dan tidak ada satu
+ * pun yang memberi tahu. Perhitungannya beberapa operasi; `tick()` boleh
+ * memanggilnya 16×/detik.
+ */
+export function clipLoopRange(s: StudioAppState): ClipLoopRange | null {
+  const cl = s.clipLoop;
+  if (cl === null) return null;
+  const hit = findClip(s.lanes, cl.clipId);
+  if (hit === null) return null;
+  const { lane, clip } = hit;
+  // SOURCE → TIMELINE lewat ratio lane, arah yang sama dengan `splitClipAt`.
+  const start = clip.start + (cl.sourceStart - clip.sourceStart) / lane.speedRatio;
+  const end = start + cl.sourceLen / lane.speedRatio;
+  if (!(end > start)) return null;
+  return { ...cl, lane, clip, start: Math.round(start), end: Math.round(end) };
+}
+
+/**
  * `duration` diturunkan dari clip terjauh + ekor kosong, minimal 2 menit.
  * Tumbuh otomatis begitu clip ditambah/digeser ke kanan.
  */
@@ -300,6 +442,25 @@ function withDerived(s: StudioAppState): StudioAppState {
   // kalau tidak panel detail akan menampilkan clip hantu.
   const laneOk = s.lanes.some((l) => l.id === s.selectedLaneId);
   const clipOk = findClip(s.lanes, s.selectedClipId) !== null;
+
+  // INVARIAN SELEKSI, ditegakkan di satu tempat supaya tiap aksi tidak perlu
+  // mengingatnya sendiri:
+  //   1. id yang clip-nya sudah hilang dibuang;
+  //   2. primer selalu anggota himpunan (kalau himpunan tidak kosong);
+  //   3. himpunan kosong + primer ada  → himpunan diisi primer. Aturan ketiga
+  //      inilah yang membuat project LAMA (yang hanya menyimpan `selectedClipId`)
+  //      langsung punya seleksi yang sah tanpa migrasi.
+  const alive = new Set(s.lanes.flatMap((l) => l.clips.map((c) => c.id)));
+  let ids = s.selectedClipIds.filter((id) => alive.has(id));
+  const primary = clipOk ? s.selectedClipId : (ids[ids.length - 1] ?? null);
+  if (primary !== null && !ids.includes(primary)) ids = [...ids, primary];
+  if (primary === null) ids = [];
+  const idsSame =
+    ids.length === s.selectedClipIds.length && ids.every((id, i) => id === s.selectedClipIds[i]);
+  // Loop yang clip-nya sudah dihapus harus mati DI SINI, bukan nanti di
+  // pemutar: `buildProjectGraph` akan diam saja (tidak menemukan clip-nya),
+  // sehingga transport berjalan tanpa suara dan tanpa ada yang menjelaskan.
+  const loopOk = s.clipLoop === null || findClip(s.lanes, s.clipLoop.clipId) !== null;
   return {
     ...s,
     duration: farthest,
@@ -307,7 +468,11 @@ function withDerived(s: StudioAppState): StudioAppState {
     panelOrder,
     railOrder,
     selectedLaneId: laneOk ? s.selectedLaneId : (s.lanes[0]?.id ?? null),
-    selectedClipId: clipOk ? s.selectedClipId : null,
+    selectedClipId: primary,
+    // Array LAMA dikembalikan kalau isinya sama — selector berbasis referensi
+    // tidak boleh ikut render ulang hanya karena state disentuh.
+    selectedClipIds: idsSame ? s.selectedClipIds : ids,
+    clipLoop: loopOk ? s.clipLoop : null,
   };
 }
 
@@ -337,6 +502,18 @@ function mapLane(
   return { lanes: s.lanes.map((l) => (l.id === laneId ? fn(l) : l)) };
 }
 
+/**
+ * BPM manual → nilai yang sah, atau null untuk "kembali ke deteksi".
+ *
+ * Dibatasi DI STORE, bukan hanya di field input: nilai bisa datang dari project
+ * lama atau dari kode lain, dan BPM 0 membuat `samplesPerBeat` jadi Infinity —
+ * satu grid rusak sudah cukup untuk membekukan penggambarnya.
+ */
+function clampGridBpmOrNull(bpm: number | null | undefined): number | null {
+  if (bpm === null || bpm === undefined || !Number.isFinite(bpm)) return null;
+  return clampGridBpm(bpm);
+}
+
 let idCounter = 0;
 function nextId(prefix: string): string {
   idCounter += 1;
@@ -350,11 +527,65 @@ export const studioActions = {
   selectLane(laneId: string): void {
     set(() => ({ selectedLaneId: laneId }));
   },
+  /**
+   * Pilih SATU clip, membuang seleksi sebelumnya. Ini yang dipakai klik biasa.
+   */
   selectClip(clipId: string | null, laneId?: string): void {
     set((s) => ({
       selectedClipId: clipId,
+      selectedClipIds: clipId === null ? [] : [clipId],
       selectedLaneId: laneId ?? s.selectedLaneId,
     }));
+  },
+  /**
+   * Tambah/buang satu clip dari seleksi (Ctrl/Cmd/Shift-klik).
+   *
+   * Membuang clip PRIMER tidak mengosongkan seleksi: primer berpindah ke sisa
+   * yang masih terpilih (lewat invarian di `withDerived`). Mengosongkannya akan
+   * membuat Ctrl-klik pada satu clip di antara empat terasa seperti membatalkan
+   * semuanya.
+   */
+  toggleClipSelection(clipId: string, laneId?: string): void {
+    set((s) => {
+      const has = s.selectedClipIds.includes(clipId);
+      const ids = has
+        ? s.selectedClipIds.filter((id) => id !== clipId)
+        : [...s.selectedClipIds, clipId];
+      return {
+        selectedClipIds: ids,
+        selectedClipId: has ? (s.selectedClipId === clipId ? null : s.selectedClipId) : clipId,
+        selectedLaneId: laneId ?? s.selectedLaneId,
+      };
+    });
+  },
+  /**
+   * Ganti seluruh seleksi sekaligus. Dipakai kotak seleksi (marquee), yang
+   * menghitung ulang himpunannya di SETIAP gerakan pointer.
+   *
+   * Mengembalikan array LAMA kalau isinya sama — marquee memanggil ini puluhan
+   * kali per detik, dan array baru tiap kali berarti seluruh timeline
+   * digambar ulang tanpa ada yang berubah.
+   */
+  setSelectedClips(ids: readonly string[], primaryId?: string | null): void {
+    set((s) => {
+      const same =
+        ids.length === s.selectedClipIds.length && ids.every((id, i) => id === s.selectedClipIds[i]);
+      if (same) return null;
+      const primary =
+        primaryId !== undefined
+          ? primaryId
+          : ids.includes(s.selectedClipId ?? '')
+            ? s.selectedClipId
+            : (ids[ids.length - 1] ?? null);
+      return { selectedClipIds: ids, selectedClipId: primary };
+    });
+  },
+  clearClipSelection(): void {
+    set((s) =>
+      s.selectedClipIds.length === 0 && s.selectedClipId === null
+        ? null
+        : { selectedClipIds: [], selectedClipId: null },
+    );
   },
 
   // — lane —
@@ -442,6 +673,57 @@ export const studioActions = {
       return { lanes, selectedLaneId: s.lanes[to]?.id ?? s.selectedLaneId };
     });
   },
+  /**
+   * Geser BANYAK clip sekaligus dengan satu selisih.
+   *
+   * `origins` = posisi saat drag DIMULAI, bukan posisi sekarang. Menggeser
+   * relatif terhadap posisi sekarang akan menumpuk galat pembulatan di setiap
+   * `pointermove`, dan setelah beberapa detik menyeret, jarak antar clip yang
+   * seharusnya tetap sudah tidak sama lagi.
+   *
+   * Selisihnya di-CLAMP satu kali untuk seluruh rombongan, bukan per clip:
+   * kalau tiap clip dibatasi sendiri-sendiri, clip yang menabrak batas kiri
+   * akan berhenti sementara yang lain terus jalan — dan susunan yang sedang
+   * dipindahkan berubah bentuk di tangan user.
+   */
+  moveClips(origins: readonly ClipOrigin[], deltaSamples: number, deltaLanes: number): void {
+    set((s) => {
+      if (origins.length === 0) return null;
+      const lastLane = s.lanes.length - 1;
+      let dx = Math.round(deltaSamples);
+      let dl = Math.round(deltaLanes);
+      for (const o of origins) {
+        dx = Math.max(dx, -o.start);
+        dl = Math.max(dl, -o.laneIndex);
+        dl = Math.min(dl, lastLane - o.laneIndex);
+      }
+
+      const moving = new Map(origins.map((o) => [o.id, o]));
+      const target = new Map<number, StudioClip[]>();
+      const lanes = s.lanes.map((lane) => {
+        const kept = lane.clips.filter((c) => !moving.has(c.id));
+        return kept.length === lane.clips.length ? lane : { ...lane, clips: kept };
+      });
+      for (const lane of s.lanes) {
+        for (const clip of lane.clips) {
+          const o = moving.get(clip.id);
+          if (o === undefined) continue;
+          const to = o.laneIndex + dl;
+          const list = target.get(to) ?? [];
+          list.push({ ...clip, start: Math.max(0, o.start + dx) });
+          target.set(to, list);
+        }
+      }
+      if (target.size === 0) return null;
+
+      const next = lanes.map((lane, i) => {
+        const incoming = target.get(i);
+        if (incoming === undefined) return lane;
+        return { ...lane, clips: [...lane.clips, ...incoming].sort((a, b) => a.start - b.start) };
+      });
+      return { lanes: next };
+    });
+  },
   updateClip(clipId: string, patch: Partial<StudioClip>): void {
     set((s) => ({
       lanes: s.lanes.map((l) => ({
@@ -450,6 +732,30 @@ export const studioActions = {
       })),
     }));
   },
+  /**
+   * Ubah pembuangan stem sebuah clip. Selalu lewat `normalizeClipStem`, jadi
+   * nilai yang setara bypass benar-benar HILANG dari clip — bukan tersimpan
+   * sebagai `{vocal:1,bass:1,other:1}` yang membuat `mixFingerprint` melihat
+   * perubahan palsu dan menjadwalkan ulang audio tanpa alasan.
+   */
+  setClipStem(clipId: string, patch: Partial<StemMix>): void {
+    set((s) => {
+      const hit = findClip(s.lanes, clipId);
+      if (hit === null) return null;
+      const next = normalizeClipStem({
+        ...hit.clip,
+        stem: clampStemMix({ ...(hit.clip.stem ?? STEM_BYPASS), ...patch }),
+      });
+      if (next === hit.clip) return null;
+      return {
+        lanes: s.lanes.map((l) =>
+          l.id === hit.lane.id
+            ? { ...l, clips: l.clips.map((c) => (c.id === clipId ? next : c)) }
+            : l,
+        ),
+      };
+    });
+  },
   removeClip(clipId: string): void {
     set((s) => ({
       lanes: s.lanes.map((l) => ({ ...l, clips: l.clips.filter((c) => c.id !== clipId) })),
@@ -457,11 +763,20 @@ export const studioActions = {
   },
   /** Belah clip terpilih di playhead. Tidak melakukan apa-apa kalau di luar clip. */
   splitClipAtPlayhead(clipId: string): void {
+    studioActions.splitClipAt(clipId, getState().playhead);
+  },
+  /**
+   * Belah clip di posisi TIMELINE mana pun. Dipisah dari versi playhead supaya
+   * pemanggil yang sudah menyesuaikan posisinya (mis. SPLIT yang menempel ke
+   * grid ketukan) tidak perlu memindahkan playhead user lebih dulu hanya untuk
+   * bisa memotong.
+   */
+  splitClipAt(clipId: string, at: Samples): void {
     set((s) => {
       const hit = findClip(s.lanes, clipId);
       if (hit === null) return null;
       const { clip } = hit;
-      const cut = s.playhead - clip.start;
+      const cut = Math.round(at) - clip.start;
       if (cut <= 0 || cut >= clip.len) return null;
       // Potongan diukur di TIMELINE-space, lalu dikonversi ke SOURCE-space
       // dengan ratio. Tanpa konversi ini, memotong clip yang di-speed-up akan
@@ -481,6 +796,78 @@ export const studioActions = {
         lanes: s.lanes.map((l) =>
           l.id === hit.lane.id
             ? { ...l, clips: l.clips.flatMap((c) => (c.id === clipId ? [left, right] : [c])) }
+            : l,
+        ),
+      };
+    });
+  },
+  /**
+   * Mulai audisi: putar region ini berulang, di pemutarnya SENDIRI.
+   *
+   * TIDAK menyentuh transport sama sekali — tidak memindahkan playhead, tidak
+   * menyalakan/mematikan play. Itu perbaikan atas versi pertama, yang membajak
+   * transport dan karenanya menghentikan lagu di lane lain hanya karena user
+   * ingin mendengar dua bar dari satu clip. Audisi adalah pemutar kedua yang
+   * berjalan berdampingan dengan timeline; lihat `startAudition` di
+   * `preview/audio-preview.ts`.
+   *
+   * Clip yang sedang diaudisi dibisukan di mix utama (`skipClipId` di
+   * `graph-builder`), supaya ia tidak terdengar dua kali dari dua tempat.
+   */
+  startClipLoop(clipId: string, sourceStart: Samples, sourceLen: Samples): void {
+    set((s) => {
+      if (findClip(s.lanes, clipId) === null || sourceLen <= 0) return null;
+      return {
+        clipLoop: {
+          clipId,
+          sourceStart: Math.round(sourceStart),
+          sourceLen: Math.round(sourceLen),
+        },
+      };
+    });
+  },
+  /** Akhiri audisi. Transport tidak disentuh — ia memang tidak pernah ikut. */
+  stopClipLoop(): void {
+    set((s) => (s.clipLoop === null ? null : { clipLoop: null }));
+  },
+  /** Pindahkan region audisi tanpa menghentikan bunyinya. */
+  moveClipLoop(sourceStart: Samples, sourceLen: Samples): void {
+    set((s) => {
+      const cl = s.clipLoop;
+      if (cl === null || sourceLen <= 0) return null;
+      const next: ClipLoop = {
+        ...cl,
+        sourceStart: Math.round(sourceStart),
+        sourceLen: Math.round(sourceLen),
+      };
+      if (next.sourceStart === cl.sourceStart && next.sourceLen === cl.sourceLen) return null;
+      return { clipLoop: next };
+    });
+  },
+  /**
+   * Potong clip jadi region loop dan ulangi. Aritmetikanya ada di
+   * `timeline/beat-cut.ts` — di sini hanya penggantian isi lane, supaya bagian
+   * yang bisa salah diam-diam tetap bisa dites tanpa store.
+   */
+  beatLoopCut(clipId: string, spec: LoopCutSpec): void {
+    set((s) => {
+      const hit = findClip(s.lanes, clipId);
+      if (hit === null) return null;
+      const cut = applyLoopCut(hit.lane, hit.clip, spec, () => nextId('clip-'), s.sampleRate);
+      if (cut.length === 0) return null;
+      return {
+        // Audisi dimatikan: region-nya baru saja MENJADI clip-nya. Membiarkannya
+        // hidup berarti loop menunjuk potongan source yang sekarang berarti
+        // lain, dan yang terdengar berhenti cocok dengan yang terlihat.
+        clipLoop: null,
+        lanes: s.lanes.map((l) =>
+          l.id === hit.lane.id
+            ? {
+                ...l,
+                clips: l.clips
+                  .flatMap((c) => (c.id === clipId ? cut : [c]))
+                  .sort((a, b) => a.start - b.start),
+              }
             : l,
         ),
       };
@@ -528,6 +915,40 @@ export const studioActions = {
       const next = Math.max(-2, Math.min(2, asset.tempoOctave + delta));
       if (next === asset.tempoOctave) return {};
       return { assets: { ...s.assets, [id]: { ...asset, tempoOctave: next } } };
+    });
+  },
+  /**
+   * Koreksi grid manual. Field yang tidak disebut TIDAK diubah, sehingga
+   * mengetik BPM tidak diam-diam membuang offset yang sudah disetel dengan
+   * susah payah (dan sebaliknya).
+   */
+  setAssetBeatGrid(id: number, patch: { bpm?: number | null; offsetSec?: number | null }): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined) return {};
+      const bpmOverride = 'bpm' in patch ? clampGridBpmOrNull(patch.bpm) : asset.bpmOverride;
+      const nextOffset = patch.offsetSec ?? null;
+      const beatOffsetOverride =
+        'offsetSec' in patch
+          ? nextOffset !== null && Number.isFinite(nextOffset)
+            ? nextOffset
+            : null
+          : asset.beatOffsetOverride;
+      if (bpmOverride === asset.bpmOverride && beatOffsetOverride === asset.beatOffsetOverride) {
+        return {};
+      }
+      return { assets: { ...s.assets, [id]: { ...asset, bpmOverride, beatOffsetOverride } } };
+    });
+  },
+  /** Buang SEMUA koreksi manual dan kembali ke hasil deteksi. */
+  resetAssetBeatGrid(id: number): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined) return {};
+      if (asset.bpmOverride === null && asset.beatOffsetOverride === null) return {};
+      return {
+        assets: { ...s.assets, [id]: { ...asset, bpmOverride: null, beatOffsetOverride: null } },
+      };
     });
   },
   /** Batas panjang timeline manual. `max === null` = kembali otomatis. */
@@ -643,11 +1064,31 @@ export const studioActions = {
     set((s) => (s.draggingClip === dragging ? null : { draggingClip: dragging }));
   },
 
-  /** COPY: simpan metadata clip terpilih. PCM tidak ikut — asset tetap dibagi. */
+  /**
+   * COPY seluruh clip terpilih. PCM tidak ikut — asset tetap dibagi.
+   *
+   * Yang disimpan bukan posisi absolutnya melainkan SELISIH terhadap clip
+   * paling kiri, supaya paste di tempat lain tetap menghasilkan susunan yang
+   * sama persis, termasuk jaraknya antar lane.
+   */
   copySelectedClip(): void {
     set((s) => {
-      const found = findClip(s.lanes, s.selectedClipId);
-      return found === null ? null : { clipboard: { ...found.clip } };
+      const picked: { clip: StudioClip; laneIndex: number }[] = [];
+      s.lanes.forEach((lane, laneIndex) => {
+        for (const clip of lane.clips) {
+          if (s.selectedClipIds.includes(clip.id)) picked.push({ clip, laneIndex });
+        }
+      });
+      if (picked.length === 0) return null;
+      picked.sort((a, b) => a.clip.start - b.clip.start || a.laneIndex - b.laneIndex);
+      const base = picked[0]!;
+      return {
+        clipboard: picked.map((p) => ({
+          clip: { ...p.clip },
+          laneOffset: p.laneIndex - base.laneIndex,
+          startOffset: p.clip.start - base.clip.start,
+        })),
+      };
     });
   },
 
@@ -659,31 +1100,53 @@ export const studioActions = {
   pasteClipboard(): void {
     set((s) => {
       const src = s.clipboard;
-      if (src === null) return null;
-      const laneId = s.selectedLaneId ?? s.lanes[0]?.id;
-      if (laneId === undefined) return null;
-      const copy: StudioClip = { ...src, id: nextId('clip-'), start: Math.max(0, s.playhead) };
+      if (src === null || src.length === 0) return null;
+      const baseLane = s.lanes.findIndex((l) => l.id === s.selectedLaneId);
+      const from = baseLane < 0 ? 0 : baseLane;
+      const at = Math.max(0, s.playhead);
+
+      const added = new Map<number, StudioClip[]>();
+      const ids: string[] = [];
+      for (const entry of src) {
+        // Lane di luar jangkauan DIJEPIT, bukan dilewati: menyalin dua lane ke
+        // lane terakhir lebih baik daripada diam-diam kehilangan separuh materi.
+        const laneIndex = Math.max(0, Math.min(s.lanes.length - 1, from + entry.laneOffset));
+        const copy: StudioClip = {
+          ...entry.clip,
+          id: nextId('clip-'),
+          start: at + entry.startOffset,
+        };
+        ids.push(copy.id);
+        const list = added.get(laneIndex) ?? [];
+        list.push(copy);
+        added.set(laneIndex, list);
+      }
+      if (ids.length === 0) return null;
+
       return {
-        ...mapLane(s, laneId, (l) => ({
-          ...l,
-          clips: [...l.clips, copy].sort((a, b) => a.start - b.start),
-        })),
-        selectedClipId: copy.id,
-        selectedLaneId: laneId,
+        lanes: s.lanes.map((lane, i) => {
+          const incoming = added.get(i);
+          if (incoming === undefined) return lane;
+          return { ...lane, clips: [...lane.clips, ...incoming].sort((a, b) => a.start - b.start) };
+        }),
+        selectedClipIds: ids,
+        selectedClipId: ids[ids.length - 1] ?? null,
+        selectedLaneId: s.lanes[from]?.id ?? s.selectedLaneId,
       };
     });
   },
 
-  /** DELETE clip terpilih. Mengembalikan true kalau ada yang dihapus. */
+  /** DELETE seluruh clip terpilih. */
   deleteSelectedClip(): void {
     set((s) => {
-      if (s.selectedClipId === null) return null;
-      const id = s.selectedClipId;
+      const doomed = new Set(s.selectedClipIds);
+      if (doomed.size === 0) return null;
       return {
         lanes: s.lanes.map((l) => {
-          const clips = l.clips.filter((c) => c.id !== id);
+          const clips = l.clips.filter((c) => !doomed.has(c.id));
           return clips.length === l.clips.length ? l : { ...l, clips };
         }),
+        selectedClipIds: [],
         selectedClipId: null,
       };
     });
@@ -753,6 +1216,10 @@ export const studioActions = {
       const advance = secToSamples((dtMs / 1000) * s.speed, s.sampleRate);
       const next = s.playhead + advance;
 
+      // Audisi loop SENGAJA tidak muncul di sini. Ia pemutar terpisah dengan
+      // jamnya sendiri; playhead timeline tidak boleh ikut terkurung di dua bar
+      // hanya karena satu clip sedang didengarkan berulang.
+
       // Batas transport = ujung MATERI. Kalau belum ada clip sama sekali,
       // pakai `duration` supaya playhead tetap bisa bergerak di project kosong.
       const end = s.contentEnd > 0 ? s.contentEnd : s.duration;
@@ -819,6 +1286,15 @@ export const studioActions = {
   setExportProgress(progress: number | null): void {
     set(() => ({ exportProgress: progress }));
   },
+  setLaneHeight(id: LaneHeightId): void {
+    set((s) => (s.laneHeight === id ? null : { laneHeight: id }));
+  },
+  /** Buka/tutup satu blok Clip Detail. */
+  toggleClipDetailSection(id: ClipDetailSectionId): void {
+    set((s) => ({
+      clipDetailSections: { ...s.clipDetailSections, [id]: !s.clipDetailSections[id] },
+    }));
+  },
   setEngineStatus(ready: boolean, error: string | null): void {
     set(() => ({ engineReady: ready, engineError: error }));
   },
@@ -838,12 +1314,16 @@ export const studioActions = {
       scrubbing: false,
       draggingClip: false,
       clipboard: null,
+      selectedClipIds: [],
       loop: true,
+      clipLoop: null,
       contentEnd: 0,
       panelOrder: DEFAULT_PANEL_ORDER,
       railOrder: DEFAULT_RAIL_ORDER,
       maximizedPanel: null,
       eqMode: 'curve',
+      clipDetailSections: DEFAULT_CLIP_DETAIL_SECTIONS,
+      laneHeight: DEFAULT_LANE_HEIGHT,
       minDurationSec: MIN_DURATION_SEC,
       maxDurationSec: null,
     });

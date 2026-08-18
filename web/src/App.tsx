@@ -54,7 +54,6 @@ export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element
   }, []);
   // Pulihkan project tersimpan + nyalakan autosave.
   usePersistence(useStudio((s) => s.sampleRate));
-  const hasSelection = useStudio((s) => s.selectedClipId !== null);
   // Shortcut transport: Space, Backspace/Enter/Home, End, ←/→.
   useTransportShortcuts();
   // Coba bangun engine sekali. Kegagalannya adalah informasi, bukan crash.
@@ -96,10 +95,18 @@ export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element
           overlayAside={<StudioRail />}
           items={[
             { id: 'timeline', node: <TimelinePanel /> },
-            // Clip Detail hanya ada saat ADA clip terpilih. Kartu kosong yang
-            // cuma berbunyi "pilih clip" memakan ruang vertikal permanen dan
-            // mendorong timeline ke atas tanpa memberi apa pun.
-            ...(hasSelection ? [{ id: 'clip-detail' as const, node: <ClipDetailPanel /> }] : []),
+            // Clip Detail SELALU ada, juga saat tidak ada yang terpilih.
+            //
+            // Dulu ia hanya dipasang saat ada seleksi, dengan alasan menghemat
+            // ruang vertikal. Itu keliru begitu seleksi jadi sesuatu yang
+            // sering berubah: panel yang muncul-hilang mendorong timeline naik
+            // turun di bawah kursor, jadi klik berikutnya mendarat di tempat
+            // yang berbeda dari yang dilihat mata. Tata letak yang bergerak
+            // sendiri jauh lebih mahal daripada satu kartu berisi judul.
+            //
+            // Tanpa seleksi, panel ini menyusut jadi satu baris judul
+            // ("PILIH CLIP DI TIMELINE") — tingginya tetap, dan itulah intinya.
+            { id: 'clip-detail', node: <ClipDetailPanel /> },
           ]}
         />
       }

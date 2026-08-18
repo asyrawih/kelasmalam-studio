@@ -13,18 +13,29 @@
  * `OfflineAudioContext` masuk tanpa cabang khusus.
  *
  * Rantai per lane (urutan mengikuti signal flow docs/07):
- *   clip gain (+fade) → EQ band 1..n → lane gain → destination
+ *   [stem] → clip gain (+fade) → EQ band 1..n → lane gain → destination
+ *
+ * Blok `[stem]` hanya ada kalau clip-nya benar-benar membuang sesuatu
+ * (`isStemBypass`). Clip biasa tidak boleh membayar dua puluh node Web Audio
+ * untuk pemrosesan yang hasilnya identik dengan tidak memproses apa pun —
+ * dan karena rantai itu memang transparan saat bypass, melewatinya tidak
+ * mengubah apa yang terdengar sedikit pun.
  */
 
 import {
   DEFAULT_FADE_CURVE,
   effectiveSpeed,
   isAudible,
+  isStemBypass,
   type EqSettings,
+  type Samples,
   type StudioClip,
+  type StudioLane,
   type StudioState,
 } from '../model';
 import { fadeCurveArray, fadeOutGain } from '../timeline/fade';
+import { stemOf } from '../timeline/stem';
+import { buildStemChain, type StemNodes } from './stem-chain';
 
 /** Ramp pendek supaya perubahan parameter tidak menimbulkan klik. */
 export const PARAM_RAMP_SEC = 0.02;
@@ -50,6 +61,12 @@ export interface LaneNodes {
 
 export interface BuiltGraph {
   readonly lanes: Map<string, LaneNodes>;
+  /**
+   * clipId → node stem, untuk clip yang punya rantai. Ada supaya slider REMOVE
+   * bisa diubah SAAT BERBUNYI lewat `updateStemNodes`, sama seperti EQ lane —
+   * membangun ulang graf tiap gerakan slider hanya menghasilkan deretan klik.
+   */
+  readonly clipStems: Map<string, StemNodes>;
   /** Source yang sudah di-`start()`; perlu di-`stop()` saat preview berhenti. */
   readonly voices: AudioBufferSourceNode[];
   /** Node non-source (gain, filter) — perlu di-disconnect saat berhenti. */
@@ -65,6 +82,15 @@ export interface GraphBuildOptions {
   readonly getBuffer: (assetId: number) => AudioBuffer | undefined;
   /** Default `audio.destination`. */
   readonly destination?: AudioNode;
+  /**
+   * Clip yang sedang DIAUDISI dan karenanya dilewati di mix utama.
+   *
+   * Lewat opsi dan bukan dibaca dari `state`, supaya jalur EXPORT tidak mungkin
+   * ikut terpengaruh: `run-export` tidak pernah mengisinya, jadi file hasil
+   * compile tidak akan pernah kehilangan satu clip hanya karena user lupa
+   * mematikan audisi.
+   */
+  readonly skipClipId?: string;
 }
 
 interface EnvelopeTiming {
@@ -189,6 +215,7 @@ export function buildProjectGraph(
   opts: GraphBuildOptions,
 ): BuiltGraph {
   const lanesOut = new Map<string, LaneNodes>();
+  const clipStems = new Map<string, StemNodes>();
   const voices: AudioBufferSourceNode[] = [];
   const nodes: AudioNode[] = [];
 
@@ -213,6 +240,9 @@ export function buildProjectGraph(
     const eqInput: AudioNode = filters[0] ?? laneGainNode;
 
     for (const clip of lane.clips) {
+      // Clip yang sedang diaudisi berbunyi dari pemutar audisi, bukan dari
+      // sini — kalau tidak, ia terdengar dua kali dari dua posisi berbeda.
+      if (clip.id === opts.skipClipId) continue;
       const buffer = opts.getBuffer(clip.assetId);
       if (buffer === undefined) continue; // clip demo tanpa PCM asli — dilewati
 
@@ -248,7 +278,21 @@ export function buildProjectGraph(
         clipElapsedSec: intoClipSec,
       });
 
-      src.connect(gain).connect(eqInput);
+      // Stem SEBELUM gain clip: pembuangan stem membentuk MATERI-nya, sedangkan
+      // gain + fade adalah level akhir clip itu. Menaruh fade di dalam rantai
+      // stem berarti kurvanya ikut difilter dan dijumlahkan tiga kali.
+      const stem = stemOf(clip);
+      let head: AudioNode = gain;
+      if (!isStemBypass(clip.stem)) {
+        const chain = buildStemChain(audio, stem);
+        chain.output.connect(gain);
+        clipStems.set(clip.id, chain);
+        nodes.push(...chain.all);
+        head = chain.input;
+      }
+
+      src.connect(head);
+      gain.connect(eqInput);
       try {
         src.start(whenSec, offsetSec, remainingSec);
       } catch {
@@ -259,5 +303,120 @@ export function buildProjectGraph(
     }
   }
 
-  return { lanes: lanesOut, voices, nodes };
+  return { lanes: lanesOut, clipStems, voices, nodes };
+}
+
+// ── Pemutar audisi ───────────────────────────────────────────────────────────
+
+export interface AuditionBuildOptions {
+  readonly lane: StudioLane;
+  readonly clip: StudioClip;
+  readonly buffer: AudioBuffer;
+  /** Region yang diulang, SOURCE-space absolut di asset. */
+  readonly sourceStart: Samples;
+  readonly sourceLen: Samples;
+  readonly sampleRate: number;
+  /** Kecepatan transport, dikalikan dengan `lane.speedRatio`. */
+  readonly transportSpeed: number;
+  readonly startAt: number;
+  readonly destination: AudioNode;
+}
+
+export interface AuditionVoice {
+  readonly source: AudioBufferSourceNode;
+  readonly stem: StemNodes | null;
+  readonly gain: GainNode;
+  readonly filters: BiquadFilterNode[];
+  readonly laneGain: GainNode;
+  /** Semua node, untuk di-disconnect saat audisi berhenti. */
+  readonly nodes: AudioNode[];
+  /** Waktu konteks saat sample pertama region keluar. */
+  readonly startAt: number;
+  readonly loopStartSec: number;
+  readonly loopEndSec: number;
+  /** Detik SOURCE yang dilewati per detik jam dinding. */
+  readonly rate: number;
+}
+
+/**
+ * Pemutar KEDUA: satu region, berulang, berjalan berdampingan dengan timeline.
+ *
+ * Bukan bagian dari `buildProjectGraph` karena hidupnya memang berbeda — ia
+ * menyala dan mati lewat tombol LOOP PLAY, bukan lewat transport, dan tetap
+ * berbunyi saat transport berhenti. Menyatukannya berarti setiap perubahan
+ * kecil pada audisi menjadwalkan ulang seluruh project.
+ *
+ * Rantainya SAMA dengan clip biasa (stem → gain → EQ lane → fader lane) supaya
+ * yang didengar saat audisi adalah suara yang sama dengan yang akan keluar dari
+ * mix — kecuali dua hal yang sengaja beda:
+ *
+ *  - MUTE/SOLO DILEWATI. LOOP PLAY perintah eksplisit atas satu clip; tombol
+ *    yang diam karena lane-nya kebetulan di-mute lebih membingungkan daripada
+ *    tombol yang sementara mengabaikan setelan mix.
+ *  - TANPA FADE. Kurva fade clip hanya akan berbunyi di putaran pertama, jadi
+ *    putaran ke-2 dan seterusnya terdengar berbeda tanpa sebab yang terlihat.
+ *    Gain clip tetap dipakai — itu level, bukan bentuk.
+ */
+export function buildAuditionVoice(
+  audio: BaseAudioContext,
+  o: AuditionBuildOptions,
+): AuditionVoice | null {
+  const sr = o.sampleRate;
+  const loopStartSec = o.sourceStart / sr;
+  const loopEndSec = (o.sourceStart + o.sourceLen) / sr;
+  if (!(loopEndSec > loopStartSec)) return null;
+
+  const nodes: AudioNode[] = [];
+  const laneGain = audio.createGain();
+  laneGain.gain.value = dbToLin(o.lane.gainDb);
+  const filters = buildEqChain(audio, o.lane.eq, laneGain);
+  laneGain.connect(o.destination);
+  nodes.push(laneGain, ...filters);
+  const eqInput: AudioNode = filters[0] ?? laneGain;
+
+  const gain = audio.createGain();
+  gain.gain.value = dbToLin(o.clip.gainDb);
+  gain.connect(eqInput);
+  nodes.push(gain);
+
+  let stem: StemNodes | null = null;
+  let head: AudioNode = gain;
+  if (!isStemBypass(o.clip.stem)) {
+    stem = buildStemChain(audio, stemOf(o.clip));
+    stem.output.connect(gain);
+    nodes.push(...stem.all);
+    head = stem.input;
+  }
+
+  const rate = effectiveSpeed(o.lane, o.transportSpeed);
+  const source = audio.createBufferSource();
+  source.buffer = o.buffer;
+  source.playbackRate.value = rate;
+  // Pengulangan diserahkan ke Web Audio, bukan dijadwalkan sendiri: `loop`
+  // menyambung akurat per-sample dan tidak pernah menumpuk galat, sedangkan
+  // menjadwalkan ulang tiap putaran terdengar sebagai klik di tiap sambungan.
+  source.loop = true;
+  source.loopStart = loopStartSec;
+  source.loopEnd = loopEndSec;
+  source.connect(head);
+  try {
+    source.start(o.startAt, loopStartSec);
+  } catch {
+    for (const n of nodes) n.disconnect();
+    return null;
+  }
+  nodes.push(source);
+
+  return {
+    source,
+    stem,
+    gain,
+    filters,
+    laneGain,
+    nodes,
+    startAt: o.startAt,
+    loopStartSec,
+    loopEndSec,
+    rate,
+  };
 }

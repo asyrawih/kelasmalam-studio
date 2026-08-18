@@ -45,6 +45,8 @@ describe('kartu Shortcut tidak boleh basi', () => {
     const notHandled: string[] = [];
 
     for (const doc of SHORTCUTS) {
+      // Gerakan pointer tidak punya `KeyboardEvent` untuk diperiksa.
+      if (doc.group === 'pointer') continue;
       for (const label of doc.keys) {
         const key = KEY_MAP[label];
         if (key === undefined) {

@@ -86,6 +86,8 @@ function asset(id: number, bpm: number, confidence: number): StudioAsset {
     tempo: { bpm, confidence, beatOffsetSec: 0 },
     tempoPending: false,
     tempoOctave: 0,
+    bpmOverride: null,
+    beatOffsetOverride: null,
   };
 }
 

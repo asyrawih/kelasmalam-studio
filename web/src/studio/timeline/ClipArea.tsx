@@ -15,13 +15,15 @@
 import {
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
-import { isAudible, LANE_HEIGHT_PX, type StudioClip, type StudioLane } from '../model';
-import { studioActions, useStudio, type StudioAsset } from '../store';
+import { isAudible, laneHeightPx, type StudioClip, type StudioLane } from '../model';
+import { studioActions, studioStore, useStudio, type ClipOrigin, type StudioAsset } from '../store';
+import { isSpaceHeld, markSpacePan, subscribeSpace } from '../shortcuts/space-pan';
 import { importFileToLane } from './audio-import';
 import { importUrlToLane } from './url-to-lane';
 import { drawClipWave } from './waveform';
@@ -49,11 +51,13 @@ type Gesture =
   | {
       readonly kind: 'clip';
       readonly pointerId: number;
-      readonly clipId: string;
       readonly x0: number;
       readonly y0: number;
-      readonly startAtDown: number;
-      readonly laneIndexAtDown: number;
+      /**
+       * Posisi SEMUA clip terpilih saat pointer turun. Selisih dihitung
+       * terhadap ini, bukan terhadap posisi sekarang — lihat `moveClips`.
+       */
+      readonly origins: readonly ClipOrigin[];
       readonly samplesPerPx: number;
     }
   | {
@@ -61,7 +65,24 @@ type Gesture =
       readonly pointerId: number;
       readonly x0: number;
       readonly scrollLeft0: number;
+    }
+  | {
+      readonly kind: 'marquee';
+      readonly pointerId: number;
+      /** Titik jangkar dalam koordinat TRACK (bukan layar) — lihat catatan. */
+      readonly x0: number;
+      readonly y0: number;
+      /** Seleksi sebelum kotak dimulai; dipertahankan saat Shift/Ctrl ditahan. */
+      readonly base: readonly string[];
     };
+
+/** Kotak seleksi dalam koordinat track, siap digambar. */
+interface MarqueeBox {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
 
 /**
  * Waveform clip di canvas.
@@ -118,6 +139,7 @@ function ClipView({
   clip,
   lane,
   selected,
+  primary,
   asset,
   duration,
   sampleRate,
@@ -126,6 +148,8 @@ function ClipView({
   clip: StudioClip;
   lane: StudioLane;
   selected: boolean;
+  /** Clip yang ditampilkan Clip Detail. Ditandai lebih kuat dari sekadar terpilih. */
+  primary: boolean;
   asset: StudioAsset | undefined;
   duration: number;
   sampleRate: number;
@@ -147,8 +171,15 @@ function ClipView({
         left: `${left}%`,
         width: `${width}%`,
         background: `${lane.color}24`,
-        border: `1px solid ${selected ? '#ffffff' : lane.color}`,
-        boxShadow: selected ? '0 0 12px #ffd40080' : 'none',
+        // Tiga keadaan, bukan dua: tidak terpilih, ikut terpilih, dan PRIMER.
+        // Tanpa pembedaan itu, user tidak bisa tahu clip mana yang sedang
+        // diedit Clip Detail saat empat clip tersorot serentak.
+        border: `1px solid ${primary ? '#ffffff' : selected ? 'var(--cy-accent)' : lane.color}`,
+        boxShadow: primary
+          ? '0 0 12px #ffd40080'
+          : selected
+            ? 'inset 0 0 0 1px #ffd40040'
+            : 'none',
         cursor: 'grab',
         overflow: 'hidden',
         userSelect: 'none',
@@ -236,9 +267,36 @@ export function ClipArea({
   const playhead = useStudio((s) => s.playhead);
   const sampleRate = useStudio((s) => s.sampleRate);
   const selectedClipId = useStudio((s) => s.selectedClipId);
+  const selectedClipIds = useStudio((s) => s.selectedClipIds);
+  const laneH = laneHeightPx(useStudio((s) => s.laneHeight));
+  /**
+   * HANYA untuk kursor. Keputusan pan/seleksi dibaca LANGSUNG dari
+   * `isSpaceHeld()` di dalam handler — nilai dari render bisa satu frame basi,
+   * dan satu frame di sini berarti gerakan pertama setelah menekan spasi jadi
+   * kotak seleksi, bukan geser. Hal yang sama berlaku untuk seleksi: keduanya
+   * dibaca dari sumbernya saat pointer turun, bukan dari closure render.
+   */
+  const spaceHeld = useSyncExternalStore(subscribeSpace, isSpaceHeld, isSpaceHeld);
 
   const gesture = useRef<Gesture | null>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
+  const [marquee, setMarquee] = useState<MarqueeBox | null>(null);
+
+  /**
+   * Titik pointer dalam koordinat TRACK.
+   *
+   * Track itulah yang punya lebar penuh timeline (bisa jauh lebih lebar dari
+   * viewport) dan yang ikut tergeser saat scroll. Menghitung kotak seleksi dari
+   * koordinat layar akan membuat kotaknya melenceng begitu user menggulir di
+   * tengah drag — dan itu terjadi setiap kali seleksi ditarik sampai ke tepi.
+   */
+  const trackPoint = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    const el = trackRef.current;
+    if (el === null) return null;
+    const r = el.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  };
 
   const span = duration > 0 ? duration : 1;
   const playPct = Math.max(0, Math.min(100, (playhead / span) * 100));
@@ -258,42 +316,99 @@ export function ClipArea({
     studioActions.setClipDragging(true);
   };
 
+  /** Posisi awal semua clip pada `ids`, untuk drag berombongan. */
+  const originsOf = (ids: readonly string[]): ClipOrigin[] => {
+    const wanted = new Set(ids);
+    const out: ClipOrigin[] = [];
+    lanes.forEach((lane, laneIndex) => {
+      for (const c of lane.clips) {
+        if (wanted.has(c.id)) out.push({ id: c.id, start: c.start, laneIndex });
+      }
+    });
+    return out;
+  };
+
   const beginClipDrag = (e: ReactPointerEvent<HTMLDivElement>, clip: StudioClip): void => {
-    // Klik clip TIDAK boleh ikut memicu pan latar.
+    // Klik clip TIDAK boleh ikut memicu kotak seleksi / pan latar.
     e.stopPropagation();
     e.preventDefault();
     const el = scrollerRef.current;
     if (el === null) return;
     const laneIndex = lanes.findIndex((l) => l.clips.some((c) => c.id === clip.id));
     if (laneIndex < 0) return;
+
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (additive) {
+      // Menambah/membuang dari seleksi, TANPA memulai drag: menyeret sambil
+      // menahan Ctrl hampir selalu tidak disengaja, dan kalau ia ikut memindah
+      // clip, satu klik salah bisa menggeser materi tanpa disadari.
+      studioActions.toggleClipSelection(clip.id, lanes[laneIndex]?.id);
+      return;
+    }
+
+    // Menyeret clip yang SUDAH terpilih membawa seluruh seleksi; menyeret clip
+    // di luar seleksi menggantinya lebih dulu. Ini yang membuat "pilih empat
+    // lalu geser semuanya" bekerja tanpa tombol tambahan.
+    const live = studioStore.getState().selectedClipIds;
+    const inSelection = live.includes(clip.id);
+    const ids = inSelection ? live : [clip.id];
+    if (!inSelection) studioActions.selectClip(clip.id, lanes[laneIndex]?.id);
+    else studioActions.setSelectedClips(ids, clip.id);
+
     // Guard NaN/∞: sebelum layout pertama, scrollWidth bisa 0.
     const samplesPerPx = el.scrollWidth > 0 ? duration / el.scrollWidth : 0;
     gesture.current = {
       kind: 'clip',
       pointerId: e.pointerId,
-      clipId: clip.id,
       x0: e.clientX,
       y0: e.clientY,
-      startAtDown: clip.start,
-      laneIndexAtDown: laneIndex,
+      origins: originsOf(ids),
       samplesPerPx,
     };
     capture(e);
-    // Klik = pilih (design menyatukan select dan drag di gerakan yang sama).
-    studioActions.selectClip(clip.id, lanes[laneIndex]?.id);
   };
 
-  const beginPan = (e: ReactPointerEvent<HTMLDivElement>): void => {
+  /**
+   * Pointer turun di LATAR.
+   *
+   * Dulu ini selalu pan. Sejak seleksi kotak ada, latar dipakai untuk MEMILIH —
+   * gerakan yang sama dengan CapCut/Figma — dan pan pindah ke modifier: spasi
+   * ditahan, atau tombol tengah mouse. Keduanya konvensi yang sudah dihafal
+   * tangan, dan keduanya tidak mungkin tertekan tanpa sengaja.
+   */
+  const beginBackgroundDrag = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const el = scrollerRef.current;
-    if (el === null || e.button !== 0) return;
+    if (el === null) return;
+    const held = isSpaceHeld();
+    const wantsPan = e.button === 1 || (e.button === 0 && held);
+    if (wantsPan) {
+      e.preventDefault();
+      if (held) markSpacePan();
+      gesture.current = {
+        kind: 'pan',
+        pointerId: e.pointerId,
+        x0: e.clientX,
+        scrollLeft0: el.scrollLeft,
+      };
+      capture(e);
+      el.style.cursor = 'grabbing';
+      return;
+    }
+    if (e.button !== 0) return;
+    const p = trackPoint(e.clientX, e.clientY);
+    if (p === null) return;
+    e.preventDefault();
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     gesture.current = {
-      kind: 'pan',
+      kind: 'marquee',
       pointerId: e.pointerId,
-      x0: e.clientX,
-      scrollLeft0: el.scrollLeft,
+      x0: p.x,
+      y0: p.y,
+      base: additive ? studioStore.getState().selectedClipIds : [],
     };
+    if (!additive) studioActions.clearClipSelection();
+    setMarquee({ left: p.x, top: p.y, width: 0, height: 0 });
     capture(e);
-    el.style.cursor = 'grabbing';
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
@@ -305,12 +420,47 @@ export function ClipArea({
       el.scrollLeft = g.scrollLeft0 - (e.clientX - g.x0);
       return;
     }
-    const rows = Math.round((e.clientY - g.y0) / LANE_HEIGHT_PX);
-    studioActions.moveClip(
-      g.clipId,
-      g.startAtDown + (e.clientX - g.x0) * g.samplesPerPx,
-      g.laneIndexAtDown + rows,
-    );
+    if (g.kind === 'marquee') {
+      const p = trackPoint(e.clientX, e.clientY);
+      if (p === null) return;
+      const box: MarqueeBox = {
+        left: Math.min(g.x0, p.x),
+        top: Math.min(g.y0, p.y),
+        width: Math.abs(p.x - g.x0),
+        height: Math.abs(p.y - g.y0),
+      };
+      setMarquee(box);
+      studioActions.setSelectedClips(clipsInBox(box, g.base));
+      return;
+    }
+    const rows = Math.round((e.clientY - g.y0) / laneH);
+    studioActions.moveClips(g.origins, (e.clientX - g.x0) * g.samplesPerPx, rows);
+  };
+
+  /**
+   * Semua clip yang BERSINGGUNGAN dengan kotak, digabung dengan `base`.
+   *
+   * Bersinggungan, bukan "termuat seluruhnya": clip di timeline bisa jauh lebih
+   * lebar dari layar, dan menuntut kotaknya melingkupi seluruh clip berarti
+   * clip panjang tidak akan pernah bisa dipilih dengan cara ini.
+   */
+  const clipsInBox = (box: MarqueeBox, base: readonly string[]): string[] => {
+    const el = trackRef.current;
+    const width = el?.getBoundingClientRect().width ?? 0;
+    if (width <= 0) return [...base];
+    const from = (box.left / width) * span;
+    const to = ((box.left + box.width) / width) * span;
+    const laneFrom = Math.floor(box.top / laneH);
+    const laneTo = Math.floor((box.top + box.height) / laneH);
+
+    const picked = new Set(base);
+    lanes.forEach((lane, i) => {
+      if (i < laneFrom || i > laneTo) return;
+      for (const c of lane.clips) {
+        if (c.start + c.len > from && c.start < to) picked.add(c.id);
+      }
+    });
+    return [...picked];
   };
 
   const endGesture = (e: ReactPointerEvent<HTMLDivElement>): void => {
@@ -324,6 +474,7 @@ export function ClipArea({
         el.releasePointerCapture(e.pointerId);
       }
     }
+    setMarquee(null);
     onDraggingChange(false);
     // Dilepas → posisi/lane baru langsung berlaku ke audio yang sedang jalan.
     studioActions.setClipDragging(false);
@@ -363,7 +514,7 @@ export function ClipArea({
       data-tl-scroll
       ref={scrollerRef}
       onScroll={onScroll}
-      onPointerDown={beginPan}
+      onPointerDown={beginBackgroundDrag}
       onPointerMove={onPointerMove}
       onPointerUp={endGesture}
       onPointerCancel={endGesture}
@@ -374,11 +525,11 @@ export function ClipArea({
         overflowY: 'hidden',
         contain: 'inline-size',
         scrollbarWidth: 'none',
-        cursor: 'grab',
+        cursor: spaceHeld ? 'grab' : 'default',
         touchAction: 'pan-y',
       }}
     >
-      <div style={{ width: trackWidth, minWidth: '100%', position: 'relative' }}>
+      <div ref={trackRef} style={{ width: trackWidth, minWidth: '100%', position: 'relative' }}>
         {lanes.map((lane) => (
           <div
             key={lane.id}
@@ -391,7 +542,7 @@ export function ClipArea({
             onDrop={(e) => handleDrop(e, lane.id)}
             style={{
               position: 'relative',
-              height: `${LANE_HEIGHT_PX}px`,
+              height: `${laneH}px`,
               borderBottom: '1px solid var(--cy-border)',
               background:
                 'repeating-linear-gradient(90deg,transparent,transparent calc(8.333% - 1px),var(--cy-grid-line) 8.333%)',
@@ -408,7 +559,8 @@ export function ClipArea({
                 key={clip.id}
                 clip={clip}
                 lane={lane}
-                selected={clip.id === selectedClipId}
+                selected={selectedClipIds.includes(clip.id)}
+                primary={clip.id === selectedClipId}
                 asset={assets[clip.assetId]}
                 duration={duration}
                 sampleRate={sampleRate}
@@ -434,6 +586,22 @@ export function ClipArea({
             ) : null}
           </div>
         ))}
+        {marquee === null ? null : (
+          <div
+            data-marquee
+            style={{
+              position: 'absolute',
+              left: `${marquee.left}px`,
+              top: `${marquee.top}px`,
+              width: `${marquee.width}px`,
+              height: `${marquee.height}px`,
+              border: '1px solid var(--cy-accent)',
+              background: '#ffd4001a',
+              pointerEvents: 'none',
+              zIndex: 3,
+            }}
+          />
+        )}
         <div
           data-playhead
           style={{

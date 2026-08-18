@@ -14,7 +14,7 @@ import { useState } from 'react';
 
 import {
   isAudible,
-  LANE_HEIGHT_PX,
+  laneHeightPx,
   LANE_SPEEDS,
   formatTime,
   laneTotalSamples,
@@ -57,13 +57,15 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
         ? 'EMPTY'
         : `${lane.clips.length} CLIP · ${formatTime(samplesToSec(laneTotalSamples(lane), sampleRate))}`;
 
+  const laneH = laneHeightPx(useStudio((st) => st.laneHeight));
+
   return (
     <>
       <div data-tl-lanes
         onClick={() => studioActions.selectLane(lane.id)}
         data-lane-header={lane.id}
         style={{
-          height: `${LANE_HEIGHT_PX}px`,
+          height: `${laneH}px`,
           borderBottom: '1px solid var(--cy-border)',
           background: selected ? 'var(--cy-surface-2)' : 'var(--cy-surface-1)',
           padding: '8px 10px',

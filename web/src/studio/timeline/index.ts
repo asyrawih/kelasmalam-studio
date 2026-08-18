@@ -1,5 +1,31 @@
 export { TimelinePanel } from './TimelinePanel';
 export { ClipDetailPanel } from './ClipDetailPanel';
+export { DetailSection } from './DetailSection';
+export {
+  BeatControls,
+  BeatOverlay,
+  LoopRegionPicker,
+  useBeatState,
+  LOOP_BAR_PRESETS,
+  MIN_LOOP_BARS,
+  MAX_LOOP_BARS,
+  ZOOM_BAR_PRESETS,
+  formatBars,
+  type BeatState,
+  type BeatZoom,
+} from './BeatSection';
+export { ScrollingWave, type ScrollingWaveProps } from './ScrollingWave';
+export { drawBeatGrid, drawPlayhead } from './beat-draw';
+export { StemSection } from './StemSection';
+export { bakeClipStem, type BakeResult } from './stem-bake';
+export { normalizeClipStem, stemOf, stemSummary, STEM_LABELS } from './stem';
+export {
+  applyLoopCut,
+  clampLoopSpec,
+  MAX_LOOP_REPEAT,
+  type ClampedRegion,
+  type LoopCutSpec,
+} from './beat-cut';
 export { OverviewStrip, type OverviewStripProps } from './OverviewStrip';
 export { LaneHeaders } from './LaneHeaders';
 export { TimelineRuler, markStepFor, type TimelineRulerProps } from './TimelineRuler';

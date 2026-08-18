@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { Card } from '../../ui/cyber';
-import { findClip, samplesToSec } from '../model';
+import { LANE_HEIGHT_IDS, findClip, samplesToSec } from '../model';
 import { studioActions, useStudio } from '../store';
 import { ClipArea } from './ClipArea';
 import { LaneHeaders } from './LaneHeaders';
@@ -41,6 +41,7 @@ export function TimelinePanel(): JSX.Element {
   const selectedClipId = useStudio((s) => s.selectedClipId);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const scrubbingRef = useRef(false);
@@ -112,23 +113,42 @@ export function TimelinePanel(): JSX.Element {
     [pxPerSecond, durationSec],
   );
 
-  // `wheel` dipasang manual karena React memasang listener wheel sebagai
-  // passive — `preventDefault()` di dalam handler React akan diabaikan dan
-  // halaman ikut menggulir saat user men-zoom.
+  /**
+   * `wheel` → zoom.
+   *
+   * Dipasang manual, BUKAN lewat `onWheel` React: React memasang listener wheel
+   * sebagai passive, sehingga `preventDefault()` diabaikan dan halaman ikut
+   * menggulir saat user men-zoom.
+   *
+   * Dipasang di SELURUH BADAN timeline (`data-tl-body`), bukan hanya di area
+   * clip yang menggulir. Dulu hanya di area clip, dan akibatnya menggulir di
+   * atas kolom nama lane, penggaris waktu, atau — pada tinggi lane S — di ruang
+   * kosong di bawah lane terakhir, tidak men-zoom apa pun: halaman yang
+   * menggulir. Dari sudut pandang user, "scroll = zoom" tampak rusak separuh
+   * waktu, dan separuh mana tergantung beberapa piksel posisi kursor.
+   *
+   * Toolbar dan baris MIN/MAX di luar elemen ini SENGAJA tidak ikut: halaman
+   * masih harus bisa digulir dengan kursor di dalam kartu ini.
+   */
   useEffect(() => {
-    const el = scrollerRef.current;
-    if (el === null) return;
+    const body = bodyRef.current;
+    if (body === null) return;
     const onWheel = (e: WheelEvent): void => {
       if (Math.abs(e.deltaY) < 1) return;
+      const el = scrollerRef.current;
+      if (el === null) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      const offsetX = e.clientX - rect.left;
+      // Kursor bisa berada di kolom nama lane (di kiri area gulir), jadi
+      // offsetnya DIJEPIT: zoom berjangkar di tepi terdekat, bukan di titik
+      // negatif yang membuat timeline melompat jauh.
+      const offsetX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
       const total = el.scrollWidth;
       const time = total > 0 ? ((el.scrollLeft + offsetX) / total) * durationSec : 0;
       zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, { time, offsetX });
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    body.addEventListener('wheel', onWheel, { passive: false });
+    return () => body.removeEventListener('wheel', onWheel);
   }, [zoomBy, durationSec]);
 
   // follow(): jaga playhead tetap terlihat. Tidak saat FIT (seluruh project
@@ -147,6 +167,8 @@ export function TimelinePanel(): JSX.Element {
     }
   }, [playhead, playing, pxPerSecond, duration, syncView]);
 
+  const laneHeight = useStudio((s) => s.laneHeight);
+  const selectedCount = useStudio((s) => s.selectedClipIds.length);
   const sel = findClip(lanes, selectedClipId);
   /**
    * SCRUB: drag playhead di ruler.
@@ -210,7 +232,7 @@ export function TimelinePanel(): JSX.Element {
   return (
     <Card
       title="Timeline"
-      subtitle="scroll = zoom · drag = pan · click clip untuk detail"
+      subtitle="drag = pilih area · spasi+drag = geser · scroll = zoom"
       notched
       glow
     >
@@ -252,8 +274,43 @@ export function TimelinePanel(): JSX.Element {
         <span style={{ fontSize: '10px', letterSpacing: '.12em', color: 'var(--cy-accent)' }}>
           {zoomLabel}
         </span>
+        {/* Tinggi lane. Di samping zoom karena keduanya menjawab pertanyaan yang
+            sama — "seberapa besar materinya di layar" — hanya sumbunya beda. */}
+        <span
+          style={{
+            marginLeft: '6px',
+            fontSize: '9px',
+            letterSpacing: '.16em',
+            color: 'var(--cy-text-muted)',
+          }}
+        >
+          H
+        </span>
+        {LANE_HEIGHT_IDS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            aria-label={`tinggi lane ${id}`}
+            aria-pressed={laneHeight === id}
+            className="cy-hover-accent-border"
+            onClick={() => studioActions.setLaneHeight(id)}
+            style={{
+              ...ZOOM_BUTTON,
+              width: '26px',
+              fontSize: '10px',
+              color: laneHeight === id ? 'var(--cy-accent)' : 'var(--cy-text-dim)',
+              borderColor: laneHeight === id ? 'var(--cy-accent)' : 'var(--cy-border)',
+            }}
+          >
+            {id}
+          </button>
+        ))}
         <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
-          {sel === null ? 'NO CLIP SELECTED' : `SELECTED: ${sel.clip.label}`}
+          {selectedCount > 1
+            ? `SELECTED: ${selectedCount} CLIP`
+            : sel === null
+              ? 'NO CLIP SELECTED'
+              : `SELECTED: ${sel.clip.label}`}
         </span>
         <button
           type="button"
@@ -276,6 +333,8 @@ export function TimelinePanel(): JSX.Element {
       </div>
 
       <div
+        ref={bodyRef}
+        data-tl-body
         style={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0,148px) minmax(0,1fr)',

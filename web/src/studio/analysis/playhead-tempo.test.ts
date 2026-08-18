@@ -16,6 +16,8 @@ function asset(id: number, bpm: number | null, opts: Partial<StudioAsset> = {}):
     tempo: bpm === null ? null : { bpm, confidence: 0.6, beatOffsetSec: 0 },
     tempoPending: false,
     tempoOctave: 0,
+    bpmOverride: null,
+    beatOffsetOverride: null,
     ...opts,
   };
 }

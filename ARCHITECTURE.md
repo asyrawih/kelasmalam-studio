@@ -89,6 +89,10 @@ Tambahan di luar daftar semula:
 
 - Deteksi tempo (BPM) gaya DJ: `crates/analysis/` + `web/src/audio/tempo-worker.ts` —
   [docs/10-tempo-detection.md](docs/10-tempo-detection.md)
+- Beat loop cut & pembuangan stem (mid/side) di Clip Detail —
+  [docs/11-beat-loop-stem.md](docs/11-beat-loop-stem.md)
+- Seleksi banyak clip (kotak seleksi) & tinggi lane —
+  [docs/12-timeline-selection.md](docs/12-timeline-selection.md)
 
 ## Quickstart
 

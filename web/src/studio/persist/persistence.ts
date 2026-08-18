@@ -8,8 +8,9 @@
  * membuat UI macet menunggu pointer yang tidak pernah dilepas.
  */
 
-import type { StudioLane, StudioState } from '../model';
+import { DEFAULT_LANE_HEIGHT, type StudioLane, type StudioState } from '../model';
 import {
+  DEFAULT_CLIP_DETAIL_SECTIONS,
   DEFAULT_PANEL_ORDER,
   DEFAULT_RAIL_ORDER,
   studioActions,
@@ -17,6 +18,7 @@ import {
   type StudioAppState,
 } from '../store';
 import { normalizeClipFade } from '../timeline/fade';
+import { normalizeClipStem } from '../timeline/stem';
 import { loadAllAssets, loadProjectJson, pruneAssets, saveProjectJson } from './db';
 
 /** Naikkan kalau bentuk data berubah dan yang lama tidak bisa dibaca lagi. */
@@ -33,6 +35,9 @@ interface PersistedProject {
   readonly minDurationSec: number;
   readonly maxDurationSec: number | null;
   readonly eqMode: StudioAppState['eqMode'];
+  /** Opsional: project lama tidak punya, dan default-nya diisi saat load. */
+  readonly clipDetailSections?: StudioAppState['clipDetailSections'];
+  readonly laneHeight?: StudioAppState['laneHeight'];
   readonly panelOrder: StudioAppState['panelOrder'];
   readonly railOrder: StudioAppState['railOrder'];
   readonly masterGainDb: number;
@@ -40,6 +45,33 @@ interface PersistedProject {
   readonly exportFileName: string;
   readonly selectedLaneId: string | null;
   readonly selectedClipId: string | null;
+  /**
+   * Koreksi beat grid per asset. OPSIONAL dan bukan bagian dari `assets`:
+   * asset sendiri (envelope, tempo hasil deteksi) memang sengaja TIDAK disimpan
+   * dan dibangun ulang tiap boot (docs/10). Yang tidak bisa dibangun ulang
+   * adalah keputusan user — BPM yang ia ketik dan downbeat yang ia geser — dan
+   * hanya itu yang ikut ke sini.
+   *
+   * Ditambahkan tanpa menaikkan `SCHEMA_VERSION`: field baru yang opsional
+   * dibaca dengan `?? {}`, jadi project lama tetap terbuka. Menaikkan versi
+   * berarti membuang project yang sudah ada demi satu peta kecil.
+   */
+  readonly assetGrids?: Record<number, PersistedGrid>;
+}
+
+interface PersistedGrid {
+  readonly bpm: number | null;
+  readonly offsetSec: number | null;
+}
+
+/** Hanya asset yang BENAR-BENAR dikoreksi yang ikut disimpan. */
+function collectAssetGrids(s: StudioAppState): Record<number, PersistedGrid> {
+  const out: Record<number, PersistedGrid> = {};
+  for (const a of Object.values(s.assets)) {
+    if (a.bpmOverride === null && a.beatOffsetOverride === null) continue;
+    out[a.id] = { bpm: a.bpmOverride, offsetSec: a.beatOffsetOverride };
+  }
+  return out;
 }
 
 export function serialize(s: StudioAppState): string {
@@ -54,6 +86,8 @@ export function serialize(s: StudioAppState): string {
     minDurationSec: s.minDurationSec,
     maxDurationSec: s.maxDurationSec,
     eqMode: s.eqMode,
+    clipDetailSections: s.clipDetailSections,
+    laneHeight: s.laneHeight,
     panelOrder: s.panelOrder,
     railOrder: s.railOrder,
     masterGainDb: s.masterGainDb,
@@ -61,6 +95,7 @@ export function serialize(s: StudioAppState): string {
     exportFileName: s.exportFileName,
     selectedLaneId: s.selectedLaneId,
     selectedClipId: s.selectedClipId,
+    assetGrids: collectAssetGrids(s),
   };
   return JSON.stringify(data);
 }
@@ -87,7 +122,10 @@ export function deserialize(json: string): PersistedProject | null {
  * harus turun sampai ke tiap clip, sekali, di pintu masuk.
  */
 export function normalizeLanes(lanes: StudioLane[]): StudioLane[] {
-  return lanes.map((l) => ({ ...l, clips: (l.clips ?? []).map(normalizeClipFade) }));
+  return lanes.map((l) => ({
+    ...l,
+    clips: (l.clips ?? []).map((c) => normalizeClipStem(normalizeClipFade(c))),
+  }));
 }
 
 export interface RestoreResult {
@@ -130,6 +168,13 @@ export async function restoreProject(
     minDurationSec: data.minDurationSec,
     maxDurationSec: data.maxDurationSec,
     eqMode: data.eqMode,
+    // Blok baru yang belum dikenal project lama tetap memakai default-nya —
+    // `{...default, ...tersimpan}`, bukan menimpa seluruhnya.
+    clipDetailSections: {
+      ...DEFAULT_CLIP_DETAIL_SECTIONS,
+      ...(data.clipDetailSections ?? {}),
+    },
+    laneHeight: data.laneHeight ?? DEFAULT_LANE_HEIGHT,
     // Data lama (sebelum panel bisa diurutkan) tidak punya field ini —
     // WAJIB memberi default, bukan `undefined`: menulis key dengan undefined
     // tetap menimpa nilai yang sudah ada di store.
@@ -142,6 +187,12 @@ export async function restoreProject(
     selectedLaneId: data.selectedLaneId,
     selectedClipId: data.selectedClipId,
   });
+
+  // SETELAH hydrate, bukan sebelum: `setAssetBeatGrid` menolak asset yang belum
+  // terdaftar, dan pendaftarannya baru terjadi lewat `decodeAsset` di atas.
+  for (const [id, grid] of Object.entries(data.assetGrids ?? {})) {
+    studioActions.setAssetBeatGrid(Number(id), { bpm: grid.bpm, offsetSec: grid.offsetSec });
+  }
 
   return { restored: true, missingAssets: missing };
 }

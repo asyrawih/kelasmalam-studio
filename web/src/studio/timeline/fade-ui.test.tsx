@@ -41,6 +41,9 @@ beforeEach(() => {
   // Clip 10 detik tepat — supaya 1 px = 25 ms dan angkanya mudah dibaca.
   studioActions.updateClip(clip.id, { start: 0, len: 10 * SR, fadeInMs: 0, fadeOutMs: 0 });
   studioActions.selectClip(clip.id, lane.id);
+  // Blok FADE terlipat secara default (panel ini sudah punya empat blok);
+  // tes ini menguji isinya, jadi ia dibuka lebih dulu.
+  studioActions.toggleClipDetailSection('fade');
 });
 
 afterEach(cleanup);
