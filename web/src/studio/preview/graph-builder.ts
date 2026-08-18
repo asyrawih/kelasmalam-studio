@@ -33,6 +33,7 @@ import {
   type StudioLane,
   type StudioState,
 } from '../model';
+import { activeLoopLen, loopSourceOffset } from '../timeline/clip-loop';
 import { fadeCurveArray, fadeOutGain } from '../timeline/fade';
 import { stemOf } from '../timeline/stem';
 import { buildStemChain, type StemNodes } from './stem-chain';
@@ -257,7 +258,15 @@ export function buildProjectGraph(
       // source — mengabaikan ini membuat clip mulai dari titik yang salah dan
       // berhenti terlalu cepat/lambat.
       const intoClipSec = Math.max(0, playheadSec - clipStartSec);
-      const offsetSec = clip.sourceStart / sr + intoClipSec * laneRatio;
+      const loopLen = activeLoopLen(clip);
+      // Clip yang LOOP membaca materinya melingkar: titik masuknya modulo
+      // panjang putaran, bukan jarak lurus dari awal clip. Lihat
+      // `timeline/clip-loop.ts` — konversi timeline->source-nya sama persis
+      // dengan cabang lurus di bawah, hanya sisanya yang diambil.
+      const offsetSec =
+        loopLen === null
+          ? clip.sourceStart / sr + intoClipSec * laneRatio
+          : loopSourceOffset(clip, loopLen, intoClipSec * laneRatio * sr) / sr;
       const remainingTimelineSec = clipEndSec - Math.max(playheadSec, clipStartSec);
       if (remainingTimelineSec <= 0) continue;
       const remainingSec = remainingTimelineSec * laneRatio;
@@ -267,6 +276,19 @@ export function buildProjectGraph(
       const src = audio.createBufferSource();
       src.buffer = buffer;
       src.playbackRate.value = rate;
+      if (loopLen !== null) {
+        // Pengulangan diserahkan ke Web Audio, alasan yang sama dengan pemutar
+        // audisi di bawah: `loop` menyambung akurat per-sample, sedangkan
+        // menjadwalkan satu voice per putaran menumpuk galat dan terdengar
+        // sebagai klik di tiap sambungan.
+        //
+        // `duration` di `src.start()` TIDAK ikut berubah: untuk source yang
+        // loop, ia menghitung total materi yang diputar (sudah termasuk
+        // putaran), jadi angka yang sama tetap berarti "sampai clip habis".
+        src.loop = true;
+        src.loopStart = clip.sourceStart / sr;
+        src.loopEnd = Math.min(buffer.duration, (clip.sourceStart + loopLen) / sr);
+      }
 
       const gain = audio.createGain();
       applyClipGainEnvelope(gain, clip, {

@@ -26,6 +26,16 @@ export {
   type ClampedRegion,
   type LoopCutSpec,
 } from './beat-cut';
+export {
+  activeLoopLen,
+  applyClipLoop,
+  clearClipLoop,
+  expandLoopClip,
+  loopSourceOffset,
+  loopTileCount,
+  normalizeClipLoop,
+  MIN_LOOP_LEN,
+} from './clip-loop';
 export { OverviewStrip, type OverviewStripProps } from './OverviewStrip';
 export { LaneHeaders } from './LaneHeaders';
 export { TimelineRuler, markStepFor, type TimelineRulerProps } from './TimelineRuler';
@@ -34,6 +44,7 @@ export { importFileToLane, assetFromBuffer, type DropResult } from './audio-impo
 export {
   drawAssetWave,
   drawClipWave,
+  drawLoopedClipWave,
   drawPlaceholderWave,
   clipDetailGradient,
   type WaveStyle,

@@ -21,6 +21,21 @@
  */
 
 import { timelineLenFor, type Samples, type StudioClip } from '../model';
+import { activeLoopLen } from './clip-loop';
+
+/**
+ * Materi yang HARUS ada di dalam asset untuk clip ini.
+ *
+ * Untuk clip biasa itu seluruh jendelanya. Untuk clip yang LOOP cukup satu
+ * putaran: sisanya dipasok oleh pengulangan, bukan oleh materi baru — jadi clip
+ * yang loop memang boleh dipanjangkan melewati ujung file, dan justru itulah
+ * gunanya. Batas asset tetap ditegakkan atas putaran itu sendiri; melewatinya
+ * membuat `AudioBufferSourceNode.start()` melempar dan clip-nya bisu.
+ */
+function requiredSourceLen(clip: StudioClip, sourceLen: Samples): Samples {
+  const loop = activeLoopLen({ ...clip, sourceLen });
+  return loop ?? sourceLen;
+}
 
 /** Panjang minimum sebuah clip, dalam sample SOURCE. */
 export const MIN_SOURCE_LEN: Samples = 1;
@@ -40,12 +55,15 @@ export function trimRight(
   assetFrames?: Samples,
 ): StudioClip {
   const wantedLen = Math.round(at) - clip.start;
+  const wantedSource = Math.max(MIN_SOURCE_LEN, Math.round(wantedLen * speedRatio));
+  // Clip yang loop tidak dibatasi ujung materi: yang harus muat di dalam asset
+  // cuma satu putaran, dan itu sudah muat sejak loop-nya dipasang.
+  const roomNeeded = requiredSourceLen(clip, wantedSource);
   const maxSource =
-    assetFrames === undefined ? Number.MAX_SAFE_INTEGER : Math.max(0, assetFrames - clip.sourceStart);
-  const sourceLen = Math.max(
-    MIN_SOURCE_LEN,
-    Math.min(maxSource, Math.round(wantedLen * speedRatio)),
-  );
+    assetFrames === undefined || roomNeeded < wantedSource
+      ? Number.MAX_SAFE_INTEGER
+      : Math.max(0, assetFrames - clip.sourceStart);
+  const sourceLen = Math.max(MIN_SOURCE_LEN, Math.min(maxSource, wantedSource));
   if (sourceLen === clip.sourceLen) return clip;
   return { ...clip, sourceLen, len: timelineLenFor(sourceLen, speedRatio) };
 }
@@ -88,10 +106,12 @@ export function slipClip(
   deltaSource: number,
   assetFrames?: Samples,
 ): StudioClip {
+  // Yang harus tetap di dalam asset adalah materi yang benar-benar dibaca: satu
+  // putaran untuk clip yang loop, seluruh jendela untuk clip biasa.
   const maxStart =
     assetFrames === undefined
       ? Number.MAX_SAFE_INTEGER
-      : Math.max(0, assetFrames - clip.sourceLen);
+      : Math.max(0, assetFrames - requiredSourceLen(clip, clip.sourceLen));
   const sourceStart = Math.max(
     0,
     Math.min(maxStart, Math.round(originSourceStart + deltaSource)),

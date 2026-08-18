@@ -39,10 +39,11 @@ import {
 } from './fade';
 import { BeatOverlay, LoopRegionPicker, formatBars } from './BeatSection';
 import { useBeatShared } from './beat-context';
+import { activeLoopLen } from './clip-loop';
 import { drawFadeCurves, fadeSourceLen, type FadeRegions } from './fade-draw';
 import { computeNormalizeGain, NORMALIZE_TARGET_DB } from './normalize';
 import { ScrollingWave } from './ScrollingWave';
-import { clipDetailGradient, drawClipWave } from './waveform';
+import { clipDetailGradient, drawClipWave, drawLoopedClipWave } from './waveform';
 
 /** Tinggi kotak waveform; handle diletakkan relatif terhadap ini. */
 const WAVE_HEIGHT = 150;
@@ -105,17 +106,20 @@ function DetailWave({
   asset,
   sourceStart,
   sourceLen,
+  loopLen = null,
 }: {
   asset: StudioAsset | undefined;
   sourceStart: number;
   sourceLen: number;
+  /** Putaran (SOURCE) kalau clip ini loop. Default null = digambar lurus. */
+  loopLen?: number | null;
 }): JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null);
   useCanvasDraw(
     ref,
     (ctx, size) => {
       const gradient = clipDetailGradient(ctx, size.height);
-      drawClipWave(ctx, asset, sourceStart, sourceLen, size.width, size.height, size.dpr, {
+      const wave = {
         outline: gradient,
         body: gradient,
         // Outline lebih redup dari badan: transien tetap terlihat sebagai
@@ -123,9 +127,24 @@ function DetailWave({
         outlineAlpha: 0.55,
         bodyAlpha: 0.9,
         centerLine: '#ffd40024',
-      });
+      };
+      if (loopLen !== null) {
+        drawLoopedClipWave(
+          ctx,
+          asset,
+          sourceStart,
+          sourceLen,
+          loopLen,
+          size.width,
+          size.height,
+          size.dpr,
+          wave,
+        );
+        return;
+      }
+      drawClipWave(ctx, asset, sourceStart, sourceLen, size.width, size.height, size.dpr, wave);
     },
-    [asset, sourceStart, sourceLen],
+    [asset, sourceStart, sourceLen, loopLen],
   );
   return <canvas ref={ref} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />;
 }
@@ -399,7 +418,12 @@ function FadeEditor({
           touchAction: 'none',
         }}
       >
-        <DetailWave asset={asset} sourceStart={clip.sourceStart} sourceLen={clip.sourceLen} />
+        <DetailWave
+          asset={asset}
+          sourceStart={clip.sourceStart}
+          sourceLen={clip.sourceLen}
+          loopLen={activeLoopLen(clip)}
+        />
         <FadeOverlay fade={fade} from={clip.sourceStart} len={clip.sourceLen} />
         <FadeHandle
           side="in"
@@ -777,7 +801,14 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
         />
       ) : (
         <>
-          <DetailWave asset={assets[clip.assetId]} sourceStart={viewStart} sourceLen={viewLen} />
+          <DetailWave
+            asset={assets[clip.assetId]}
+            sourceStart={viewStart}
+            sourceLen={viewLen}
+            // Saat kotak sedang menampilkan REGION-nya saja (audisi), ubin loop
+            // tidak dipakai: yang tergambar memang sudah satu putaran.
+            loopLen={loopZoom ? null : activeLoopLen(clip)}
+          />
           {fade === null ? null : <FadeOverlay fade={fade} from={viewStart} len={viewLen} />}
           <BeatOverlay
             grid={beat.grid}

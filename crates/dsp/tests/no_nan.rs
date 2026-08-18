@@ -199,6 +199,164 @@ proptest! {
         }
         prop_assert!(r <= p + 1e-3, "rms {r} > peak {p}");
     }
+
+    #[test]
+    fn delay_never_nan(
+        block in finite_block(),
+        d0 in -1.0e6f32..1.0e6,
+        d1 in -1.0e6f32..1.0e6,
+    ) {
+        let mut mem = vec![0.0f32; 256];
+        let mut line = Delay::attach(&mut mem, 0).unwrap();
+        for (i, x) in block.iter().enumerate() {
+            // Delay disapu antara dua nilai acak — persis yang dilakukan
+            // SPIRAL, dan justru di situ indeks bisa keluar jalur.
+            let t = i as f32 / block.len().max(1) as f32;
+            let d = d0 + (d1 - d0) * t;
+            let y = line.tick(clamp_audio(*x), d);
+            prop_assert!(y.is_finite(), "delay emitted {y} at d={d}");
+        }
+    }
+
+    #[test]
+    fn lfo_never_nan(
+        hz in -1.0e6f32..1.0e6,
+        sr in 8000.0f32..384_000.0,
+        turns in -10.0f32..10.0,
+        shape_idx in 0usize..4,
+    ) {
+        const SHAPES: [LfoShape; 4] = [
+            LfoShape::Sine, LfoShape::Triangle, LfoShape::Saw, LfoShape::Square,
+        ];
+        let s = SHAPES[shape_idx];
+        let mut l = Lfo::new();
+        l.set_rate(sr, hz);
+        l.set_phase_turns(turns);
+        for _ in 0..1024 {
+            let v = l.next(s);
+            prop_assert!(v.is_finite(), "lfo emitted {v}");
+            prop_assert!((-1.0..=1.0).contains(&v), "lfo out of range: {v}");
+        }
+        prop_assert!(l.peek_at(QUARTER_TURN, s).is_finite());
+    }
+
+    #[test]
+    fn onepole_never_nan(
+        cutoff in -1.0e6f32..1.0e6,
+        dc_hz in -1000.0f32..1000.0,
+        sr in 8000.0f32..384_000.0,
+        block in finite_block(),
+    ) {
+        let mut lp = OnePoleLp::new();
+        lp.set_cutoff(sr, cutoff);
+        let mut dc = DcBlock::new();
+        dc.set_rate(sr, dc_hz);
+        for x in block.iter() {
+            let x = clamp_audio(*x);
+            let a = lp.tick(x);
+            let b = dc.tick(x);
+            prop_assert!(a.is_finite(), "one-pole emitted {a}");
+            prop_assert!(b.is_finite(), "dc block emitted {b}");
+        }
+        lp.flush_denormal();
+        dc.flush_denormal();
+    }
+
+    #[test]
+    fn householder_never_nan(x in prop::array::uniform8(finite_f32())) {
+        let mut y = x;
+        householder8(&mut y);
+        prop_assert!(y.iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn fdn_never_nan(
+        rt60 in -10.0f32..1000.0,
+        size in -5.0f32..5.0,
+        damp in -1000.0f32..1.0e6,
+        depth in -5.0f32..5.0,
+        block in finite_block(),
+    ) {
+        let mut f = Fdn8::new(48_000.0);
+        let mut mem = vec![0.0f32; daw_dsp::fdn::mem_frames(48_000.0)];
+        f.set_params(rt60, size, damp, depth);
+        for x in block.iter() {
+            let x = clamp_audio(*x);
+            let (l, r) = f.tick(&mut mem, x, -x);
+            prop_assert!(l.is_finite() && r.is_finite(), "fdn emitted {l}, {r}");
+        }
+    }
+}
+
+// **Properti ledakan feedback.**
+//
+// Dipisah dari blok di atas karena butuh jalan panjang: yang diuji bukan "ada
+// NaN atau tidak setelah 64 sample", melainkan apakah lingkaran umpan-balik
+// menuju divergen setelah ratusan ribu sample. NaN di dalam loop feedback
+// bersifat **permanen** — tidak ada yang me-reset filter di tengah lagu — jadi
+// ini satu-satunya penghalang yang ada.
+//
+// Kasusnya sedikit dan iterasinya banyak, kebalikan dari konfigurasi di atas.
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn delay_feedback_loop_never_explodes(
+        fb in 0.0f32..0.999,
+        damp_hz in 200.0f32..18_000.0,
+        delay_samples in 2.0f32..2000.0,
+    ) {
+        let mut mem = vec![0.0f32; 4096];
+        let mut lp = OnePoleLp::with_cutoff(48_000.0, damp_hz);
+        let mut dc = DcBlock::with_rate(48_000.0);
+        let mut fed = 0.0f32;
+        let mut w = 0usize;
+        let mut peak_seen = 0.0f32;
+
+        for n in 0..200_000 {
+            let mut line = Delay::attach(&mut mem, w).unwrap();
+            // Noise deterministik selama 20k sample pertama, lalu senyap:
+            // ekornya yang harus meluruh, bukan tumbuh.
+            let x = if n < 20_000 {
+                libm::sinf(n as f32 * 0.37) * 0.5 + libm::sinf(n as f32 * 1.13) * 0.5
+            } else {
+                0.0
+            };
+            let y = line.tick(x + fed, delay_samples);
+            w = line.write_pos();
+            fed = dc.tick(lp.tick(y)) * fb;
+            prop_assert!(fed.is_finite(), "loop non-finite di sample {n}");
+            peak_seen = peak_seen.max(fed.abs());
+        }
+        // Gain DC loop tertutup terburuk adalah 1/(1-fb); dengan fb=0.999 itu
+        // 1000×, jadi 1e3 adalah batas yang sah, bukan angka longgar.
+        prop_assert!(peak_seen < 1.0e3, "loop mencapai {peak_seen} (fb={fb})");
+        // Dan setelah 180k sample senyap, ekornya harus benar-benar habis.
+        prop_assert!(fed.abs() < 1.0, "ekor belum meluruh: {fed}");
+    }
+
+    #[test]
+    fn fdn_never_explodes(
+        rt60 in 0.05f32..60.0,
+        size in 0.3f32..1.0,
+        damp_hz in 500.0f32..20_000.0,
+    ) {
+        let mut f = Fdn8::new(48_000.0);
+        let mut mem = vec![0.0f32; daw_dsp::fdn::mem_frames(48_000.0)];
+        f.set_params(rt60, size, damp_hz, 1.0);
+        let mut peak_seen = 0.0f32;
+        for n in 0..200_000 {
+            let x = if n < 20_000 {
+                libm::sinf(n as f32 * 0.37) * 0.5 + libm::sinf(n as f32 * 1.13) * 0.5
+            } else {
+                0.0
+            };
+            let (l, r) = f.tick(&mut mem, x, -x);
+            prop_assert!(l.is_finite() && r.is_finite(), "fdn non-finite di sample {n}");
+            peak_seen = peak_seen.max(l.abs().max(r.abs()));
+        }
+        prop_assert!(peak_seen < 1.0e3, "fdn mencapai {peak_seen}");
+    }
 }
 
 /// Batasi nilai supaya filter resonan pada input ekstrem tidak menghasilkan

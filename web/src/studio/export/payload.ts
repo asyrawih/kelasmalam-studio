@@ -15,6 +15,7 @@
  */
 
 import type { StudioState } from '../model';
+import { expandLoopClip } from '../timeline/clip-loop';
 
 export interface ExportAssetPcm {
   readonly assetId: number;
@@ -87,7 +88,17 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
   };
 
   const lanes = state.lanes.map((lane) => {
-    const clips = lane.clips.filter((clip) => {
+    // LOOP CLIP DIJABARKAN DI SINI, bukan dikirim sebagai field baru.
+    //
+    // Engine Rust belum mengenal `loopLen`; menambahkannya ke protokol snapshot
+    // berarti dua tafsir tentang loop (Web Audio dan Rust) yang bedanya hanya
+    // terdengar di file hasil export. Deretan clip lurus adalah hal yang SUDAH
+    // dimengerti kedua sisi — lihat `timeline/clip-loop.ts` untuk satu selisih
+    // yang diakui (fade-out lebih panjang dari satu putaran).
+    const flat = lane.clips.flatMap((c) =>
+      expandLoopClip(c, lane.speedRatio, state.sampleRate, (i) => `${c.id}~loop${i}`),
+    );
+    const clips = flat.filter((clip) => {
       const buf = getBuffer(clip.assetId);
       if (buf === undefined) return false;
       if (!assets.has(clip.assetId)) {

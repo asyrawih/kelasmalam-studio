@@ -164,6 +164,33 @@ describe('kontrol beat di topbar', () => {
     expect(after.map((c) => c.start)).toEqual([0, 4, 8].map((s) => s * SR));
   });
 
+  it('LOOP CLIP memasang region ke clip TANPA memotong: jumlah clip tetap satu', () => {
+    render(<Studio />);
+    // 125px ≈ 5 detik → bar terdekat 6 detik; 2 bar @120 BPM = 4 detik.
+    fireEvent.pointerDown(picker(), { pointerId: 1, button: 0, clientX: 125 });
+    fireEvent.pointerUp(picker(), { pointerId: 1, clientX: 125 });
+    fireEvent.click(screen.getByRole('button', { name: '2 BAR' }));
+    fireEvent.click(screen.getByRole('button', { name: 'LOOP CLIP' }));
+
+    const after = clips();
+    expect(after).toHaveLength(1);
+    const c = after[0]!;
+    // Yang berubah HANYA cara materinya dibaca — bukan tempat dan panjangnya.
+    expect(c.start).toBe(0);
+    expect(c.len).toBe(16 * SR);
+    expect(c.sourceStart).toBe(6 * SR);
+    expect(c.loopLen).toBe(4 * SR);
+  });
+
+  it('tombolnya berbalik jadi LEPAS LOOP, dan melepaskannya membuang field loop', () => {
+    render(<Studio />);
+    fireEvent.click(screen.getByRole('button', { name: '2 BAR' }));
+    fireEvent.click(screen.getByRole('button', { name: 'LOOP CLIP' }));
+    fireEvent.click(screen.getByRole('button', { name: 'LEPAS LOOP' }));
+    expect(clips()).toHaveLength(1);
+    expect(clips()[0]!.loopLen).toBeUndefined();
+  });
+
   it('klik di waveform memindahkan awal loop ke BAR terdekat', () => {
     render(<Studio />);
     // 400px = 16 detik → 125px ≈ 5 detik, bar terdekat = 6 detik.

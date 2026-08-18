@@ -38,6 +38,7 @@ import {
 import { samplesToSec, type Samples, type StudioClip } from '../model';
 import { studioActions, useStudio, type StudioAsset } from '../store';
 import { MAX_LOOP_REPEAT, clampLoopSpec, type ClampedRegion } from './beat-cut';
+import { activeLoopLen } from './clip-loop';
 import { drawBeatGrid, drawPlayhead } from './beat-draw';
 
 /**
@@ -65,6 +66,18 @@ export function formatBars(bars: number): string {
   if (bars >= 1) return String(Math.round(bars * 100) / 100);
   const denom = Math.round(1 / bars);
   return `1/${denom}`;
+}
+
+/**
+ * "2.6×" — berapa kali putaran itu muat di dalam clip, PECAHAN ikut ditampilkan.
+ *
+ * Sengaja tidak dibulatkan ke bilangan bulat: putaran terakhir memang hampir
+ * selalu terpotong di tengah, dan angka bulat akan menjanjikan sesuatu yang
+ * tidak terjadi.
+ */
+export function loopRepeatsText(sourceLen: Samples, loopLen: Samples): string {
+  if (!(loopLen > 0) || !(sourceLen > 0)) return '—';
+  return `${Math.round((sourceLen / loopLen) * 10) / 10}×`;
 }
 
 /** Nudge offset downbeat. Halus = untuk menyetel terakhir dengan telinga. */
@@ -559,6 +572,8 @@ export function BeatControls({
     studioActions.setAssetBeatGrid(assetId, { offsetSec: grid.offsetSec + deltaSec });
   };
 
+  /** Panjang putaran yang SUDAH terpasang di clip ini, atau null. */
+  const clipLoopLen = activeLoopLen(clip);
   const regionSec = region === null ? 0 : samplesToSec(region.sourceLen, sampleRate);
   const regionAtSec =
     region === null ? 0 : samplesToSec(region.sourceStart - clip.sourceStart, sampleRate);
@@ -757,13 +772,51 @@ export function BeatControls({
           >
             {beat.looping ? 'STOP LOOP' : 'LOOP PLAY'}
           </Button>
+          {/* PASANG KE CLIP — jawaban untuk "kenapa harus dipotong dulu".
+              Bertetangga dengan LOOP PLAY dan bukan dengan LOOP CUT karena
+              keduanya tidak merusak apa pun: yang satu memutar region, yang
+              satu menyuruh clip memutarnya terus. LOOP CUT ada di kelompok CUT
+              bersama hal-hal yang benar-benar mengubah susunan timeline. */}
+          <Button
+            size="sm"
+            variant={clipLoopLen !== null ? 'solid' : 'outline'}
+            disabled={clipLoopLen === null && (grid === null || region === null)}
+            title={
+              clipLoopLen !== null
+                ? 'lepaskan loop — clip kembali diputar lurus'
+                : 'pasang region ini ke clip: diulang sepanjang clip, tanpa memotong dan tanpa menambah clip baru'
+            }
+            onClick={() => {
+              if (clipLoopLen !== null) {
+                studioActions.removeClipLoopRegion(clip.id);
+                onCut('loop dilepas — clip diputar lurus lagi');
+                return;
+              }
+              if (region === null) return;
+              studioActions.setClipLoopRegion(clip.id, {
+                sourceStart: region.sourceStart,
+                sourceLen: region.sourceLen,
+              });
+              onCut(
+                `loop ${formatBars(beat.bars)} bar dipasang ke clip — ${loopRepeatsText(
+                  clip.sourceLen,
+                  region.sourceLen,
+                )} sepanjang clip`,
+              );
+            }}
+          >
+            {clipLoopLen !== null ? 'LEPAS LOOP' : 'LOOP CLIP'}
+          </Button>
         </div>
-        <Caption accent={beat.looping}>
-          {region === null
-            ? '—'
-            : beat.looping
-              ? `mengulang ${formatBars(beat.bars)} bar · ${regionSec.toFixed(2)} s`
-              : `region ${regionAtSec.toFixed(2)} s → ${(regionAtSec + regionSec).toFixed(2)} s`}
+        <Caption accent={beat.looping || clipLoopLen !== null}>
+          {clipLoopLen !== null
+            ? `clip mengulang ${samplesToSec(clipLoopLen, sampleRate).toFixed(2)} s · ` +
+              `${loopRepeatsText(clip.sourceLen, clipLoopLen)} sepanjang clip`
+            : region === null
+              ? '—'
+              : beat.looping
+                ? `mengulang ${formatBars(beat.bars)} bar · ${regionSec.toFixed(2)} s`
+                : `region ${regionAtSec.toFixed(2)} s → ${(regionAtSec + regionSec).toFixed(2)} s`}
         </Caption>
       </Group>
       )}

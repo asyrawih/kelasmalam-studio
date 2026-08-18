@@ -56,6 +56,26 @@ export interface StudioClip {
    */
   fadeCurve: FadeCurve;
   /**
+   * REGION LOOP di dalam clip, panjangnya di SOURCE-space. `undefined` (atau
+   * 0) = clip diputar lurus seperti biasa.
+   *
+   * Artinya: materi yang berbunyi adalah `[sourceStart, sourceStart + loopLen)`
+   * SAJA, diulang terus sampai clip habis — panjang clip di timeline (`len`)
+   * tidak berubah karenanya. Ini yang membedakannya dari LOOP CUT, yang
+   * memotong clip jadi beberapa clip nyata.
+   *
+   * KENAPA HANYA PANJANGNYA, BUKAN PASANGAN start+len SENDIRI: awal region
+   * SELALU `sourceStart`. Kalau loop punya awalnya sendiri, akan ada dua titik
+   * masuk ke materi yang sama (trim-in dan awal loop) yang bisa berselisih, dan
+   * setiap trim/slip harus menjaga keduanya tetap sinkron. Dengan satu titik,
+   * slip menggeser loop-nya juga — itu justru gerakan yang dicari.
+   *
+   * `len`/`sourceLen` TETAP pada hubungan lamanya (`len = sourceLen / ratio`),
+   * jadi speed, trim, dan drag tidak perlu tahu apa-apa soal loop. Yang berubah
+   * hanya cara materi itu dibaca: melingkar, bukan lurus.
+   */
+  loopLen?: Samples;
+  /**
    * Sisa dari era mock waveform. Waveform sekarang SELALU digambar dari peak
    * pyramid asset (`timeline/envelope.ts`); clip tanpa asset mendapat
    * placeholder yang sengaja tidak menyerupai audio, bukan bentuk dari seed.

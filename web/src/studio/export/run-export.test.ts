@@ -390,6 +390,45 @@ describe('buildExportPayload', () => {
     expect(JSON.parse(fast.json).speed).toBe(1);
   });
 
+  it('clip yang LOOP dijabarkan jadi deretan potongan yang menutup rentangnya', () => {
+    // Engine Rust belum mengenal `loopLen`; kalau field ini diam-diam ikut
+    // terkirim (atau diabaikan), file hasil export akan memutar materi lurus
+    // sepanjang clip — persis yang TIDAK terdengar di preview.
+    const s = state({
+      lanes: [
+        {
+          ...((state() as unknown as { lanes: Record<string, unknown>[] }).lanes[0] as object),
+          speedRatio: 1,
+          clips: [
+            {
+              id: 'c1',
+              assetId: 7,
+              start: 0,
+              len: 48_000,
+              sourceStart: 0,
+              sourceLen: 48_000,
+              loopLen: 16_000,
+              gainDb: 0,
+              fadeInMs: 0,
+              fadeOutMs: 0,
+              fadeCurve: 'linear',
+            },
+          ],
+        },
+      ],
+    });
+    const json = JSON.parse(buildExportPayload(s, lookup).json) as {
+      lanes: { clips: { start: number; len: number; sourceStart: number }[] }[];
+    };
+    const clips = json.lanes[0]!.clips;
+    expect(clips).toHaveLength(3);
+    expect(clips.map((c) => c.start)).toEqual([0, 16_000, 32_000]);
+    // Tiap potongan membaca region yang sama — itu arti mengulang.
+    for (const c of clips) expect(c.sourceStart).toBe(0);
+    const last = clips[clips.length - 1]!;
+    expect(last.start + last.len).toBe(48_000);
+  });
+
   it('lane mute tidak menyumbang panjang output', () => {
     const muted = state({
       lanes: [{ ...(state() as unknown as { lanes: unknown[] }).lanes[0] as object, mute: true }],

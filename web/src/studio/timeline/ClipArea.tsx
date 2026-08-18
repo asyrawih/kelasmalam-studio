@@ -26,7 +26,8 @@ import { studioActions, studioStore, useStudio, type ClipOrigin, type StudioAsse
 import { isSpaceHeld, markSpacePan, subscribeSpace } from '../shortcuts/space-pan';
 import { importFileToLane } from './audio-import';
 import { importUrlToLane } from './url-to-lane';
-import { drawClipWave } from './waveform';
+import { activeLoopLen } from './clip-loop';
+import { drawClipWave, drawLoopedClipWave } from './waveform';
 import { fadeOverlayGradient } from './fade';
 import { useCanvasDraw } from '../../ui/lib/canvas';
 
@@ -132,12 +133,15 @@ function ClipWave({
   asset,
   sourceStart,
   sourceLen,
+  loopLen,
   color,
   style,
 }: {
   asset: StudioAsset | undefined;
   sourceStart: number;
   sourceLen: number;
+  /** Panjang putaran (SOURCE) kalau clip ini loop; null = diputar lurus. */
+  loopLen: number | null;
   color: string;
   style: CSSProperties;
 }): JSX.Element {
@@ -145,7 +149,7 @@ function ClipWave({
   useCanvasDraw(
     ref,
     (ctx, size) => {
-      drawClipWave(ctx, asset, sourceStart, sourceLen, size.width, size.height, size.dpr, {
+      const wave = {
         outline: color,
         body: color,
         // Opacity lama (0.5) dipertahankan untuk outline; badan RMS sedikit
@@ -153,9 +157,26 @@ function ClipWave({
         outlineAlpha: 0.5,
         bodyAlpha: 0.85,
         centerLine: null,
-      });
+      };
+      // Clip yang loop menggambar PUTARANNYA, diulang — bukan materi sepanjang
+      // `sourceLen`, yang sebagian besarnya tidak pernah berbunyi.
+      if (loopLen !== null) {
+        drawLoopedClipWave(
+          ctx,
+          asset,
+          sourceStart,
+          sourceLen,
+          loopLen,
+          size.width,
+          size.height,
+          size.dpr,
+          wave,
+        );
+        return;
+      }
+      drawClipWave(ctx, asset, sourceStart, sourceLen, size.width, size.height, size.dpr, wave);
     },
-    [asset, sourceStart, sourceLen, color],
+    [asset, sourceStart, sourceLen, loopLen, color],
   );
   // Canvas dibungkus div, dan ukurannya dipaksa 100% — JANGAN mengandalkan
   // `left`/`right` untuk meregangkannya.
@@ -307,12 +328,17 @@ function ClipView({
           pointerEvents: 'none',
         }}
       >
+        {/* Tanda loop di LABEL, bukan badge sendiri: clip di timeline bisa
+            setinggi 30 px dan sesempit beberapa piksel, dan lencana kedua akan
+            jadi hal pertama yang menutupi waveform. */}
+        {activeLoopLen(clip) === null ? '' : '⟳ '}
         {clip.label}
       </div>
       <ClipWave
         asset={asset}
         sourceStart={clip.sourceStart}
         sourceLen={clip.sourceLen}
+        loopLen={activeLoopLen(clip)}
         color={lane.color}
         style={{
           // Mengisi seluruh clip, bukan strip 20px di dasar seperti mock design.

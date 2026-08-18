@@ -13,15 +13,23 @@
 
 pub mod biquad;
 pub mod comp;
+pub mod delay;
 pub mod fastmath;
+pub mod fdn;
+pub mod lfo;
 pub mod mix;
+pub mod onepole;
 pub mod resample;
 pub mod smooth;
 
 pub use biquad::{Biquad, Coeffs, FilterKind};
 pub use comp::{CompParams, Compressor, Detector};
+pub use delay::{ceil_pow2, floor_pow2, Delay};
 pub use fastmath::{db_to_lin, fast_exp2, fast_log2, lin_to_db};
+pub use fdn::{householder8, Fdn8, FDN_LINES};
+pub use lfo::{fast_sin_norm, Lfo, LfoShape, QUARTER_TURN};
 pub use mix::{add_scaled, add_scaled_ramp, clear, copy_scaled, peak, rms};
+pub use onepole::{DcBlock, OnePoleLp};
 pub use resample::{hermite4, FracCursor};
 pub use smooth::Smoother;
 

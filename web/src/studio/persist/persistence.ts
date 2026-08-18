@@ -16,6 +16,7 @@ import {
   studioStore,
   type StudioAppState,
 } from '../store';
+import { normalizeClipLoop } from '../timeline/clip-loop';
 import { normalizeClipFade } from '../timeline/fade';
 import { normalizeClipStem } from '../timeline/stem';
 import { loadAllAssets, loadProjectJson, pruneAssets, saveProjectJson } from './db';
@@ -120,7 +121,7 @@ export function deserialize(json: string): PersistedProject | null {
 export function normalizeLanes(lanes: StudioLane[]): StudioLane[] {
   return lanes.map((l) => ({
     ...l,
-    clips: (l.clips ?? []).map((c) => normalizeClipStem(normalizeClipFade(c))),
+    clips: (l.clips ?? []).map((c) => normalizeClipLoop(normalizeClipStem(normalizeClipFade(c)))),
   }));
 }
 

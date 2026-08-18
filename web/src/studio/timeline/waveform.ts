@@ -16,6 +16,7 @@
  */
 
 import type { StudioAsset } from '../store';
+import { loopTileCount } from './clip-loop';
 import { allocColumns, readEnvelope, type EnvelopeColumns } from './envelope';
 
 /** Buffer kolom yang dipakai ulang lintas semua canvas. Menggambar tidak boleh
@@ -184,4 +185,86 @@ export function drawClipWave(
     return;
   }
   drawAssetWave(ctx, asset, sourceStart, sourceLen, width, height, dpr, style);
+}
+
+/**
+ * Lebar minimum satu ubin loop sebelum menggambarnya jadi sia-sia. Di bawah ini
+ * satu putaran lebih tipis dari beberapa piksel dan yang tergambar bukan lagi
+ * bentuk, melainkan derau.
+ */
+export const MIN_LOOP_TILE_PX = 3;
+/** Seam digambar hanya kalau ubinnya cukup lebar untuk dilihat sebagai batas. */
+const SEAM_MIN_TILE_PX = 8;
+
+/**
+ * Waveform clip yang LOOP: satu putaran, DIULANG, bukan materi yang memanjang.
+ *
+ * Ini bukan hiasan. Clip yang loop hanya membaca `[sourceStart, sourceStart +
+ * loopLen)`, jadi menggambar `sourceLen` apa adanya akan menampilkan materi yang
+ * TIDAK berbunyi — dan pada clip yang lebih panjang dari file-nya, sebagian
+ * kotaknya bahkan kosong. Gambar yang tidak cocok dengan yang terdengar adalah
+ * cacat yang paling mahal di UI editing (lihat `drawPlaceholderWave`).
+ *
+ * Biayanya tetap sebanding dengan LEBAR, bukan jumlah ubin: tiap ubin hanya
+ * menggambar kolom sebanyak lebarnya sendiri.
+ */
+export function drawLoopedClipWave(
+  ctx: CanvasRenderingContext2D,
+  asset: StudioAsset | undefined,
+  sourceStart: number,
+  sourceLen: number,
+  loopLen: number,
+  width: number,
+  height: number,
+  dpr: number,
+  style: WaveStyle,
+): void {
+  if (asset === undefined) {
+    drawPlaceholderWave(ctx, width, height, style.outline);
+    return;
+  }
+  if (!(width > 0) || !(height > 0) || !(loopLen > 0) || !(sourceLen > 0)) return;
+
+  const tiles = loopTileCount(sourceLen, loopLen);
+  const tileW = (loopLen / sourceLen) * width;
+  if (tiles <= 1 || tileW < MIN_LOOP_TILE_PX) {
+    // Ubin sub-piksel: yang tergambar per putaran tidak akan terbaca berapa pun
+    // usahanya. Satu putaran diregangkan sepanjang clip — materinya jujur
+    // (memang itu yang berbunyi), hanya JUMLAH putarannya yang tidak terbaca,
+    // dan pada kerapatan ini ia memang tidak pernah terbaca.
+    drawAssetWave(ctx, asset, sourceStart, loopLen, width, height, dpr, style);
+    return;
+  }
+
+  for (let i = 0; i < tiles; i++) {
+    const x = i * tileW;
+    const visible = Math.min(tileW, width - x);
+    if (visible <= 0) break;
+    ctx.save();
+    // Clip: ubin TERAKHIR hampir selalu terpotong di tengah putaran, persis
+    // seperti bunyinya — loop berhenti di ujung clip, bukan di ujung putaran.
+    ctx.beginPath();
+    ctx.rect(x, 0, visible, height);
+    ctx.clip();
+    ctx.translate(x, 0);
+    drawAssetWave(ctx, asset, sourceStart, loopLen, tileW, height, dpr, style);
+    ctx.restore();
+  }
+
+  if (tileW >= SEAM_MIN_TILE_PX && typeof style.outline === 'string') {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = style.outline;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    for (let i = 1; i < tiles; i++) {
+      const x = Math.round(i * tileW) + 0.5;
+      if (x >= width) break;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 }

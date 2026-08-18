@@ -20,6 +20,7 @@
 import { useEffect, useRef } from 'react';
 
 import { isStemBypass } from '../model';
+import { activeLoopLen } from '../timeline/clip-loop';
 import { studioStore } from '../store';
 import {
   play,
@@ -71,7 +72,12 @@ export function mixFingerprint(): string {
             // akan me-restart audio tiap slider bergerak satu piksel.
             .map(
               (c) =>
-                `${c.id}@${c.start}+${c.len}#${c.assetId}:${c.gainDb}${isStemBypass(c.stem) ? '' : 'S'}`,
+                `${c.id}@${c.start}+${c.len}#${c.assetId}:${c.gainDb}` +
+                `${isStemBypass(c.stem) ? '' : 'S'}` +
+                // Loop clip mengubah SUSUNAN voice (source jadi melingkar,
+                // titik masuknya modulo), jadi ia harus menjadwalkan ulang —
+                // beda dengan gain/EQ yang bisa diubah live.
+                `${activeLoopLen(c) === null ? '' : `L${c.loopLen ?? 0}@${c.sourceStart}`}`,
             )
             .join(','),
       ),

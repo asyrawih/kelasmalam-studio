@@ -47,6 +47,7 @@ import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SP
 } from './model';
 import { createDemoStudio, createInitialStudio } from './demo';
 import { applyLoopCut, type LoopCutSpec } from './timeline/beat-cut';
+import { activeLoopLen, applyClipLoop, clearClipLoop, MIN_LOOP_LEN } from './timeline/clip-loop';
 import { slipClip, trimLeft, trimRight } from './timeline/clip-trim';
 import { normalizeClipStem } from './timeline/stem';
 import type { Envelope } from './timeline/envelope';
@@ -832,12 +833,22 @@ export const studioActions = {
       // mengambil bagian source yang salah (docs/07 §8d: dua koordinat space).
       const cutSource = Math.round(cut * hit.lane.speedRatio);
       const left: StudioClip = { ...clip, len: cut, sourceLen: cutSource };
+      // CLIP YANG LOOP: kedua belahan tetap memutar REGION YANG SAMA.
+      //
+      // Belahan kanan TIDAK memajukan `sourceStart` seperti clip biasa. Untuk
+      // clip lurus, memajukannya adalah satu-satunya cara agar materi
+      // menyambung; untuk clip yang loop ia justru memindahkan region ke materi
+      // yang bukan bagian dari loop — dua belahan dari satu loop akan memutar
+      // dua hal yang berbeda. Yang terjadi sekarang: putaran mulai lagi dari
+      // awalnya di titik potong. Itu lompatan fase yang bisa didengar, tapi
+      // tetap materi yang sama, dan itulah yang bisa dijelaskan ke user.
+      const looped = activeLoopLen(clip) !== null;
       const right: StudioClip = {
         ...clip,
         id: nextId('clip-'),
         start: clip.start + cut,
         len: clip.len - cut,
-        sourceStart: clip.sourceStart + cutSource,
+        sourceStart: looped ? clip.sourceStart : clip.sourceStart + cutSource,
         sourceLen: clip.sourceLen - cutSource,
         seed: clip.seed + 7,
       };
@@ -917,6 +928,64 @@ export const studioActions = {
                   .flatMap((c) => (c.id === clipId ? cut : [c]))
                   .sort((a, b) => a.start - b.start),
               }
+            : l,
+        ),
+      };
+    });
+  },
+  /**
+   * PASANG LOOP KE CLIP — region ini diputar berulang SEPANJANG clip, tanpa
+   * memotong apa pun.
+   *
+   * Perbedaannya dengan `beatLoopCut` adalah perbedaan yang diminta user:
+   * timeline tidak bertambah satu objek pun, posisi & panjang clip tetap, dan
+   * membatalkannya cukup satu klik (`removeClipLoopRegion`). Yang berubah hanya
+   * cara materi clip dibaca — melingkar, bukan lurus.
+   *
+   * Audisi TIDAK dimatikan (beda dengan LOOP CUT): region yang diaudisi persis
+   * region yang baru saja dipasang, jadi yang terdengar tetap cocok dengan yang
+   * terlihat. LOOP CUT harus mematikannya karena di sana source clip-nya benar-
+   * benar berganti arti.
+   */
+  setClipLoopRegion(clipId: string, region: { sourceStart: Samples; sourceLen: Samples }): void {
+    set((s) => {
+      const hit = findClip(s.lanes, clipId);
+      if (hit === null || !(region.sourceLen >= MIN_LOOP_LEN)) return null;
+      const next = applyClipLoop(hit.clip, region, s.sampleRate);
+      return {
+        lanes: s.lanes.map((l) =>
+          l.id === hit.lane.id
+            ? { ...l, clips: l.clips.map((c) => (c.id === clipId ? next : c)) }
+            : l,
+        ),
+      };
+    });
+  },
+  /**
+   * Lepaskan loop; clip kembali diputar lurus.
+   *
+   * Jendelanya ikut dipangkas ke ujung materi kalau perlu. Wajib: clip yang
+   * loop boleh lebih panjang dari file-nya (pengulangan yang mengisi), dan
+   * membiarkan panjang itu setelah loop dilepas membuat `src.start()` melempar
+   * — `graph-builder` menangkapnya dan MELEWATI clip, jadi gejalanya bukan
+   * error melainkan clip yang terlihat ada tapi bisu.
+   */
+  removeClipLoopRegion(clipId: string): void {
+    set((s) => {
+      const hit = findClip(s.lanes, clipId);
+      if (hit === null || hit.clip.loopLen === undefined) return null;
+      const bare = clearClipLoop(hit.clip);
+      const frames = s.assets[bare.assetId]?.frames;
+      const room = frames === undefined ? bare.sourceLen : Math.max(1, frames - bare.sourceStart);
+      const sourceLen = Math.min(bare.sourceLen, room);
+      const next: StudioClip =
+        sourceLen === bare.sourceLen
+          ? bare
+          : { ...bare, sourceLen, len: timelineLenFor(sourceLen, hit.lane.speedRatio) };
+      return {
+        lanes: s.lanes.map((l) =>
+          l.id === hit.lane.id
+            ? { ...l, clips: l.clips.map((c) => (c.id === clipId ? next : c)) }
             : l,
         ),
       };
