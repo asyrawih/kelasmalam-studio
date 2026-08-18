@@ -141,6 +141,29 @@ describe('tempo di playhead', () => {
     });
   });
 
+  /**
+   * Identitas hasil = rem render sel BPM. Kalau ia berubah tiap gerakan
+   * playhead, `useSyncExternalStore` membaca setiap `pointermove` saat scrub
+   * sebagai perubahan dan sel BPM ikut render ulang walau angkanya diam.
+   */
+  it('mengembalikan REFERENSI yang sama selama isinya tidak berubah', () => {
+    const laneId = studioStore.getState().lanes[0]!.id;
+    studioActions.registerAsset(asset(1, 128));
+    studioActions.addClip(laneId, clip('a', 1, 0, 30));
+    studioActions.setPlayhead(10 * SR);
+
+    const first = selectPlayheadTempo(studioStore.getState());
+    // Playhead bergerak, tapi masih di clip yang sama: tidak ada satu pun yang
+    // dipajang berubah.
+    studioActions.setPlayhead(11 * SR);
+    expect(selectPlayheadTempo(studioStore.getState())).toBe(first);
+
+    // Keluar dari clip memang mengubah isinya — di sini identitas HARUS
+    // berubah, kalau tidak readout-nya membeku di angka yang sudah lewat.
+    studioActions.setPlayhead(40 * SR);
+    expect(selectPlayheadTempo(studioStore.getState())).not.toBe(first);
+  });
+
   it('batas akhir clip bersifat setengah-terbuka', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
     studioActions.registerAsset(asset(1, 128));

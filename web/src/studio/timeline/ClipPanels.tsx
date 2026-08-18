@@ -34,7 +34,6 @@ import {
   clampFadeMs,
   FADE_PRESET_SEC,
   msToSec,
-  samplesToFadeMs,
   secToMs,
   type FadeSide,
 } from './fade';
@@ -289,6 +288,163 @@ function FadeHandle({
 }
 
 /** Satu blok kontrol untuk satu sisi fade: angka + preset panjang transisi. */
+/**
+ * EDITOR FADE — permukaan tersendiri yang TIDAK PERNAH BERGERAK.
+ *
+ * Kenapa terpisah dari kotak waveform utama: kotak itu bisa berada dalam mode
+ * jendela geser, dan di sana gambarnya berjalan saat play. Menyetel kurva di
+ * atas permukaan yang bergeser berarti sasarannya kabur dari bawah tangan —
+ * gerakan halus yang justru dibutuhkan untuk menilai transisi jadi mustahil.
+ *
+ * Di sini clip digambar UTUH dan diam: apa pun yang sedang terjadi di transport,
+ * yang terlihat tetap bentuk fade-nya. Itu satu-satunya hal yang sedang diatur.
+ */
+function FadeEditor({
+  clip,
+  asset,
+  sampleRate,
+  speedRatio,
+  onClose,
+}: {
+  readonly clip: StudioClip;
+  readonly asset: StudioAsset | undefined;
+  readonly sampleRate: number;
+  readonly speedRatio: number;
+  readonly onClose: () => void;
+}): JSX.Element {
+  const [dragSide, setDragSide] = useState<FadeSide | null>(null);
+  const curve: FadeCurve = clip.fadeCurve === 'linear' ? 'linear' : DEFAULT_FADE_CURVE;
+  const fade: FadeRegions = {
+    sourceStart: clip.sourceStart,
+    sourceEnd: clip.sourceStart + clip.sourceLen,
+    fadeInSource: fadeSourceLen(clip.fadeInMs, sampleRate, speedRatio),
+    fadeOutSource: fadeSourceLen(clip.fadeOutMs, sampleRate, speedRatio),
+    curve,
+  };
+  const xOf = (source: number): number =>
+    clip.sourceLen > 0 ? (source - clip.sourceStart) / clip.sourceLen : -1;
+
+  const setFade = (side: FadeSide, ms: number): void => {
+    const v = Math.round(clampFadeMs(clip, side, ms, sampleRate));
+    studioActions.updateClip(clip.id, side === 'in' ? { fadeInMs: v } : { fadeOutMs: v });
+  };
+  /** Fraksi kotak → milidetik fade. Kotaknya SELALU seluruh clip di sini. */
+  const setFromFrac = (side: FadeSide, f: number): void => {
+    const source = (side === 'in' ? f : 1 - f) * clip.sourceLen;
+    setFade(side, (Math.max(0, source) / speedRatio / sampleRate) * 1000);
+  };
+
+  return (
+    <div
+      data-fade-editor
+      role="dialog"
+      aria-label="editor fade"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'var(--cy-surface-1)',
+        border: '1px solid var(--cy-accent)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 5,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '6px 8px',
+          borderBottom: '1px solid var(--cy-border)',
+        }}
+      >
+        <span style={{ fontSize: '9px', letterSpacing: '.18em', color: 'var(--cy-accent)' }}>
+          FADE
+        </span>
+        <span style={{ fontSize: '10px', color: 'var(--cy-text-dim)' }}>
+          tarik gagang di sudut · dobel-klik = nol · panah = geser
+        </span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+          <Button
+            size="sm"
+            variant={curve === 'linear' ? 'outline' : 'ghost'}
+            onClick={() => studioActions.updateClip(clip.id, { fadeCurve: 'linear' })}
+            style={{ padding: '0 8px' }}
+          >
+            LINEAR
+          </Button>
+          <Button
+            size="sm"
+            variant={curve === 'equalPower' ? 'outline' : 'ghost'}
+            onClick={() => studioActions.updateClip(clip.id, { fadeCurve: 'equalPower' })}
+            style={{ padding: '0 8px' }}
+          >
+            EQUAL-POWER
+          </Button>
+          <Button size="sm" variant="ghost" aria-label="tutup editor fade" onClick={onClose}>
+            ✕
+          </Button>
+        </span>
+      </div>
+
+      <div
+        style={{
+          position: 'relative',
+          flex: '1 1 auto',
+          minHeight: 0,
+          margin: '10px 12px 12px',
+          background: '#000',
+          border: '1px solid var(--cy-border)',
+          overflow: 'visible',
+          touchAction: 'none',
+        }}
+      >
+        <DetailWave asset={asset} sourceStart={clip.sourceStart} sourceLen={clip.sourceLen} />
+        <FadeOverlay fade={fade} from={clip.sourceStart} len={clip.sourceLen} />
+        <FadeHandle
+          side="in"
+          xFrac={xOf(fade.sourceStart + fade.fadeInSource)}
+          valueMs={clip.fadeInMs}
+          dragging={dragSide === 'in'}
+          onFocus={() => setDragSide('in')}
+          onDrag={(f) => setFromFrac('in', f)}
+          onReset={() => setFade('in', 0)}
+          onNudge={(d) => setFade('in', clip.fadeInMs + secToMs(d))}
+        />
+        <FadeHandle
+          side="out"
+          xFrac={xOf(fade.sourceEnd - fade.fadeOutSource)}
+          valueMs={clip.fadeOutMs}
+          dragging={dragSide === 'out'}
+          onFocus={() => setDragSide('out')}
+          onDrag={(f) => setFromFrac('out', f)}
+          onReset={() => setFade('out', 0)}
+          onNudge={(d) => setFade('out', clip.fadeOutMs + secToMs(d))}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            right: '6px',
+            bottom: '6px',
+            display: 'flex',
+            gap: '10px',
+            fontFamily: 'var(--cy-font-mono)',
+            fontSize: '10px',
+            letterSpacing: '.08em',
+            color: '#ffd400',
+            background: '#050505cc',
+            padding: '2px 6px',
+            pointerEvents: 'none',
+          }}
+        >
+          <span>IN {fmtSec(clip.fadeInMs)}</span>
+          <span>OUT {fmtSec(clip.fadeOutMs)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FadeControls({
   side,
   clip,
@@ -438,10 +594,10 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
    * menggeser tempat lagu di lane lain sedang berbunyi.
    */
   const [dragCenter, setDragCenter] = useState<number | null>(null);
+  const [fadeOpen, setFadeOpen] = useState(false);
   const { shown: sel, beat } = useBeatShared();
 
   const clip = sel?.clip;
-  const clipMs = clip === undefined ? 0 : samplesToFadeMs(clip.len, sampleRate);
   const speedRatio = sel?.lane.speedRatio ?? 1;
 
   /**
@@ -458,6 +614,26 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
   const viewStart =
     loopZoom && beat.region !== null ? beat.region.sourceStart : (clip?.sourceStart ?? 0);
   const viewLen = loopZoom && beat.region !== null ? beat.region.sourceLen : (clip?.sourceLen ?? 0);
+
+  /**
+   * Playhead di SOURCE-space TANPA dibatasi ke dalam clip. Dipakai sebagai pusat
+   * jendela geser — di sana jendela memang boleh menjorok keluar materi.
+   */
+  const playheadSourceRaw =
+    clip === undefined ? 0 : clip.sourceStart + (playhead - clip.start) * speedRatio;
+
+  /**
+   * Jendela yang BENAR-BENAR tampak, SOURCE-space — termasuk saat jendela geser
+   * aktif. Gagang fade dipasang dari sini, bukan dari fraksi clip; di jendela
+   * geser nilainya mengikuti playhead, jadi gagangnya bergerak bersama gambarnya.
+   */
+  const windowFrom =
+    follow && beat.windowLen !== null
+      ? (dragCenter ?? playheadSourceRaw) - beat.windowLen / 2
+      : viewStart;
+  const windowLen = follow && beat.windowLen !== null ? beat.windowLen : viewLen;
+  const xOf = (source: number): number =>
+    windowLen > 0 ? (source - windowFrom) / windowLen : -1;
 
   /**
    * Menarik waveform di jendela geser.
@@ -509,6 +685,21 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
     if (clip === undefined) return;
     const v = Math.round(clampFadeMs(clip, side, ms, sampleRate));
     studioActions.updateClip(clip.id, side === 'in' ? { fadeInMs: v } : { fadeOutMs: v });
+  };
+
+  /**
+   * Gagang dilepas di fraksi `f` dari JENDELA → berapa milidetik fade-nya.
+   *
+   * Dua konversi, dan keduanya wajib: fraksi jendela → sample SOURCE, lalu
+   * source → waktu TIMELINE lewat `speedRatio` (fade diukur di waktu timeline).
+   * Melewatkan yang kedua membuat fade di lane yang di-speed-up meleset persis
+   * sebesar rasionya — dan itu hanya terdengar, tidak terlihat.
+   */
+  const setFadeFromWindow = (side: FadeSide, f: number): void => {
+    if (clip === undefined || windowLen <= 0) return;
+    const at = windowFrom + f * windowLen;
+    const source = side === 'in' ? at - clip.sourceStart : clip.sourceStart + clip.sourceLen - at;
+    setFade(side, (Math.max(0, source) / speedRatio / sampleRate) * 1000);
   };
 
   /**
@@ -587,10 +778,7 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
       ) : (
         <>
           <DetailWave asset={assets[clip.assetId]} sourceStart={viewStart} sourceLen={viewLen} />
-          {/* Fade disembunyikan saat jendelanya di-zoom: handle-nya diletakkan
-              sebagai fraksi CLIP, jadi di tampilan sempit ia akan menunjuk
-              tempat yang bukan tempatnya. Lebih baik hilang daripada bohong. */}
-          {zoomed ? null : <FadeOverlay curve={curve} inFrac={inFrac} outFrac={outFrac} />}
+          {fade === null ? null : <FadeOverlay fade={fade} from={viewStart} len={viewLen} />}
           <BeatOverlay
             grid={beat.grid}
             region={loopZoom ? null : beat.region}
@@ -607,30 +795,70 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
         enabled={beat.grid !== null && !zoomed}
         onPick={(frac, fine) => beat.moveTo(clip.sourceStart + frac * clip.sourceLen, fine)}
       />
-      {zoomed ? null : (
+      {/* GAGANG FADE hanya di tampilan yang DIAM.
+          Bukan karena tidak bisa dipetakan — bisa, dan sempat begitu — tapi
+          karena permukaannya bergeser saat play: menarik gagang di atas gambar
+          yang sedang berjalan berarti sasarannya kabur dari bawah tangan. Untuk
+          menyetel fade dengan tenang ada tombol FADE, yang membuka editor
+          tersendiri dengan permukaan yang tidak pernah bergerak. */}
+      {fade === null || follow ? null : (
         <>
           <FadeHandle
             side="in"
-            fracOfClip={inFrac}
+            xFrac={xOf(fade.sourceStart + fade.fadeInSource)}
             valueMs={clip.fadeInMs}
             dragging={dragSide === 'in'}
             onFocus={() => setDragSide('in')}
-            onDrag={(f) => setFade('in', f * clipMs)}
+            onDrag={(f) => setFadeFromWindow('in', f)}
             onReset={() => setFade('in', 0)}
             onNudge={(d) => setFade('in', clip.fadeInMs + secToMs(d))}
           />
           <FadeHandle
             side="out"
-            fracOfClip={outFrac}
+            xFrac={xOf(fade.sourceEnd - fade.fadeOutSource)}
             valueMs={clip.fadeOutMs}
             dragging={dragSide === 'out'}
             onFocus={() => setDragSide('out')}
-            onDrag={(f) => setFade('out', f * clipMs)}
+            onDrag={(f) => setFadeFromWindow('out', f)}
             onReset={() => setFade('out', 0)}
             onNudge={(d) => setFade('out', clip.fadeOutMs + secToMs(d))}
           />
         </>
       )}
+      {/* Tombol pembuka editor fade.
+          Fade dulu diatur langsung di kotak ini, dan itu keliru begitu jendela
+          geser ada: permukaannya berjalan saat play. Tombol memindahkan
+          pekerjaan itu ke permukaan yang diam, dan sekaligus membuat "menyetel
+          fade" jadi sesuatu yang dimasuki dengan sengaja — bukan sesuatu yang
+          bisa tergeser tanpa sadar saat tangan meleset di atas waveform. */}
+      <Button
+        size="sm"
+        variant={fadeOpen ? 'outline' : 'ghost'}
+        aria-label="buka editor fade"
+        title="atur fade di permukaan yang tidak bergerak"
+        onClick={() => setFadeOpen((v) => !v)}
+        style={{
+          position: 'absolute',
+          right: '6px',
+          top: '6px',
+          height: '22px',
+          padding: '0 8px',
+          fontSize: '9px',
+          background: '#050505cc',
+          zIndex: 3,
+        }}
+      >
+        FADE
+      </Button>
+      {fadeOpen ? (
+        <FadeEditor
+          clip={clip}
+          asset={assets[clip.assetId]}
+          sampleRate={sampleRate}
+          speedRatio={speedRatio}
+          onClose={() => setFadeOpen(false)}
+        />
+      ) : null}
       {zoomed ? (
         <div
           data-loop-badge

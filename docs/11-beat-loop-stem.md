@@ -331,6 +331,52 @@ topbar dan Clip Detail WAJIB menunjuk clip yang sama. Dua tempat yang
 menghitungnya sendiri-sendiri suatu saat akan berbeda tanpa ada yang memberi
 tahu.
 
+## Kurva fade digambar di ruang SOURCE
+
+`timeline/fade-draw.ts`. Satu implementasi dipakai KEDUA tampilan (clip utuh &
+jendela geser) — dua salinan berarti bentuk kurva bisa berbeda hanya karena user
+menekan tombol zoom.
+
+Dulu overlay fade digambar sebagai **fraksi clip** (`inFrac`/`outFrac` 0..1
+sepanjang kotak). Itu bekerja selama kotaknya menampilkan seluruh clip, dan
+runtuh begitu jendela geser ada: di sana kotak menampilkan 4 bar dari clip 3
+menit, dan fraksi clip menunjuk tempat yang bukan tempatnya.
+
+Jalan keluar yang pertama diambil — **menyembunyikan** fade saat di-zoom — salah.
+Fade tetap ada dan tetap terdengar, jadi menyembunyikannya berarti user tidak
+bisa melihat *maupun menyentuh* sesuatu yang sedang mempengaruhi suaranya. Yang
+benar adalah memetakannya: daerah fade punya posisi SOURCE yang pasti, dan posisi
+itu bisa digambar di jendela mana pun. Kalau kebetulan di luar jendela, ia memang
+tidak terlihat — dan itu jujur.
+
+### Menyetelnya punya permukaannya sendiri
+
+Menggambar kurva di jendela geser ternyata masih salah, tapi karena alasan yang
+berbeda: **permukaannya berjalan saat play.** Menarik gagang di atas gambar yang
+bergeser berarti sasarannya kabur dari bawah tangan, dan gerakan halus yang
+justru dibutuhkan untuk menilai transisi jadi mustahil.
+
+Jadi sekarang:
+
+- **Jendela geser**: fade tidak digambar dan gagangnya tidak ada.
+- **Tampilan FULL** (diam): fade digambar, gagang bisa ditarik seperti biasa.
+- Tombol **`FADE`** di pojok kotak waveform membuka `FadeEditor` — clip digambar
+  UTUH dan DIAM, apa pun yang sedang terjadi di transport. Tersedia di kedua
+  tampilan, jadi tidak perlu keluar dari mode jendela geser hanya untuk menyetel
+  fade.
+
+Tombolnya juga membuat "menyetel fade" jadi sesuatu yang dimasuki dengan
+sengaja — bukan sesuatu yang bisa tergeser tanpa sadar saat tangan meleset di
+atas waveform.
+
+Konversi tarikannya tetap dua langkah — fraksi kotak → sample SOURCE → waktu
+TIMELINE (`speedRatio`). Melewatkan langkah kedua membuat fade di lane yang
+di-speed-up meleset persis sebesar rasionya, dan itu hanya terdengar, tidak
+terlihat.
+
+Belum ada: **membengkokkan kurva** (menarik titik tengah fade seperti FL Studio).
+Sekarang bentuknya masih dua pilihan diskrit, LINEAR dan EQUAL-POWER.
+
 ## Strip lane berdenyut mengikuti ketukan
 
 `timeline/beat-pulse.ts` + `useLanePulses` di `LaneHeaders.tsx`. Strip warna di
@@ -392,6 +438,7 @@ sudah di layar.
 | `web/src/studio/timeline/BeatSection.tsx` | overlay grid, region loop, kontrol VIEW/LOOP |
 | `web/src/studio/timeline/beat-draw.ts` | penggambar grid + playhead (dipakai dua tampilan) |
 | `web/src/studio/timeline/beat-pulse.ts` | terang strip lane per frame (murni) |
+| `web/src/studio/timeline/fade-draw.ts` | kurva fade di ruang source (dipakai dua tampilan) |
 | `web/src/studio/timeline/ScrollingWave.tsx` | jendela geser rAF, playhead di tengah |
 | `web/src/studio/timeline/beat-context.tsx` | state beat + clip yang dipajang, dibagi bersama |
 | `web/src/studio/timeline/stem.ts` | normalisasi & pembacaan `StudioClip.stem` |

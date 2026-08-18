@@ -1262,6 +1262,11 @@ export const studioActions = {
   tick(dtMs: number): void {
     set((s) => {
       if (!s.playing) return null;
+      // Selama playhead di-drag, TANGAN yang memegang posisi. Kalau tick tetap
+      // memajukannya, tiap 60 ms playhead melompat ke depan lalu ditarik balik
+      // oleh `pointermove` berikutnya — dan yang terdengar dari pemutar scrub
+      // adalah butiran yang loncat-loncat, bukan gerakan tangan.
+      if (s.scrubbing) return null;
       const advance = secToSamples((dtMs / 1000) * s.speed, s.sampleRate);
       const next = s.playhead + advance;
 

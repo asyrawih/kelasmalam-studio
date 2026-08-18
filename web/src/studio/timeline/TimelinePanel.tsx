@@ -216,11 +216,12 @@ export function TimelinePanel(): JSX.Element {
       e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
       scrubbingRef.current = true;
-      // Menggeser playhead MENGHENTIKAN transport. Alternatifnya (lanjut
-      // berbunyi setelah dilepas) membuat posisi akhir terasa tidak pasti:
-      // audio langsung berjalan dari titik yang baru saja kamu geser, jadi
-      // sulit mendengar apakah titiknya sudah tepat.
-      studioActions.setPlaying(false);
+      // Transport TIDAK dihentikan. Dulu iya — alasannya "posisi akhir jadi
+      // tidak pasti kalau audio langsung lanjut". Yang menjawab itu sekarang
+      // bukan diam, melainkan scrub audio: selama digeser, yang terdengar
+      // adalah butiran materi DI BAWAH playhead (`scrubTo`), jadi posisinya
+      // justru dinilai dengan telinga, bukan ditebak. Begitu dilepas, `endScrub`
+      // menaikkan `seekEpoch` dan lagu lanjut dari titik yang baru.
       studioActions.beginScrub();
       seekFromClientX(e.clientX);
     },

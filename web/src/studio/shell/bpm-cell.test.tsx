@@ -134,6 +134,19 @@ describe('sel BPM', () => {
     expect(screen.getByText('×2')).toBeTruthy();
   });
 
+  /**
+   * Tinggi sel tidak boleh bergantung pada isinya. Baris nota BpmCell
+   * muncul-hilang tiap kali playhead melewati sambungan clip, dan strip ini
+   * baris `auto` di grid halaman — kalau nodenya ikut hilang, seluruh timeline
+   * di bawahnya naik-turun mengikuti kursor saat scrub.
+   */
+  it('baris nota tetap ada walau tidak ada yang perlu dikatakan', () => {
+    const { container } = render(<BpmCell />);
+    const cellEl = container.firstElementChild as HTMLElement;
+    expect(cellEl.children).toHaveLength(3); // label, nilai, nota
+    expect(cellEl.children[2]?.textContent).toBe('');
+  });
+
   it('menandai angka yang tidak diyakini dengan "?"', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
     studioActions.registerAsset(asset(8, 96, 0.04));

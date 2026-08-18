@@ -53,7 +53,17 @@ beforeEach(() => {
   const lane = s.lanes[0]!;
   const clip = lane.clips[0]!;
   // Clip 10 detik tepat — supaya 1 px = 25 ms dan angkanya mudah dibaca.
-  studioActions.updateClip(clip.id, { start: 0, len: 10 * SR, fadeInMs: 0, fadeOutMs: 0 });
+  // `sourceLen` DISETEL ikut `len` (speedRatio 1): gagang fade sekarang
+  // diposisikan lewat ruang SOURCE, jadi clip dengan timeline 10 detik tapi
+  // source ratusan detik bukan lagi keadaan yang masuk akal untuk diuji.
+  studioActions.updateClip(clip.id, {
+    start: 0,
+    len: 10 * SR,
+    sourceStart: 0,
+    sourceLen: 10 * SR,
+    fadeInMs: 0,
+    fadeOutMs: 0,
+  });
   studioActions.selectClip(clip.id, lane.id);
 });
 

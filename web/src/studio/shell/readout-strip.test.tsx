@@ -27,7 +27,17 @@ const cell = (label: string): HTMLElement => screen.getByText(label).parentEleme
 const compile = (): HTMLElement => cell('Compile out');
 /** Baris nilai besar (label, nilai, lalu baris mikro opsional). */
 const valueOf = (el: HTMLElement): string => (el.children[1]?.textContent ?? '').trim();
-const noteOf = (el: HTMLElement): string | null => el.children[2]?.textContent ?? null;
+/**
+ * Baris mikro di bawah nilai. Node-nya SEKARANG SELALU ADA: ia mengunci tinggi
+ * sel supaya strip tidak berubah tinggi saat notanya muncul-hilang — itulah
+ * yang dulu membuat timeline di bawahnya melompat saat playhead di-scrub
+ * (lihat `NoteLine` di `BpmCell`). Jadi yang berarti di sini ada-tidaknya
+ * TEKS, bukan ada-tidaknya elemen; baris kosong dilaporkan `null`.
+ */
+const noteOf = (el: HTMLElement): string | null => {
+  const text = el.children[2]?.textContent ?? '';
+  return text === '' ? null : text;
+};
 
 describe('COMPILE OUT = panjang file, bukan panjang timeline', () => {
   it('durasi yang tampil = contentEnd / sampleRate / renderSpeed', () => {

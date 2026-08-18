@@ -70,10 +70,48 @@ let memoValue: PlayheadTempo | null = null;
 
 export function selectPlayheadTempo(s: StudioAppState): PlayheadTempo {
   if (memoKey === s && memoValue !== null) return memoValue;
-  const value = computePlayheadTempo(s);
+  const next = computePlayheadTempo(s);
+  // Referensi LAMA dipertahankan kalau isinya sama persis.
+  //
+  // Kunci berbasis referensi state saja tidak cukup: SETIAP aksi membuat state
+  // baru, dan saat scrub itu berarti sekali per `pointermove`. Objek hasil yang
+  // selalu baru terbaca sebagai "berubah" oleh `useSyncExternalStore`, jadi sel
+  // BPM ikut render ulang puluhan kali per detik walau angkanya tidak bergerak
+  // sedikit pun — playhead bergeser 3 px di dalam clip yang sama tidak mengubah
+  // apa-apa yang dipajang. Perbandingan isi di bawah yang menghentikannya.
+  const value = memoValue !== null && sameTempo(memoValue, next) ? memoValue : next;
   memoKey = s;
   memoValue = value;
   return value;
+}
+
+function sameEntry(a: ActiveTempo, b: ActiveTempo): boolean {
+  return (
+    a.laneId === b.laneId &&
+    a.clipId === b.clipId &&
+    a.laneName === b.laneName &&
+    a.bpm === b.bpm &&
+    a.sourceBpm === b.sourceBpm &&
+    a.confidence === b.confidence &&
+    a.speedFactor === b.speedFactor
+  );
+}
+
+/** Kesetaraan ISI — bukan referensi. Semua field-nya primitif, jadi cukup satu
+ *  lapis; kalau nanti ada field objek di sini, ia harus ikut dibandingkan atau
+ *  memo di atas akan menahan nilai basi. */
+function sameTempo(a: PlayheadTempo, b: PlayheadTempo): boolean {
+  if (a.pending !== b.pending || a.unknown !== b.unknown || a.idle !== b.idle) return false;
+  if (a.primary === null || b.primary === null) {
+    if (a.primary !== b.primary) return false;
+  } else if (!sameEntry(a.primary, b.primary)) {
+    return false;
+  }
+  if (a.others.length !== b.others.length) return false;
+  return a.others.every((o, i) => {
+    const other = b.others[i];
+    return other !== undefined && sameEntry(o, other);
+  });
 }
 
 function computePlayheadTempo(s: StudioAppState): PlayheadTempo {

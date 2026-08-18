@@ -206,8 +206,9 @@ describe('kontrol beat di topbar', () => {
     expect(s.clipLoop).toMatchObject({ sourceLen: 4 * SR }); // 2 bar @120 BPM
     // Waveform sekarang menampilkan region-nya, bukan seluruh clip.
     expect(screen.getByText('LOOP 2 BAR')).toBeTruthy();
-    // Fade tidak boleh ikut ditampilkan di jendela yang di-zoom — posisinya
-    // dihitung sebagai fraksi CLIP dan akan menunjuk tempat yang salah.
+    // Gagang fade TIDAK ada di jendela geser: permukaannya berjalan saat play,
+    // jadi menyetel kurva di atasnya berarti sasaran yang kabur dari bawah
+    // tangan. Untuk itu ada tombol FADE + editor tersendiri yang diam.
     expect(document.querySelector('[data-fade-handle="in"]')).toBeNull();
     expect(document.querySelector('[data-loop-picker]')).toBeNull();
   });
@@ -419,6 +420,70 @@ describe('kontrol beat di topbar (lanjutan)', () => {
   });
 });
 
+
+describe('editor fade', () => {
+  function fadeButton(): HTMLElement {
+    return screen.getByRole('button', { name: 'buka editor fade' });
+  }
+  function editor(): Element | null {
+    return document.querySelector('[data-fade-editor]');
+  }
+
+  it('gagang fade TIDAK ada di jendela geser — permukaannya berjalan saat play', () => {
+    studioActions.updateClip(clips()[0]!.id, { fadeInMs: 1000, fadeOutMs: 1000 });
+    render(<Studio />);
+    fireEvent.click(screen.getByTitle('jendela 4 bar yang bergeser mengikuti playhead'));
+    // Menarik gagang di atas gambar yang bergeser berarti sasarannya kabur dari
+    // bawah tangan; untuk itulah editor tersendiri ada.
+    expect(document.querySelector('[data-fade-handle="in"]')).toBeNull();
+  });
+
+  it('gagang fade tetap ada di tampilan FULL yang diam', () => {
+    studioActions.updateClip(clips()[0]!.id, { fadeInMs: 1000, fadeOutMs: 1000 });
+    render(<Studio />);
+    fireEvent.click(screen.getByRole('button', { name: 'FULL' }));
+    expect(document.querySelector('[data-fade-handle="in"]')).not.toBeNull();
+  });
+
+  it('tombol FADE membuka dan menutup editornya', () => {
+    render(<Studio />);
+    expect(editor()).toBeNull();
+    fireEvent.click(fadeButton());
+    expect(editor()).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'tutup editor fade' }));
+    expect(editor()).toBeNull();
+  });
+
+  it('editornya tersedia JUGA saat jendela geser aktif', () => {
+    render(<Studio />);
+    fireEvent.click(screen.getByTitle('jendela 4 bar yang bergeser mengikuti playhead'));
+    fireEvent.click(fadeButton());
+    expect(editor()).not.toBeNull();
+    // Dan di dalamnya gagangnya kembali ada — permukaan ini tidak bergerak.
+    expect(editor()!.querySelector('[data-fade-handle="in"]')).not.toBeNull();
+  });
+
+  it('menyeret gagang di editor mengubah fade clip', () => {
+    studioActions.updateClip(clips()[0]!.id, { fadeInMs: 0, fadeOutMs: 0 });
+    render(<Studio />);
+    fireEvent.click(fadeButton());
+    const h = editor()!.querySelector('[data-fade-handle="in"]') as HTMLElement;
+    // Kotaknya SELALU seluruh clip di sini: 400 px = 16 detik, x=100 → 4 detik.
+    fireEvent.pointerDown(h, { pointerId: 1, button: 0, clientX: 0 });
+    fireEvent.pointerMove(h, { pointerId: 1, clientX: 100 });
+    fireEvent.pointerUp(h, { pointerId: 1, clientX: 100 });
+    expect(clips()[0]!.fadeInMs).toBe(4000);
+  });
+
+  it('bentuk kurva bisa diganti dari dalam editor', () => {
+    render(<Studio />);
+    fireEvent.click(fadeButton());
+    const ed = editor()!;
+    const linear = [...ed.querySelectorAll('button')].find((b) => b.textContent === 'LINEAR')!;
+    fireEvent.click(linear);
+    expect(clips()[0]!.fadeCurve).toBe('linear');
+  });
+});
 
 describe('susunan bar BEAT & LOOP', () => {
   function group(label: string): HTMLElement {

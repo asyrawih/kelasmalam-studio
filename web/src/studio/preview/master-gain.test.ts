@@ -127,9 +127,14 @@ describe('Amplify master (preview)', () => {
     const master = masters[0]!;
     expect(master.gain.value).toBeCloseTo(lin(-6), 6);
 
-    // Setiap lane gain menyambung ke master itu, dan tidak ada satu pun yang
-    // menyambung ke destination.
-    const laneGains = gains.filter((g) => g !== master && g.out.includes(master));
+    // Rantainya sekarang lane → BUS generasi → master. Bus itu ada supaya
+    // susunan bisa diganti dengan crossfade tanpa senyap (lihat `Generation`
+    // di audio-preview). Yang dijaga tes ini tidak berubah: tidak ada satu pun
+    // node yang sampai ke destination tanpa lewat master.
+    const buses = gains.filter((g) => g !== master && g.out.includes(master));
+    expect(buses).toHaveLength(1);
+    const bus = buses[0]!;
+    const laneGains = gains.filter((g) => g !== bus && g.out.includes(bus));
     expect(laneGains.length).toBe(studioStore.getState().lanes.length);
     for (const g of gains) {
       if (g === master) continue;

@@ -14,7 +14,7 @@
 import { formatTime, samplesToSec, PITCH_LOCK_AVAILABLE } from '../model';
 import { outputSeconds, semitoneShift } from '../rail/RenderSpeedCard';
 import { selectClipCount, useStudio } from '../store';
-import { BpmCell } from './BpmCell';
+import { BpmCell, NoteLine, VALUE_LINE_HEIGHT } from './BpmCell';
 
 interface Cell {
   readonly label: string;
@@ -139,6 +139,8 @@ function CellView({ cell }: { cell: Cell }): JSX.Element {
           fontWeight: 600,
           color: cell.color,
           marginTop: '2px',
+          height: VALUE_LINE_HEIGHT,
+          lineHeight: VALUE_LINE_HEIGHT,
         }}
       >
         {cell.value}
@@ -146,20 +148,10 @@ function CellView({ cell }: { cell: Cell }): JSX.Element {
           {cell.unit}
         </span>
       </div>
-      {cell.note === undefined ? null : (
-        <div
-          style={{
-            fontSize: '9px',
-            letterSpacing: '.12em',
-            color: 'var(--cy-text-muted)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {cell.note}
-        </div>
-      )}
+      {/* Selalu dirender, walau kosong — lihat `NoteLine`. Tinggi strip harus
+          tetap: ia baris `auto` di grid halaman, jadi setiap perubahan tinggi
+          menggeser timeline di bawahnya. */}
+      <NoteLine text={cell.note} />
     </div>
   );
 }

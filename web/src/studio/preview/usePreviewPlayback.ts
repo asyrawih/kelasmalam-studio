@@ -6,6 +6,14 @@
  * 60 ms oleh UI; kalau hook ini ikut bereaksi, semua voice akan dijadwalkan
  * ulang 16×/detik dan yang terdengar cuma klik.
  *
+ * DUA CARA menjadwalkan ulang, dan memilih yang salah terdengar jelas:
+ *   - `play()`   dari `state.playhead`. Untuk PLAY dan untuk LOMPATAN — di
+ *                situ posisi baru memang yang diminta user.
+ *   - `reschedule()` dari posisi yang benar-benar terdengar. Untuk susunan yang
+ *                berubah saat berbunyi (tambah lane, geser clip, paste). Memakai
+ *                `play()` di sini membuat lagu melompat mundur sampai 60 ms tiap
+ *                kali — itulah "kok jadi stop dulu baru play" yang dilaporkan.
+ *
  * Sementara sampai engine WASM hidup. Lihat catatan di audio-preview.ts.
  */
 
@@ -13,10 +21,20 @@ import { useEffect, useRef } from 'react';
 
 import { isStemBypass } from '../model';
 import { studioStore } from '../store';
-import { play, startAudition, stop, stopAudition, updateLaneParams } from './audio-preview';
+import {
+  play,
+  reschedule,
+  scrubTo,
+  startAudition,
+  stop,
+  stopAudition,
+  stopScrub,
+  updateLaneParams,
+} from './audio-preview';
 
-/** Sidik jari hal-hal yang mengharuskan penjadwalan ulang saat sedang play. */
-function mixFingerprint(): string {
+/** Sidik jari hal-hal yang mengharuskan penjadwalan ulang saat sedang play.
+ *  Diekspor untuk tes — lihat `mix-fingerprint.test.ts`. */
+export function mixFingerprint(): string {
   const s = studioStore.getState();
   return [
     s.speed,
@@ -33,20 +51,30 @@ function mixFingerprint(): string {
     // gain lane & EQ TIDAK di sini — keduanya parameter kontinu yang diubah
     // live lewat updateLaneParams(). Memasukkannya akan me-restart audio tiap
     // kali slider bergerak satu piksel.
-    ...s.lanes.map(
-      (l) =>
-        `${l.id}:${l.mute ? 1 : 0}${l.solo ? 1 : 0}x${l.speedRatio}:` +
-        l.clips
-          // Satu BIT stem, bukan nilainya: yang mengharuskan penjadwalan ulang
-          // adalah ada/tidaknya rantai stem, sedangkan gain & frekuensinya
-          // diubah live lewat updateLaneParams. Memasukkan nilainya ke sini
-          // akan me-restart audio tiap slider bergerak satu piksel.
-          .map(
-            (c) =>
-              `${c.id}@${c.start}+${c.len}#${c.assetId}:${c.gainDb}${isStemBypass(c.stem) ? '' : 'S'}`,
-          )
-          .join(','),
-    ),
+    // Lane yang tidak menyumbang bunyi DIBUANG sebelum dipetakan — bukan
+    // dipetakan jadi string kosong, karena entri kosong pun mengubah hasil
+    // `join` dan itu sudah cukup untuk memicu penjadwalan ulang. Lane baru
+    // selalu lahir tanpa clip, jadi tanpa saringan ini "TAMBAH LANE" memotong
+    // lagu yang sedang berbunyi demi susunan yang sama persis.
+    //
+    // SOLO tetap ikut walau lane-nya kosong: lane kosong yang di-solo
+    // membungkam semua lane lain, dan itu jelas terdengar.
+    ...s.lanes
+      .filter((l) => l.clips.length > 0 || l.solo)
+      .map(
+        (l) =>
+          `${l.id}:${l.mute ? 1 : 0}${l.solo ? 1 : 0}x${l.speedRatio}:` +
+          l.clips
+            // Satu BIT stem, bukan nilainya: yang mengharuskan penjadwalan ulang
+            // adalah ada/tidaknya rantai stem, sedangkan gain & frekuensinya
+            // diubah live lewat updateLaneParams. Memasukkan nilainya ke sini
+            // akan me-restart audio tiap slider bergerak satu piksel.
+            .map(
+              (c) =>
+                `${c.id}@${c.start}+${c.len}#${c.assetId}:${c.gainDb}${isStemBypass(c.stem) ? '' : 'S'}`,
+            )
+            .join(','),
+      ),
   ].join('|');
 }
 
@@ -83,6 +111,7 @@ export function usePreviewPlayback(): void {
   const wasPlaying = useRef(false);
   const wasScrubbing = useRef(false);
   const lastMix = useRef('');
+  const lastSeek = useRef(studioStore.getState().seekEpoch);
   const lastAudition = useRef('');
 
   useEffect(() => {
@@ -112,13 +141,6 @@ export function usePreviewPlayback(): void {
         lastAudition.current = auditionFp;
       }
 
-      // Selama playhead di-drag, audio dibisukan.
-      //
-      // Alternatifnya menjadwalkan ulang tiap pointermove — itu berarti semua
-      // voice di-start/stop puluhan kali per detik dan yang terdengar hanya
-      // deretan klik, bukan audio. Scrub-audio ala tape (memutar potongan
-      // pendek mengikuti kursor) butuh penjadwal sendiri; itu pekerjaan engine,
-      // bukan jalur preview sementara ini.
       // Selama clip di-drag, audio jalan terus dengan susunan LAMA. Menjadwalkan
       // ulang tiap pointermove akan memotong-motong suara jadi klik. Begitu
       // dilepas, `draggingClip` turun, sidik jari sudah berubah, dan blok di
@@ -128,24 +150,45 @@ export function usePreviewPlayback(): void {
         return;
       }
 
+      // ── SCRUB ──
+      //
+      // Transport TIDAK dihentikan (lihat `TimelinePanel.onScrubDown`), tapi
+      // mix-nya memang harus berhenti: mix dijadwalkan di muka dan berjalan
+      // maju sendiri, sedangkan tangan bisa diam atau mundur. Yang mengambil
+      // alih adalah pemutar butir di `scrubTo` — itu yang berbunyi seperti
+      // forward/rewind. Begitu dilepas, `endScrub` menaikkan `seekEpoch`, dan
+      // cabang di bawah menyalakan mix lagi dari posisi baru.
       if (state.scrubbing) {
         if (wasScrubbing.current === false) stop();
         wasScrubbing.current = true;
+        // Senyap saat transport berhenti: menggeser playhead untuk menaruh
+        // posisi bukan permintaan untuk mendengar apa pun.
+        if (state.playing) scrubTo(state);
         wasPlaying.current = state.playing;
         lastMix.current = mix;
+        lastSeek.current = state.seekEpoch;
         return;
       }
-      wasScrubbing.current = false;
+      if (wasScrubbing.current) {
+        stopScrub();
+        wasScrubbing.current = false;
+      }
 
       if (state.playing) {
-        // Mulai, atau jadwalkan ulang kalau mix/posisi berubah saat berbunyi.
-        if (!wasPlaying.current || mix !== lastMix.current) {
+        const seeked = state.seekEpoch !== lastSeek.current;
+        if (!wasPlaying.current || seeked) {
+          // PLAY, atau user melompat: posisi yang diminta ada di `playhead`.
           play(state);
-          lastMix.current = mix;
+        } else if (mix !== lastMix.current) {
+          // Susunannya yang berubah, bukan posisinya — lanjutkan di titik yang
+          // sedang terdengar, jangan mundur ke playhead yang tertinggal tick.
+          reschedule(state);
         }
+        lastMix.current = mix;
       } else if (wasPlaying.current) {
         stop();
       }
+      lastSeek.current = state.seekEpoch;
       wasPlaying.current = state.playing;
     };
 

@@ -16,6 +16,8 @@
  * akan membuat user menunggu angka yang tidak akan pernah datang.
  */
 
+import { memo } from 'react';
+
 import { correctedBpm, selectPlayheadTempo, type PlayheadTempo } from '../analysis/playhead-tempo';
 import { TEMPO_UNCERTAIN, studioActions, useStudio } from '../store';
 
@@ -49,7 +51,14 @@ export function tempoNote(t: PlayheadTempo): string | undefined {
   return t.primary.laneName.toUpperCase();
 }
 
-export function BpmCell(): JSX.Element {
+/**
+ * `memo` TANPA props bukan optimasi spekulatif: sel ini anak `ReadoutStrip`,
+ * dan strip itu berlangganan `playhead` untuk selnya sendiri. Tanpa `memo`,
+ * setiap gerakan playhead — puluhan kali per detik saat scrub dan saat
+ * transport berjalan — me-render ulang sel BPM lewat induknya, melewati
+ * langganan store-nya sendiri sepenuhnya.
+ */
+export const BpmCell = memo(function BpmCell(): JSX.Element {
   // Berlangganan ke seluruh state: sel ini memang bergantung pada playhead,
   // lanes, assets, dan speed sekaligus. Selector sempit di sini hanya akan
   // memindahkan penggabungannya ke tempat lain tanpa mengurangi render.
@@ -108,7 +117,19 @@ export function BpmCell(): JSX.Element {
       >
         Bpm
       </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+      {/* Tinggi dikunci: tombol ×2/÷2 muncul-hilang mengikuti ada-tidaknya clip
+          di playhead, dan kotaknya sedikit lebih tinggi dari baseline angka —
+          tanpa tinggi tetap, baris ini ikut tumbuh-susut saat scrub. Sama
+          dengan baris nilai `CellView`. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: '6px',
+          marginTop: '2px',
+          height: VALUE_LINE_HEIGHT,
+        }}
+      >
         <span
           style={{
             fontFamily: 'var(--cy-font-sans)',
@@ -150,23 +171,44 @@ export function BpmCell(): JSX.Element {
           </span>
         ) : null}
       </div>
-      {(() => {
-        const note = tempoNote(tempo);
-        return note === undefined ? null : (
-          <div
-            style={{
-              fontSize: '9px',
-              letterSpacing: '.12em',
-              color: 'var(--cy-text-muted)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {note}
-          </div>
-        );
-      })()}
+      {/* Baris nota SELALU ada, walau kosong. Ini yang membuat timeline berhenti
+          berkedip saat playhead digeser: nota ini muncul-hilang tiap kali
+          playhead melewati sambungan clip, dan baris `readouts` di
+          `StudioLayout` ber-`auto` — jadi strip-nya memendek, seluruh isi di
+          bawahnya ikut naik-turun ~12 px, dan yang terlihat adalah timeline
+          yang melompat mengikuti kursor. */}
+      <NoteLine text={tempoNote(tempo)} />
+    </div>
+  );
+})
+
+/** Tinggi baris NILAI (angka 19px). Dibagi dengan `CellView` supaya kelima sel
+ *  sejajar dan tidak ada yang berubah tinggi saat isinya berganti. */
+export const VALUE_LINE_HEIGHT = '23px';
+
+/** Tinggi baris nota, dikunci supaya sel yang punya nota dan yang tidak sama
+ *  tingginya. 12px = line box wajar untuk teks 9px. */
+export const NOTE_LINE_HEIGHT = '12px';
+
+/**
+ * Baris mikro di bawah nilai sel. Dipakai bersama `CellView` di `ReadoutStrip`
+ * supaya kelima sel punya tinggi yang sama, apa pun isinya.
+ */
+export function NoteLine({ text }: { text?: string }): JSX.Element {
+  return (
+    <div
+      style={{
+        fontSize: '9px',
+        lineHeight: NOTE_LINE_HEIGHT,
+        height: NOTE_LINE_HEIGHT,
+        letterSpacing: '.12em',
+        color: 'var(--cy-text-muted)',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {text ?? ''}
     </div>
   );
 }
