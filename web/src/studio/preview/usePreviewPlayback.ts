@@ -85,6 +85,10 @@ export function mixFingerprint(): string {
             .map(
               (c) =>
                 `${c.id}@${c.start}+${c.len}#${c.assetId}:${c.gainDb}` +
+                // Bentuk chain clip, bukan nilainya — aturan yang sama dengan
+                // stem di bawah. Tanpa ini, menambah efek ke sebuah clip tidak
+                // pernah menjadwalkan ulang dan node-nya tidak pernah dirakit.
+                `${chainShape(c.chain)}` +
                 `${isStemBypass(c.stem) ? '' : 'S'}` +
                 // Loop clip mengubah SUSUNAN voice (source jadi melingkar,
                 // titik masuknya modulo), jadi ia harus menjadwalkan ulang —
@@ -122,6 +126,10 @@ function auditionFingerprint(): string {
     hit.clip.assetId,
     hit.lane.speedRatio,
     s.speed,
+    // Bentuk chain ikut: menambah efek harus merakit ulang voice audisi juga,
+    // kalau tidak loop terdengar berbeda dari lagunya.
+    chainShape(hit.lane.chain),
+    chainShape(hit.clip.chain),
   ].join(':');
 }
 

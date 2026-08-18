@@ -104,6 +104,8 @@ const XFADE_SEC = 0.012;
 const laneNodes = new Map<string, LaneNodes>();
 /** Rantai stem per clip yang sedang berbunyi. Kosong untuk clip tanpa REMOVE. */
 const clipStems = new Map<string, StemNodes>();
+/** clipId → node `daw-fx` clip dari graf yang sedang berbunyi. */
+const clipFxNodes = new Map<string, AudioWorkletNode>();
 
 /**
  * Titik ikat antara JAM AUDIO dan posisi timeline, dipasang saat `play()`.
@@ -277,6 +279,7 @@ export function stop(): void {
   stopScrub();
   laneNodes.clear();
   clipStems.clear();
+  clipFxNodes.clear();
   masterFxNode = null;
   anchor = null;
   // Master SENGAJA dibiarkan hidup: pemutar audisi menyambung ke sana dan
@@ -472,6 +475,10 @@ export function updateLaneParams(state: StudioAppState): void {
     // hanyalah clip yang berpindah antara bypass dan aktif — rantainya memang
     // belum/tidak lagi ada, dan itu ditangani `mixFingerprint`.
     for (const clip of lane.clips) {
+      // Knob FX clip lewat jalur yang SAMA dengan stem dan EQ: nilai dikirim
+      // ke node yang sudah berbunyi, bukan memicu perakitan ulang graf.
+      const fx = clipFxNodes.get(clip.id);
+      if (fx !== undefined) pushFxParams(fx, clip.chain);
       const chain = clipStems.get(clip.id);
       if (chain === undefined) continue;
       updateStemNodes(chain, stemOf(clip), at);
@@ -494,6 +501,8 @@ export function updateLaneParams(state: StudioAppState): void {
         f.gain.setTargetAtTime(band.gainDb, at, PARAM_RAMP_SEC);
         f.Q.setTargetAtTime(band.q, at, PARAM_RAMP_SEC);
       });
+      if (v.laneFx !== null) pushFxParams(v.laneFx, range.lane.chain);
+      if (v.clipFx !== null) pushFxParams(v.clipFx, range.clip.chain);
       if (v.stem !== null) updateStemNodes(v.stem, stemOf(range.clip), at);
     }
   }
@@ -553,8 +562,10 @@ function startGeneration(
   // melawan ramp yang sedang berjalan.
   laneNodes.clear();
   clipStems.clear();
+  clipFxNodes.clear();
   masterFxNode = null;
   for (const [id, ln] of graph.lanes) laneNodes.set(id, ln);
+  for (const [id, n] of graph.clipFx) clipFxNodes.set(id, n);
   masterFxNode = graph.masterFx;
   for (const [id, chain] of graph.clipStems) clipStems.set(id, chain);
 

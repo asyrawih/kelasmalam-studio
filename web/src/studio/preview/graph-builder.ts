@@ -73,6 +73,8 @@ export interface BuiltGraph {
   readonly clipStems: Map<string, StemNodes>;
   /** Node `daw-fx` master, kalau ada. */
   readonly masterFx: AudioWorkletNode | null;
+  /** clipId → node `daw-fx` clip, untuk clip yang punya chain. */
+  readonly clipFx: Map<string, AudioWorkletNode>;
   /**
    * Penanda tiap hal yang BENAR-BENAR diterapkan graf ini.
    *
@@ -234,6 +236,7 @@ export function buildProjectGraph(
   const lanesOut = new Map<string, LaneNodes>();
   const features = new Set<string>();
   const clipStems = new Map<string, StemNodes>();
+  const clipFx = new Map<string, AudioWorkletNode>();
   const voices: AudioBufferSourceNode[] = [];
   const nodes: AudioNode[] = [];
 
@@ -333,7 +336,6 @@ export function buildProjectGraph(
 
       const gain = audio.createGain();
       features.add(`clipGain:${clip.id}`);
-      clip.chain.forEach((fx, i) => features.add(`clipFx:${clip.id}:${i}:${fx.kind}`));
       if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) features.add(`fade:${clip.id}`);
       applyClipGainEnvelope(gain, clip, {
         startAt: whenSec,
@@ -359,7 +361,25 @@ export function buildProjectGraph(
       }
 
       src.connect(head);
-      gain.connect(eqInput);
+
+      // Insert chain CLIP: sesudah gain + fade, sebelum EQ lane. Urutan yang
+      // sama dengan `build_plan` di Rust — chain tidak pernah melihat
+      // diskontinuitas tepi clip, yang akan membuat FILTER resonan berdenging.
+      //
+      // Penanda fiturnya sengaja ditulis DI SINI, bukan di dekat penanda
+      // lain di atas: versi sebelumnya menandai `clipFx:` tanpa pernah
+      // membangun node-nya, dan penanda yang berbohong itu justru membuat
+      // guard paritas lulus sementara efek clip tidak pernah berbunyi.
+      const clipNode = createFxNode(audio, clip.chain);
+      if (clipNode !== null) {
+        clip.chain.forEach((fx, i) => features.add(`clipFx:${clip.id}:${i}:${fx.kind}`));
+        gain.connect(clipNode);
+        clipNode.connect(eqInput);
+        clipFx.set(clip.id, clipNode);
+        nodes.push(clipNode);
+      } else {
+        gain.connect(eqInput);
+      }
       try {
         src.start(whenSec, offsetSec, remainingSec);
       } catch {
@@ -370,7 +390,7 @@ export function buildProjectGraph(
     }
   }
 
-  return { lanes: lanesOut, clipStems, masterFx, features, voices, nodes };
+  return { lanes: lanesOut, clipStems, clipFx, masterFx, features, voices, nodes };
 }
 
 // ── Pemutar audisi ───────────────────────────────────────────────────────────
@@ -395,6 +415,9 @@ export interface AuditionVoice {
   readonly gain: GainNode;
   readonly filters: BiquadFilterNode[];
   readonly laneGain: GainNode;
+  /** Node `daw-fx` lane dan clip, kalau chain-nya tidak kosong. */
+  readonly laneFx: AudioWorkletNode | null;
+  readonly clipFx: AudioWorkletNode | null;
   /** Semua node, untuk di-disconnect saat audisi berhenti. */
   readonly nodes: AudioNode[];
   /** Waktu konteks saat sample pertama region keluar. */
@@ -436,14 +459,30 @@ export function buildAuditionVoice(
   const nodes: AudioNode[] = [];
   const laneGain = audio.createGain();
   laneGain.gain.value = dbToLin(o.lane.gainDb);
-  const filters = buildEqChain(audio, o.lane.eq, laneGain);
+  // Audisi HARUS memakai rantai yang sama dengan pemutar utama. Kalau tidak,
+  // loop region terdengar berbeda dari lagunya sendiri — dan bedanya persis
+  // efek yang barusan dipasang user.
+  const laneFx = createFxNode(audio, o.lane.chain);
+  const afterEq: AudioNode = laneFx ?? laneGain;
+  if (laneFx !== null) {
+    laneFx.connect(laneGain);
+    nodes.push(laneFx);
+  }
+  const filters = buildEqChain(audio, o.lane.eq, afterEq);
   laneGain.connect(o.destination);
   nodes.push(laneGain, ...filters);
-  const eqInput: AudioNode = filters[0] ?? laneGain;
+  const eqInput: AudioNode = filters[0] ?? afterEq;
 
   const gain = audio.createGain();
   gain.gain.value = dbToLin(o.clip.gainDb);
-  gain.connect(eqInput);
+  const clipFxNode = createFxNode(audio, o.clip.chain);
+  if (clipFxNode !== null) {
+    gain.connect(clipFxNode);
+    clipFxNode.connect(eqInput);
+    nodes.push(clipFxNode);
+  } else {
+    gain.connect(eqInput);
+  }
   nodes.push(gain);
 
   let stem: StemNodes | null = null;
@@ -480,6 +519,8 @@ export function buildAuditionVoice(
     gain,
     filters,
     laneGain,
+    laneFx,
+    clipFx: clipFxNode,
     nodes,
     startAt: o.startAt,
     loopStartSec,
