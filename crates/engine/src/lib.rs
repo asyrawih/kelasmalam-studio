@@ -778,9 +778,10 @@ impl Engine {
                         continue;
                     }
                     let (l, r) = scratch.one(buf, offset, n);
-                    if let Some(node) = fx.get_mut(node) {
-                        node.process(l, r);
-                    }
+                    // Lewat rak, bukan `get_mut(..).process(..)`: node dan
+                    // arena memorinya sama-sama milik rak, jadi pemisahan
+                    // pinjamannya harus terjadi di dalam sana.
+                    fx.process_node(node, l, r);
                 }
                 Step::Fader { track, buf } => {
                     if buf >= count {

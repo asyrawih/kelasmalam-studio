@@ -334,6 +334,7 @@ mod tests {
 
     fn log_taper() -> ParamDesc {
         ParamDesc {
+            id: "log_t",
             taper: Taper::Log,
             ..LOG
         }
@@ -341,6 +342,7 @@ mod tests {
 
     fn power_taper() -> ParamDesc {
         ParamDesc {
+            id: "pow_t",
             taper: Taper::Power(2.0),
             min: -1.0,
             max: 1.0,
@@ -351,6 +353,7 @@ mod tests {
 
     fn stepped() -> ParamDesc {
         ParamDesc {
+            id: "step_t",
             taper: Taper::Stepped(5),
             min: 0.0,
             max: 4.0,
@@ -362,9 +365,14 @@ mod tests {
     /// Pulang-pergi posisi knob → nilai → posisi knob harus mendarat di tempat
     /// yang sama. Kalau tidak, knob "melompat" saat user melepas dan menyentuh
     /// lagi — gejala yang sering disalahartikan sebagai bug UI.
+    ///
+    /// Hanya untuk taper kontinu. `Stepped` sengaja TIDAK memenuhi ini: dia
+    /// membulatkan ke detent terdekat, jadi posisi di antara dua detent memang
+    /// tidak boleh kembali ke tempatnya. Sifat yang benar untuk stepped adalah
+    /// roundtrip NILAI, diuji terpisah di bawah.
     #[test]
-    fn norm_roundtrips_on_every_taper() {
-        let cases = [LIN, log_taper(), power_taper(), stepped()];
+    fn norm_roundtrips_on_continuous_tapers() {
+        let cases = [LIN, log_taper(), power_taper()];
         for p in cases.iter() {
             for i in 0..=20 {
                 let t = i as f32 / 20.0;
@@ -376,6 +384,17 @@ mod tests {
                     p.id
                 );
             }
+        }
+    }
+
+    /// Untuk taper stepped, nilai di detent harus kembali persis ke dirinya.
+    #[test]
+    fn stepped_roundtrips_by_value() {
+        let p = stepped();
+        for i in 0..5 {
+            let v = i as f32;
+            let back = p.from_norm(p.to_norm(v));
+            assert!((back - v).abs() < 1e-4, "detent {v} -> {back}");
         }
     }
 

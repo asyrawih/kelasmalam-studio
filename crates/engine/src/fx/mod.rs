@@ -10,7 +10,7 @@
 //!
 //! Kerangka ini memisahkan keduanya. Penulis efek mengimplementasi
 //! [`Effect`] — satu file, satu impl, plus deskriptor parameternya. Macro
-//! [`fx_registry!`](crate::fx_registry) lalu **menghasilkan** enum, seluruh
+//! Macro `fx_registry!` lalu **menghasilkan** enum, seluruh
 //! dispatch-nya, dan katalog statisnya. Menambah efek ke-20 berarti satu file
 //! baru dan satu baris di daftar registry; tidak ada `match` yang perlu
 //! disunting dan tidak ada kode UI yang perlu ditulis.
@@ -140,9 +140,23 @@ pub trait Effect: Sized {
     /// `mem`, tidak boleh mengalokasi heap.
     fn new(sample_rate: f32, mem: &mut [f32]) -> Self;
 
+    /// Sekali di AWAL tiap blok penuh, sebelum `prepare`. Tempat menolkan
+    /// akumulator per-blok (mis. gain reduction maksimum).
+    fn begin_block(&mut self, mem: &mut [f32]) {
+        let _ = mem;
+    }
+
     /// Sekali per blok PENUH, sebelum loop sub-blok. Di sinilah transendental
-    /// boleh dipanggil: desain koefisien, resolusi beat→frame, set target
-    /// smoother.
+    /// boleh dipanggil untuk nilai yang datang dari **param block**: resolusi
+    /// beat→frame, set target smoother, desain koefisien dari knob.
+    ///
+    /// Perhatikan bahwa ini BUKAN tempat menanggapi perubahan yang datang
+    /// lewat command ring. Command ber-timestamp memecah blok jadi sub-blok
+    /// supaya berlaku sample-accurate; kalau tanggapannya ditunda ke sini,
+    /// perubahan di tengah blok akan tertunda 1024 sample pada render offline
+    /// tapi cuma 128 sample pada realtime — dan block-size invariance patah.
+    /// Efek yang punya setting bertipe menanggapinya di `process`, dijaga flag
+    /// `dirty`, persis seperti yang sudah dilakukan `Eq4`.
     fn prepare(&mut self, p: &ParamCtx<'_>);
 
     /// Sekali per SUB-BLOK. In-place, stereo planar. Wajib resumable.
@@ -298,13 +312,18 @@ impl FxRack {
     }
 
     /// Sekali di AWAL tiap blok penuh (bukan sub-blok).
+    ///
+    /// `prepare` dipanggil dengan konteks kosong selama jalur param block
+    /// belum hidup — tiap efek mempertahankan setting bertipenya alih-alih
+    /// ditimpa nol. Begitu `Engine::latch_params` ada, satu-satunya yang
+    /// berubah di sini adalah slice yang dimasukkan ke `ParamCtx`.
     pub fn begin_block(&mut self) {
+        let sr = self.sample_rate;
         let FxRack { slots, arena, .. } = self;
-        let ctx = ParamCtx::empty(self.sample_rate);
+        let ctx = ParamCtx::empty(sr);
         for s in slots.iter_mut() {
             let mem = arena.block(s.mem);
             s.node.begin_block(mem);
-            let _ = &ctx;
             s.node.prepare(&ctx);
         }
     }
