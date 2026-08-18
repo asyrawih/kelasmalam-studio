@@ -59,6 +59,44 @@ RUSTFLAGS_ST="-C target-feature=+bulk-memory,+mutable-globals,+simd128"
 
 BUILD_STD_ARGS=(-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort)
 
+# --- DEBUG_PANIC=1: artefak yang MENYEBUTKAN panic-nya --------------------
+#
+# `panic_immediate_abort` di atas meng-compile SETIAP panic Rust menjadi satu
+# instruksi `unreachable`. Itu memang yang kita mau untuk artefak produksi —
+# seluruh mesin format panic std ikut hilang, dan itu puluhan KB — tapi harganya
+# dibayar saat ada yang salah: browser hanya melaporkan
+#
+#     RuntimeError: unreachable executed
+#
+# tanpa pesan, tanpa nama fungsi, tanpa baris. `console_error_panic_hook` yang
+# dipasang `initNonRealtime()` pun tidak pernah terpanggil, karena kode yang
+# memanggilnya sudah tidak ada di artefak.
+#
+# Dengan DEBUG_PANIC=1 flag itu dilepas dan simbolnya dipertahankan, sehingga
+# panic yang sama muncul di console sebagai pesan Rust lengkap + stack trace
+# yang menyebut fungsinya (mis. `alloc::raw_vec::capacity_overflow`).
+#
+#     DEBUG_PANIC=1 ./scripts/build-wasm.sh
+#
+# Artefaknya lebih besar dan lebih lambat — pakai untuk MENEMUKAN penyebabnya,
+# lalu bangun ulang tanpa flag ini.
+#
+# CATATAN PENTING saat menafsirkan hasilnya: kalau dengan DEBUG_PANIC=1 pun
+# console tetap hanya menampilkan `unreachable` TANPA pesan apa pun, itu BUKAN
+# panic melainkan GAGAL ALOKASI (kehabisan memori). `handle_alloc_error` di
+# wasm memanggil `abort()` langsung, bukan lewat mesin panic, jadi hook-nya
+# tidak pernah kebagian. Varian mt di-link dengan `--max-memory=2 GiB`; seluruh
+# PCM project ada di linear memory selama export, jadi plafon itu nyata.
+if [ "${DEBUG_PANIC:-0}" = "1" ]; then
+  echo "==> DEBUG_PANIC=1: panic akan menyebut pesan + stack (artefak lebih besar)"
+  BUILD_STD_ARGS=(-Z build-std=std,panic_abort)
+  export CARGO_PROFILE_RELEASE_STRIP=none
+  export CARGO_PROFILE_RELEASE_DEBUG=2
+  # LTO fat + codegen-units 1 membuat build ini berkali-kali lipat lebih lama
+  # tanpa menambah apa pun yang kita cari di sini.
+  export CARGO_PROFILE_RELEASE_LTO=thin
+fi
+
 # Fitur wasm yang boleh dipakai wasm-opt — DIDAFTAR SATU PER SATU, jangan `-all`.
 #
 # `-all` pernah dipakai di sini dengan alasan yang masuk akal (rustc terus
@@ -81,10 +119,18 @@ WASM_OPT_FEATURES=(--enable-bulk-memory
                    --enable-multivalue
                    --enable-reference-types
                    --enable-extended-const)
-WASM_OPT_ARGS_MT=(-O4 "${WASM_OPT_FEATURES[@]}" --enable-threads
-                  --strip-debug --strip-producers --strip-dwarf)
-WASM_OPT_ARGS_ST=(-O4 "${WASM_OPT_FEATURES[@]}" --disable-threads
-                  --strip-debug --strip-producers --strip-dwarf)
+# Di DEBUG_PANIC nama fungsi justru SATU-SATUNYA hal yang dicari, jadi
+# `--strip-debug/--strip-dwarf` dilepas dan optimasi diturunkan supaya inlining
+# tidak melarutkan bingkai stack yang mau dibaca.
+if [ "${DEBUG_PANIC:-0}" = "1" ]; then
+  WASM_OPT_ARGS_MT=(-O1 "${WASM_OPT_FEATURES[@]}" --enable-threads --debuginfo)
+  WASM_OPT_ARGS_ST=(-O1 "${WASM_OPT_FEATURES[@]}" --disable-threads --debuginfo)
+else
+  WASM_OPT_ARGS_MT=(-O4 "${WASM_OPT_FEATURES[@]}" --enable-threads
+                    --strip-debug --strip-producers --strip-dwarf)
+  WASM_OPT_ARGS_ST=(-O4 "${WASM_OPT_FEATURES[@]}" --disable-threads
+                    --strip-debug --strip-producers --strip-dwarf)
+fi
 
 # build_variant <nama> <outdir> <rustflags> <wasm-opt args...>
 build_variant() {
