@@ -658,42 +658,96 @@ benar untuk tidak pernah terdengar klik.
 
 ## 6e. Effect routing: per-clip vs per-track
 
+> **Status: sudah mendarat.** Bagian ini dulu merekomendasikan "per-track saja"
+> untuk MVP dan menyebut per-clip sebagai jalur fase 2. Jalur itu sekarang ada,
+> dalam bentuk yang lebih sempit dari yang dibayangkan — dan penyempitannya
+> justru yang membuatnya benar. Analisis aslinya dipertahankan di bawah karena
+> alasannya masih berlaku dan menjelaskan bentuk yang dipilih.
+
+### Kenapa per-clip sulit (analisis asli, masih berlaku)
+
 | | Per-track insert chain | Per-clip insert |
 |---|---|---|
 | Jumlah instance FX | ≤ 32 chain, tetap | Sebanyak clip yang **aktif**, berubah-ubah |
 | Alokasi | Sekali, saat track dibuat | Saat playhead masuk clip → **alokasi di jalur RT** (dilarang, docs/01 §1c) |
-| Solusinya | — | Pool pre-allocated + voice stealing |
-| Tail (reverb/delay) | Tidak ada masalah — chain selalu hidup | Tail terpotong saat playhead keluar clip, kecuali instance ditahan hidup N detik |
-| CPU | Deterministik | Bergantung kepadatan clip; bagian terpadat lagu = puncak CPU |
-| Precedent | Standar semua DAW | Ableton: hanya "clip envelope" (otomasi), bukan FX instance |
+| Tail (reverb/delay) | Tidak ada masalah — chain selalu hidup | Tail terpotong saat playhead keluar clip |
+| CPU | Deterministik | Bergantung kepadatan clip |
 
-### Anggaran CPU (dari [docs/02](02-dsp-engine.md))
+Anggaran CPU (docs/02 §2d): satu REVERB ~1.6 poin persen. Bagian chorus dengan
+32 track × 4 clip aktif berarti sampai 128 chain hidup bersamaan — jauh di luar
+anggaran, bahkan dengan pool.
 
-Target: 32 track × (EQ 4-band + compressor) + 2 send bus, @48k, blok 128.
-Pengukuran di dokumen itu memberi ~35–45% dari satu core di mesin target.
-Sisa anggaran yang aman: ~15 poin persen sebelum underrun mulai jadi risiko
-(docs/05 punya angka headroom-nya).
+### Bentuk yang dipilih, dan yang ditolak
 
-Per-clip insert **bukan** biaya tetap: bagian chorus dengan 32 track × 4 clip
-aktif berarti sampai 128 chain hidup bersamaan. Bahkan dengan pool, itu 4× beban
-per-track — jauh di luar anggaran.
+Rancangan fase 2 yang dibayangkan bagian ini adalah **kolam rak yang
+diperebutkan voice**: clip yang berbunyi meminjam rak, melepasnya setelah
+ekornya habis, dan mencuri dari yang paling pelan kalau habis.
 
-### Rekomendasi MVP: **per-track saja**
+Rancangan itu ditolak, dan alasannya bukan kerumitan melainkan aturan yang
+tidak bisa ditawar: rak harus dibangun **ulang** saat dipinjam, karena clip
+berikutnya bisa memakai jenis efek yang berbeda. Membangun node berarti
+mengalokasi, di `render_block`. Menyiasatinya menuntut tiap slot pool
+menyediakan SEMUA jenis efek sekaligus — biayanya jauh lebih besar daripada
+yang dihemat.
 
-Dan yang menggantikan kebutuhan user "menambahkan effect di clip", dengan biaya
-mendekati nol:
+Yang dipakai adalah bentuk paling sederhana yang benar: **rak dialokasikan per
+CLIP saat project dimuat, sekali, dan tidak pernah dilepas.**
 
-1. **Clip gain + fade + `speed_ratio`** sudah per-clip. Itu mencakup mayoritas
-   kasus nyata ("clip ini terlalu keras", "clip ini perlu fade").
-2. **Otomasi per-track** (`ParamTarget::FxParam`) di rentang waktu clip.
-   Secara musikal ini setara dengan "efek di clip ini" untuk semua efek yang
-   tidak butuh instance terpisah — yaitu semua efek kecuali yang punya tail.
-3. Kalau user benar-benar butuh chain berbeda untuk satu clip: **pindahkan clip
-   ke track baru**. Satu klik ("Move to new track"), nol kompleksitas engine,
-   dan hasilnya persis sama secara audio.
+- Batasnya keras: `MAX_CLIP_CHAINS = 8` clip ber-efek per project.
+- Yang kelebihan **tetap berbunyi**, tanpa efek, dan `map_project` mengatakannya
+  lewat peringatan. Kehilangan efek jauh lebih baik daripada kehilangan audio,
+  dan kehilangan diam-diam paling buruk.
 
-Jalur fase 2 kalau data penggunaan menunjukkan ini benar-benar dibutuhkan:
-per-clip insert dengan pool pre-allocated, batas keras (mis. 8 chain per-clip
-aktif bersamaan), dan tail handling lewat "keep-alive 2 detik setelah clip
-berakhir". `Clip::insert_chain` sudah ada di model v1 supaya penambahan itu tidak
-butuh migrasi file project.
+Yang didapat sebagai gantinya bukan sedikit:
+
+- **Nol alokasi** di jalur render. Diuji langsung oleh
+  `render_block_with_clip_chains_does_not_allocate` di bawah `rt-guard`,
+  termasuk jalur ekor keep-alive.
+- **Nol pencurian slot dan nol kondisi balapan.**
+- **Ekor tidak pernah terpotong** saat playhead keluar clip — yang justru
+  keberatan utama tabel di atas. Rak-nya memang tidak pernah dilepas.
+
+### Keep-alive: kenapa BUKAN berbasis energi
+
+Bentuk yang kelihatan benar adalah menahan chain sampai keluarannya turun di
+bawah −80 dBFS. Itu **salah**, dan salahnya tidak kelihatan sampai lama.
+
+`peak` dihitung atas slice yang diberikan pemanggil. Pada render 128-frame ia
+dievaluasi delapan kali lebih sering daripada 1024-frame, jadi ambangnya
+dilewati di **sample yang berbeda**. Chain dibebaskan pada waktu berbeda,
+urutan iterasi `render_track` berubah, dan `null_test_block_size_invariance`
+gagal — secara **intermiten**, hanya pada project yang punya ekor.
+
+Karena itu `Effect::tail_frames()` wajib **fungsi murni dari parameter dan
+sample rate**. ECHO menghitung `ln(1e−4)/ln(fb)`, REVERB dari RT60, FILTER
+konstanta 50 ms. Tes konformans menegakkannya:
+`tail_frames_does_not_depend_on_what_was_processed`.
+
+### Transport
+
+| kejadian | chain per-clip |
+|---|---|
+| `stop()` | ekor terus berbunyi |
+| `seek()` | **reset keras** — ekor yang selamat dari seek membuat render dari seek berbeda dari bounce yang mulai bersih di posisi sama |
+| `load_project` | reset keras |
+| track mute / solo-out | ekor jalan terus, `PanAdd` tidak diemit, jadi tidak ikut dijumlah — tanpa kasus khusus |
+
+### Urutan sinyal
+
+```
+source PCM → clip gain → clip fade (termasuk micro-fade 3 ms paksa)
+           → insert chain CLIP → buffer track
+           → EQ track → kompresor track → insert chain TRACK
+           → fader → pan → send → bus → chain MASTER → output
+```
+
+Chain clip berada **sesudah** fade, jadi ia tidak pernah melihat diskontinuitas
+tepi clip — FILTER resonan yang disuapi tepi mentah akan berdenging.
+
+### `Clip::insert_chain`
+
+Bagian ini dulu menyebut `Clip::insert_chain` sudah ada di model v1 "supaya
+tidak butuh migrasi nanti". Yang tidak disebut: tipenya `Vec<FxId>`, dan `Fx`
+yang ditunjuk id itu **tidak pernah didefinisikan di mana pun**. Sekarang ada
+(`FxDef`), dan isinya inline, bukan id ke pool — lihat alasannya di
+`crates/timeline-core/src/model.rs`.

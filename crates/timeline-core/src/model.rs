@@ -75,6 +75,47 @@ id_type!(
 );
 
 // -------------------------------------------------------------------------
+// Efek
+// -------------------------------------------------------------------------
+
+/// Satu efek terpasang di sebuah insert chain.
+///
+/// Sebelum tipe ini ada, `insert_chain` bertipe `Vec<FxId>` — daftar identitas
+/// yang menunjuk instance yang **tidak didefinisikan di mana pun**. Kontrak
+/// terdokumentasi dengan rujukan menggantung seperti itu lebih buruk daripada
+/// tidak ada kontrak: `docs/06 §6e` bahkan mengutipnya sebagai bukti bahwa
+/// menambahkan FX per-clip kelak tidak akan butuh migrasi.
+///
+/// Isinya INLINE, bukan id ke sebuah pool. Pool menuntut tabel global,
+/// penghitungan rujukan, dan pembersihan — seluruh mesin asset-pool, untuk
+/// objek beberapa puluh byte. Ia juga membuat undo sulit ("track dihapus,
+/// siapa yang memiliki efeknya?"), sedangkan inline membiarkan involusi
+/// `RestoreClip { state: Box<Clip> }` bekerja apa adanya. Satu-satunya hal yang
+/// dibeli pool — dua track berbagi satu instance efek — untuk efek yang punya
+/// STATE bukan fitur melainkan crosstalk.
+///
+/// Bentuknya sengaja sama dengan `FxInsert` di model studio dan `FxJson` di
+/// `wasm-bridge`: nama efek dari katalog, dan parameter BERNAMA. Itu yang
+/// membuat menambah efek ke-20 tidak mengubah format berkas sama sekali.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FxDef {
+    pub id: FxId,
+    /// Id efek dari katalog engine: `"filter"`, `"echo"`, `"reverb"`, …
+    pub kind: String,
+    #[serde(default = "true_bool")]
+    pub enabled: bool,
+    /// Nilai parameter bernama. Yang tidak disebut memakai default katalog —
+    /// menyalin default ke berkas akan membekukan angka yang seharusnya
+    /// dimiliki deskriptor.
+    #[serde(default)]
+    pub params: alloc::collections::BTreeMap<String, f32>,
+}
+
+fn true_bool() -> bool {
+    true
+}
+
+// -------------------------------------------------------------------------
 // Fade
 // -------------------------------------------------------------------------
 
@@ -193,10 +234,13 @@ pub struct Clip {
     #[serde(default = "one_u32")]
     pub loop_count: u32,
 
-    /// Efek per-clip. Kosong di MVP (lihat rekomendasi `docs/06` §6e), tapi
-    /// field-nya ada sejak versi 1 supaya tidak butuh migrasi nanti.
+    /// Efek per-clip.
+    ///
+    /// Tetap `#[serde(default)]` dan tidak menaikkan `PROJECT_VERSION`: berkas
+    /// versi 1 selalu menulis array KOSONG di sini (MVP tidak pernah mengisinya),
+    /// dan array kosong terbaca sama saja sebagai `Vec<FxDef>`.
     #[serde(default)]
-    pub insert_chain: Vec<FxId>,
+    pub insert_chain: Vec<FxDef>,
 
     #[serde(default)]
     pub name: String,
@@ -393,7 +437,7 @@ pub struct Track {
     pub name: String,
     /// Diurutkan berdasarkan `timeline_pos`; invariant dijaga `edit`.
     pub clips: Vec<Clip>,
-    pub insert_chain: Vec<FxId>,
+    pub insert_chain: Vec<FxDef>,
     pub sends: Vec<Send>,
     /// Tujuan utama. Biasanya master.
     pub output: BusId,
@@ -474,7 +518,7 @@ impl Track {
 pub struct Bus {
     pub id: BusId,
     pub name: String,
-    pub insert_chain: Vec<FxId>,
+    pub insert_chain: Vec<FxDef>,
     pub fader_db: f32,
     pub pan: f32,
     pub mute: bool,

@@ -49,6 +49,29 @@
   },
 
   "$defs": {
+    "Fx": {
+      "description": "Satu efek terpasang di insert chain. Sebelumnya array ini berisi Id yang menunjuk instance yang tidak didefinisikan di mana pun — rujukan menggantung yang justru dikutip docs/06 §6e sebagai bukti bahwa FX per-clip tidak akan butuh migrasi. Isinya INLINE, bukan id ke pool: pool menuntut tabel global + refcount + GC untuk objek beberapa puluh byte, membuat undo sulit, dan satu-satunya yang dibelinya (dua track berbagi satu instance) untuk efek ber-STATE bukan fitur melainkan crosstalk.",
+      "type": "object",
+      "required": ["id", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "kind": {
+          "description": "Id efek dari katalog engine (fxCatalogJson): filter, echo, spiral, flanger, reverb, pitch, eq4, comp.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "false = bypass. Node tetap diproses supaya ekornya meluruh alami; yang diredam adalah INPUT-nya.",
+          "type": "boolean",
+          "default": true
+        },
+        "params": {
+          "description": "Nilai parameter BERNAMA, bukan berurutan. Yang tidak disebut memakai default katalog — menyalin default ke berkas akan membekukan angka yang seharusnya dimiliki deskriptor. Nama parameter itu sendiri juga datang dari katalog, jadi menambah efek ke-20 tidak mengubah schema ini sama sekali.",
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    },
     "TimelineSample": {
       "description": "Posisi/durasi dalam TIMELINE space (sample sejak awal lagu). Di JSON hanya integer — type-safety-nya ada di Rust (newtype TimelineSample), bukan di sini.",
       "type": "integer",
@@ -196,9 +219,9 @@
         "mute": { "type": "boolean", "default": false },
         "loop_count": { "type": "integer", "minimum": 1, "default": 1 },
         "insert_chain": {
-          "description": "FX per-clip. Kosong di MVP (lihat rekomendasi docs/06 §6e); field-nya ada sejak v1 supaya tidak butuh migrasi nanti.",
+          "description": "FX per-clip. Engine menyediakan jumlah TERBATAS chain per-clip dalam satu project; yang kelebihan tetap berbunyi tanpa efek dan dilaporkan sebagai peringatan.",
           "type": "array",
-          "items": { "$ref": "#/$defs/Id" }
+          "items": { "$ref": "#/$defs/Fx" }
         },
         "name": { "type": "string" },
         "color": { "description": "Index ke palet design system, bukan RGB — supaya ganti tema tidak mengubah file project.", "type": "integer", "minimum": 0, "maximum": 255 }
@@ -230,7 +253,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/Clip" }
         },
-        "insert_chain": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
+        "insert_chain": { "type": "array", "items": { "$ref": "#/$defs/Fx" } },
         "sends": { "type": "array", "items": { "$ref": "#/$defs/Send" } },
         "output": { "$ref": "#/$defs/Id" },
         "fader_db": { "$ref": "#/$defs/Db" },
@@ -252,7 +275,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/Id" },
         "name": { "type": "string" },
-        "insert_chain": { "type": "array", "items": { "$ref": "#/$defs/Id" } },
+        "insert_chain": { "type": "array", "items": { "$ref": "#/$defs/Fx" } },
         "fader_db": { "$ref": "#/$defs/Db" },
         "pan": { "type": "number", "minimum": -1, "maximum": 1 },
         "mute": { "type": "boolean" },

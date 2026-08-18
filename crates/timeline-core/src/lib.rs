@@ -47,7 +47,7 @@ pub use edit::{EditCmd, EditError, FadeSide, History, OverlapPolicy};
 // diam-diam mem-*shadow* trait auto itu. Pakai `daw_timeline::model::Send`.
 pub use model::{
     lin_to_db, AssetId, AssetRef, Automation, AutomationPoint, Bus, BusId, Clip, ClipId, CurveKind,
-    FadeCurve, FadeSpec, FxId, MigrationError, ParamTarget, Project, SendId, Track, TrackId,
+    FadeCurve, FadeSpec, FxDef, FxId, MigrationError, ParamTarget, Project, SendId, Track, TrackId,
     PROJECT_VERSION,
 };
 pub use peaks::{MinMax, Pyramid, LEVEL_STRIDES};

@@ -377,3 +377,96 @@ pub fn sample_to_tick(map: &TempoMap, sample: u64, sr: u32) -> u64;
 ```
 Keduanya di-property-test dengan `proptest`: `sample_to_tick(tick_to_sample(t))`
 harus kembali ke `t` (dengan toleransi 0 tick untuk tick di batas grid).
+
+---
+
+## 2d. Insert FX
+
+Enam efek gaya rekordbox — FILTER, ECHO, SPIRAL, FLANGER, REVERB, PITCH —
+plus EQ 4-band dan kompresor bawaan. Bisa dipasang di **track**, **master**,
+dan **clip**.
+
+### Kerangkanya, bukan efeknya
+
+Yang menentukan biaya jangka panjang bukan enam efek pertamanya, melainkan
+berapa mahal efek ke-dua puluh. Karena itu efek ditulis sebagai `trait Effect`
+(`crates/engine/src/fx/mod.rs`) dan didaftarkan lewat satu macro:
+
+```rust
+fx_registry! {
+    2 => Filter : super::filter::FilterFx;
+    3 => Echo   : super::echo::EchoFx;
+    6 => Reverb : super::reverb::ReverbFx, boxed;
+}
+```
+
+Macro itu menghasilkan `FxKind`, `FxNode`, seluruh dispatch-nya, dan `CATALOG`.
+Menambah efek = **satu berkas + satu baris**. Tidak ada `match` yang perlu
+disunting, tidak ada schema yang berubah, dan tidak ada kode UI baru — panel FX
+merakit knob dari deskriptor yang diekspor `fxCatalogJson()`.
+
+Diskriminan `FxKind` **ikut tersimpan di snapshot**; menggesernya membuat
+project lama dibaca sebagai efek yang berbeda. Angkanya karena itu ditulis
+eksplisit dan dikunci `const _: () = assert!(..)`.
+
+### `prepare` vs `process`
+
+`Eq4` sudah lama mendokumentasikan invariannya sendiri: "koefisien di-hitung
+ULANG PER BLOK, tidak per sample". Pemisahan ini menjadikannya kontrak:
+
+- `prepare` — sekali per blok penuh. Boleh transendental.
+- `process` — sekali per sub-blok. **Wajib resumable**: memecah satu blok 1024
+  frame jadi 8×128 harus menghasilkan bit yang sama.
+
+Yang mendesain ulang koefisien melakukannya pada **grid sample absolut**
+(`GRID = 32`), bukan di batas blok pemanggil. Kalau di batas blok, refresh
+jatuh delapan kali lebih sering pada render 128-frame dibanding 1024-frame dan
+hasilnya berhenti bit-identical. 32 sample juga menaikkan laju refresh ke
+1500 Hz, yang memang dibutuhkan filter yang disapu cepat.
+
+### Memori
+
+Efek berbasis delay mengambil memorinya dari **arena** yang dialokasi sekali
+(`fx/arena.rs`), bukan dari `Box` per node. Nge-`Box` per efek berarti memanggil
+alokator — dan mungkin `memory.grow` — di AudioWorklet thread, dan `memory.grow`
+di sana menginvalidasi setiap `Float32Array` yang dipegang main thread
+(docs/05). Kehabisan anggaran jadi `PlanError::OutOfFxMemory`, ditolak sebelum
+plan dipasang dan dilaporkan ke UI.
+
+`daw_dsp::Delay` karena itu **meminjam** memorinya. Panjangnya pangkat dua, dan
+alasan utamanya bukan kecepatan: indeks ter-mask selalu di dalam rentang, jadi
+read pointer SPIRAL yang meluncur melewati batas menghasilkan wrap — bukan
+jalur panic. `render_block` tidak boleh panic.
+
+### Anggaran CPU (terukur, bukan aritmetika)
+
+Diukur dengan criterion, relatif terhadap `biquad/eq4_stereo_128` = 1.96 µs,
+satuan yang menghubungkan bench ke anggaran §2a:
+
+| primitif | terukur | rasio EQ4 |
+|---|---|---|
+| `delay_read_frac_mono_128` | 274 ns | 0.14× |
+| `echo_core_stereo_128` | 1.14 µs | 0.58× |
+| `flanger_core_stereo_128` | 630 ns | 0.32× |
+| `fdn8_stereo_128` | 3.47 µs | 1.77× |
+
+REVERB ~1.6 poin persen per instance: pada 32 track itu ~51 poin persen, jauh
+di atas headroom yang tersisa. **REVERB dan ECHO praktis milik send bus.**
+`build_plan` menghitung estimasi statis dan mengeluarkan PERINGATAN di atas
+ambang — itu beda antara "app-nya patah-patah di sebagian mesin" dan "app-nya
+sudah mengatakannya".
+
+### Ukuran artefak
+
+156.7 KB gz sebelum FX → 189.3 KB gz sesudahnya, dengan gate 307.200. Enam
+efek menambah ~1.8 KB gz masing-masing; efek ke-20 diperkirakan mendarat ~90 KB
+di bawah gate.
+
+### Bypass
+
+Bypass **bukan** crossfade wet/dry: itu memotong ekor reverb tepat saat tombol
+ditekan. Yang diredam adalah **input** node (10 ms) sambil jalur kering
+dilewatkan kembali, sehingga ekornya meluruh alami dan totalnya tidak pernah
+diskontinu. Konsekuensinya `Step::Fx` **selalu** diemit, termasuk untuk efek
+yang di-bypass; slot yang ekornya habis lalu ditidurkan dan biayanya jadi satu
+cabang.

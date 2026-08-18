@@ -174,7 +174,14 @@ Isi:
 
 ---
 
-## M7 — FX chain
+## M7 — FX chain ✅
+
+**Sudah mendarat.** Lihat docs/02 §2d untuk kerangkanya dan docs/06 §6e untuk
+routing per-clip. Yang berbeda dari rencana di bawah: `OP_FX_*` tidak jadi
+ditambahkan — parameter kontinu lewat blok param (yang konsumennya memang belum
+ada saat rencana ini ditulis), dan perubahan STRUKTURAL lewat snapshot penuh,
+persis pemisahan yang sudah dipakai transport vs clip. Satu opcode lebih
+sedikit untuk salah.
 
 Isi:
 - Biquad TDF-II + EQ parametrik, compressor, insert chain per-track

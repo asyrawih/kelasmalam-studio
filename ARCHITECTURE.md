@@ -8,11 +8,11 @@ Dokumen ini adalah index. Detail per bagian:
 | Dok | Isi |
 |---|---|
 | [docs/01-threads-memory.md](docs/01-threads-memory.md) | Thread topology, instantiasi WASM di worklet, SAB layout + offset table, SPSC ring, real-time safety, COOP/COEP |
-| [docs/02-dsp-engine.md](docs/02-dsp-engine.md) | Graph processing, buffer lifetime, smoothing, biquad TDF-II, compressor, denormal, SIMD, sample-accurate sequencing |
+| [docs/02-dsp-engine.md](docs/02-dsp-engine.md) | Graph processing, buffer lifetime, smoothing, biquad TDF-II, compressor, denormal, SIMD, sample-accurate sequencing, **insert FX** (registry, arena, anggaran CPU, bypass) |
 | [docs/03-export.md](docs/03-export.md) | Offline render di Worker, WAV + TPDF dither + 24-bit packing, analisis MP3/OGG jalur A/B/C, file delivery |
 | [docs/04-build.md](docs/04-build.md) | Cargo workspace, RUSTFLAGS atomics, wasm-pack vs manual, profil rilis, Vite config, CI |
 | [docs/05-failure-modes.md](docs/05-failure-modes.md) | Underrun, memory.grow, tab throttling, Safari |
-| [docs/06-timeline-clips.md](docs/06-timeline-clips.md) | Clip model non-destruktif, import/decode, waveform pyramid, editing, routing FX |
+| [docs/06-timeline-clips.md](docs/06-timeline-clips.md) | Clip model non-destruktif, import/decode, waveform pyramid, editing, routing FX (per-clip, per-track, master) |
 | [docs/07-gain-speed.md](docs/07-gain-speed.md) | Signal flow, gain staging, metering, varispeed + time-stretch, dua koordinat space |
 | [docs/08-ui-mapping.md](docs/08-ui-mapping.md) | Mapping komponen design → data model → engine command |
 | [docs/09-roadmap.md](docs/09-roadmap.md) | Milestone M0–M9 dengan definisi "done" yang testable |

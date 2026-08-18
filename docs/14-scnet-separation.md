@@ -25,7 +25,7 @@ sudah berubah, satu tetap berdiri:
 
 | Alasan docs/11 | Sekarang |
 |---|---|
-| "bobot model 20–80 MB" | Benar: SCNet base 10,6 M parameter → ONNX fp32 **44,5 MB** (fp16 22,6 MB) |
+| "bobot model 20–80 MB" | Benar, dan terukur: SCNet base → ONNX fp32 **42,45 MiB** (fp16 21,56 MiB). Lihat §Ukuran |
 | "render offline bermenit-menit" | Berubah: **2,83× realtime** di 16 thread; lagu 4 menit ≈ 85 detik |
 | "tidak punya FFT sama sekali" | Tetap benar, dan tetap tidak perlu — STFT dikerjakan di worker TS, bukan di crate Rust |
 | "tidak punya backend" | **Tetap benar dan tetap dipertahankan.** Semua tetap di browser |
@@ -63,6 +63,82 @@ hanya 48% dari HT-Demucs.
 **Angka 2,83× itu di 16 thread.** Skala kasarnya linear terhadap jumlah thread,
 jadi mesin 4 core kemungkinan ada di ~0,7× realtime → lagu 4 menit ≈ 5–6 menit.
 Itu tebakan, dan tebakan tidak boleh masuk roadmap: lihat spike S1.
+
+## Ukuran: berapa yang benar-benar diunduh user
+
+Semua angka di bawah **diukur langsung**, bukan diperkirakan (jsdelivr API,
+HuggingFace `content-length`, dan `gzip`/`brotli` lokal — Agustus 2026).
+
+### Total unduhan pertama (jalur produksi WASM)
+
+| Aset | Mentah | gzip | brotli |
+|---|---|---|---|
+| `scnet_base.onnx` (fp32) | 42,45 MiB | ~38,7 MiB | — |
+| `ort-wasm-simd-threaded.wasm` (ORT 1.22) | 10,69 MiB | 2,73 MiB | 1,72 MiB |
+| `ort.wasm.min.js` (loader) | 0,05 MiB | kecil | kecil |
+| **Total** | **≈ 53 MiB** | **≈ 41 MiB** | **≈ 40 MiB** |
+
+Tiga hal yang perlu diketahui sebelum menganggarkan angka ini:
+
+1. **Bobot fp32 nyaris tidak bisa dikompres.** Diukur: gzip hanya memangkas ~9%
+   dari file ONNX. Jangan berharap Brotli menyelamatkan — yang menyelamatkan
+   adalah memilih fp16, dan itu keputusan model, bukan keputusan server.
+2. **Matriks basis DFT sudah menyatu di dalam graf ONNX.** Repo model hanya
+   berisi dua file (`scnet_base.onnx`, `scnet_base_fp16.onnx`), jadi tidak ada
+   unduhan ketiga yang perlu diurus.
+3. **Jangan pakai `ort-wasm-simd-threaded.jsep.wasm` (20,86 MiB).** Varian itu
+   ada hanya untuk WebGPU/WebNN, dan §WebGPU di bawah menjelaskan kenapa jalur
+   itu justru lebih lambat. Memakainya = membayar 10 MiB tambahan untuk
+   memperlambat diri sendiri.
+
+Dengan fp16 totalnya turun ke ≈ 32 MiB mentah / ≈ 24 MiB transfer — tapi WASM EP
+tidak punya kernel fp16, jadi bobotnya di-cast saat load. Itu **hemat bandwidth,
+bukan hemat RAM atau CPU**, dan efeknya pada kecepatan harus diukur di S1
+sebelum dipilih.
+
+### Varian SCNet: hanya `base` yang layak di klien
+
+Ukuran checkpoint asli dari rilis ZFTurbo (diambil lewat GitHub API):
+
+| Varian | Checkpoint | ~Parameter | SDR |
+|---|---|---|---|
+| **base** | **40,5 MiB** | **10,6 M** | **9,0** |
+| small | 40,5 MiB | ~10,6 M | 8,81 |
+| tran | 39,8 MiB | ~10,4 M | 8,93 |
+| large | 161 MiB | ~42 M | 9,32 |
+| XL | 206 MiB | ~54 M | 9,81 |
+| XL more_wide v5 | 204 MiB | ~53 M | 10,09 |
+| XL IHF | 204 MiB | ~53 M | 9,83 |
+
+Naik dari `base` ke `XL` membeli **+0,8 sampai +1,1 dB SDR** dengan harga **5×
+ukuran unduhan dan sekitar 5× biaya komputasi**. Di browser itu bukan trade-off,
+itu hukuman: unduhan 206 MiB dan lagu 4 menit yang berubah dari ~1,5 menit jadi
+~7 menit, demi selisih yang bahkan tidak selalu terdengar pada materi non-referensi.
+
+**Keputusan: `base` saja.** Varian `large`/`XL` hanya masuk akal di jalur server,
+dan jalur server bukan arah proyek ini.
+
+### Kenapa klien, bukan server — dan alasannya lebih kuat dari sekadar hemat CPU
+
+Menaruh model di klien sering dibaca sebagai "menghemat CPU server". Itu manfaat
+yang paling kecil. Yang lebih menentukan adalah **lalu lintasnya**:
+
+| | Server memproses | Klien memproses |
+|---|---|---|
+| Unduhan awal | 0 | ≈ 41 MiB, **sekali per browser** |
+| Per lagu: upload | 4–10 MB tiap kali | 0 |
+| Per lagu: unduh hasil | 4 stem WAV, bisa > 100 MB | 0 |
+| Lagu ke-2 dst. | bayar lagi, selamanya | **0 byte** |
+| Materi user | keluar dari perangkat | tidak pernah keluar |
+| Biaya kamu | naik linear per lagu | tetap (static hosting) |
+
+Ongkos 41 MiB itu dibayar **sekali**, lalu di-cache. Jalur server membayar
+upload + download **setiap lagu, selamanya** — dan pada lagu ketiga totalnya
+sudah melewati unduhan model. Ditambah: tidak ada musik user yang perlu
+disimpan, dijaga, atau dijelaskan di kebijakan privasi.
+
+Yang harus diterima sebagai gantinya: unduhan pertama 41 MiB butuh progress bar
+sendiri dan tombol batal (§Budget ukuran), dan mesin lemah akan lambat (§S1).
 
 ## Tiga tabrakan yang khas repo ini
 
@@ -183,9 +259,12 @@ ke-4.
 
 1. **Lisensi bobot.** Kode SCNet dan scnet-web-wasm MIT, tapi checkpoint
    pretrained-nya datang dari rilis ZFTurbo (Music-Source-Separation-Training)
-   dan dilatih di MUSDB18-HQ. Lisensi checkpoint berdiri sendiri dan harus
-   dibaca sebelum di-host — terutama kalau produk ini komersial. Ini satu-satunya
-   risiko non-teknis di dokumen ini, dan yang paling sering dilewatkan.
+   dan dilatih di MUSDB18-HQ. Repo model di HuggingFace
+   (`elicwhite/scnet-browser-onnx`) **tidak mencantumkan lisensi sama sekali**
+   (`license: None`) — jadi ini bukan sekadar "perlu dicek", melainkan lubang
+   yang harus ditutup sebelum bobotnya di-host, terutama kalau produk ini
+   komersial. Satu-satunya risiko non-teknis di dokumen ini, dan yang paling
+   sering dilewatkan.
 2. **fp32 atau fp16.** fp16 menghemat 22 MB unduhan, tapi WASM EP tidak punya
    kernel fp16 — ia akan di-cast dan bisa lebih lambat. Default: **fp32 untuk
    WASM**; fp16 hanya berguna kalau suatu saat pindah ke WebGPU.
