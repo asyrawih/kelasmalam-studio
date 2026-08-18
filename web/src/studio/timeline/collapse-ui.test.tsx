@@ -45,14 +45,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Clip Detail selalu terpasang', () => {
-  it('tetap ada saat tidak ada clip terpilih', () => {
-    studioActions.selectClip(null);
+  it('tanpa seleksi pun tetap memajang sebuah clip — panel tidak pernah kosong', () => {
+    act(() => studioActions.clearClipSelection());
     render(<ClipDetailPanel />);
     // Panel yang muncul-hilang mendorong timeline naik-turun di bawah kursor,
     // sehingga klik berikutnya mendarat di tempat yang berbeda dari yang
-    // dilihat mata. Judulnya tetap; isinya yang kosong.
-    expect(screen.getByText('PILIH CLIP DI TIMELINE')).toBeTruthy();
-    expect(document.querySelector('[data-detail-section="beat"]')).toBeNull();
+    // dilihat mata. Selama project punya clip, panel ini selalu berisi.
+    expect(screen.queryByText('PILIH CLIP DI TIMELINE')).toBeNull();
+    expect(document.querySelector('[data-detail-section="beat"]')).not.toBeNull();
+    expect(screen.getByText('TIDAK TERPILIH')).toBeTruthy();
   });
 
   it('TETAP menampilkan clip terakhir setelah seleksi dilepas', () => {
@@ -78,23 +79,63 @@ describe('Clip Detail selalu terpasang', () => {
     expect(screen.queryByText('TIDAK TERPILIH')).toBeNull();
   });
 
-  it('clip yang dihapus tidak dipajang sebagai hantu', () => {
+  it('menghapus clip yang dipajang JATUH ke clip lain, bukan mengempis', () => {
+    // Dua clip supaya ada yang tersisa setelah satu dihapus.
+    const laneId = studioStore.getState().lanes[0]!.id;
+    act(() =>
+      studioActions.addClip(laneId, {
+        ...studioStore.getState().lanes[0]!.clips[0]!,
+        id: 'sisa',
+        label: 'SISA',
+        start: 40 * SR,
+      }),
+    );
+    act(() => studioActions.selectClip(clipId0()));
     render(<ClipDetailPanel />);
-    const id = clipId0();
-    act(() => studioActions.removeClip(id));
+    const shown = studioStore.getState().lanes[0]!.clips.find((c) => c.id !== 'sisa')!;
+
+    act(() => studioActions.removeClip(shown.id));
+    // Tinggi panel tidak boleh berubah tepat setelah menekan X — timeline di
+    // bawahnya akan melompat, persis masalah yang sama dengan kotak seleksi.
+    expect(screen.queryByText('PILIH CLIP DI TIMELINE')).toBeNull();
+    expect(document.querySelector('[data-detail-section="beat"]')).not.toBeNull();
+    // Dan yang dipajang bukan clip yang baru dihapus.
+    expect(screen.queryByText(shown.label)).toBeNull();
+  });
+
+  it('memilih clip di bawah playhead lebih dulu saat jatuh', () => {
+    const laneId = studioStore.getState().lanes[0]!.id;
+    act(() =>
+      studioActions.addClip(laneId, {
+        ...studioStore.getState().lanes[0]!.clips[0]!,
+        id: 'jauh',
+        label: 'JAUH',
+        start: 60 * SR,
+      }),
+    );
+    act(() => studioActions.setPlayhead(61 * SR)); // di dalam 'JAUH'
+    const first = studioStore.getState().lanes[0]!.clips.find((c) => c.id !== 'jauh')!;
+    act(() => studioActions.selectClip(first.id));
+    render(<ClipDetailPanel />);
+    act(() => studioActions.removeClip(first.id));
+    expect(screen.getByText('JAUH')).toBeTruthy();
+  });
+
+  it('project tanpa clip sama sekali memang kosong', () => {
+    for (const c of studioStore.getState().lanes.flatMap((l) => l.clips)) {
+      act(() => studioActions.removeClip(c.id));
+    }
+    render(<ClipDetailPanel />);
     expect(screen.getByText('PILIH CLIP DI TIMELINE')).toBeTruthy();
   });
 
-  it('isinya muncul begitu ada yang dipilih', () => {
-    const id = clipId();
-    studioActions.selectClip(null);
-    const view = render(<ClipDetailPanel />);
-    expect(document.querySelector('[data-detail-section="beat"]')).toBeNull();
-    cleanup();
-    studioActions.selectClip(id);
-    view.unmount();
+  it('badge hilang begitu clip yang dipajang memang dipilih', () => {
+    const id = clipId0();
+    act(() => studioActions.clearClipSelection());
     render(<ClipDetailPanel />);
-    expect(document.querySelector('[data-detail-section="beat"]')).not.toBeNull();
+    expect(screen.getByText('TIDAK TERPILIH')).toBeTruthy();
+    act(() => studioActions.selectClip(id));
+    expect(screen.queryByText('TIDAK TERPILIH')).toBeNull();
   });
 });
 

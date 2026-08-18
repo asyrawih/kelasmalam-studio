@@ -136,29 +136,38 @@ berikutnya mendarat di tempat berbeda dari yang dilihat mata.
 
 Perilakunya sama dengan Clip View di Ableton: yang terakhir dibuka tetap
 terbuka. Yang penting keadaannya DIKATAKAN — mengedit clip yang tidak tersorot
-di timeline harus terlihat jelas, bukan ketahuan belakangan. Clip yang benar-
-benar dihapus tidak dipajang sebagai hantu: id-nya di-resolve ulang dari `lanes`
-setiap render, bukan disimpan sebagai objek.
+di timeline harus terlihat jelas, bukan ketahuan belakangan.
+
+Clip yang dihapus tidak dipajang sebagai hantu: id-nya di-resolve ulang dari
+`lanes` setiap render, bukan disimpan sebagai objek. Dan kalau clip itu memang
+hilang, panel **jatuh ke clip lain** (`fallbackClip`) — yang di bawah playhead
+lebih dulu, kalau tidak ada yang paling awal — bukan mengempis. Kalau ia
+mengempis, tingginya berubah tepat setelah menekan X dan timeline di bawahnya
+melompat: masalah yang sama, pemicu yang berbeda. Panel baru benar-benar kosong
+kalau project tidak punya clip sama sekali, dan di keadaan itu timeline juga
+kosong sehingga tidak ada yang bisa melompat.
 
 ---
 
-## `scroll = zoom` berlaku di SELURUH badan timeline
+## `scroll = zoom` berlaku di SELURUH kartu timeline
 
-Listener `wheel` menempel di `[data-tl-body]` — kotak yang berisi kolom nama
-lane, penggaris waktu, dan area clip — bukan hanya di area clip yang menggulir.
+Aturannya satu kalimat yang bisa dipegang: **kursor di timeline → gulir berarti
+zoom, halaman tidak ikut bergerak.** Listener `wheel` menempel di `[data-tl-card]`
+— pembungkus seluruh kartu, termasuk toolbar dan baris MIN/MAX.
 
-Sebelumnya hanya di area clip, dan akibatnya menggulir di atas kolom nama lane,
-penggaris waktu, atau (pada tinggi lane S) ruang kosong di bawah lane terakhir
-tidak men-zoom apa pun: halaman yang menggulir. Dari sudut pandang user,
-"scroll = zoom" tampak rusak separuh waktu, dan separuh mana tergantung beberapa
-piksel posisi kursor.
+Dua versi sebelumnya salah karena membelah kartu ini jadi zona-zona. Mula-mula
+hanya area clip yang menggulir; lalu badan timeline tanpa toolbar. Keduanya
+membuat "scroll = zoom" bekerja atau tidak tergantung beberapa piksel posisi
+kursor — dan batas zonanya tidak terlihat sama sekali di layar. Fitur yang benar
+separuh waktu lebih membingungkan daripada fitur yang tidak ada.
 
-Toolbar dan baris MIN/MAX di luar elemen itu SENGAJA tidak ikut — halaman masih
-harus bisa digulir dengan kursor di dalam kartu timeline. Listener dipasang
-manual (bukan `onWheel` React) karena React memasang listener wheel sebagai
-passive, sehingga `preventDefault()` diabaikan dan halaman tetap ikut bergerak.
-Jangkar zoom dijepit ke tepi area gulir, jadi menggulir di atas kolom nama lane
-tidak melompat ke posisi negatif.
+Halaman tetap bisa digulir dengan kursor di panel lain (Clip Detail, rail) atau
+di luar kartu.
+
+Listener dipasang manual (bukan `onWheel` React) karena React memasang listener
+wheel sebagai passive, sehingga `preventDefault()` diabaikan dan halaman tetap
+ikut bergerak. Jangkar zoom dijepit ke tepi area gulir, jadi menggulir di atas
+kolom nama lane tidak melompat ke posisi negatif.
 
 ---
 

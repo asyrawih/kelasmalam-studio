@@ -28,6 +28,7 @@ import {
   samplesToSec,
   type FadeCurve,
   type StudioClip,
+  type StudioLane,
 } from '../model';
 import { studioActions, useStudio, type StudioAsset } from '../store';
 import {
@@ -61,6 +62,30 @@ const KEY_STEP_SEC = 0.1;
 const KEY_STEP_FINE_SEC = 0.01;
 
 const fmtSec = (ms: number): string => `${msToSec(ms).toFixed(2)} s`;
+
+/**
+ * Clip mana yang dipajang saat tidak ada yang terpilih dan clip terakhir sudah
+ * hilang.
+ *
+ * Yang di bawah PLAYHEAD lebih dulu — itu clip yang paling mungkin sedang
+ * dipikirkan user, dan pilihannya bisa ditebak dari layar. Kalau playhead
+ * berada di ruang kosong, ambil clip paling awal. `null` hanya kalau project
+ * benar-benar tidak punya clip; di keadaan itu timeline juga kosong dan tidak
+ * ada yang bisa melompat.
+ */
+function fallbackClip(
+  lanes: readonly StudioLane[],
+  playhead: number,
+): { lane: StudioLane; clip: StudioClip } | null {
+  let earliest: { lane: StudioLane; clip: StudioClip } | null = null;
+  for (const lane of lanes) {
+    for (const clip of lane.clips) {
+      if (playhead >= clip.start && playhead < clip.start + clip.len) return { lane, clip };
+      if (earliest === null || clip.start < earliest.clip.start) earliest = { lane, clip };
+    }
+  }
+  return earliest;
+}
 
 /** Input durasi fade dalam DETIK; diterapkan saat blur/Enter, bukan tiap ketikan. */
 function SecField({
@@ -417,7 +442,15 @@ export function ClipDetailPanel(): JSX.Element {
   if (selectedClipId !== null) stickyId.current = selectedClipId;
   // Di-resolve ulang dari `lanes`, bukan disimpan sebagai objek: clip-nya bisa
   // ikut berubah (atau dihapus) selama ia dipajang.
-  const sel = findClip(lanes, selectedClipId ?? stickyId.current);
+  let sel = findClip(lanes, selectedClipId ?? stickyId.current);
+  if (sel === null) {
+    // Clip yang dipajang baru saja DIHAPUS. Kalau panel dibiarkan mengempis di
+    // sini, tingginya berubah tepat setelah menekan X — dan timeline di bawahnya
+    // melompat, persis masalah yang sama dengan kotak seleksi. Jadi panel jatuh
+    // ke clip lain yang masih ada, bukan ke keadaan kosong.
+    sel = fallbackClip(lanes, playhead);
+    if (sel !== null) stickyId.current = sel.clip.id;
+  }
   /** true kalau yang dipajang memang sedang terpilih di timeline. */
   const isSelected = sel !== null && sel.clip.id === selectedClipId;
   const startSec = sel === null ? 0 : samplesToSec(sel.clip.start, sampleRate);

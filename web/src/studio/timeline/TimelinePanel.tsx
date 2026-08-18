@@ -41,7 +41,7 @@ export function TimelinePanel(): JSX.Element {
   const selectedClipId = useStudio((s) => s.selectedClipId);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const scrubbingRef = useRef(false);
@@ -120,18 +120,22 @@ export function TimelinePanel(): JSX.Element {
    * sebagai passive, sehingga `preventDefault()` diabaikan dan halaman ikut
    * menggulir saat user men-zoom.
    *
-   * Dipasang di SELURUH BADAN timeline (`data-tl-body`), bukan hanya di area
-   * clip yang menggulir. Dulu hanya di area clip, dan akibatnya menggulir di
-   * atas kolom nama lane, penggaris waktu, atau — pada tinggi lane S — di ruang
-   * kosong di bawah lane terakhir, tidak men-zoom apa pun: halaman yang
-   * menggulir. Dari sudut pandang user, "scroll = zoom" tampak rusak separuh
-   * waktu, dan separuh mana tergantung beberapa piksel posisi kursor.
+   * Dipasang di SELURUH KARTU timeline, bukan hanya di area clip yang
+   * menggulir. Aturannya jadi satu kalimat yang bisa dipegang: **kursor di
+   * timeline → gulir berarti zoom, halaman tidak ikut bergerak.**
    *
-   * Toolbar dan baris MIN/MAX di luar elemen ini SENGAJA tidak ikut: halaman
-   * masih harus bisa digulir dengan kursor di dalam kartu ini.
+   * Dua versi sebelumnya salah karena membelah kartu ini jadi zona-zona.
+   * Mula-mula hanya area clip; lalu badan timeline tanpa toolbar. Keduanya
+   * membuat "scroll = zoom" bekerja atau tidak tergantung beberapa piksel
+   * posisi kursor — dan batas zonanya tidak terlihat sama sekali di layar.
+   * Fitur yang benar separuh waktu lebih membingungkan daripada fitur yang
+   * tidak ada.
+   *
+   * Halaman tetap bisa digulir: arahkan kursor ke panel lain (Clip Detail,
+   * rail) atau ke ruang di luar kartu.
    */
   useEffect(() => {
-    const body = bodyRef.current;
+    const body = cardRef.current;
     if (body === null) return;
     const onWheel = (e: WheelEvent): void => {
       if (Math.abs(e.deltaY) < 1) return;
@@ -230,176 +234,177 @@ export function TimelinePanel(): JSX.Element {
     pxPerSecond === null ? `FIT · ${Math.round(fitPxPerSec)} px/s` : `${Math.round(pxPerSecond)} px/s`;
 
   return (
-    <Card
-      title="Timeline"
-      subtitle="drag = pilih area · spasi+drag = geser · scroll = zoom"
-      notched
-      glow
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '10px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <button
-          type="button"
-          aria-label="zoom out"
-          className="cy-hover-accent-border"
-          onClick={() => zoomBy(1 / 1.6)}
-          style={{ ...ZOOM_BUTTON, width: '32px', fontSize: '13px' }}
-        >
-          −
-        </button>
-        <button
-          type="button"
-          aria-label="zoom in"
-          className="cy-hover-accent-border"
-          onClick={() => zoomBy(1.6)}
-          style={{ ...ZOOM_BUTTON, width: '32px', fontSize: '13px' }}
-        >
-          +
-        </button>
-        <button
-          type="button"
-          className="cy-hover-accent-border"
-          onClick={() => studioActions.setZoom(null)}
-          style={{ ...ZOOM_BUTTON, padding: '0 10px', fontSize: '10px' }}
-        >
-          FIT
-        </button>
-        <span style={{ fontSize: '10px', letterSpacing: '.12em', color: 'var(--cy-accent)' }}>
-          {zoomLabel}
-        </span>
-        {/* Tinggi lane. Di samping zoom karena keduanya menjawab pertanyaan yang
-            sama — "seberapa besar materinya di layar" — hanya sumbunya beda. */}
-        <span
-          style={{
-            marginLeft: '6px',
-            fontSize: '9px',
-            letterSpacing: '.16em',
-            color: 'var(--cy-text-muted)',
-          }}
-        >
-          H
-        </span>
-        {LANE_HEIGHT_IDS.map((id) => (
-          <button
-            key={id}
-            type="button"
-            aria-label={`tinggi lane ${id}`}
-            aria-pressed={laneHeight === id}
-            className="cy-hover-accent-border"
-            onClick={() => studioActions.setLaneHeight(id)}
-            style={{
-              ...ZOOM_BUTTON,
-              width: '26px',
-              fontSize: '10px',
-              color: laneHeight === id ? 'var(--cy-accent)' : 'var(--cy-text-dim)',
-              borderColor: laneHeight === id ? 'var(--cy-accent)' : 'var(--cy-border)',
-            }}
-          >
-            {id}
-          </button>
-        ))}
-        <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
-          {selectedCount > 1
-            ? `SELECTED: ${selectedCount} CLIP`
-            : sel === null
-              ? 'NO CLIP SELECTED'
-              : `SELECTED: ${sel.clip.label}`}
-        </span>
-        <button
-          type="button"
-          className="cy-hover-accent-border"
-          onClick={() => studioActions.addLane()}
-          style={{
-            height: '28px',
-            padding: '0 12px',
-            border: '1px dashed var(--cy-border-strong)',
-            background: 'transparent',
-            color: 'var(--cy-text-muted)',
-            fontFamily: 'var(--cy-font-mono)',
-            fontSize: '10px',
-            letterSpacing: '.12em',
-            cursor: 'pointer',
-          }}
-        >
-          + LANE
-        </button>
-      </div>
-
-      <div
-        ref={bodyRef}
-        data-tl-body
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0,148px) minmax(0,1fr)',
-          border: '1px solid var(--cy-border)',
-          background: '#000',
-          maxWidth: '100%',
-        }}
+    <div ref={cardRef} data-tl-card>
+      <Card
+        title="Timeline"
+        subtitle="drag = pilih area · spasi+drag = geser · scroll = zoom"
+        notched
+        glow
       >
         <div
           style={{
-            borderRight: '1px solid var(--cy-border)',
-            borderBottom: '1px solid var(--cy-border)',
-            height: '28px',
             display: 'flex',
             alignItems: 'center',
-            padding: '0 10px',
-            fontSize: '9px',
-            letterSpacing: '.18em',
-            color: 'var(--cy-text-muted)',
+            gap: '8px',
+            marginBottom: '10px',
+            flexWrap: 'wrap',
           }}
         >
-          LANES
+          <button
+            type="button"
+            aria-label="zoom out"
+            className="cy-hover-accent-border"
+            onClick={() => zoomBy(1 / 1.6)}
+            style={{ ...ZOOM_BUTTON, width: '32px', fontSize: '13px' }}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            aria-label="zoom in"
+            className="cy-hover-accent-border"
+            onClick={() => zoomBy(1.6)}
+            style={{ ...ZOOM_BUTTON, width: '32px', fontSize: '13px' }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="cy-hover-accent-border"
+            onClick={() => studioActions.setZoom(null)}
+            style={{ ...ZOOM_BUTTON, padding: '0 10px', fontSize: '10px' }}
+          >
+            FIT
+          </button>
+          <span style={{ fontSize: '10px', letterSpacing: '.12em', color: 'var(--cy-accent)' }}>
+            {zoomLabel}
+          </span>
+          {/* Tinggi lane. Di samping zoom karena keduanya menjawab pertanyaan yang
+              sama — "seberapa besar materinya di layar" — hanya sumbunya beda. */}
+          <span
+            style={{
+              marginLeft: '6px',
+              fontSize: '9px',
+              letterSpacing: '.16em',
+              color: 'var(--cy-text-muted)',
+            }}
+          >
+            H
+          </span>
+          {LANE_HEIGHT_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              aria-label={`tinggi lane ${id}`}
+              aria-pressed={laneHeight === id}
+              className="cy-hover-accent-border"
+              onClick={() => studioActions.setLaneHeight(id)}
+              style={{
+                ...ZOOM_BUTTON,
+                width: '26px',
+                fontSize: '10px',
+                color: laneHeight === id ? 'var(--cy-accent)' : 'var(--cy-text-dim)',
+                borderColor: laneHeight === id ? 'var(--cy-accent)' : 'var(--cy-border)',
+              }}
+            >
+              {id}
+            </button>
+          ))}
+          <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--cy-text-dim)' }}>
+            {selectedCount > 1
+              ? `SELECTED: ${selectedCount} CLIP`
+              : sel === null
+                ? 'NO CLIP SELECTED'
+                : `SELECTED: ${sel.clip.label}`}
+          </span>
+          <button
+            type="button"
+            className="cy-hover-accent-border"
+            onClick={() => studioActions.addLane()}
+            style={{
+              height: '28px',
+              padding: '0 12px',
+              border: '1px dashed var(--cy-border-strong)',
+              background: 'transparent',
+              color: 'var(--cy-text-muted)',
+              fontFamily: 'var(--cy-font-mono)',
+              fontSize: '10px',
+              letterSpacing: '.12em',
+              cursor: 'pointer',
+            }}
+          >
+            + LANE
+          </button>
         </div>
-        <TimelineRuler
-          ref={rulerRef}
-          durationSec={durationSec}
-          pxPerSecond={pxPerSecond}
-          trackWidth={trackWidth}
-          onScrubDown={onScrubDown}
-          onScrubMove={onScrubMove}
-          onScrubUp={onScrubUp}
-        />
+
         <div
+          data-tl-body
           style={{
-            gridColumn: 'span 2',
             display: 'grid',
             gridTemplateColumns: 'minmax(0,148px) minmax(0,1fr)',
+            border: '1px solid var(--cy-border)',
+            background: '#000',
+            maxWidth: '100%',
           }}
         >
-          <LaneHeaders />
-          <ClipArea
-            scrollerRef={scrollerRef}
-            trackWidth={trackWidth}
-            onScroll={syncView}
-            onDraggingChange={(d) => {
-              draggingRef.current = d;
+          <div
+            style={{
+              borderRight: '1px solid var(--cy-border)',
+              borderBottom: '1px solid var(--cy-border)',
+              height: '28px',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 10px',
+              fontSize: '9px',
+              letterSpacing: '.18em',
+              color: 'var(--cy-text-muted)',
             }}
-            onImportError={setImportError}
+          >
+            LANES
+          </div>
+          <TimelineRuler
+            ref={rulerRef}
+            durationSec={durationSec}
+            pxPerSecond={pxPerSecond}
+            trackWidth={trackWidth}
+            onScrubDown={onScrubDown}
+            onScrubMove={onScrubMove}
+            onScrubUp={onScrubUp}
           />
+          <div
+            style={{
+              gridColumn: 'span 2',
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0,148px) minmax(0,1fr)',
+            }}
+          >
+            <LaneHeaders />
+            <ClipArea
+              scrollerRef={scrollerRef}
+              trackWidth={trackWidth}
+              onScroll={syncView}
+              onDraggingChange={(d) => {
+                draggingRef.current = d;
+              }}
+              onImportError={setImportError}
+            />
+          </div>
         </div>
-      </div>
 
-      <OverviewStrip viewLeftPct={view.left} viewWidthPct={view.width} />
-      <DurationBounds />
+        <OverviewStrip viewLeftPct={view.left} viewWidthPct={view.width} />
+        <DurationBounds />
 
-      {importError !== null ? (
-        <div style={{ marginTop: '8px', fontSize: '10px', color: '#ff4d4d' }}>
-          IMPORT GAGAL — {importError}
-        </div>
-      ) : null}
-      {lanesCount === 0 ? (
-        <div style={{ marginTop: '8px', fontSize: '10px', color: 'var(--cy-text-muted)' }}>
-          TIDAK ADA LANE — TEKAN “+ LANE”
-        </div>
-      ) : null}
-    </Card>
+        {importError !== null ? (
+          <div style={{ marginTop: '8px', fontSize: '10px', color: '#ff4d4d' }}>
+            IMPORT GAGAL — {importError}
+          </div>
+        ) : null}
+        {lanesCount === 0 ? (
+          <div style={{ marginTop: '8px', fontSize: '10px', color: 'var(--cy-text-muted)' }}>
+            TIDAK ADA LANE — TEKAN “+ LANE”
+          </div>
+        ) : null}
+      </Card>
+    </div>
   );
 }

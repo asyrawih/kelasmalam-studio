@@ -63,13 +63,26 @@ describe('gulir untuk zoom', () => {
     expect(studioStore.getState().pxPerSecond).toBeLessThan(20);
   });
 
-  it('gulir di TOOLBAR tidak dibajak — halaman harus tetap bisa digulir', () => {
+  it('gulir di TOOLBAR juga men-zoom — seluruh kartu ikut aturan yang sama', () => {
     render(<TimelinePanel />);
     act(() => studioActions.setZoom(20));
-    const toolbar = find('button[aria-label="zoom in"]');
-    const ev = wheel(toolbar, -100);
+    const ev = wheel(find('button[aria-label="zoom in"]'), -100);
+    // Membelah kartu jadi zona "boleh zoom" dan "tidak" membuat fiturnya
+    // bekerja atau tidak tergantung beberapa piksel posisi kursor, dan batas
+    // zonanya tidak terlihat sama sekali di layar.
+    expect(ev.defaultPrevented).toBe(true);
+    expect(studioStore.getState().pxPerSecond).toBeGreaterThan(20);
+  });
+
+  it('gulir di luar kartu timeline TIDAK dibajak — halaman tetap bisa digulir', () => {
+    render(<TimelinePanel />);
+    act(() => studioActions.setZoom(20));
+    const outside = document.createElement('div');
+    document.body.appendChild(outside);
+    const ev = wheel(outside, -100);
     expect(ev.defaultPrevented).toBe(false);
     expect(studioStore.getState().pxPerSecond).toBe(20);
+    outside.remove();
   });
 
   it('gulir mendatar murni (deltaY ~0) dibiarkan lewat', () => {
