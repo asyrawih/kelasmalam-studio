@@ -137,6 +137,10 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
       })),
       clips: clips.map((c) => ({
         id: c.id,
+        // Dikirim walau engine belum bisa memprosesnya. Sebelum ini, stem
+        // terdengar di preview dan hilang dari file TANPA satu pun peringatan
+        // — `map_project` sekarang bisa mengatakannya karena datanya sampai.
+        stem: c.stem === undefined ? null : { ...c.stem },
         assetId: toDense(c.assetId),
         start: c.start,
         len: c.len,
@@ -178,4 +182,43 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
     assets: [...assets.values()],
     endSample: Math.round(endTimeline / speed),
   };
+}
+
+/**
+ * Penanda tiap hal yang BENAR-BENAR ikut ke payload export.
+ *
+ * Diturunkan dari JSON yang dikirim, bukan dari state — kalau diturunkan dari
+ * state, ia akan melaporkan hal yang tidak pernah diserialisasi dan justru
+ * menutupi lubang yang mau dicari.
+ *
+ * Pasangannya `BuiltGraph.features`; `parity.test.ts` menuntut
+ * `preview ⊆ export`. Perbandingan sample tidak mungkin — Node tidak punya Web
+ * Audio, dan biquad Web Audio bukan implementasi yang sama dengan Rust — tapi
+ * "apa yang diterapkan" bisa dibandingkan, dan itu persis kelas kegagalan yang
+ * pernah benar-benar terjadi: `clip.stem` dipakai preview dan tidak pernah
+ * dikirim ke export.
+ */
+export function payloadFeatures(json: string): Set<string> {
+  const out = new Set<string>();
+  const p = JSON.parse(json) as {
+    masterChain?: { kind: string }[];
+    lanes?: {
+      id: string;
+      eq?: { bands?: unknown[] };
+      chain?: { kind: string }[];
+      clips?: { id: string; fadeInMs?: number; fadeOutMs?: number; stem?: unknown }[];
+    }[];
+  };
+  (p.masterChain ?? []).forEach((fx, i) => out.add(`masterFx:${i}:${fx.kind}`));
+  for (const lane of p.lanes ?? []) {
+    out.add(`laneGain:${lane.id}`);
+    if ((lane.eq?.bands ?? []).length > 0) out.add(`eq:${lane.id}`);
+    (lane.chain ?? []).forEach((fx, i) => out.add(`fx:${lane.id}:${i}:${fx.kind}`));
+    for (const c of lane.clips ?? []) {
+      out.add(`clipGain:${c.id}`);
+      if ((c.fadeInMs ?? 0) > 0 || (c.fadeOutMs ?? 0) > 0) out.add(`fade:${c.id}`);
+      if (c.stem !== null && c.stem !== undefined) out.add(`stem:${c.id}`);
+    }
+  }
+  return out;
 }

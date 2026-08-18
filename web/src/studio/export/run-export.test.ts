@@ -20,6 +20,7 @@ import {
   type RenderHandle,
 } from './run-export';
 import type { ExportPayload } from './payload';
+import type { StudioState } from '../model';
 
 // ── Dobel ────────────────────────────────────────────────────────────────────
 
@@ -296,10 +297,11 @@ function buffer(frames: number, channels = 2, sampleRate = 48_000): AudioBuffer 
 }
 
 describe('buildExportPayload', () => {
-  // CATATAN: `as never` di bawah mematikan seluruh pengecekan tipe untuk
-  // fixture ini, jadi field wajib yang baru TIDAK akan ketahuan saat compile —
-  // hanya saat tes gagal. Itu yang terjadi saat `chain` ditambahkan.
-  const state = (over: Record<string, unknown> = {}) =>
+  // Diketik `StudioState`, BUKAN `as never`. Cast ke `never` mematikan seluruh
+  // pengecekan tipe di fixture, sehingga field wajib yang baru tidak ketahuan
+  // saat compile — hanya saat tes gagal jauh kemudian. Itu persis yang terjadi
+  // ketika `chain` ditambahkan.
+  const state = (over: Partial<StudioState> = {}): StudioState =>
     ({
       sampleRate: 48_000,
       speed: 1,
@@ -332,7 +334,7 @@ describe('buildExportPayload', () => {
         },
       ],
       ...over,
-    }) as never;
+    }) as StudioState;
 
   const lookup = (id: number): AudioBuffer | undefined => (id === 7 ? buffer(1024) : undefined);
 
@@ -359,14 +361,8 @@ describe('buildExportPayload', () => {
     const s = state({
       lanes: [
         {
-          ...((state() as unknown as { lanes: Record<string, unknown>[] }).lanes[0] as object),
-          clips: [
-            {
-              ...((state() as unknown as { lanes: { clips: object[] }[] }).lanes[0]!
-                .clips[0] as object),
-              assetId: big,
-            },
-          ],
+          ...state().lanes[0]!,
+          clips: [{ ...state().lanes[0]!.clips[0]!, assetId: big }],
         },
       ],
     });
@@ -403,7 +399,7 @@ describe('buildExportPayload', () => {
     const s = state({
       lanes: [
         {
-          ...((state() as unknown as { lanes: Record<string, unknown>[] }).lanes[0] as object),
+          ...state().lanes[0]!,
           speedRatio: 1,
           clips: [
             {
@@ -413,6 +409,8 @@ describe('buildExportPayload', () => {
               len: 48_000,
               sourceStart: 0,
               sourceLen: 48_000,
+              label: 'c1',
+              seed: 1,
               loopLen: 16_000,
               gainDb: 0,
               fadeInMs: 0,
@@ -437,7 +435,7 @@ describe('buildExportPayload', () => {
 
   it('lane mute tidak menyumbang panjang output', () => {
     const muted = state({
-      lanes: [{ ...(state() as unknown as { lanes: unknown[] }).lanes[0] as object, mute: true }],
+      lanes: [{ ...state().lanes[0]!, mute: true }],
     });
     expect(buildExportPayload(muted, lookup).endSample).toBe(0);
   });

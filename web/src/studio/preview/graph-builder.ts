@@ -73,6 +73,17 @@ export interface BuiltGraph {
   readonly clipStems: Map<string, StemNodes>;
   /** Node `daw-fx` master, kalau ada. */
   readonly masterFx: AudioWorkletNode | null;
+  /**
+   * Penanda tiap hal yang BENAR-BENAR diterapkan graf ini.
+   *
+   * Ada untuk satu tujuan: dibandingkan dengan penanda yang sama dari
+   * `buildExportPayload`. Perbandingan sample tidak mungkin (biquad Web Audio
+   * dan Rust bukan implementasi yang sama, dan Node tidak punya Web Audio),
+   * tapi "apa yang diterapkan" bisa dibandingkan — dan itu sudah cukup untuk
+   * menangkap satu-satunya kelas kegagalan yang pernah benar-benar terjadi di
+   * sini: sebuah field yang dipakai preview dan tidak pernah dikirim ke export.
+   */
+  readonly features: ReadonlySet<string>;
   /** Source yang sudah di-`start()`; perlu di-`stop()` saat preview berhenti. */
   readonly voices: AudioBufferSourceNode[];
   /** Node non-source (gain, filter) — perlu di-disconnect saat berhenti. */
@@ -221,6 +232,7 @@ export function buildProjectGraph(
   opts: GraphBuildOptions,
 ): BuiltGraph {
   const lanesOut = new Map<string, LaneNodes>();
+  const features = new Set<string>();
   const clipStems = new Map<string, StemNodes>();
   const voices: AudioBufferSourceNode[] = [];
   const nodes: AudioNode[] = [];
@@ -233,6 +245,7 @@ export function buildProjectGraph(
   // Chain master disisipkan SEBELUM tujuan akhir, jadi seluruh lane melewatinya
   // — urutan yang sama dengan `build_plan` di Rust (master chain berjalan
   // setelah semua bus dijumlahkan, sebelum fader master).
+  state.masterChain.forEach((fx, i) => features.add(`masterFx:${i}:${fx.kind}`));
   const masterFx = createFxNode(audio, state.masterChain);
   if (masterFx !== null) {
     masterFx.connect(rawDestination);
@@ -251,6 +264,9 @@ export function buildProjectGraph(
     // Urutan mengikuti docs/07 dan `build_plan`: EQ bawaan dulu, baru insert
     // chain user, baru fader lane. Menukarnya membuat preview dan file hasil
     // export terdengar berbeda untuk chain yang sama.
+    features.add(`laneGain:${lane.id}`);
+    if (lane.eq.bands.length > 0) features.add(`eq:${lane.id}`);
+    lane.chain.forEach((fx, i) => features.add(`fx:${lane.id}:${i}:${fx.kind}`));
     const laneFx = createFxNode(audio, lane.chain);
     const afterEq: AudioNode = laneFx ?? laneGainNode;
     if (laneFx !== null) {
@@ -316,6 +332,8 @@ export function buildProjectGraph(
       }
 
       const gain = audio.createGain();
+      features.add(`clipGain:${clip.id}`);
+      if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) features.add(`fade:${clip.id}`);
       applyClipGainEnvelope(gain, clip, {
         startAt: whenSec,
         // Durasi di JAM DINDING, bukan timeline: transport 2× membuat clip
@@ -331,6 +349,7 @@ export function buildProjectGraph(
       const stem = stemOf(clip);
       let head: AudioNode = gain;
       if (!isStemBypass(clip.stem)) {
+        features.add(`stem:${clip.id}`);
         const chain = buildStemChain(audio, stem);
         chain.output.connect(gain);
         clipStems.set(clip.id, chain);
@@ -350,7 +369,7 @@ export function buildProjectGraph(
     }
   }
 
-  return { lanes: lanesOut, clipStems, masterFx, voices, nodes };
+  return { lanes: lanesOut, clipStems, masterFx, features, voices, nodes };
 }
 
 // ── Pemutar audisi ───────────────────────────────────────────────────────────

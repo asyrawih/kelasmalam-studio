@@ -282,6 +282,7 @@ export interface StudioAppState extends StudioState {
  * menyentuh keseluruhan project.
  */
 export type MenuId =
+  | 'fx'
   | 'transport'
   | 'beat'
   | 'loop'

@@ -154,4 +154,19 @@ describe('transport di toolbar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'play' }));
     expect(studioStore.getState().playing).toBe(true);
   });
+
+  /// Menu FX harus benar-benar merender panel aslinya, bukan salinan — kalau
+  /// disalin, dua versi akan berbeda perilaku dan tidak ada yang menyadarinya.
+  it('menu FX membuka panel insert chain yang sesungguhnya', () => {
+    render(<Bar />);
+    act(() => {
+      fireEvent.click(icon('fx'));
+    });
+    expect(studioStore.getState().openMenu).toBe('fx');
+    // Penanda milik FxCard: tombol target LANE. Sengaja bukan "MASTER" —
+    // toolbar sendiri punya tombol menu bernama sama, dan query-nya jadi
+    // ambigu.
+    expect(screen.getByRole('button', { name: 'LANE' })).toBeTruthy();
+  });
+
 });

@@ -141,6 +141,33 @@ fn true_bool() -> bool {
     true
 }
 
+/// Pemisahan stem per clip.
+///
+/// Engine BELUM memprosesnya; field ini ada supaya `map_project` bisa
+/// memperingatkan alih-alih membuangnya diam-diam. Nilai 1 di ketiganya berarti
+/// tidak ada yang dibuang.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StemJson {
+    #[serde(default = "one_f32")]
+    pub vocal: f32,
+    #[serde(default = "one_f32")]
+    pub bass: f32,
+    #[serde(default = "one_f32")]
+    pub other: f32,
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+impl StemJson {
+    /// Apakah setelan ini benar-benar membuang sesuatu.
+    fn removes_anything(&self) -> bool {
+        self.vocal < 0.999 || self.bass < 0.999 || self.other < 0.999
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct EqJson {
     #[serde(default)]
@@ -185,6 +212,9 @@ pub struct ClipJson {
     /// `linear` | `equalPower`.
     #[serde(default)]
     pub fade_curve: String,
+    /// Pemisahan stem. Belum diproses engine — lihat `StemJson`.
+    #[serde(default)]
+    pub stem: Option<StemJson>,
 }
 
 fn one_f64() -> f64 {
@@ -364,6 +394,23 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
         }
         for (i, b) in lane.eq.bands.iter().take(EQ_BANDS).enumerate() {
             eq[i] = clamp_band(b);
+        }
+
+        // Stem terdengar di preview tapi TIDAK diproses engine. Sebelum ini ia
+        // hilang tanpa jejak dari file hasil export — persis kelas kegagalan
+        // yang seluruh lapisan peringatan di berkas ini ada untuk mencegahnya.
+        // Yang benar bukan mendiamkannya, melainkan mengatakannya.
+        let stemmed = lane
+            .clips
+            .iter()
+            .filter(|c| c.stem.map(|s| s.removes_anything()).unwrap_or(false))
+            .count();
+        if stemmed > 0 {
+            warnings.push(format!(
+                "Lane \"{}\": {stemmed} clip memakai REMOVE (stem), yang belum diproses engine — \
+                 hasilnya terdengar di preview tapi TIDAK akan ada di berkas. Pakai BAKE dulu.",
+                lane.id
+            ));
         }
 
         tracks.push(TrackDesc {
@@ -1006,5 +1053,52 @@ mod tests {
             peak < 0.05,
             "highpass tidak dieksekusi — DC 0.5 masih tersisa {peak}"
         );
+    }
+
+    // ── Stem: peringatan, bukan kehilangan diam-diam ──────────────────────
+
+    /// Ini regresi yang jadi contoh berulang di seluruh kerjaan FX: `clip.stem`
+    /// diterapkan di graf preview tapi tidak punya padanan di sisi engine, jadi
+    /// hasil export terdengar berbeda dari yang barusan didengar — dan tidak
+    /// ada satu pun peringatan yang menyebutkannya.
+    #[test]
+    fn stem_removal_is_reported_not_dropped_silently() {
+        let json = r#"{ "sampleRate": 48000, "speed": 1,
+            "lanes": [{ "id": "L1", "gainDb": 0, "speedRatio": 1,
+                "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 1000,
+                            "stem": { "vocal": 0, "bass": 1, "other": 1 } }] }] }"#;
+        let m = mapping_from_json(json).unwrap();
+        assert!(
+            m.warnings.iter().any(|w| w.contains("REMOVE")),
+            "stem hilang tanpa peringatan: {:?}",
+            m.warnings
+        );
+    }
+
+    /// Stem yang TIDAK membuang apa pun tidak boleh memicu peringatan —
+    /// peringatan yang selalu muncul akan berhenti dibaca.
+    #[test]
+    fn a_neutral_stem_setting_is_not_reported() {
+        let json = r#"{ "sampleRate": 48000, "speed": 1,
+            "lanes": [{ "id": "L1", "gainDb": 0, "speedRatio": 1,
+                "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 1000,
+                            "stem": { "vocal": 1, "bass": 1, "other": 1 } }] }] }"#;
+        let m = mapping_from_json(json).unwrap();
+        assert!(
+            !m.warnings.iter().any(|w| w.contains("REMOVE")),
+            "stem netral ikut diperingatkan: {:?}",
+            m.warnings
+        );
+    }
+
+    /// Clip tanpa field `stem` sama sekali (project lama) juga tidak boleh
+    /// memicu apa pun.
+    #[test]
+    fn a_clip_without_stem_is_not_reported() {
+        let json = r#"{ "sampleRate": 48000, "speed": 1,
+            "lanes": [{ "id": "L1", "gainDb": 0, "speedRatio": 1,
+                "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 1000 }] }] }"#;
+        let m = mapping_from_json(json).unwrap();
+        assert!(!m.warnings.iter().any(|w| w.contains("REMOVE")));
     }
 }

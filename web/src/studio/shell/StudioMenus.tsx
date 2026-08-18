@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { AmplifyCard } from '../rail/AmplifyCard';
 import { CompileCard } from '../rail/CompileCard';
 import { EqCurveCard } from '../rail/EqCurveCard';
+import { FxCard } from '../fx/FxCard';
 import { MixerCard } from '../rail/MixerCard';
 import { RenderSpeedCard } from '../rail/RenderSpeedCard';
 import { ShortcutsCard } from '../rail/ShortcutsCard';
@@ -169,6 +170,14 @@ export const STUDIO_MENUS: readonly MenuDef[] = [
     title: 'equalizer lane terpilih',
     width: 620,
     render: () => <EqCurveCard />,
+  },
+  {
+    id: 'fx',
+    icon: '≋',
+    label: 'FX',
+    title: 'insert chain lane terpilih atau master',
+    width: 560,
+    render: () => <FxCard />,
   },
   {
     id: 'master',
