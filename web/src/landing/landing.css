@@ -1,0 +1,290 @@
+/*
+ * Landing page — salinan blok <helmet><style> dari
+ * `design/Landing Pages.dc.html`.
+ *
+ * Isinya HANYA hal-hal yang tidak bisa ditulis sebagai inline style:
+ * keyframe, pseudo-element, media query, dan :hover. Sisa bahasa visualnya
+ * hidup sebagai inline style di `LandingPage.tsx`, persis seperti design file.
+ *
+ * Satu perbedaan mekanis dari design: prefix selector-nya `.km-root`
+ * (dipasang di div terluar landing) alih-alih `.by-theme`. Token warna sudah
+ * global lewat `ui/cyber/theme.css`, jadi tidak ada blok token yang disalin
+ * ulang di sini — nilainya identik dengan yang ada di helmet design.
+ */
+
+@keyframes km-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-0.25deg);
+  }
+  50% {
+    transform: translate3d(0, -16px, 0) rotate(0.25deg);
+  }
+}
+
+@keyframes km-float-slow {
+  0%,
+  100% {
+    transform: translate3d(0, 6px, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+@keyframes km-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes km-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.km-root a {
+  color: var(--cy-accent);
+  text-decoration: none;
+}
+
+.km-root a:hover {
+  color: var(--cy-accent-alt);
+}
+
+/* Panel ENGINE: sapuan cahaya horizontal yang berjalan terus. */
+.km-root .km-wasm {
+  position: relative;
+  overflow: hidden;
+}
+
+.km-root .km-wasm::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, #ffd4000f, transparent);
+  animation: km-sweep 5.5s linear infinite;
+  pointer-events: none;
+}
+
+.km-root .km-shot {
+  animation: km-float 7s var(--cy-ease-in-out, ease-in-out) infinite;
+  will-change: transform;
+}
+
+.km-root .km-shot-glow {
+  animation: km-glow 7s ease-in-out infinite;
+}
+
+.km-root .km-chip {
+  animation: km-float-slow 5.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .km-root .km-wasm::after,
+  .km-root .km-shot,
+  .km-root .km-chip,
+  .km-root .km-shot-glow {
+    animation: none;
+  }
+}
+
+.km-root .km-wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* Panel besar dengan sudut ter-tick aksen di kiri-atas & kanan-bawah. */
+.km-root .km-panel {
+  border: 1px solid var(--cy-border);
+  background: linear-gradient(180deg, #0b0b0a, #070706);
+  padding: 40px 36px;
+  position: relative;
+}
+
+.km-root .km-panel::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 16px;
+  height: 16px;
+  border-top: 1px solid var(--cy-accent);
+  border-left: 1px solid var(--cy-accent);
+}
+
+.km-root .km-panel::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 16px;
+  height: 16px;
+  border-bottom: 1px solid var(--cy-accent);
+  border-right: 1px solid var(--cy-accent);
+}
+
+/* Latar hero: dua halo radial + grid yang di-mask supaya memudar ke tepi. */
+.km-root .km-hero-bg {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--cy-border);
+}
+
+.km-root .km-hero-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(900px 420px at 12% 20%, #ffd4001f, transparent 68%),
+    radial-gradient(720px 380px at 88% 6%, #ffb0201a, transparent 70%),
+    linear-gradient(180deg, #0b0a03, transparent 60%);
+  pointer-events: none;
+}
+
+.km-root .km-hero-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent, transparent 63px, #ffd4000d 64px),
+    repeating-linear-gradient(0deg, transparent, transparent 63px, #ffd4000d 64px);
+  -webkit-mask-image: radial-gradient(closest-side at 35% 40%, #000, transparent 85%);
+  mask-image: radial-gradient(closest-side at 35% 40%, #000, transparent 85%);
+  pointer-events: none;
+}
+
+.km-root .km-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.km-root .km-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.km-root .km-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.km-root .km-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.km-root .km-faq {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.km-root .km-nav {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  margin-left: auto;
+}
+
+/*
+ * Ukuran yang PUNYA override di media query di bawah harus datang dari class,
+ * bukan dari atribut style: inline style menang atas rule class mana pun, jadi
+ * versi mobile-nya tidak akan pernah dipakai. Di design nilai-nilai ini ditulis
+ * inline; di sini dipindah ke class dengan angka yang sama persis.
+ */
+.km-root .km-h1 {
+  font-size: 58px;
+}
+
+.km-root .km-h2 {
+  font-size: 34px;
+}
+
+/* Judul FAQ satu-satunya km-h2 yang lebih kecil di design. */
+.km-root .km-h2-sm {
+  font-size: 30px;
+}
+
+.km-root .km-sec {
+  padding-top: 96px;
+}
+
+.km-root .km-cta {
+  padding: 52px 44px;
+}
+
+/* Hover pada kartu harga & baris FAQ (design: style-hover). */
+.km-root .km-hover-accent:hover {
+  border-color: var(--cy-accent);
+}
+
+.km-root .km-hover-border:hover {
+  border-color: var(--cy-border-strong);
+}
+
+@media (max-width: 900px) {
+  .km-root .km-wrap {
+    padding: 0 20px;
+  }
+  .km-root .km-panel {
+    padding: 26px 20px;
+  }
+  .km-root .km-hero,
+  .km-root .km-3,
+  .km-root .km-2,
+  .km-root .km-faq {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .km-root .km-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .km-root .km-nav a {
+    display: none;
+  }
+  .km-root .km-h1 {
+    font-size: 38px;
+  }
+  .km-root .km-h2 {
+    font-size: 25px;
+  }
+  .km-root .km-sec {
+    padding-top: 60px;
+  }
+  .km-root .km-cta {
+    padding: 32px 22px;
+  }
+  .km-root .km-4 > div {
+    border-bottom: 1px solid var(--cy-border);
+  }
+}
+
+@media (max-width: 560px) {
+  .km-root .km-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .km-root .km-h1 {
+    font-size: 30px;
+  }
+  .km-root .km-h2 {
+    font-size: 22px;
+  }
+}

@@ -1,7 +1,7 @@
 /**
  * Port lokal dari `CyberUI.Badge`.
  *
- * Tone yang dipakai design: default, accent, success, danger. `dot` menambah
+ * Tone yang dipakai design: default, accent, success, warning, danger. `dot` menambah
  * titik kecil di kiri; `pulse` membuatnya berkedip memakai keyframe
  * `daw-blink` dari helmet design. Tinggi 26px (`hint-size="auto,26px"`),
  * kecuali badge di FX Rack yang 22px — itu lewat prop `height`.
@@ -9,7 +9,7 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 
-export type BadgeTone = 'default' | 'accent' | 'success' | 'danger';
+export type BadgeTone = 'default' | 'accent' | 'success' | 'warning' | 'danger';
 
 export interface BadgeProps {
   readonly tone?: BadgeTone;
@@ -31,6 +31,8 @@ const TONE: Record<BadgeTone, ToneSpec> = {
   default: { fg: 'var(--cy-text-dim)', border: 'var(--cy-border)', bg: 'transparent' },
   accent: { fg: 'var(--cy-accent)', border: '#ffd40059', bg: '#ffd4000f' },
   success: { fg: 'var(--cy-success)', border: '#ffd40059', bg: '#ffd4000f' },
+  // Dipakai badge LIFETIME di landing page (`tone="warning"` di design).
+  warning: { fg: 'var(--cy-warning)', border: '#ffb02059', bg: '#ffb0200f' },
   danger: { fg: '#ff4d4d', border: '#ff4d4d59', bg: '#ff4d4d0f' },
 };
 

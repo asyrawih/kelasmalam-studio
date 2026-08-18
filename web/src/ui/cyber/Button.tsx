@@ -62,8 +62,11 @@ export function Button({
     clipPath: 'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)',
     ...SIZE[size],
     ...VARIANT[variant],
+    // `border` (shorthand) yang ditulis ulang, BUKAN `borderColor`: mencampur
+    // shorthand dan longhand untuk properti yang sama membuat React
+    // meninggalkan sisa nilai lama saat prop `active` berubah.
     ...(active && variant !== 'solid'
-      ? { color: 'var(--cy-accent)', borderColor: 'var(--cy-accent)' }
+      ? { color: 'var(--cy-accent)', border: '1px solid var(--cy-accent)' }
       : null),
     ...style,
   };

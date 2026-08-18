@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+.by-theme .cy-root.cy-root{--cy-bg:#050505;--cy-surface-1:#0c0c0c;--cy-surface-2:#141414;--cy-surface-3:#1c1c1c37;--cy-overlay:#050505e6;--cy-border:#282520;--cy-border-strong:#4a4335;--cy-grid-line:#161616;--cy-neon-amber:#ffd400;--cy-neon-magenta:#ffb020;--cy-neon-cyan:#ffd400;--cy-accent:#ffd400;--cy-accent-alt:#ffb020;--cy-warning:#ffb020;--cy-success:#ffd400;--cy-info:#ffb020;--cy-text:#f2efe6;--cy-text-dim:#a8a294;--cy-text-muted:#6f6a5e;--cy-text-on-accent:#050505;--cy-glow-soft:0 0 18px #ffd40014;--cy-glow-lime:0 0 0 1px #ffd40059,0 0 12px #ffd40040,0 0 32px #ffd4001f}
+.by-theme a{color:var(--cy-accent);text-decoration:none}
+.by-theme a:hover{color:var(--cy-accent-alt)}
+@keyframes km-scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@keyframes km-float{0%,100%{transform:translate3d(0,0,0) rotate(-.25deg)}50%{transform:translate3d(0,-16px,0) rotate(.25deg)}}
+@keyframes km-float-slow{0%,100%{transform:translate3d(0,6px,0)}50%{transform:translate3d(0,-10px,0)}}
+@keyframes km-glow{0%,100%{opacity:.35}50%{opacity:.7}}
+@keyframes km-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}
+.by-theme .km-wasm{position:relative;overflow:hidden}
+.by-theme .km-wasm::after{content:"";position:absolute;top:0;bottom:0;width:28%;background:linear-gradient(90deg,transparent,#ffd4000f,transparent);animation:km-sweep 5.5s linear infinite;pointer-events:none}
+@media(prefers-reduced-motion:reduce){.by-theme .km-wasm::after{animation:none}}
+.by-theme .km-shot{animation:km-float 7s var(--cy-ease-in-out,ease-in-out) infinite;will-change:transform}
+.by-theme .km-shot-glow{animation:km-glow 7s ease-in-out infinite}
+.by-theme .km-chip{animation:km-float-slow 5.5s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.by-theme .km-shot,.by-theme .km-chip,.by-theme .km-shot-glow{animation:none}}
+.by-theme .km-wrap{max-width:1180px;margin:0 auto;padding:0 40px}
+.by-theme .km-panel{border:1px solid var(--cy-border);background:linear-gradient(180deg,#0b0b0a,#070706);padding:40px 36px;position:relative}
+.by-theme .km-panel::before{content:"";position:absolute;top:-1px;left:-1px;width:16px;height:16px;border-top:1px solid var(--cy-accent);border-left:1px solid var(--cy-accent)}
+.by-theme .km-panel::after{content:"";position:absolute;bottom:-1px;right:-1px;width:16px;height:16px;border-bottom:1px solid var(--cy-accent);border-right:1px solid var(--cy-accent)}
+@media(max-width:900px){.by-theme .km-panel{padding:26px 20px}}
+.by-theme .km-hero-bg{position:relative;overflow:hidden;border-bottom:1px solid var(--cy-border)}
+.by-theme .km-hero-bg::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 420px at 12% 20%,#ffd4001f,transparent 68%),radial-gradient(720px 380px at 88% 6%,#ffb0201a,transparent 70%),linear-gradient(180deg,#0b0a03,transparent 60%);pointer-events:none}
+.by-theme .km-hero-bg::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent,transparent 63px,#ffd4000d 64px),repeating-linear-gradient(0deg,transparent,transparent 63px,#ffd4000d 64px);-webkit-mask-image:radial-gradient(closest-side at 35% 40%,#000,transparent 85%);mask-image:radial-gradient(closest-side at 35% 40%,#000,transparent 85%);pointer-events:none}
+.by-theme .km-hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:56px;align-items:center}
+.by-theme .km-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.by-theme .km-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.by-theme .km-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;align-items:start}
+.by-theme .km-faq{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:40px;align-items:start}
+.by-theme .km-nav{display:flex;align-items:center;gap:26px;margin-left:auto}
+@media(max-width:900px){
+.by-theme .km-wrap{padding:0 20px}
+.by-theme .km-hero,.by-theme .km-3,.by-theme .km-2,.by-theme .km-faq{grid-template-columns:minmax(0,1fr);gap:24px}
+.by-theme .km-4{grid-template-columns:repeat(2,minmax(0,1fr))}
+.by-theme .km-nav a{display:none}
+.by-theme .km-h1{font-size:38px}
+.by-theme .km-h2{font-size:25px}
+.by-theme .km-sec{padding-top:60px}
+.by-theme .km-cta{padding:32px 22px}
+.by-theme .km-4 > div{border-bottom:1px solid var(--cy-border)}
+}
+@media(max-width:560px){
+.by-theme .km-4{grid-template-columns:minmax(0,1fr)}
+.by-theme .km-h1{font-size:30px}
+.by-theme .km-h2{font-size:22px}
+}
+</style>
+</helmet>
+<div class="by-theme">
+<x-import component-from-global-scope="CyberUI.CyberProvider" accent="amber" grid="{{ true }}" hint-size="100%,100%">
+<div style="background:var(--cy-bg);font-family:var(--cy-font-mono);color:var(--cy-text);min-height:100vh">
+
+<div style="position:sticky;top:0;z-index:20;border-bottom:1px solid var(--cy-border);background:#050505ee;backdrop-filter:blur(6px)">
+<div class="km-wrap" style="display:flex;align-items:center;gap:16px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap">
+<span style="font-family:var(--cy-font-sans);font-size:20px;font-weight:700;letter-spacing:.06em">KELAS MALAM STUDIO</span>
+<span style="font-size:11px;letter-spacing:.18em;color:var(--cy-accent)">// TIMELINE MIX</span>
+<div class="km-nav">
+<a href="#fitur" style="font-size:11px;letter-spacing:.16em;color:var(--cy-text-dim)">FITUR</a>
+<a href="#alur" style="font-size:11px;letter-spacing:.16em;color:var(--cy-text-dim)">ALUR</a>
+<a href="#spek" style="font-size:11px;letter-spacing:.16em;color:var(--cy-text-dim)">SPEK</a>
+<a href="#harga" style="font-size:11px;letter-spacing:.16em;color:var(--cy-text-dim)">HARGA</a>
+<x-import component-from-global-scope="CyberUI.Button" size="sm" animate="{{ false }}" hint-size="auto,34px">BUKA STUDIO</x-import>
+</div>
+</div>
+</div>
+
+<div class="km-hero-bg">
+<div class="km-wrap" style="padding-top:64px;padding-bottom:76px;position:relative;z-index:1">
+<div class="km-hero">
+<div>
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:22px">
+<x-import component-from-global-scope="CyberUI.Badge" tone="accent" dot="{{ true }}" pulse="{{ true }}" animate="{{ false }}" hint-size="auto,26px">BROWSER-BASED · TANPA INSTALL</x-import>
+<span style="font-size:10px;letter-spacing:.2em;color:var(--cy-text-muted)">48 kHz · 24-BIT</span>
+</div>
+<h1 class="km-h1" style="font-family:var(--cy-font-sans);font-size:58px;line-height:1.02;font-weight:700;letter-spacing:.01em;margin:0 0 20px;text-wrap:balance">TUMPUK AUDIO DI TIMELINE.<br><span style="color:var(--cy-accent)">COMPILE JADI SATU.</span></h1>
+<p style="font-size:15px;line-height:1.7;color:var(--cy-text-dim);max-width:54ch;margin:0 0 30px;text-wrap:pretty">Editor multi-lane untuk mixtape, podcast, dan set DJ. Taruh file di lane, geser di timeline, atur fade dan gain, lalu render semuanya jadi satu WAV atau MP3 — semua di browser, tanpa upload ke server.</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:34px">
+<x-import component-from-global-scope="CyberUI.Button" animate="{{ false }}" hint-size="auto,46px">MULAI MIXING GRATIS</x-import>
+<x-import component-from-global-scope="CyberUI.Button" variant="outline" animate="{{ false }}" hint-size="auto,46px">▶ LIHAT DEMO 90 DETIK</x-import>
+</div>
+<div style="display:flex;gap:34px;flex-wrap:wrap">
+<sc-for list="{{ heroStats }}" as="st" hint-placeholder-count="3">
+<div>
+<div style="font-family:var(--cy-font-sans);font-size:26px;font-weight:700;color:var(--cy-accent)">{{ st.val }}</div>
+<div style="font-size:10px;letter-spacing:.18em;color:var(--cy-text-muted);margin-top:3px">{{ st.label }}</div>
+</div>
+</sc-for>
+</div>
+</div>
+<div style="position:relative;perspective:1400px">
+<div class="km-shot-glow" style="position:absolute;inset:-8% -6% -14%;background:radial-gradient(60% 55% at 50% 45%,#ffd40033,transparent 72%);filter:blur(22px);pointer-events:none"></div>
+<div class="km-shot" style="position:relative;border:1px solid var(--cy-border-strong);background:#000;box-shadow:0 30px 70px #000000cc,0 0 0 1px #ffd4001f">
+<div style="display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid var(--cy-border);background:var(--cy-surface-1)">
+<span style="width:8px;height:8px;background:var(--cy-accent)"></span>
+<span style="width:8px;height:8px;background:var(--cy-border-strong)"></span>
+<span style="width:8px;height:8px;background:var(--cy-border-strong)"></span>
+<span style="margin-left:8px;font-size:9px;letter-spacing:.16em;color:var(--cy-text-muted)">STUDIO — TIMELINE MIX</span>
+<span style="margin-left:auto;font-size:9px;letter-spacing:.14em;color:var(--cy-accent)">{{ heroClock }}</span>
+</div>
+<img src="uploads/pasted-1787056171154-0.png" alt="Tampilan timeline Kelas Malam Studio" style="display:block;width:100%;height:auto"></img>
+</div>
+<div class="km-chip" style="position:absolute;left:-18px;bottom:34px;border:1px solid var(--cy-accent);background:#0b0904;padding:9px 13px;box-shadow:0 12px 30px #000000b3">
+<div style="font-size:9px;letter-spacing:.18em;color:var(--cy-text-muted)">COMPILE OUT</div>
+<div style="font-family:var(--cy-font-sans);font-size:18px;font-weight:700;color:var(--cy-accent);line-height:1.2">03:34 WAV</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="km-wrap">
+<div class="km-sec" style="padding:96px 0 0">
+<div id="fitur" class="km-panel">
+<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:28px;flex-wrap:wrap">
+<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">01 / FITUR</span>
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0">SEMUA YANG DIBUTUHKAN UNTUK SATU RILISAN</h2>
+</div>
+<div class="km-3">
+<sc-for list="{{ features }}" as="ft" hint-placeholder-count="6">
+<x-import component-from-global-scope="CyberUI.Card" notched="{{ true }}" animate="{{ false }}" hint-size="100%,200px">
+<span style="font-size:9px;letter-spacing:.18em;color:var(--cy-accent);border:1px solid var(--cy-border-strong);padding:3px 7px">{{ ft.tag }}</span>
+<div style="font-family:var(--cy-font-sans);font-size:19px;font-weight:600;letter-spacing:.04em;color:var(--cy-text);margin:14px 0 10px">{{ ft.title }}</div>
+<p style="font-size:12px;line-height:1.7;color:var(--cy-text-dim);margin:0;text-wrap:pretty">{{ ft.body }}</p>
+</x-import>
+</sc-for>
+</div>
+</div>
+</div>
+
+<div class="km-sec" style="padding:96px 0 0">
+<div id="alur" class="km-panel">
+<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:28px;flex-wrap:wrap">
+<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">02 / ALUR KERJA</span>
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0">DARI FILE MENTAH KE SATU MASTER</h2>
+</div>
+<div class="km-4" style="border:1px solid var(--cy-border);background:var(--cy-surface-1)">
+<sc-for list="{{ steps }}" as="sp" hint-placeholder-count="4">
+<div style="padding:26px 22px;border-right:1px solid var(--cy-border)">
+<div style="font-family:var(--cy-font-sans);font-size:38px;font-weight:700;color:var(--cy-accent);line-height:1;margin-bottom:14px">{{ sp.n }}</div>
+<div style="font-size:13px;letter-spacing:.12em;color:var(--cy-text);margin-bottom:9px">{{ sp.title }}</div>
+<p style="font-size:12px;line-height:1.7;color:var(--cy-text-dim);margin:0;text-wrap:pretty">{{ sp.body }}</p>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+
+<div class="km-sec" style="padding:96px 0 0">
+<div id="spek" class="km-panel km-2">
+<div>
+<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">03 / SPESIFIKASI</span>
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:14px 0 16px">ANGKA YANG DIPEGANG ENGINE</h2>
+<p style="font-size:13px;line-height:1.75;color:var(--cy-text-dim);max-width:46ch;margin:0 0 24px;text-wrap:pretty">Tidak ada pemrosesan tersembunyi. Yang terdengar di preview persis yang keluar saat compile — termasuk peak yang kelewat panas.</p>
+<x-import component-from-global-scope="CyberUI.Button" variant="outline" animate="{{ false }}" hint-size="auto,44px">BACA CATATAN TEKNIS</x-import>
+</div>
+<div style="display:grid;gap:2px">
+<sc-for list="{{ specs }}" as="sc" hint-placeholder-count="8">
+<div style="display:flex;gap:14px;align-items:center;padding:12px 14px;border:1px solid var(--cy-border);background:var(--cy-surface-1)">
+<span style="font-size:11px;color:var(--cy-text-dim);letter-spacing:.06em">{{ sc.label }}</span>
+<span style="margin-left:auto;font-size:12px;color:var(--cy-accent);text-align:right">{{ sc.val }}</span>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+
+<div class="km-sec" style="padding:96px 0 0">
+<div id="harga" class="km-panel">
+<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:10px;flex-wrap:wrap">
+<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">04 / HARGA</span>
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0">BAYAR SEKALI PAKAI, ATAU SEKALI SEUMUR HIDUP</h2>
+</div>
+<p style="font-size:12px;color:var(--cy-text-dim);margin:0 0 26px">Semua paket membuka fitur yang sama. Yang berbeda hanya durasi akses — dan satu hal ekstra di Lifetime.</p>
+<div class="km-3" style="align-items:stretch">
+<sc-for list="{{ plans }}" as="pl" hint-placeholder-count="3">
+<div onClick="{{ pl.on }}" style="border:1px solid {{ pl.bd }};background:{{ pl.bg }};padding:26px 24px;cursor:pointer;display:flex;flex-direction:column;gap:14px" style-hover="border-color:var(--cy-accent)">
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+<span style="font-size:13px;letter-spacing:.2em;color:var(--cy-text)">{{ pl.name }}</span>
+<x-import component-from-global-scope="CyberUI.Badge" tone="{{ pl.badgeTone }}" animate="{{ false }}" hint-size="auto,22px">{{ pl.badge }}</x-import>
+</div>
+<div>
+<div style="display:flex;align-items:baseline;gap:8px">
+<span style="font-family:var(--cy-font-sans);font-size:40px;font-weight:700;color:var(--cy-accent);line-height:1">{{ pl.price }}</span>
+<span style="font-size:11px;color:var(--cy-text-muted)">{{ pl.unit }}</span>
+</div>
+<div style="font-size:10px;letter-spacing:.12em;color:var(--cy-text-muted);margin-top:6px">{{ pl.per }}</div>
+</div>
+<p style="font-size:12px;line-height:1.6;color:var(--cy-text-dim);margin:0">{{ pl.desc }}</p>
+<div style="display:grid;gap:8px">
+<sc-for list="{{ pl.items }}" as="it" hint-placeholder-count="4">
+<div style="display:flex;gap:9px;align-items:baseline">
+<span style="color:var(--cy-accent);font-size:10px">▸</span>
+<span style="font-size:12px;color:var(--cy-text-dim);line-height:1.55">{{ it }}</span>
+</div>
+</sc-for>
+</div>
+<sc-if value="{{ pl.lifetime }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px dashed var(--cy-accent);background:#ffd4000a;padding:12px 13px">
+<div style="font-size:10px;letter-spacing:.18em;color:var(--cy-accent);margin-bottom:6px">REQUEST FITUR</div>
+<p style="font-size:11px;line-height:1.6;color:var(--cy-text-dim);margin:0">Khusus pemegang Lifetime: ajukan fitur yang kamu butuhkan lewat papan request, dan ikut memilih apa yang dikerjakan duluan.</p>
+</div>
+</sc-if>
+<div style="margin-top:auto;padding-top:14px">
+<x-import component-from-global-scope="CyberUI.Button" size="sm" variant="outline" animate="{{ false }}" hint-size="100%,38px">AMBIL {{ pl.name }}</x-import>
+</div>
+</div>
+</sc-for>
+</div>
+<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;font-size:10px;letter-spacing:.14em;color:var(--cy-text-muted)">
+<span>PEMBAYARAN QRIS · TRANSFER · E-WALLET</span>
+<span>·</span>
+<span>AKSES AKTIF SEGERA SETELAH BAYAR</span>
+<span>·</span>
+<span>TIDAK ADA PERPANJANGAN OTOMATIS</span>
+</div>
+</div>
+</div>
+
+<div class="km-sec" style="padding:96px 0 0">
+<div class="km-panel km-wasm">
+<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:10px;flex-wrap:wrap;position:relative;z-index:1">
+<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">05 / ENGINE</span>
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0">DITENAGAI WEBASSEMBLY, BUKAN JAVASCRIPT BIASA</h2>
+</div>
+<p style="font-size:13px;line-height:1.75;color:var(--cy-text-dim);margin:0 0 26px;max-width:74ch;text-wrap:pretty;position:relative;z-index:1">Inti DSP-nya ditulis di Rust lalu dikompilasi ke WebAssembly SIMD. Mixing, resampling, dan render jalan di thread terpisah dengan memori linear — jadi timeline tetap 60 fps meski lane-nya menumpuk, dan compile satu jam audio selesai dalam hitungan detik.</p>
+<div class="km-3" style="position:relative;z-index:1">
+<sc-for list="{{ wasmStats }}" as="ws" hint-placeholder-count="3">
+<div style="border:1px solid var(--cy-border);background:#000;padding:20px 18px">
+<div style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;color:var(--cy-accent);line-height:1">{{ ws.val }}<span style="font-size:13px;color:var(--cy-text-muted);margin-left:5px">{{ ws.unit }}</span></div>
+<div style="font-size:11px;letter-spacing:.14em;color:var(--cy-text);margin-top:10px">{{ ws.label }}</div>
+<div style="font-size:11px;line-height:1.6;color:var(--cy-text-dim);margin-top:6px">{{ ws.note }}</div>
+</div>
+</sc-for>
+</div>
+<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:16px;position:relative;z-index:1" class="km-2">
+<div style="border:1px solid var(--cy-border);background:#000;padding:18px">
+<div style="font-size:10px;letter-spacing:.2em;color:var(--cy-text-muted);margin-bottom:12px">RENDER 60 MENIT AUDIO · 4 LANE</div>
+<div style="display:grid;gap:12px">
+<sc-for list="{{ bench }}" as="bn" hint-placeholder-count="2">
+<div>
+<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+<span style="font-size:11px;color:{{ bn.color }};letter-spacing:.1em">{{ bn.name }}</span>
+<span style="margin-left:auto;font-family:var(--cy-font-sans);font-size:16px;font-weight:600;color:{{ bn.color }}">{{ bn.time }}</span>
+</div>
+<div style="height:10px;background:#0b0b0a;border:1px solid var(--cy-border);position:relative;overflow:hidden">
+<div style="position:absolute;inset:0 auto 0 0;width:{{ bn.w }}%;background:{{ bn.fill }}"></div>
+</div>
+</div>
+</sc-for>
+</div>
+<div style="font-size:10px;color:var(--cy-text-muted);margin-top:12px;letter-spacing:.1em">Diukur di M2 Air · Chrome 128 · WASM SIMD aktif</div>
+</div>
+<div style="border:1px solid var(--cy-border);background:#000;padding:18px">
+<div style="font-size:10px;letter-spacing:.2em;color:var(--cy-text-muted);margin-bottom:12px">DI BALIK LAYAR</div>
+<div style="display:grid;gap:9px">
+<sc-for list="{{ wasmBullets }}" as="wb" hint-placeholder-count="5">
+<div style="display:flex;gap:10px;align-items:baseline">
+<span style="color:var(--cy-accent);font-size:10px">▸</span>
+<span style="font-size:12px;line-height:1.6;color:var(--cy-text-dim)">{{ wb }}</span>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;position:relative;z-index:1">
+<sc-for list="{{ wasmTags }}" as="tg" hint-placeholder-count="5">
+<span style="font-size:9px;letter-spacing:.18em;color:var(--cy-text-dim);border:1px solid var(--cy-border-strong);padding:5px 9px">{{ tg }}</span>
+</sc-for>
+</div>
+</div>
+</div>
+
+<div class="km-sec km-faq" style="padding:96px 0 0">
+<div>
+<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">06 / FAQ</span>
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:30px;font-weight:700;letter-spacing:.03em;margin:14px 0 0">PERTANYAAN YANG SERING MASUK</h2>
+</div>
+<div style="display:grid;gap:2px">
+<sc-for list="{{ faqs }}" as="fq" hint-placeholder-count="4">
+<div onClick="{{ fq.on }}" style="border:1px solid var(--cy-border);background:var(--cy-surface-1);padding:16px 18px;cursor:pointer" style-hover="border-color:var(--cy-border-strong)">
+<div style="display:flex;gap:14px;align-items:center">
+<span style="font-size:13px;color:{{ fq.color }};letter-spacing:.04em">{{ fq.q }}</span>
+<span style="margin-left:auto;font-size:15px;color:var(--cy-accent)">{{ fq.sign }}</span>
+</div>
+<sc-if value="{{ fq.open }}" hint-placeholder-val="{{ false }}">
+<p style="font-size:12px;line-height:1.75;color:var(--cy-text-dim);margin:12px 0 0;max-width:70ch;text-wrap:pretty">{{ fq.a }}</p>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</div>
+
+<div class="km-cta" style="margin:96px 0 0;border:1px solid var(--cy-accent);background:#0b0904;padding:52px 44px;display:flex;align-items:center;gap:36px;flex-wrap:wrap;filter:var(--cy-glow-filter-soft)">
+<div style="min-width:0;flex:1">
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0 0 10px">BUKA STUDIO, TARUH LAGU PERTAMA</h2>
+<p style="font-size:13px;color:var(--cy-text-dim);margin:0;max-width:60ch;text-wrap:pretty">Tidak perlu akun untuk mencoba timeline. Bayar hanya ketika mau meng-compile hasilnya.</p>
+</div>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<x-import component-from-global-scope="CyberUI.Button" animate="{{ false }}" hint-size="auto,46px">BUKA STUDIO</x-import>
+<x-import component-from-global-scope="CyberUI.Button" variant="ghost" animate="{{ false }}" hint-size="auto,46px">LIHAT HARGA</x-import>
+</div>
+</div>
+
+<div style="margin-top:56px;padding:26px 0 48px;border-top:1px solid var(--cy-border);display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+<span style="font-family:var(--cy-font-sans);font-size:15px;font-weight:700;letter-spacing:.06em">KELAS MALAM STUDIO</span>
+<span style="font-size:10px;letter-spacing:.16em;color:var(--cy-text-muted)">© 2026 · DIBUAT UNTUK YANG MIXING JAM 2 PAGI</span>
+<div style="margin-left:auto;display:flex;gap:22px">
+<a href="#fitur" style="font-size:10px;letter-spacing:.16em">FITUR</a>
+<a href="#harga" style="font-size:10px;letter-spacing:.16em">HARGA</a>
+<a href="#spek" style="font-size:10px;letter-spacing:.16em">SPEK</a>
+</div>
+</div>
+</div>
+</x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1100}}">
+class Component extends DCLogic {
+  state = { t: 0, plan: 'd7', faq: 0 };
+
+  componentDidMount() { this.i = setInterval(() => this.setState(s => ({ t: s.t + 1 })), 90); }
+  componentWillUnmount() { clearInterval(this.i); }
+
+  rnd(i) { const x = Math.sin(i * 127.1 + 3.7) * 43758.5453; return x - Math.floor(x); }
+  bars(n, seed) {
+    return Array.from({ length: n }, (_, i) => {
+      const gate = this.rnd(Math.floor(i / 2) * 5.3 + seed) > 0.15 ? 1 : 0.25;
+      return { k: i, h: Math.max(6, Math.round(gate * (0.45 + 0.55 * this.rnd(i * 3.1 + seed)) * 95)) };
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const p = (s.t * 0.6) % 100;
+    return {
+      heroClock: '00:' + String(Math.floor(p * 0.36)).padStart(2, '0') + ' / 01:40',
+      heroPlayhead: 'calc(14px + (100% - 28px) * ' + (p / 100).toFixed(3) + ')',
+      heroStats: [
+        { k: 1, val: '∞', label: 'LANE PER PROJECT' },
+        { k: 2, val: '0', label: 'FILE DIUPLOAD' },
+        { k: 3, val: '1', label: 'FILE HASIL COMPILE' },
+      ],
+      heroLanes: [
+        { k: 1, name: 'FIRST', color: '#ffd400', l: 0, w: 74, bars: this.bars(34, 3) },
+        { k: 2, name: 'VOCAL', color: '#ffb020', l: 18, w: 42, bars: this.bars(20, 9) },
+        { k: 3, name: 'AMBIENCE', color: '#a07a10', l: 8, w: 88, bars: this.bars(40, 17) },
+        { k: 4, name: 'DROP FX', color: '#6f6a5e', l: 56, w: 26, bars: this.bars(12, 23) },
+      ],
+      features: [
+        { k: 1, title: 'TIMELINE MULTI-LANE', body: 'Lane tak terbatas, rename bebas, mute/solo per lane. Geser clip horizontal untuk waktu, vertikal untuk pindah lane.', tag: 'CORE' },
+        { k: 2, title: 'ZOOM & PAN PRESISI', body: 'Scroll untuk zoom sampai 400 px/detik, drag untuk pan. Ruler dan overview ikut bergerak, playhead auto-follow saat play.', tag: 'NAV' },
+        { k: 3, title: 'CLIP DETAIL', body: 'Klik clip untuk merender waveform penuhnya: trim, fade in/out linear atau equal-power, normalize, split di playhead.', tag: 'EDIT' },
+        { k: 4, title: 'LANE MIXER + EQ', body: 'Fader dan gain per lane, EQ tiga band dengan preset. Semua perubahan langsung terdengar di preview.', tag: 'MIX' },
+        { k: 5, title: 'VARISPEED RENDER', body: 'Render 0.5x sampai 2x dengan pitch ikut bergeser — mode klasik tape, bukan time-stretch artefak.', tag: 'RENDER' },
+        { k: 6, title: 'COMPILE SATU FILE', body: 'Semua lane dijumlahkan jadi satu WAV 24-bit atau MP3. Tanpa limiter tersembunyi — apa yang kamu dengar itu yang keluar.', tag: 'OUT' },
+      ],
+      steps: [
+        { k: 1, n: '01', title: 'DROP FILE', body: 'Tarik audio ke lane kosong. MP3, WAV, OGG, M4A — didekode langsung di browser.' },
+        { k: 2, n: '02', title: 'SUSUN DI TIMELINE', body: 'Geser clip ke posisi waktunya, tumpuk di lane berbeda, rename lane sesuai peran.' },
+        { k: 3, n: '03', title: 'RAPIKAN TRANSISI', body: 'Fade equal-power antar lagu, trim ekor, atur gain supaya peak tetap di bawah 0 dBFS.' },
+        { k: 4, n: '04', title: 'COMPILE', body: 'Pilih format, tekan compile, file turun ke device. Tidak ada yang pernah menyentuh server.' },
+      ],
+      specs: [
+        { k: 1, label: 'Sample rate', val: '48 kHz' },
+        { k: 2, label: 'Bit depth output', val: '24-bit WAV' },
+        { k: 3, label: 'Format masuk', val: 'MP3 · WAV · OGG · M4A · FLAC' },
+        { k: 4, label: 'Zoom range', val: '2 → 400 px/s' },
+        { k: 5, label: 'Fade curve', val: 'Linear · Equal-power' },
+        { k: 6, label: 'Varispeed', val: '0.5× → 2× (pitch ikut)' },
+        { k: 7, label: 'Proses audio', val: '100% lokal di browser' },
+        { k: 8, label: 'Batas project', val: 'Sebatas RAM device' },
+      ],
+      plans: [
+        {
+          id: 'd7', name: '7 DAYS', price: 'Rp50.000', unit: '/ 7 hari', per: '≈ Rp7.100 per hari',
+          desc: 'Akses penuh untuk satu rilisan. Paling sering diambil.',
+          badge: 'PALING DIAMBIL',
+          items: ['Semua fitur studio dibuka', 'Lane tak terbatas', 'Export WAV 24-bit & MP3', 'Varispeed render 0.5×–2×'],
+        },
+        {
+          id: 'd30', name: '30 DAYS', price: 'Rp149.000', unit: '/ 30 hari', per: '≈ Rp4.900 per hari',
+          desc: 'Untuk yang rilis rutin tiap minggu.',
+          badge: 'HEMAT 30%',
+          items: ['Semua isi paket 7 Days', 'Simpan project di device', 'Preset fade & EQ custom', 'Antrian compile lebih panjang'],
+        },
+        {
+          id: 'life', name: 'LIFETIME', price: 'Rp399.000', unit: '/ sekali bayar', per: 'balik modal di bulan ke-3',
+          desc: 'Bayar sekali, plus jalur request fitur.',
+          badge: 'REQUEST FITUR',
+          items: ['Semua fitur, selamanya', 'Semua update berikutnya', 'Bisa request fitur langsung ke developer', 'Nama masuk daftar early supporter'],
+        },
+      ].map(pl => ({
+        ...pl,
+        active: s.plan === pl.id,
+        bd: s.plan === pl.id ? 'var(--cy-accent)' : 'var(--cy-border)',
+        bg: s.plan === pl.id ? '#0f0d05' : 'var(--cy-surface-1)',
+        badgeTone: pl.id === 'life' ? 'warning' : 'accent',
+        showBadge: true,
+        lifetime: pl.id === 'life',
+        on: () => this.setState({ plan: pl.id }),
+      })),
+      wasmStats: [
+        { k: 1, val: '18', unit: '×', label: 'LEBIH CEPAT DARI JS MURNI', note: 'Loop mixing SIMD 4-lane, tanpa garbage collector di jalur audio.' },
+        { k: 2, val: '<3', unit: 'ms', label: 'LATENSI ROUND-TRIP', note: 'Buffer 128 frame di AudioWorklet, terpisah dari thread UI.' },
+        { k: 3, val: '60', unit: 'fps', label: 'TIMELINE TETAP MULUS', note: 'Waveform di-decimate di WASM, UI cuma menggambar hasilnya.' },
+      ],
+      bench: [
+        { k: 1, name: 'WASM SIMD (dipakai di sini)', time: '4.1 s', w: 12, color: 'var(--cy-accent)', fill: 'linear-gradient(90deg,#ffd400,#ffb020)' },
+        { k: 2, name: 'JavaScript murni', time: '74.6 s', w: 100, color: 'var(--cy-text-dim)', fill: '#2f2c25' },
+      ],
+      wasmBullets: [
+        'Inti DSP Rust → WebAssembly, nol dependency runtime.',
+        'Memori linear sekali alokasi: tidak ada GC pause saat render.',
+        'Resampler cubic Hermite dengan cursor pecahan presisi sample.',
+        'Decode & mixdown jalan di worker, UI tidak pernah ter-block.',
+        'Fallback JS otomatis kalau browser tidak mendukung SIMD.',
+      ],
+      wasmTags: ['RUST', 'WEBASSEMBLY SIMD', 'AUDIOWORKLET', 'WEB WORKERS', 'ZERO-COPY BUFFER', 'OFFLINE-READY'],
+      faqs: [
+        { k: 0, q: 'Audio saya diupload ke server?', a: 'Tidak. Dekode, mixing, dan render berjalan di browser lewat Web Audio API. File tidak pernah meninggalkan device kamu.' },
+        { k: 1, q: 'Berapa panjang project maksimum?', a: 'Dibatasi RAM device. Di laptop 8 GB, project satu jam dengan empat lane masih nyaman.' },
+        { k: 2, q: 'Apakah ada limiter di output?', a: 'Tidak ada limiter maupun soft-clip. Sample di atas 0 dBFS lewat apa adanya, jadi turunkan gain sampai peak aman.' },
+        { k: 3, q: 'Bisa dipakai offline?', a: 'Bisa. Setelah halaman dimuat sekali, studio berjalan tanpa koneksi.' },
+      ].map(f => ({
+        ...f, open: s.faq === f.k,
+        sign: s.faq === f.k ? '−' : '+',
+        color: s.faq === f.k ? 'var(--cy-accent)' : 'var(--cy-text)',
+        on: () => this.setState(st => ({ faq: st.faq === f.k ? -1 : f.k })),
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>
