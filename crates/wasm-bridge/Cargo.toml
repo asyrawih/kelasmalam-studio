@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 daw-rt       = { workspace = true }
 daw-timeline = { workspace = true }
+daw-analysis = { workspace = true }
 daw-engine   = { workspace = true }
 daw-export   = { workspace = true }
 serde        = { workspace = true }

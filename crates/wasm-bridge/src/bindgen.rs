@@ -9,6 +9,7 @@
 //! - offline renderer untuk export worker,
 //! - WAV encoder streaming (docs/03 §3b) + FLAC (lossless, terkompresi),
 //! - import/decode asset PCM + peak pyramid,
+//! - deteksi tempo (BPM) untuk readout gaya DJ,
 //! - alokasi blok kontrol + info build (untuk `wasm-loader.ts`).
 
 #![cfg(target_arch = "wasm32")]
@@ -591,4 +592,58 @@ fn daw_dsp_hermite(y_m1: f32, y0: f32, y1: f32, y2: f32, t: f32) -> f32 {
     let c2 = y_m1 - 2.5 * y0 + 2.0 * y1 - 0.5 * y2;
     let c3 = 0.5 * (y2 - y_m1) + 1.5 * (y0 - y1);
     ((c3 * t + c2) * t + c1) * t + c0
+}
+
+// ---------------------------------------------------------------------------
+// Deteksi tempo (BPM)
+// ---------------------------------------------------------------------------
+
+/// Hasil analisis tempo satu asset.
+#[wasm_bindgen]
+pub struct TempoEstimate {
+    bpm: f32,
+    confidence: f32,
+    beat_offset_sec: f32,
+}
+
+#[wasm_bindgen]
+impl TempoEstimate {
+    /// Ketukan per menit.
+    #[wasm_bindgen(getter)]
+    pub fn bpm(&self) -> f32 {
+        self.bpm
+    }
+
+    /// 0..1. UI WAJIB memakainya: angka BPM untuk materi tanpa ketukan jelas
+    /// (ambient, rekaman bicara) tidak berarti apa-apa, dan memajangnya seolah
+    /// pasti adalah berbohong dengan presisi.
+    #[wasm_bindgen(getter)]
+    pub fn confidence(&self) -> f32 {
+        self.confidence
+    }
+
+    /// Detik dari awal materi ke ketukan pertama yang terdeteksi.
+    #[wasm_bindgen(getter, js_name = beatOffsetSec)]
+    pub fn beat_offset_sec(&self) -> f32 {
+        self.beat_offset_sec
+    }
+}
+
+/// Deteksi tempo dari PCM planar.
+///
+/// `right` boleh `Float32Array` kosong untuk materi mono. Mengembalikan
+/// `undefined` kalau materinya terlalu pendek (< 8 detik) atau senyap — itu
+/// BUKAN error, jadi jangan dilempar sebagai exception; "tidak tahu" adalah
+/// jawaban yang sah dan UI menampilkannya sebagai "—", bukan sebagai kegagalan.
+///
+/// WAJIB dipanggil dari Web Worker. Satu lintasan filterbank enam biquad atas
+/// seluruh materi memakan ratusan milidetik untuk lagu lima menit; di main
+/// thread itu terlihat sebagai UI yang membeku saat file di-drop.
+#[wasm_bindgen(js_name = detectTempo)]
+pub fn detect_tempo(left: &[f32], right: &[f32], sample_rate: f32) -> Option<TempoEstimate> {
+    daw_analysis::detect_bpm(left, right, sample_rate).map(|e| TempoEstimate {
+        bpm: e.bpm,
+        confidence: e.confidence,
+        beat_offset_sec: e.beat_offset_sec,
+    })
 }

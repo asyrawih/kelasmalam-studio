@@ -12,6 +12,7 @@ import { studioActions } from '../store';
 import { ensureContext, registerBuffer } from '../preview/audio-preview';
 import { restoreProject, startAutosave } from './persistence';
 import { assetFromBuffer } from '../timeline/audio-import';
+import { requestAssetTempo } from '../analysis/tempo-client';
 
 export type PersistenceStatus =
   | { readonly phase: 'loading' }
@@ -40,6 +41,12 @@ export function usePersistence(sampleRate: number): PersistenceStatus {
         // Persis fungsi yang dipakai jalur import: envelope hasil pemulihan
         // dijamin identik dengan envelope saat file pertama kali di-drop.
         studioActions.registerAsset(assetFromBuffer(id, name, buffer));
+        // Tempo TIDAK ikut disimpan di IndexedDB, jadi dianalisis ulang di sini.
+        // Yang disimpan hanya byte file asli (lihat persist/db.ts); menambah
+        // hasil turunan ke sana berarti satu bentuk data lagi yang bisa basi
+        // terhadap perbaikan algoritma, dan analisisnya sendiri hanya ratusan
+        // milidetik di worker.
+        requestAssetTempo(id, buffer);
         return true;
       } catch {
         return false;

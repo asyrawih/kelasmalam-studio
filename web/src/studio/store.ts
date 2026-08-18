@@ -41,6 +41,44 @@ import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SP
 import { createDemoStudio, createInitialStudio } from './demo';
 import type { Envelope } from './timeline/envelope';
 
+/**
+ * Tempo hasil analisis WASM (`daw-analysis`, lewat `audio/tempo-worker.ts`).
+ *
+ * Disimpan pada ASSET, bukan pada clip: BPM adalah sifat materi sumbernya.
+ * Dua clip dari lagu yang sama punya BPM sumber yang sama; yang membedakannya
+ * adalah kecepatan lane tempat mereka duduk — dan itu dihitung saat dipakai
+ * (`selectPlayheadTempo`), bukan disalin ke tiap clip.
+ */
+export interface AssetTempo {
+  readonly bpm: number;
+  /** 0..1. Di bawah `TEMPO_UNCERTAIN` angka BPM tidak layak dipajang polos. */
+  readonly confidence: number;
+  readonly beatOffsetSec: number;
+}
+
+/**
+ * Ambang "tidak yakin". Di bawah ini UI menandai angkanya, bukan
+ * menyembunyikannya — materi tanpa ketukan jelas tetap punya jawaban paling
+ * mungkin, dan menyembunyikannya sama menyesatkannya dengan memajangnya polos.
+ *
+ * Nilainya DIUKUR, bukan ditebak. `detectTempo` dijalankan atas materi nyata
+ * lewat artefak WASM yang sama dengan yang dipakai aplikasi:
+ *
+ *   derau putih                    0.015
+ *   pad ambient (tanpa transien)   0.017
+ *   burst mirip bicara             0.046
+ *   lagu nyata #1 (155 BPM)        0.191
+ *   lagu nyata #2 (135 BPM)        0.224
+ *   groove sintetis (tes Rust)     0.45 – 0.60
+ *
+ * 0.1 duduk di celah antara dua kelompok itu. Angka pertama yang dipakai di
+ * sini adalah 0.2, dan itu SALAH: kedua lagu nyata di atas — yang BPM-nya
+ * terbukti benar karena tiap potongan 25 detiknya memberi angka yang sama —
+ * akan ditandai "tidak yakin". Musik nyata punya banyak isi ODF yang bukan
+ * ketukan, jadi periodisitasnya wajar lebih rendah dari materi sintetis.
+ */
+export const TEMPO_UNCERTAIN = 0.1;
+
 /** Asset audio yang sudah di-decode. Peak nyata, bukan mock. */
 export interface StudioAsset {
   readonly id: number;
@@ -54,6 +92,22 @@ export interface StudioAsset {
   readonly envelope: Envelope;
   readonly frames: Samples;
   readonly sampleRate: number;
+  /**
+   * `null` selama analisis belum selesai ATAU kalau materinya tidak bisa
+   * dianalisis (< 8 detik, senyap). Dua keadaan itu sengaja tidak dibedakan di
+   * sini; yang membedakannya adalah `tempoPending`.
+   */
+  readonly tempo: AssetTempo | null;
+  /** true selama worker masih bekerja. Memisahkan "belum tahu" dari "tidak ada". */
+  readonly tempoPending: boolean;
+  /**
+   * Koreksi oktaf dari user: BPM efektif = `tempo.bpm * 2 ** tempoOctave`.
+   *
+   * Ada karena oktaf tempo memang tidak selalu bisa diputuskan oleh mesin —
+   * lagu 170 BPM dengan backbeat sama sahnya didengar sebagai 85. Setiap
+   * perkakas DJ menyediakan ×2 / ÷2 untuk alasan yang sama.
+   */
+  readonly tempoOctave: number;
 }
 
 /**
@@ -445,6 +499,36 @@ export const studioActions = {
   },
   registerAsset(asset: StudioAsset): void {
     set((s) => ({ assets: { ...s.assets, [asset.id]: asset } }));
+  },
+  /**
+   * Hasil dari worker tempo. `tempo === null` berarti sudah dianalisis dan
+   * memang tidak ada jawabannya — `tempoPending` tetap dimatikan supaya UI
+   * berhenti menampilkan "menganalisis".
+   */
+  setAssetTempo(id: number, tempo: AssetTempo | null): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined) return {};
+      return { assets: { ...s.assets, [id]: { ...asset, tempo, tempoPending: false } } };
+    });
+  },
+  /** Tandai bahwa analisis sedang berjalan (dipanggil saat worker di-post). */
+  markAssetTempoPending(id: number): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined || asset.tempoPending) return {};
+      return { assets: { ...s.assets, [id]: { ...asset, tempoPending: true } } };
+    });
+  },
+  /** ×2 (`+1`) atau ÷2 (`-1`) pada BPM asset. Dibatasi ±2 oktaf. */
+  shiftAssetTempoOctave(id: number, delta: number): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined) return {};
+      const next = Math.max(-2, Math.min(2, asset.tempoOctave + delta));
+      if (next === asset.tempoOctave) return {};
+      return { assets: { ...s.assets, [id]: { ...asset, tempoOctave: next } } };
+    });
   },
   /** Batas panjang timeline manual. `max === null` = kembali otomatis. */
   /**

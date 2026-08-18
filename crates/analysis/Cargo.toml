@@ -1,0 +1,27 @@
+[package]
+name         = "daw-analysis"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+publish.workspace      = true
+description  = "Analisis offline: deteksi tempo (BPM) gaya DJ. BUKAN jalur realtime."
+
+[lib]
+name = "daw_analysis"
+path = "src/lib.rs"
+
+[dependencies]
+# Filterbank-nya memakai biquad yang SAMA dengan engine — kalau nanti beatgrid
+# dipakai untuk sync, band yang dianalisis identik dengan band yang dimainkan.
+daw-dsp = { workspace = true }
+libm    = { workspace = true }
+
+[dev-dependencies]
+# Tes membangkitkan materi sintetis; pakai libm yang SAMA dengan crate-nya
+# supaya angka tes tidak bergantung pada libm sistem.
+libm = { workspace = true }
+
+[features]
+default = ["std"]
+std = []

@@ -20,6 +20,7 @@ import { ensureContext, registerBuffer } from '../preview/audio-preview';
 import { saveAsset } from '../persist/db';
 import { canGunzip, gunzip, sniff } from './sniff';
 import { buildEnvelope } from './envelope';
+import { requestAssetTempo } from '../analysis/tempo-client';
 
 /**
  * Buat asset dari `AudioBuffer` hasil decode dan daftarkan ke store.
@@ -36,6 +37,9 @@ export function assetFromBuffer(id: number, name: string, buffer: AudioBuffer): 
     envelope: buildEnvelope(buffer),
     frames: buffer.length,
     sampleRate: buffer.sampleRate,
+    tempo: null,
+    tempoPending: false,
+    tempoOctave: 0,
   };
 }
 
@@ -130,6 +134,9 @@ export async function importBytesToLane(
     // sampleRate context, jadi frame-nya langsung sepadan dengan project.
     const frames = buffer.length;
     studioActions.registerAsset(assetFromBuffer(assetId, name, buffer));
+    // Setelah registerAsset, bukan sebelum: worker menjawab secara asinkron dan
+    // `setAssetTempo` mengabaikan id yang belum ada di store.
+    requestAssetTempo(assetId, buffer);
     // Simpan PCM-nya supaya preview playback bisa membunyikannya.
     registerBuffer(assetId, buffer);
     // Byte ASLI disimpan untuk pemulihan setelah refresh — bukan PCM-nya,

@@ -1,0 +1,175 @@
+/**
+ * Sel BPM di readout strip — pelacak tempo gaya DJ.
+ *
+ * Yang dijawab: "materi yang sedang berbunyi di playhead ini berapa BPM,
+ * SETELAH pitch fader lane dan kecepatan transport." Itu sebabnya angkanya
+ * ikut berubah saat speed lane digeser, persis seperti angka BPM di CDJ.
+ *
+ * Empat keadaan dibedakan, dan tidak satu pun boleh terlihat seperti yang lain:
+ *
+ *   idle      "—"          tidak ada clip terdengar di playhead
+ *   pending   "…"          worker WASM masih menganalisis
+ *   unknown   "—" + nota   sudah dianalisis, materinya memang tanpa ketukan
+ *   ada       angka        + tanda "?" kalau keyakinannya rendah
+ *
+ * Menampilkan "0.0" atau "—" tanpa keterangan untuk tiga keadaan yang berbeda
+ * akan membuat user menunggu angka yang tidak akan pernah datang.
+ */
+
+import { correctedBpm, selectPlayheadTempo, type PlayheadTempo } from '../analysis/playhead-tempo';
+import { TEMPO_UNCERTAIN, studioActions, useStudio } from '../store';
+
+/** Selisih BPM di bawah ini dianggap "sudah match" dan tidak dilaporkan. */
+const MATCH_EPSILON = 0.05;
+
+/**
+ * Nota di bawah angka. Memilih SATU hal terpenting untuk dikatakan, bukan
+ * menumpuk semuanya — barisnya hanya selebar satu sel.
+ *
+ * Urutannya disengaja: selisih dengan lane lain lebih mendesak daripada
+ * keterangan pitch, karena itu yang dipakai untuk beatmatch.
+ */
+export function tempoNote(t: PlayheadTempo): string | undefined {
+  if (t.primary === null) {
+    if (t.pending) return 'MENGANALISIS…';
+    if (t.unknown) return 'TANPA KETUKAN JELAS';
+    return undefined;
+  }
+  const other = t.others[0];
+  if (other !== undefined) {
+    const delta = other.bpm - t.primary.bpm;
+    if (Math.abs(delta) < MATCH_EPSILON) return `SEIRAMA · ${t.others.length + 1} LANE`;
+    const sign = delta > 0 ? '+' : '−';
+    return `${other.laneName.toUpperCase()} ${sign}${Math.abs(delta).toFixed(1)}`;
+  }
+  if (Math.abs(t.primary.speedFactor - 1) > 1e-4) {
+    return `SUMBER ${t.primary.sourceBpm.toFixed(1)}`;
+  }
+  if (t.primary.confidence < TEMPO_UNCERTAIN) return 'TIDAK YAKIN';
+  return t.primary.laneName.toUpperCase();
+}
+
+export function BpmCell(): JSX.Element {
+  // Berlangganan ke seluruh state: sel ini memang bergantung pada playhead,
+  // lanes, assets, dan speed sekaligus. Selector sempit di sini hanya akan
+  // memindahkan penggabungannya ke tempat lain tanpa mengurangi render.
+  const tempo = useStudio(selectPlayheadTempo);
+  const assets = useStudio((s) => s.assets);
+
+  // Oktaf dipakai pada ASSET dari clip yang sedang ditampilkan; tanpa clip
+  // aktif tidak ada yang bisa digandakan.
+  const activeAssetId = useStudio((s) => {
+    const t = selectPlayheadTempo(s);
+    if (t.primary === null) return null;
+    for (const lane of s.lanes) {
+      const clip = lane.clips.find((c) => c.id === t.primary?.clipId);
+      if (clip !== undefined) return clip.assetId;
+    }
+    return null;
+  });
+
+  const uncertain = tempo.primary !== null && tempo.primary.confidence < TEMPO_UNCERTAIN;
+  const value =
+    tempo.primary !== null
+      ? `${tempo.primary.bpm.toFixed(1)}${uncertain ? '?' : ''}`
+      : tempo.pending
+        ? '…'
+        : '—';
+
+  const asset = activeAssetId === null ? undefined : assets[activeAssetId];
+  const shifted = asset !== undefined && asset.tempoOctave !== 0;
+  const title =
+    tempo.primary === null
+      ? tempo.pending
+        ? 'Menganalisis tempo di worker WASM.'
+        : 'Tidak ada materi ber-tempo di posisi playhead.'
+      : `Terdengar ${tempo.primary.bpm.toFixed(2)} BPM. Materi sumber ${tempo.primary.sourceBpm.toFixed(2)} BPM` +
+        `${shifted ? ` (dikoreksi ${asset.tempoOctave > 0 ? '×' : '÷'}${2 ** Math.abs(asset.tempoOctave)})` : ''}` +
+        `, kecepatan ${tempo.primary.speedFactor.toFixed(3)}×.` +
+        (uncertain ? ' Keyakinan deteksi rendah — periksa dengan telinga.' : '');
+
+  return (
+    <div
+      title={title}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        padding: '9px 16px',
+        borderRight: '1px solid var(--cy-border)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: '9px',
+          letterSpacing: '.2em',
+          color: 'var(--cy-text-muted)',
+          textTransform: 'uppercase',
+        }}
+      >
+        Bpm
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+        <span
+          style={{
+            fontFamily: 'var(--cy-font-sans)',
+            fontSize: '19px',
+            fontWeight: 600,
+            // Angka yang tidak diyakini TIDAK boleh sama menyalanya dengan yang
+            // diyakini — warnanya yang membedakan, bukan hanya tanda "?".
+            color: uncertain ? 'var(--cy-text-dim)' : 'var(--cy-accent)',
+          }}
+        >
+          {value}
+        </span>
+        {activeAssetId !== null && tempo.primary !== null ? (
+          <span style={{ display: 'flex', gap: '2px' }}>
+            {([-1, 1] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                title={
+                  d > 0
+                    ? 'Gandakan BPM — oktaf tempo memang ambigu; 85 dan 170 sama sahnya.'
+                    : 'Bagi dua BPM.'
+                }
+                onClick={() => studioActions.shiftAssetTempoOctave(activeAssetId, d)}
+                style={{
+                  fontFamily: 'var(--cy-font-mono)',
+                  fontSize: '9px',
+                  lineHeight: 1,
+                  padding: '3px 4px',
+                  background: 'transparent',
+                  color: 'var(--cy-text-muted)',
+                  border: '1px solid var(--cy-border)',
+                  cursor: 'pointer',
+                }}
+              >
+                {d > 0 ? '×2' : '÷2'}
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </div>
+      {(() => {
+        const note = tempoNote(tempo);
+        return note === undefined ? null : (
+          <div
+            style={{
+              fontSize: '9px',
+              letterSpacing: '.12em',
+              color: 'var(--cy-text-muted)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {note}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+/** Diekspor untuk tes: BPM sumber setelah koreksi oktaf. */
+export { correctedBpm };

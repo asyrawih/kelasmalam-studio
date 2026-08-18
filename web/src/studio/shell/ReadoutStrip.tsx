@@ -14,6 +14,7 @@
 import { formatTime, samplesToSec, PITCH_LOCK_AVAILABLE } from '../model';
 import { outputSeconds, semitoneShift } from '../rail/RenderSpeedCard';
 import { selectClipCount, useStudio } from '../store';
+import { BpmCell } from './BpmCell';
 
 interface Cell {
   readonly label: string;
@@ -90,62 +91,75 @@ export function ReadoutStrip(): JSX.Element {
     },
     { label: 'Lanes', value: String(laneCount), unit: 'ch', color: 'var(--cy-text)' },
     { label: 'Clips', value: String(clipCount), unit: '', color: 'var(--cy-text)' },
-    compile,
   ];
 
   return (
     <div style={{ display: 'flex', borderBottom: '1px solid var(--cy-border)', background: '#000' }}>
       {cells.map((c) => (
+        <CellView key={c.label} cell={c} />
+      ))}
+      {/* BPM duduk sebelum COMPILE OUT: keduanya soal "apa yang keluar", tapi
+          BPM soal yang terdengar SEKARANG dan COMPILE OUT soal file nanti.
+          Punya komponen sendiri karena ia satu-satunya sel yang interaktif
+          (×2 / ÷2), dan menyelipkan tombol ke `CellView` akan membuat empat sel
+          lain membawa cabang yang tidak pernah mereka pakai. */}
+      <BpmCell />
+      <CellView cell={compile} />
+    </div>
+  );
+}
+
+/** Satu sel tampilan. Diekstrak supaya BPM bisa disisipkan di tengah tanpa
+ *  menyalin markup-nya. */
+function CellView({ cell }: { cell: Cell }): JSX.Element {
+  return (
+    <div
+      title={cell.title}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        padding: '9px 16px',
+        borderRight: '1px solid var(--cy-border)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: '9px',
+          letterSpacing: '.2em',
+          color: 'var(--cy-text-muted)',
+          textTransform: 'uppercase',
+        }}
+      >
+        {cell.label}
+      </div>
+      <div
+        style={{
+          fontFamily: 'var(--cy-font-sans)',
+          fontSize: '19px',
+          fontWeight: 600,
+          color: cell.color,
+          marginTop: '2px',
+        }}
+      >
+        {cell.value}
+        <span style={{ fontSize: '10px', color: 'var(--cy-text-muted)', marginLeft: '4px' }}>
+          {cell.unit}
+        </span>
+      </div>
+      {cell.note === undefined ? null : (
         <div
-          key={c.label}
-          title={c.title}
           style={{
-            flex: 1,
-            minWidth: 0,
-            padding: '9px 16px',
-            borderRight: '1px solid var(--cy-border)',
+            fontSize: '9px',
+            letterSpacing: '.12em',
+            color: 'var(--cy-text-muted)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
         >
-          <div
-            style={{
-              fontSize: '9px',
-              letterSpacing: '.2em',
-              color: 'var(--cy-text-muted)',
-              textTransform: 'uppercase',
-            }}
-          >
-            {c.label}
-          </div>
-          <div
-            style={{
-              fontFamily: 'var(--cy-font-sans)',
-              fontSize: '19px',
-              fontWeight: 600,
-              color: c.color,
-              marginTop: '2px',
-            }}
-          >
-            {c.value}
-            <span style={{ fontSize: '10px', color: 'var(--cy-text-muted)', marginLeft: '4px' }}>
-              {c.unit}
-            </span>
-          </div>
-          {c.note === undefined ? null : (
-            <div
-              style={{
-                fontSize: '9px',
-                letterSpacing: '.12em',
-                color: 'var(--cy-text-muted)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {c.note}
-            </div>
-          )}
+          {cell.note}
         </div>
-      ))}
+      )}
     </div>
   );
 }
