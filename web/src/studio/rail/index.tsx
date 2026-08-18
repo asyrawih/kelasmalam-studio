@@ -27,6 +27,7 @@
 
 import { CompileCard } from './CompileCard';
 import { EqCurveCard } from './EqCurveCard';
+import { FxCard } from '../fx/FxCard';
 import { MixerCard } from './MixerCard';
 import { TabBar } from './TabBar';
 import { TransportCard } from './TransportCard';
@@ -54,6 +55,7 @@ export function StudioRail(): JSX.Element {
               <TabBar />
               {tab === 'mix' ? <MixerCard /> : null}
               {tab === 'eq' ? <EqCurveCard /> : null}
+              {tab === 'fx' ? <FxCard /> : null}
               {tab === 'compile' ? <CompileCard /> : null}
             </div>
           ),

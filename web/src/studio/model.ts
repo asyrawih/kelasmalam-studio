@@ -284,7 +284,7 @@ export type EqMode = 'curve' | 'sliders';
  * jatuh ke AUTO lewat `resolveFormat` di `CompileCard`.
  */
 export type ExportFormat = 'AUTO' | 'WAV' | 'FLAC' | 'MP3' | 'OGG';
-export type RailTab = 'mix' | 'eq' | 'compile';
+export type RailTab = 'mix' | 'eq' | 'fx' | 'compile';
 
 /** Nilai kecepatan yang ditawarkan design. PITCH LOCKED — lihat catatan bawah. */
 export const SPEEDS = [0.5, 0.75, 1, 1.5, 2] as const;

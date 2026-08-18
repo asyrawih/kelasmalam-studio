@@ -1,4 +1,4 @@
-/** Tab bar rail: MIX | EQ | COMPILE. State tab-nya hidup di store. */
+/** Tab bar rail: MIX | EQ | FX | COMPILE. State tab-nya hidup di store. */
 
 import type { RailTab } from '../model';
 import { studioActions, useTab } from './store-adapter';
@@ -6,6 +6,7 @@ import { studioActions, useTab } from './store-adapter';
 const TABS: readonly { id: RailTab; label: string }[] = [
   { id: 'mix', label: 'MIX' },
   { id: 'eq', label: 'EQ' },
+  { id: 'fx', label: 'FX' },
   { id: 'compile', label: 'COMPILE' },
 ];
 
@@ -16,7 +17,7 @@ export function TabBar(): JSX.Element {
     <div
       role="tablist"
       aria-label="Panel rail"
-      style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: '4px' }}
+      style={{ display: 'grid', gridTemplateColumns: `repeat(${TABS.length},minmax(0,1fr))`, gap: '4px' }}
     >
       {TABS.map((t) => {
         const active = tab === t.id;

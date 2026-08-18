@@ -39,6 +39,11 @@ export interface FxPreviewStatus {
   readonly error: string | null;
 }
 
+/** Katalog yang sudah dimuat, atau null kalau runtime belum siap. */
+export function fxCatalog(): Map<string, EffectDesc> | null {
+  return catalog;
+}
+
 export function fxPreviewStatus(): FxPreviewStatus {
   return { ready: fxModule !== null && catalog !== null, error: loadError };
 }
