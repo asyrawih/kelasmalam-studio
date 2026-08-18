@@ -37,6 +37,7 @@
 import { useMemo } from 'react';
 import { useEngineOrNull } from './engine-context';
 import { MASTER_BUS, type UiEngine } from './engine-types';
+import { MASTER_PARAM_GAIN, trackGainSlot, trackPanSlot } from '../audio/param-map';
 import { dbToLin, faderToDb, linToDb } from './gain';
 import type { ClipId, Clip, FxId, Track, TrackId } from './model';
 import { timelineSample } from './model';
@@ -47,15 +48,6 @@ import { uiActions, uiStore } from './store';
 const uiActionsProject = () => uiStore.getState().project;
 const uiTransport = () => uiStore.getState().transport;
 
-/** 8 slot param per track di BLOCK 2 SAB. Disepakati bersama Rust; kalau
- *  berubah di sana, ubah di sini juga (tidak ada cara mengeceknya otomatis). */
-const PARAMS_PER_TRACK = 8;
-const TRACK_PARAM_GAIN = 0;
-const TRACK_PARAM_PAN = 1;
-/** Slot param master dipesan di ujung atas blok. */
-const MASTER_PARAM_GAIN = 1016;
-
-const trackParam = (track: TrackId, offset: number): number => track * PARAMS_PER_TRACK + offset;
 
 export interface EngineCommands {
   // ── Transport ─────────────────────────────────────────────
@@ -166,13 +158,13 @@ function build(engine: UiEngine | null): EngineCommands {
     setMetronome: (on) => uiActions.patchTransport({ metronome: on }),
 
     setFaderLive: (track, travel) =>
-      engine?.setParam(trackParam(track, TRACK_PARAM_GAIN), dbToLin(faderToDb(travel))),
+      engine?.setParam(trackGainSlot(track), dbToLin(faderToDb(travel))),
     setFaderCommit: (track, travel) => {
       const db = faderToDb(travel);
       engine?.setTrackGain(track, db);
       uiActions.patchTrack(track, (t) => ({ ...t, gain: dbToLin(db) }));
     },
-    setPanLive: (track, pan) => engine?.setParam(trackParam(track, TRACK_PARAM_PAN), pan),
+    setPanLive: (track, pan) => engine?.setParam(trackPanSlot(track), pan),
     setPanCommit: (track, pan) => {
       engine?.setPan(track, pan);
       uiActions.patchTrack(track, (t) => ({ ...t, pan }));

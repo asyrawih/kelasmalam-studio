@@ -34,12 +34,14 @@ pub mod arena;
 pub mod comp;
 pub mod desc;
 pub mod eq;
+pub mod params;
 pub mod registry;
 
 pub use arena::{FxArena, MemHandle, FX_ARENA_FLOATS};
 pub use comp::CompNode;
 pub use desc::{Category, EffectDesc, ParamDesc, Smoothing, Taper, Unit};
 pub use eq::Eq4;
+pub use params::{param_map_json, PARAMS_PER_TRACK};
 pub use registry::{FxKind, FxNode, CATALOG};
 
 use alloc::boxed::Box;

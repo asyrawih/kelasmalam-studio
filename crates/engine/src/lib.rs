@@ -30,13 +30,13 @@ use daw_dsp::{add_scaled, clear, db_to_lin};
 use daw_rt::{Command, MAX_BLOCK, MAX_BUFFERS, MAX_TRACKS, MAX_VOICES};
 use daw_timeline::TimelineSample;
 
-use crate::fx::FxRack;
+use crate::fx::{params, FxRack};
 use crate::graph::{
     build_plan, bus_unit, send_slot, track_unit, MASTER_METER_SLOT, TOTAL_SEND_SLOTS, TOTAL_UNITS,
 };
 use crate::meter::MeterBank;
 use crate::plan::{PlanError, ProcessPlan, Step};
-use crate::snapshot::{Project, MAX_SENDS};
+use crate::snapshot::{Project, MAX_BUSES, MAX_SENDS};
 use crate::track::{apply_fader, pan_add, Mixer};
 use crate::transport::{Transport, TransportState};
 use crate::voice::{Asset, AssetTable, VoicePool, VoiceStart};
@@ -297,6 +297,70 @@ impl Engine {
     }
 
     // ---------------------------------------------------------------- non-RT
+
+    /// Terapkan snapshot blok parameter dari sisi host.
+    ///
+    /// Dipanggil dari `engine_process` SEBELUM `render_block`, dan hanya saat
+    /// generation berubah — jadi biayanya sekali per rAF, bukan sekali per
+    /// blok audio.
+    ///
+    /// Nilai masuk lewat `set_gain_lin`/`set_pan`, yang menyetel TARGET
+    /// smoother dan bukan nilai langsung; itu yang membuat geseran fader
+    /// secepat apa pun tetap bebas zipper tanpa perlu memecah blok.
+    ///
+    /// Slot yang belum dikemudikan UI bernilai NaN dan dilewati. Nol TIDAK
+    /// bisa dipakai sebagai penanda "kosong" karena nol adalah gain yang sah —
+    /// lihat catatan di [`crate::fx::params`].
+    pub fn latch_params(&mut self, src: &[f32]) {
+        #[inline]
+        fn get(src: &[f32], i: usize) -> f32 {
+            match src.get(i) {
+                Some(v) => *v,
+                None => f32::NAN,
+            }
+        }
+
+        for t in 0..self.project.tracks.len().min(MAX_TRACKS) {
+            let u = track_unit(t);
+            if let Some(p) = self.mixer.unit_mut(u) {
+                let g = get(src, params::track_gain_slot(t));
+                if params::is_override(g) {
+                    p.set_gain_lin(g);
+                }
+                let pan = get(src, params::track_pan_slot(t));
+                if params::is_override(pan) {
+                    p.set_pan(pan);
+                }
+            }
+        }
+
+        for b in 0..self.project.buses.len().min(MAX_BUSES) {
+            let u = bus_unit(b);
+            if let Some(p) = self.mixer.unit_mut(u) {
+                let g = get(src, params::bus_gain_slot(b));
+                if params::is_override(g) {
+                    p.set_gain_lin(g);
+                }
+                let pan = get(src, params::bus_pan_slot(b));
+                if params::is_override(pan) {
+                    p.set_pan(pan);
+                }
+            }
+        }
+
+        // Master punya slotnya sendiri di ujung atas blok — itu yang ditulis
+        // `setMasterFaderLive`. Ia menunjuk bus master, yang juga punya slot
+        // bus biasa; slot master diterapkan belakangan supaya ia yang menang,
+        // karena itulah yang benar-benar dikemudikan UI.
+        if let Some(m) = self.project.master_bus() {
+            let g = get(src, params::MASTER_PARAM_GAIN);
+            if params::is_override(g) {
+                if let Some(p) = self.mixer.unit_mut(bus_unit(m as usize)) {
+                    p.set_gain_lin(g);
+                }
+            }
+        }
+    }
 
     /// Memasang project baru: membangun plan, mengisi parameter, menyusun
     /// jadwal clip. NON-RT — mengalokasi.

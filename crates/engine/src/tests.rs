@@ -291,3 +291,109 @@ fn retired_plans_are_dropped_off_the_render_thread() {
     // Plan lama menunggu diambil sisi non-RT — bukan di-drop di render_block.
     assert!(f.engine.take_retired().is_some());
 }
+
+// ── Blok parameter ────────────────────────────────────────────────────────
+
+use crate::fx::params;
+
+/// Blok param penuh NaN, seperti keadaannya sebelum UI menyentuh apa pun.
+fn empty_param_block() -> Vec<f32> {
+    alloc::vec![f32::NAN; daw_rt::layout::PARAM_SLOTS]
+}
+
+fn rms(v: &[f32]) -> f32 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    let s: f64 = v.iter().map(|x| (*x as f64) * (*x as f64)).sum();
+    (s / v.len() as f64).sqrt() as f32
+}
+
+/// INI tes yang menahan bug paling mahal di jalur ini.
+///
+/// `commitParams()` menulis SELURUH 2048 slot tiap terbit, bukan hanya yang
+/// berubah. Kalau slot yang belum pernah disentuh diperlakukan sebagai nilai
+/// yang sah, maka drag pertama pada SATU fader akan menyetel gain semua track
+/// dan bus ke nol — seluruh project langsung senyap, dan penyebabnya tidak
+/// terlihat di mana pun.
+#[test]
+fn untouched_param_slots_change_nothing() {
+    let mut a = build(4, true, true, 128);
+    let mut b = build(4, true, true, 128);
+
+    let (al, ar) = render_all(&mut a, 8192, 128);
+
+    b.engine.latch_params(&empty_param_block());
+    let (bl, br) = render_all(&mut b, 8192, 128);
+
+    assert_eq!(al, bl, "slot kosong mengubah kanal kiri");
+    assert_eq!(ar, br, "slot kosong mengubah kanal kanan");
+}
+
+/// Dan ini yang membuktikan bug-nya benar-benar diperbaiki: sebelum ada
+/// konsumen blok param di Rust, `setFaderLive` menulis ke SAB dan nilainya
+/// dibuang — menggeser fader saat berbunyi tidak mengubah apa pun.
+#[test]
+fn param_block_gain_actually_changes_the_audio() {
+    let mut base = build(1, false, false, 128);
+    let (bl, _) = render_all(&mut base, 8192, 128);
+
+    let mut quiet = build(1, false, false, 128);
+    let mut block = empty_param_block();
+    block[params::track_gain_slot(0)] = 0.1;
+    quiet.engine.latch_params(&block);
+    let (ql, _) = render_all(&mut quiet, 8192, 128);
+
+    // Diukur setelah smoother 5 ms settle, jadi yang dibandingkan level tetap.
+    let a = rms(&bl[4096..]);
+    let q = rms(&ql[4096..]);
+    assert!(a > 1.0e-4, "referensi senyap, tes tidak bermakna");
+    assert!(q < a * 0.5, "gain tidak diterapkan: {a} -> {q}");
+}
+
+/// Nol adalah gain yang SAH. Kalau ia dipakai sebagai penanda "slot kosong",
+/// user tidak akan pernah bisa menarik fader sampai habis.
+#[test]
+fn zero_is_a_real_gain_not_an_empty_marker() {
+    let mut f = build(1, false, false, 128);
+    let mut block = empty_param_block();
+    block[params::track_gain_slot(0)] = 0.0;
+    f.engine.latch_params(&block);
+    let (l, r) = render_all(&mut f, 8192, 128);
+    assert!(rms(&l[4096..]) < 1.0e-5, "gain 0 tidak menyenyapkan kiri");
+    assert!(rms(&r[4096..]) < 1.0e-5, "gain 0 tidak menyenyapkan kanan");
+}
+
+/// Master punya slotnya sendiri di ujung atas blok DAN slot bus biasa, karena
+/// master memang sebuah bus. Yang dikemudikan UI adalah slot master, jadi ia
+/// yang harus menang.
+#[test]
+fn master_slot_wins_over_the_bus_slot() {
+    let mut f = build(1, false, false, 128);
+    let mut block = empty_param_block();
+    block[params::bus_gain_slot(0)] = 1.0;
+    block[params::MASTER_PARAM_GAIN] = 0.0;
+    f.engine.latch_params(&block);
+    let (l, _) = render_all(&mut f, 8192, 128);
+    assert!(rms(&l[4096..]) < 1.0e-5, "slot master kalah oleh slot bus");
+}
+
+/// Nilai yang masuk harus di-ramp, bukan dipasang langsung — kalau langsung,
+/// menggeser fader cepat terdengar sebagai deretan klik.
+#[test]
+fn gain_changes_ramp_instead_of_stepping() {
+    let mut f = build(1, false, false, 128);
+    render_all(&mut f, 4096, 128);
+
+    let mut block = empty_param_block();
+    block[params::track_gain_slot(0)] = 0.0;
+    f.engine.latch_params(&block);
+
+    let (l, _) = render_all(&mut f, 512, 128);
+    // Kalau gain dipasang langsung, sample pertama sesudahnya sudah nol dan
+    // lompatannya besar. Dengan ramp, penurunannya bertahap.
+    let head = rms(&l[..64]);
+    let tail = rms(&l[448..]);
+    assert!(head > tail, "tidak turun sama sekali: {head} -> {tail}");
+    assert!(head > 1.0e-4, "turun seketika, bukan di-ramp: {head}");
+}

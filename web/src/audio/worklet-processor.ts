@@ -77,6 +77,7 @@ interface RawExports {
     atHi: number,
   ): void;
   engine_load_snapshot(ptr: number, bytes: number, len: number): number;
+  engine_latch_params(ptr: number, values: number, len: number): void;
   scratch_alloc(len: number): number;
   scratch_free(ptr: number, len: number): void;
   abi_version(): number;
@@ -193,6 +194,7 @@ class DawProcessor extends AudioWorkletProcessor {
       ptr?: number;
       len?: number;
       bytes?: Uint8Array;
+      values?: Float32Array;
     };
     if (data.type === 'snapshot') {
       // Jalur shared: main thread sudah menyalin bytes ke linear memory dan
@@ -228,6 +230,20 @@ class DawProcessor extends AudioWorkletProcessor {
           c[i + 4]!,
           c[i + 5]!,
         );
+      }
+    } else if (data.type === 'params' && data.values) {
+      // Jalur degraded saja: di jalur shared, UI menulis langsung ke blok
+      // kontrol dan engine_process yang menyalinnya, jadi pesan ini tidak
+      // pernah dikirim. Nilai lewat scratch MILIK worklet — `controlPtr` yang
+      // dioperkan berasal dari instance main thread dan di mode `st` menunjuk
+      // memori linear yang berbeda.
+      const v = data.values;
+      const bytes = v.length * 4;
+      const ptr = raw.scratch_alloc(bytes);
+      if (ptr !== 0) {
+        new Float32Array(this.memory.buffer, ptr, v.length).set(v);
+        raw.engine_latch_params(this.enginePtr, ptr, v.length);
+        raw.scratch_free(ptr, bytes);
       }
     } else if (data.type === 'seek') {
       raw.engine_seek(this.enginePtr, data.lo ?? 0, data.hi ?? 0);

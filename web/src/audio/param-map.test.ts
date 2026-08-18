@@ -1,11 +1,13 @@
 /**
- * Tes sinkronisasi layout SAB Rust ↔ TS (docs/01 §1b).
+ * Tes sinkronisasi peta slot param Rust ↔ TS.
  *
- * Sumber kebenaran ada di `crates/rt/src/layout.rs`; `layout_json()` di sana
- * mencetak semua offset. Tes ini menjalankan tes Rust yang mencetaknya lalu
- * membandingkannya dengan konstanta TS. Kalau cargo tidak tersedia (mis. CI
- * front-end saja), tes ditandai skip alih-alih gagal — pekerjaan job `wasm`
- * di CI yang menjaminnya.
+ * Sumber kebenaran ada di `crates/engine/src/fx/params.rs`. Sebelum tes ini,
+ * kedua sisi cuma diikat oleh komentar; menggeser `PARAMS_PER_TRACK` di salah
+ * satunya akan membuat fader satu track mengemudikan gain track lain, tanpa
+ * error di mana pun.
+ *
+ * Kalau cargo tidak tersedia (CI front-end saja), tes dilewati — job `wasm`
+ * yang menegakkannya, pola yang sama dengan `sab-layout.test.ts`.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -13,7 +15,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { assertLayout, assertNoOverlap, type RustLayoutJson } from './sab-layout';
+import { assertParamMap, assertParamRegions, type RustParamMapJson } from './param-map';
 
 /**
  * Akar repo (yang memuat `Cargo.toml`), dicari naik dari cwd vitest.
@@ -36,33 +38,30 @@ function repoRoot(): string | null {
   return null;
 }
 
-function rustLayout(): RustLayoutJson | null {
+function rustParamMap(): RustParamMapJson | null {
   const cwd = repoRoot();
   if (cwd === null) return null;
   try {
     const out = execFileSync(
       'cargo',
-      ['test', '-p', 'daw-rt', '--lib', '--', '--nocapture', 'print_layout_json'],
+      ['test', '-p', 'daw-engine', '--lib', '--', '--nocapture', 'print_param_map_json'],
       { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
     );
-    const line = out.split('\n').find((l) => l.trim().startsWith('{"sabSize"'));
-    return line ? (JSON.parse(line.trim()) as RustLayoutJson) : null;
+    const line = out.split('\n').find((l) => l.trim().startsWith('{"paramSlots"'));
+    return line ? (JSON.parse(line.trim()) as RustParamMapJson) : null;
   } catch {
     return null;
   }
 }
 
-describe('sab-layout', () => {
-  it('tidak ada blok yang tumpang tindih', () => {
-    expect(() => assertNoOverlap()).not.toThrow();
+describe('param-map', () => {
+  it('wilayah slot tidak tumpang tindih', () => {
+    expect(() => assertParamRegions()).not.toThrow();
   });
 
-  it('cocok dengan crates/rt/src/layout.rs', () => {
-    const rust = rustLayout();
-    if (!rust) {
-      // Tidak ada cargo → dilewati; job `wasm` di CI yang menegakkannya.
-      return;
-    }
-    expect(() => assertLayout(rust)).not.toThrow();
+  it('cocok dengan crates/engine/src/fx/params.rs', () => {
+    const rust = rustParamMap();
+    if (!rust) return;
+    expect(() => assertParamMap(rust)).not.toThrow();
   });
 });

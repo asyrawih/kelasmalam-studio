@@ -217,7 +217,13 @@ pub unsafe extern "C" fn engine_new(
         out: vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
         cmd_rx,
         ctl: ctl_ptr,
-        param_gen_seen: u32::MAX,
+        // Diambil dari nilai yang BERLAKU, bukan u32::MAX. Kalau di-set ke
+        // sentinel, panggilan `engine_process` pertama akan melihat generation
+        // berbeda dan menyalin blok param yang belum pernah ditulis UI — yaitu
+        // nol semua — lalu menyetel gain seluruh mixer ke nol. Project senyap
+        // sejak sample pertama, tanpa satu pun error.
+        // SAFETY: ctl_ptr sudah divalidasi di atas.
+        param_gen_seen: unsafe { atom(ctl_ptr, off::PARAM_GEN) }.load(Ordering::Acquire),
         max_frames,
         sample_rate,
     };
@@ -270,6 +276,34 @@ pub extern "C" fn engine_out_channels() -> u32 {
 // Hot path
 // ---------------------------------------------------------------------------
 
+/// Terapkan blok parameter yang datang lewat `postMessage`.
+///
+/// Ada khusus untuk jalur degraded (tanpa SharedArrayBuffer). Di jalur shared,
+/// UI menulis langsung ke blok kontrol dan `engine_process` yang menyalinnya —
+/// tidak ada yang memanggil fungsi ini.
+///
+/// Sengaja TIDAK lewat blok kontrol: di mode `st`, worklet meng-instansiasi
+/// modul dengan memori linear-nya SENDIRI, sementara `controlPtr` yang
+/// dioperkan berasal dari instance main thread. Alamat itu tidak bermakna di
+/// memori worklet, jadi menulis parameter ke sana akan merusak memori yang
+/// tidak ada hubungannya. Nilai di sini datang lewat scratch milik worklet.
+///
+/// # Safety
+/// `ptr` harus hasil [`engine_new`] yang masih hidup; `values` harus menunjuk
+/// `len` buah `f32` yang valid selama panggilan.
+#[no_mangle]
+pub unsafe extern "C" fn engine_latch_params(ptr: *mut RtEngine, values: *const f32, len: u32) {
+    if ptr.is_null() || values.is_null() || len == 0 {
+        return;
+    }
+    let n = (len as usize).min(off::PARAM_SLOTS);
+    // SAFETY: dijamin pemanggil (buffer valid selama panggilan).
+    let src = unsafe { core::slice::from_raw_parts(values, n) };
+    // SAFETY: dijamin pemanggil (kepemilikan tunggal).
+    let rt = unsafe { &mut *ptr };
+    rt.engine.latch_params(src);
+}
+
 /// Render satu quantum. **Ini satu-satunya fungsi yang dipanggil per 128 frame.**
 ///
 /// Urutannya penting:
@@ -315,18 +349,29 @@ pub unsafe extern "C" fn engine_process(ptr: *mut RtEngine, frames: u32) -> u32 
     // --- 2. param double-buffer ------------------------------------------
     // Blok param (docs/01 §1b) dipublikasikan UI dengan Release pada
     // `param_gen`; di sini dibaca dengan Acquire dan slot aktif = `gen & 1`.
-    // `daw-engine` belum mengekspos konsumen blok param (semua parameter masih
-    // lewat command ring), jadi untuk saat ini kita hanya melacak generation-nya
-    // — begitu API-nya ada, HANYA blok ini yang berubah.
+    // Pasangannya di `engine-client.ts`: UI menulis SELURUH slot ke buffer
+    // `(gen+1) & 1` lebih dulu, baru menaikkan generation — jadi slot yang
+    // dibaca di sini tidak pernah setengah tertulis.
+    //
+    // Menyalin sekali per generation, bukan sekali per blok: generation cuma
+    // naik sekali per rAF (~60 Hz), sementara fungsi ini dipanggil ~375 Hz.
     // SAFETY: ctl valid selama engine hidup.
     let generation = unsafe { atom(rt.ctl, off::PARAM_GEN) }.load(Ordering::Acquire);
     if generation != rt.param_gen_seen {
         rt.param_gen_seen = generation;
-        let _active_slot = if generation & 1 == 0 {
+        let base = if generation & 1 == 0 {
             off::PARAM_SLOT_A
         } else {
             off::PARAM_SLOT_B
         };
+        // SAFETY: `base + PARAM_SLOTS*4` = 0x6100 + 0x2000 = 0x8100 pada slot B,
+        // yang persis METER_SEQ — jadi wilayahnya berada di dalam blok kontrol
+        // dan tidak menabrak blok meter. Alignment 4 dijamin oleh offset yang
+        // kelipatan 64.
+        let src = unsafe {
+            core::slice::from_raw_parts(rt.ctl.add(base) as *const f32, off::PARAM_SLOTS)
+        };
+        rt.engine.latch_params(src);
     }
 
     // --- 3. render --------------------------------------------------------

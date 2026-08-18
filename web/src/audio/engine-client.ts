@@ -127,7 +127,17 @@ export class EngineClient {
   private flushScheduled = false;
 
   /** Slot param double-buffer yang sedang disiapkan (bayangan lokal). */
-  private readonly paramShadow = new Float32Array(PARAM_SLOTS);
+  /**
+   * Bayangan blok param. Diisi **NaN**, bukan nol.
+   *
+   * `commitParams()` menerbitkan SELURUH slot tiap kali, bukan hanya yang
+   * berubah. Kalau slot yang belum pernah disentuh bernilai nol, engine
+   * membacanya sebagai gain nol — dan geseran pertama pada SATU fader akan
+   * menyenyapkan seluruh project. NaN berarti "tidak dikemudikan UI", dan
+   * engine melewatinya. Nol tidak bisa dipakai sebagai penanda kosong karena
+   * nol adalah gain yang sah (lihat `param-map.ts`).
+   */
+  private readonly paramShadow = new Float32Array(PARAM_SLOTS).fill(NaN);
   private paramDirty = false;
 
   private disposed = false;
