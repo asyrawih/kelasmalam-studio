@@ -18,6 +18,7 @@ function clip(over: Partial<StudioClip> = {}): StudioClip {
   return {
     id: 'c1',
     assetId: 1,
+    chain: [],
     start: 10 * SR,
     len: 20 * SR,
     sourceStart: 5 * SR,

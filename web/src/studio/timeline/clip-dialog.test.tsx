@@ -62,6 +62,7 @@ function clip(id: string, startSec: number, lenSec = 4): StudioClip {
   return {
     id,
     assetId: 1,
+    chain: [],
     start: startSec * SR,
     len: lenSec * SR,
     sourceStart: 0,

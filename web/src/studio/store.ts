@@ -37,6 +37,7 @@ import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SP
   type EqSettings,
   type ExportFormat,
   type FxInsert,
+  type FxTarget,
   type LaneHeightId,
   type RailTab,
   type Samples,
@@ -529,6 +530,32 @@ function nextId(prefix: string): string {
 
 // ── Aksi publik ──────────────────────────────────────────────────────────────
 
+/**
+ * Terapkan `edit` pada chain milik `target`, tanpa menyentuh yang lain.
+ *
+ * Satu tempat untuk ketiga target: kalau tiap aksi mengurai targetnya sendiri,
+ * cabang `clip` akan terlewat di salah satunya dan efeknya menghilang tanpa
+ * error.
+ */
+function editFxChain(
+  s: StudioAppState,
+  target: FxTarget,
+  edit: (chain: FxInsert[]) => FxInsert[],
+): Partial<StudioAppState> {
+  if (target.kind === 'master') {
+    return { masterChain: edit(s.masterChain) };
+  }
+  if (target.kind === 'lane') {
+    return mapLane(s, target.id, (l) => ({ ...l, chain: edit(l.chain) }));
+  }
+  return {
+    lanes: s.lanes.map((l) => ({
+      ...l,
+      clips: l.clips.map((c) => (c.id === target.id ? { ...c, chain: edit(c.chain) } : c)),
+    })),
+  };
+}
+
 export const studioActions = {
   // — seleksi —
   selectLane(laneId: string): void {
@@ -636,69 +663,54 @@ export const studioActions = {
   },
 
   /**
-   * Tambah efek ke akhir chain sebuah lane (atau master kalau `laneId` null).
+   * Tambah efek ke akhir chain sebuah target.
    *
    * `params` sengaja dibiarkan kosong: nilai yang tidak dikirim memakai default
    * KATALOG di sisi Rust. Menyalin seluruh default ke sini akan membekukan
    * angka yang seharusnya dimiliki deskriptor — dan begitu default di Rust
    * berubah, project lama tetap memakai salinan lamanya tanpa ada yang tahu.
    */
-  addFx(laneId: string | null, kind: string): void {
-    const fx: FxInsert = { kind, enabled: true, params: {} };
-    if (laneId === null) {
-      set((s) => ({ ...s, masterChain: [...s.masterChain, fx] }));
-      return;
-    }
-    set((s) => mapLane(s, laneId, (l) => ({ ...l, chain: [...l.chain, fx] })));
+  addFx(target: FxTarget, kind: string): void {
+    set((s) => editFxChain(s, target, (chain) => [...chain, { kind, enabled: true, params: {} }]));
   },
 
-  removeFx(laneId: string | null, index: number): void {
-    const drop = (chain: FxInsert[]): FxInsert[] => chain.filter((_, i) => i !== index);
-    if (laneId === null) {
-      set((s) => ({ ...s, masterChain: drop(s.masterChain) }));
-      return;
-    }
-    set((s) => mapLane(s, laneId, (l) => ({ ...l, chain: drop(l.chain) })));
+  removeFx(target: FxTarget, index: number): void {
+    set((s) => editFxChain(s, target, (chain) => chain.filter((_, i) => i !== index)));
   },
 
   /** Pindahkan efek di dalam chain. Urutan efek mengubah suara, jadi ini bukan
    *  sekadar kosmetik. */
-  moveFx(laneId: string | null, from: number, to: number): void {
-    const reorder = (chain: FxInsert[]): FxInsert[] => {
-      if (from === to || from < 0 || from >= chain.length || to < 0 || to >= chain.length) {
-        return chain;
-      }
-      const next = [...chain];
-      const [moved] = next.splice(from, 1);
-      if (moved === undefined) return chain;
-      next.splice(to, 0, moved);
-      return next;
-    };
-    if (laneId === null) {
-      set((s) => ({ ...s, masterChain: reorder(s.masterChain) }));
-      return;
-    }
-    set((s) => mapLane(s, laneId, (l) => ({ ...l, chain: reorder(l.chain) })));
+  moveFx(target: FxTarget, from: number, to: number): void {
+    set((s) =>
+      editFxChain(s, target, (chain) => {
+        if (from === to || from < 0 || from >= chain.length || to < 0 || to >= chain.length) {
+          return chain;
+        }
+        const next = [...chain];
+        const [moved] = next.splice(from, 1);
+        if (moved === undefined) return chain;
+        next.splice(to, 0, moved);
+        return next;
+      }),
+    );
   },
 
-  setFxEnabled(laneId: string | null, index: number, enabled: boolean): void {
-    const patch = (chain: FxInsert[]): FxInsert[] =>
-      chain.map((fx, i) => (i === index ? { ...fx, enabled } : fx));
-    if (laneId === null) {
-      set((s) => ({ ...s, masterChain: patch(s.masterChain) }));
-      return;
-    }
-    set((s) => mapLane(s, laneId, (l) => ({ ...l, chain: patch(l.chain) })));
+  setFxEnabled(target: FxTarget, index: number, enabled: boolean): void {
+    set((s) =>
+      editFxChain(s, target, (chain) =>
+        chain.map((fx, i) => (i === index ? { ...fx, enabled } : fx)),
+      ),
+    );
   },
 
-  setFxParam(laneId: string | null, index: number, param: string, value: number): void {
-    const patch = (chain: FxInsert[]): FxInsert[] =>
-      chain.map((fx, i) => (i === index ? { ...fx, params: { ...fx.params, [param]: value } } : fx));
-    if (laneId === null) {
-      set((s) => ({ ...s, masterChain: patch(s.masterChain) }));
-      return;
-    }
-    set((s) => mapLane(s, laneId, (l) => ({ ...l, chain: patch(l.chain) })));
+  setFxParam(target: FxTarget, index: number, param: string, value: number): void {
+    set((s) =>
+      editFxChain(s, target, (chain) =>
+        chain.map((fx, i) =>
+          i === index ? { ...fx, params: { ...fx.params, [param]: value } } : fx,
+        ),
+      ),
+    );
   },
 
   setLaneEq(laneId: string, eq: EqSettings): void {

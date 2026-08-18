@@ -141,6 +141,11 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
         // terdengar di preview dan hilang dari file TANPA satu pun peringatan
         // — `map_project` sekarang bisa mengatakannya karena datanya sampai.
         stem: c.stem === undefined ? null : { ...c.stem },
+        chain: c.chain.map((fx) => ({
+          kind: fx.kind,
+          enabled: fx.enabled,
+          params: { ...fx.params },
+        })),
         assetId: toDense(c.assetId),
         start: c.start,
         len: c.len,
@@ -206,7 +211,13 @@ export function payloadFeatures(json: string): Set<string> {
       id: string;
       eq?: { bands?: unknown[] };
       chain?: { kind: string }[];
-      clips?: { id: string; fadeInMs?: number; fadeOutMs?: number; stem?: unknown }[];
+      clips?: {
+        id: string;
+        fadeInMs?: number;
+        fadeOutMs?: number;
+        stem?: unknown;
+        chain?: { kind: string }[];
+      }[];
     }[];
   };
   (p.masterChain ?? []).forEach((fx, i) => out.add(`masterFx:${i}:${fx.kind}`));
@@ -218,6 +229,7 @@ export function payloadFeatures(json: string): Set<string> {
       out.add(`clipGain:${c.id}`);
       if ((c.fadeInMs ?? 0) > 0 || (c.fadeOutMs ?? 0) > 0) out.add(`fade:${c.id}`);
       if (c.stem !== null && c.stem !== undefined) out.add(`stem:${c.id}`);
+      (c.chain ?? []).forEach((fx, i) => out.add(`clipFx:${c.id}:${i}:${fx.kind}`));
     }
   }
   return out;

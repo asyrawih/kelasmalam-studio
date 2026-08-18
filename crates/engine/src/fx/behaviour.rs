@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 
 use super::arena::FxArena;
 use super::registry::{FxKind, FxNode};
-use super::{Effect, ParamCtx};
+use super::ParamCtx;
 
 const SR: f32 = 48_000.0;
 const BLOCK: usize = 128;

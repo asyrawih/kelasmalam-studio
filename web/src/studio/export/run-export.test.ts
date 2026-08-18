@@ -320,6 +320,7 @@ describe('buildExportPayload', () => {
             {
               id: 'c1',
               assetId: 7,
+              chain: [],
               start: 4800,
               len: 48_000,
               sourceStart: 100,
@@ -329,7 +330,7 @@ describe('buildExportPayload', () => {
               fadeCurve: 'equalPower',
             },
             // Clip demo tanpa PCM — harus DILEWATI, sama seperti di preview.
-            { id: 'c2', assetId: 99, start: 0, len: 96_000, sourceStart: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeCurve: 'linear' },
+            { id: 'c2', assetId: 99, chain: [], start: 0, len: 96_000, sourceStart: 0, gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeCurve: 'linear' },
           ],
         },
       ],
@@ -411,6 +412,7 @@ describe('buildExportPayload', () => {
               sourceLen: 48_000,
               label: 'c1',
               seed: 1,
+              chain: [],
               loopLen: 16_000,
               gainDb: 0,
               fadeInMs: 0,

@@ -105,6 +105,7 @@ function clip(id: string, assetId: number): StudioClip {
     fadeOutMs: 0,
     fadeCurve: DEFAULT_FADE_CURVE,
     seed: 1,
+    chain: [],
   };
 }
 

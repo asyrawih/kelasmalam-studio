@@ -104,6 +104,7 @@ function maximalState(): StudioState {
       {
         id: `${id}-c1`,
         assetId: 7,
+        chain: [{ kind: 'filter', enabled: true, params: { knob: 0.4 } }],
         start: 0,
         len: 48_000,
         sourceStart: 0,

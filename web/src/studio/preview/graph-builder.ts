@@ -333,6 +333,7 @@ export function buildProjectGraph(
 
       const gain = audio.createGain();
       features.add(`clipGain:${clip.id}`);
+      clip.chain.forEach((fx, i) => features.add(`clipFx:${clip.id}:${i}:${fx.kind}`));
       if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) features.add(`fade:${clip.id}`);
       applyClipGainEnvelope(gain, clip, {
         startAt: whenSec,

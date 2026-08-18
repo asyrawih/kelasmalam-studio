@@ -84,6 +84,23 @@ impl Default for CompSettings {
 /// bukan dipotong diam-diam.
 pub const MAX_CHAIN_LEN: usize = 4;
 
+/// Berapa banyak clip dalam satu project yang boleh punya insert chain sendiri.
+///
+/// `docs/06 §6e` menolak insert per-clip untuk MVP dengan alasan yang masih
+/// berlaku: alokasi di jalur RT dilarang, jumlah instance-nya tak terbatas
+/// (32 track × 4 clip aktif = 128 chain), dan ekor delay/reverb terpotong saat
+/// playhead keluar clip. Batas ini adalah jalan keluar yang doc itu sendiri
+/// sediakan, diambil dalam bentuk paling sederhana yang benar: chain
+/// dialokasikan per CLIP saat project dimuat, sekali, bukan diperebutkan
+/// voice saat berbunyi.
+///
+/// Konsekuensinya jujur dan disebutkan ke user lewat peringatan: sebuah
+/// project boleh punya paling banyak delapan clip ber-efek. Sebagai gantinya
+/// tidak ada satu pun alokasi, pencurian slot, atau kondisi balapan di jalur
+/// render — dan ekornya tidak pernah terpotong, karena rak-nya memang tidak
+/// pernah dilepas.
+pub const MAX_CLIP_CHAINS: usize = 8;
+
 /// Satu efek terpasang di insert chain.
 ///
 /// `params` diindeks berdasarkan URUTAN di `EffectDesc::params`, bukan nama.
@@ -189,6 +206,11 @@ pub struct ClipDesc {
     /// bisa menyatakannya — kalau tidak, file hasil export akan berbeda dari
     /// yang didengar user tepat di titik yang paling diperhatikannya.
     pub fade_curve: u8,
+    /// Slot pool insert per-clip, kalau clip ini punya chain.
+    ///
+    /// Indeks, bukan chain-nya sendiri: `ClipDesc` harus tetap `Copy` karena
+    /// jalur trigger menyalinnya di dalam `render_block`.
+    pub chain_slot: Option<u8>,
     /// Rasio baca source per sample timeline (1.0 = normal). Resampling
     /// memakai cubic Hermite (daw_dsp::hermite4).
     pub speed: f64,
@@ -210,6 +232,7 @@ impl Default for ClipDesc {
             fade_in: 0,
             fade_out: 0,
             fade_curve: FADE_LINEAR,
+            chain_slot: None,
             speed: 1.0,
         }
     }
@@ -224,6 +247,10 @@ pub struct Project {
     /// `buses[0]` konvensinya master, tapi yang menentukan adalah `dest == None`.
     pub buses: Vec<BusDesc>,
     pub clips: Vec<ClipDesc>,
+    /// Insert chain per-clip, satu entri per slot pool. Clip menunjuknya lewat
+    /// `ClipDesc::chain_slot`.
+    #[serde(default)]
+    pub clip_chains: Vec<Vec<FxSlotDesc>>,
     pub loop_range: Option<(u64, u64)>,
 }
 

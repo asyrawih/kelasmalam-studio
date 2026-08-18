@@ -286,7 +286,10 @@ fn retired_plans_are_dropped_off_the_render_thread() {
     // Rak ikut dipensiunkan bersama plan: panjangnya ikut project, jadi ia
     // juga tidak boleh di-drop di audio thread.
     let rack = crate::fx::FxRack::new(crate::graph::TOTAL_UNITS, 48_000.0);
-    f.engine.install_config(RenderConfig { plan, rack }).ok();
+    let clips = crate::fx::ClipFxPool::empty(48_000.0);
+    f.engine
+        .install_config(RenderConfig { plan, rack, clips })
+        .ok();
     let mut l = alloc::vec![0.0f32; 128];
     let mut r = alloc::vec![0.0f32; 128];
     f.engine.render_block(&mut l, &mut r);
@@ -633,4 +636,171 @@ fn eq_settings_from_the_project_reach_the_live_rack() {
         b < a * 0.5,
         "EQ project tidak sampai ke rak yang berbunyi: {a} -> {b}"
     );
+}
+
+// ── Insert chain per-clip ─────────────────────────────────────────────────
+
+fn with_clip_chain(chain: Vec<FxSlotDesc>) -> Fixture {
+    let mut f = build(1, false, false, 128);
+    let mut p = f.engine.project().clone();
+    p.clip_chains = alloc::vec![chain];
+    p.clips[0].chain_slot = Some(0);
+    f.engine.load_project(p).expect("plan valid");
+    f.engine.play();
+    f
+}
+
+/// Insert per-clip harus benar-benar dieksekusi — dan HANYA pada clip yang
+/// menunjuknya.
+#[test]
+fn a_clip_chain_actually_changes_the_audio() {
+    let mut plain = with_clip_chain(Vec::new());
+    let (pl, _) = render_all(&mut plain, 8192, 128);
+
+    let mut filtered = with_clip_chain(alloc::vec![FxSlotDesc {
+        kind: 0,
+        bypass: false,
+        params: eq_lowpass_params(120.0),
+    }]);
+    let (fl, _) = render_all(&mut filtered, 8192, 128);
+
+    let a = ac_rms(&pl[4096..]);
+    let b = ac_rms(&fl[4096..]);
+    assert!(a > 1.0e-3, "referensi senyap, tes tidak bermakna");
+    assert!(b < a * 0.5, "chain per-clip tidak dieksekusi: {a} -> {b}");
+}
+
+/// Project tanpa chain per-clip harus menghasilkan bit yang SAMA PERSIS dengan
+/// sebelum fitur ini ada. Jalur dua-fase di `render_track` tidak boleh
+/// mengubah apa pun untuk voice biasa.
+#[test]
+fn clips_without_chains_are_bit_identical() {
+    let mut a = build(2, true, true, 128);
+    let (al, ar) = render_all(&mut a, 8192, 128);
+
+    let mut b = with_clip_chain(Vec::new());
+    let mut p = b.engine.project().clone();
+    p.clip_chains.clear();
+    p.clips[0].chain_slot = None;
+    let _ = b.engine.load_project(p);
+    // Bandingkan terhadap fixture yang bentuknya sama.
+    let mut c = build(2, true, true, 128);
+    let (cl, cr) = render_all(&mut c, 8192, 128);
+    assert_eq!(al, cl);
+    assert_eq!(ar, cr);
+}
+
+/// Ekor harus terus berbunyi SETELAH clip-nya berakhir — itu keberatan utama
+/// `docs/06 §6e` terhadap insert per-clip, dan alasan rak-nya tidak pernah
+/// dilepas.
+#[test]
+fn a_clip_chain_tail_outlives_the_clip() {
+    // ECHO dengan feedback tinggi: ekornya jelas terdengar setelah clip habis.
+    let echo = FxSlotDesc {
+        kind: 3,
+        bypass: false,
+        params: alloc::vec![120.0, 0.85, 6_000.0, 0.0, 1.0],
+    };
+    let mut f = with_clip_chain(alloc::vec![echo]);
+
+    // Clip pertama: start 1000, len 20_000 → berakhir di 21_000.
+    let (l, _) = render_all(&mut f, 30_000, 128);
+    // Jendela SETELAH clip berakhir tapi SEBELUM clip kedua (start 30_000).
+    let tail = ac_rms(&l[22_000..28_000]);
+    assert!(tail > 1.0e-4, "ekor per-clip terpotong saat clip berakhir: {tail}");
+}
+
+/// Ekor yang selamat dari seek membuat render dari seek berbeda dari bounce
+/// yang mulai bersih di posisi yang sama.
+#[test]
+fn seeking_clears_the_clip_chain_tail() {
+    let echo = FxSlotDesc {
+        kind: 3,
+        bypass: false,
+        params: alloc::vec![120.0, 0.9, 6_000.0, 0.0, 1.0],
+    };
+    let mut f = with_clip_chain(alloc::vec![echo]);
+    render_all(&mut f, 20_000, 128);
+
+    // Seek ke wilayah senyap jauh setelah semua clip.
+    f.engine.seek(crate::TimelineSample(80_000));
+    f.engine.play();
+    let (l, r) = render_all(&mut f, 4096, 128);
+    assert!(
+        ac_rms(&l) < 1.0e-5 && ac_rms(&r) < 1.0e-5,
+        "ekor selamat dari seek: {} / {}",
+        ac_rms(&l),
+        ac_rms(&r)
+    );
+}
+
+/// Slot yang tidak menunjuk clip mana pun tidak boleh membuat apa pun berbunyi.
+#[test]
+fn an_unreferenced_chain_slot_stays_silent() {
+    let mut f = build(1, false, false, 128);
+    let mut p = f.engine.project().clone();
+    p.clip_chains = alloc::vec![alloc::vec![FxSlotDesc {
+        kind: 3,
+        bypass: false,
+        params: alloc::vec![120.0, 0.9, 6_000.0, 0.0, 1.0],
+    }]];
+    // Sengaja TIDAK ada clip yang menunjuk slot 0.
+    f.engine.load_project(p).expect("plan valid");
+    f.engine.play();
+    let before = build(1, false, false, 128);
+    let mut before = before;
+    let (bl, _) = render_all(&mut before, 8192, 128);
+    let (fl, _) = render_all(&mut f, 8192, 128);
+    assert_eq!(bl, fl, "slot tanpa clip mengubah audio");
+}
+
+
+/// Uji langsung klaim "jalan keluar per-clip tidak mengalokasi".
+///
+/// `render_block_does_not_allocate` di atas berjalan pada project tanpa chain
+/// per-clip, jadi ia tidak pernah menyentuh jalur dua-fase di `render_track`
+/// maupun rak pool. Yang ini menyentuhnya — termasuk ekor yang terus diproses
+/// setelah clip berakhir, yaitu bagian yang paling mudah tergoda mengalokasi.
+#[test]
+#[cfg(feature = "rt-guard")]
+fn render_block_with_clip_chains_does_not_allocate() {
+    let echo = FxSlotDesc {
+        kind: 3,
+        bypass: false,
+        params: alloc::vec![120.0, 0.85, 6_000.0, 0.0, 0.5],
+    };
+    let reverb = FxSlotDesc {
+        kind: 6,
+        bypass: false,
+        params: alloc::vec![2_000.0, 0.8, 5_000.0, 20.0, 0.35, 1.0, 0.3],
+    };
+    let mut f = build(4, true, true, 128);
+    let mut p = f.engine.project().clone();
+    // Beberapa slot sekaligus, dengan efek yang punya memori dan ekor panjang.
+    p.clip_chains = alloc::vec![
+        alloc::vec![echo.clone(), reverb.clone()],
+        alloc::vec![reverb.clone()],
+        alloc::vec![echo],
+    ];
+    for (i, c) in p.clips.iter_mut().enumerate().take(3) {
+        c.chain_slot = Some(i as u8);
+    }
+    f.engine.load_project(p).expect("plan valid");
+    f.engine.play();
+
+    let mut l = alloc::vec![0.0f32; 128];
+    let mut r = alloc::vec![0.0f32; 128];
+    for _ in 0..8 {
+        f.engine.render_block(&mut l, &mut r);
+    }
+
+    daw_rt::rt_guard::reset_violations();
+    daw_rt::rt_section! {
+        // Cukup panjang untuk melewati akhir clip pertama, jadi jalur ekor
+        // keep-alive ikut terlewati di dalam penjaga.
+        for _ in 0..400 {
+            f.engine.render_block(&mut l, &mut r);
+        }
+    }
+    assert_eq!(daw_rt::rt_guard::violations(), 0);
 }

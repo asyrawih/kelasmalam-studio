@@ -36,6 +36,7 @@ function clip(id: string, assetId: number, startSec: number, lenSec: number): St
     fadeOutMs: 0,
     fadeCurve: DEFAULT_FADE_CURVE,
     seed: 1,
+    chain: [],
   };
 }
 

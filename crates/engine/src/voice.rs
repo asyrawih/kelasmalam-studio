@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 
 use daw_dsp::{db_to_lin, hermite4};
 
+use crate::fx::ClipFxPool;
 use crate::snapshot::{FADE_EQUAL_POWER, FADE_LINEAR};
 
 /// Panjang micro-fade default (ms). Spesifikasi: 2–5 ms.
@@ -136,6 +137,8 @@ pub struct VoiceStart {
     /// 0 = linear, 1 = equal-power. Lihat `ClipDesc::fade_curve`.
     pub fade_curve: u8,
     pub speed: f64,
+    /// Slot insert per-clip, kalau clip ini punya chain.
+    pub chain: Option<u8>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -169,6 +172,9 @@ pub struct Voice {
     age: u64,
     /// Puncak amplitudo blok terakhir — dipakai untuk memilih korban "terpelan".
     peak: f32,
+    /// Slot insert per-clip. Voice dengan slot dirender ke buffer kerja pool,
+    /// bukan langsung ke buffer track.
+    chain: Option<u8>,
 }
 
 impl Voice {
@@ -191,6 +197,7 @@ impl Voice {
             pending: None,
             age: 0,
             peak: 0.0,
+            chain: None,
         }
     }
 
@@ -212,6 +219,11 @@ impl Voice {
         self.fade_in = s.fade_in.max(micro);
         self.fade_out = s.fade_out.max(micro);
         self.fade_curve = s.fade_curve;
+        // WAJIB di-set, bukan diwarisi: slot voice dipakai ulang, jadi tanpa
+        // baris ini sebuah clip tanpa chain bisa mewarisi slot chain milik clip
+        // sebelumnya — dan audionya masuk ke buffer kerja pool alih-alih ke
+        // buffer track.
+        self.chain = s.chain;
         self.kill_remaining = 0;
         self.kill_len = 0;
         self.pending = None;
@@ -376,14 +388,63 @@ impl VoicePool {
 
     /// Render semua voice milik `track` ke buffer stereo (SUM, tidak menimpa).
     ///
-    /// Ini menjalankan: source PCM → cubic Hermite → clip gain → clip fade ×
-    /// micro-fade. Zero alloc, tanpa panic.
-    pub fn render_track(&mut self, track: u16, assets: &AssetTable, l: &mut [f32], r: &mut [f32]) {
+    /// Dua fase, dan urutannya penting:
+    ///
+    /// 1. Voice TANPA insert per-clip dijumlahkan langsung ke buffer track —
+    ///    persis seperti sebelumnya, jadi project tanpa efek clip tidak
+    ///    membayar apa pun kecuali satu perbandingan per voice.
+    /// 2. Tiap slot pool yang memiliki track ini dirender ke buffer kerja,
+    ///    dilewatkan chain-nya, lalu dijumlahkan.
+    ///
+    /// Urutan sinyalnya mengikuti docs/07: source → clip gain → clip fade
+    /// (termasuk micro-fade paksa) → insert chain clip → buffer track. Chain
+    /// karena itu tidak pernah melihat diskontinuitas tepi clip — FILTER
+    /// resonan yang disuapi tepi mentah akan berdenging.
+    pub fn render_track(
+        &mut self,
+        track: u16,
+        assets: &AssetTable,
+        pool: &mut ClipFxPool,
+        l: &mut [f32],
+        r: &mut [f32],
+    ) {
         let n = l.len().min(r.len());
         if n == 0 {
             return;
         }
+        self.render_matching(track, assets, None, l, r, n);
+
+        for slot in 0..pool.len() as u8 {
+            if pool.track_of(slot) != Some(track) {
+                continue;
+            }
+            let ringing = pool.is_ringing(slot);
+            let had_input = match pool.scratch_mut(n) {
+                Some((sl, sr)) => self.render_matching(track, assets, Some(slot), sl, sr, n),
+                None => false,
+            };
+            // Tidak ada materi baru DAN ekornya sudah habis: tidak ada yang
+            // perlu dikerjakan sama sekali.
+            if !had_input && !ringing {
+                continue;
+            }
+            pool.process_into(slot, had_input, l, r, n);
+        }
+    }
+
+    /// Render voice pada `track` yang slot chain-nya cocok. `true` kalau ada
+    /// setidaknya satu voice yang benar-benar menghasilkan sesuatu.
+    fn render_matching(
+        &mut self,
+        track: u16,
+        assets: &AssetTable,
+        chain: Option<u8>,
+        l: &mut [f32],
+        r: &mut [f32],
+        n: usize,
+    ) -> bool {
         let micro = self.micro_fade;
+        let mut any = false;
         let mut i = 0usize;
         while i < self.active_len {
             let id = self.active[i];
@@ -395,10 +456,11 @@ impl VoicePool {
                         continue;
                     }
                 };
-                if v.track != track || v.state == VoiceState::Free {
+                if v.track != track || v.chain != chain || v.state == VoiceState::Free {
                     i += 1;
                     continue;
                 }
+                any = true;
                 render_voice(v, assets, l, r, n, micro)
             };
             if done {
@@ -413,6 +475,7 @@ impl VoicePool {
                 i += 1;
             }
         }
+        any
     }
 }
 
@@ -540,6 +603,7 @@ mod tests {
             fade_out: 0,
             fade_curve: 0,
             speed: 1.0,
+            chain: None,
         });
         let v = &p.voices[p.active[0] as usize];
         assert_eq!(v.fade_in, (MICRO_FADE_MS * 0.001 * 48_000.0) as u64);
@@ -596,6 +660,7 @@ mod tests {
             fade_out: 0,
             fade_curve: FADE_LINEAR,
             speed: 1.0,
+            chain: None,
         };
         lin.start(&start, 0, 0);
         eqp.start(
@@ -632,6 +697,7 @@ mod tests {
             fade_out: 0,
             fade_curve: 0,
             speed: 1.0,
+            chain: None,
         };
         for _ in 0..10 {
             p.trigger(&s);

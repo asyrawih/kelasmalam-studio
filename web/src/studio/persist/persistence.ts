@@ -134,7 +134,13 @@ export function normalizeLanes(lanes: StudioLane[]): StudioLane[] {
     // di payload akan melempar, dan gejalanya muncul saat export — jauh dari
     // penyebabnya.
     chain: l.chain ?? [],
-    clips: (l.clips ?? []).map((c) => normalizeClipLoop(normalizeClipStem(normalizeClipFade(c)))),
+    clips: (l.clips ?? []).map((c) => {
+      const n = normalizeClipLoop(normalizeClipStem(normalizeClipFade(c)));
+      // Default diberikan SETELAH normalisasi: fungsi-fungsi itu mengembalikan
+      // clip aslinya apa adanya kalau tidak ada yang perlu diperbaiki, jadi
+      // memberi default sebelumnya akan tertimpa lagi.
+      return { ...n, chain: n.chain ?? [] };
+    }),
   }));
 }
 

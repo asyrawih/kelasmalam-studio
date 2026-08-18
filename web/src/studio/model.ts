@@ -29,6 +29,14 @@ export const DEFAULT_FADE_CURVE: FadeCurve = 'equalPower';
 export interface StudioClip {
   id: string;
   assetId: number;
+  /**
+   * Insert chain khusus clip ini.
+   *
+   * Engine menyediakan jumlah TERBATAS chain per-clip dalam satu project
+   * (lihat `MAX_CLIP_CHAINS` di Rust); yang kelebihan tetap berbunyi tapi
+   * tanpa efek, dan `map_project` mengatakannya lewat peringatan.
+   */
+  chain: FxInsert[];
   /** Posisi di timeline (sample). */
   start: Samples;
   /**
@@ -188,6 +196,18 @@ export interface FxInsert {
   readonly enabled: boolean;
   readonly params: Readonly<Record<string, number>>;
 }
+
+/**
+ * Ke mana sebuah aksi FX ditujukan.
+ *
+ * Union bertag, bukan `laneId: string | null` dengan null berarti master:
+ * begitu targetnya jadi tiga (lane, clip, master), null berhenti bisa
+ * membedakannya dan pemanggil mulai menebak.
+ */
+export type FxTarget =
+  | { readonly kind: 'lane'; readonly id: string }
+  | { readonly kind: 'clip'; readonly id: string }
+  | { readonly kind: 'master' };
 
 export interface StudioLane {
   id: string;

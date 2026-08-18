@@ -136,7 +136,7 @@ describe('panel FX', () => {
     // fireEvent, dan React melaporkannya lewat console.error — yang justru
     // digagalkan smoke test studio.
     act(() => {
-      studioActions.setFxParam(studioStore.getState().lanes[0]!.id, 1, 'cutoff', 4_000);
+      studioActions.setFxParam({ kind: 'lane', id: studioStore.getState().lanes[0]!.id }, 1, 'cutoff', 4_000);
     });
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Naikkan' })[1]!);

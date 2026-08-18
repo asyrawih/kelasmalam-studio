@@ -153,6 +153,7 @@ function clip(o: {
     fadeOutMs: o.fadeOutMs ?? 0,
     fadeCurve: o.fadeCurve ?? ('linear' as FadeCurve),
     seed: 1,
+    chain: [],
   };
 }
 

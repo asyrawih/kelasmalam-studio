@@ -208,6 +208,7 @@ describe('aksi store', () => {
         fadeOutMs: 0,
         fadeCurve: DEFAULT_FADE_CURVE,
         seed: 1,
+        chain: [],
       }),
     );
     const after = studioStore.getState();

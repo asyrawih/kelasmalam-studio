@@ -44,6 +44,7 @@ function lane(
       fadeOutMs: 0,
       fadeCurve: DEFAULT_FADE_CURVE,
       seed: c.seed,
+      chain: [],
     })),
   };
 }

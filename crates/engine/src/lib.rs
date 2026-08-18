@@ -30,7 +30,7 @@ use daw_dsp::{add_scaled, clear, db_to_lin};
 use daw_rt::{Command, MAX_BLOCK, MAX_BUFFERS, MAX_TRACKS, MAX_VOICES};
 use daw_timeline::TimelineSample;
 
-use crate::fx::{params, plan_chains, FxArena, FxRack};
+use crate::fx::{params, plan_chains, ClipFxPool, FxArena, FxRack};
 use crate::graph::{
     build_plan, bus_unit, send_slot, track_unit, MASTER_METER_SLOT, TOTAL_SEND_SLOTS, TOTAL_UNITS,
 };
@@ -231,6 +231,10 @@ impl EventQueue {
 pub struct RenderConfig {
     pub plan: ProcessPlan,
     pub rack: FxRack,
+    /// Insert chain per-clip. Ikut ditukar karena `ClipDesc::chain_slot`
+    /// menunjuk indeks di dalamnya — memisahkannya membuka jendela di mana
+    /// clip baru menunjuk slot yang belum ada.
+    pub clips: ClipFxPool,
 }
 
 /// Satu-satunya pemilik state audio. Tidak ada `Rc`/`Arc`/`Mutex` di dalamnya;
@@ -278,6 +282,7 @@ impl Engine {
             config: RenderConfig {
                 plan: ProcessPlan::silent(),
                 rack: FxRack::new(TOTAL_UNITS, sr),
+                clips: ClipFxPool::empty(sr),
             },
             incoming: None,
             retired: [None, None, None, None],
@@ -403,6 +408,7 @@ impl Engine {
         // ini di awal blok berikutnya, jadi mengisi yang lama berarti seluruh
         // setting EQ hilang tiap kali project dimuat — tanpa error apa pun.
         let mut rack = FxRack::build(&layout, self.sample_rate, arena);
+        let clips = ClipFxPool::build(&project, self.sample_rate);
 
         // Parameter mixer + FX.
         for (i, t) in project.tracks.iter().enumerate() {
@@ -451,8 +457,12 @@ impl Engine {
         self.loop_enabled = project.loop_range.is_some();
         self.project = project;
         self.config.rack.reset_all();
+        // Ekor per-clip ikut dinolkan. Ekor yang selamat dari seek membuat
+        // render yang dimulai dari seek berbeda dari bounce yang mulai bersih
+        // di posisi yang sama — pelanggaran null-test langsung.
+        self.config.clips.reset_all();
         self.voices.reset();
-        let _ = self.install_config(RenderConfig { plan, rack });
+        let _ = self.install_config(RenderConfig { plan, rack, clips });
         self.rewind_schedule();
         Ok(())
     }
@@ -504,6 +514,12 @@ impl Engine {
         &self.config.plan
     }
 
+    #[doc(hidden)]
+    pub fn clip_pool_len(&self) -> usize {
+        self.config.clips.len()
+    }
+
+
     pub fn rack(&self) -> &FxRack {
         &self.config.rack
     }
@@ -538,6 +554,10 @@ impl Engine {
         // lalu clip yang menaungi posisi baru dimulai di tengah.
         self.voices.reset();
         self.config.rack.reset_all();
+        // Ekor per-clip ikut dinolkan. Ekor yang selamat dari seek membuat
+        // render yang dimulai dari seek berbeda dari bounce yang mulai bersih
+        // di posisi yang sama — pelanggaran null-test langsung.
+        self.config.clips.reset_all();
         self.queue.clear();
         self.rewind_schedule();
     }
@@ -581,6 +601,7 @@ impl Engine {
                     fade_in: c.fade_in,
                     fade_out: c.fade_out,
                     fade_curve: c.fade_curve,
+                chain: c.chain_slot,
                     speed: c.speed,
                 });
             }
@@ -630,6 +651,7 @@ impl Engine {
                 fade_in: c.fade_in,
                 fade_out: c.fade_out,
                 fade_curve: c.fade_curve,
+                chain: c.chain_slot,
                 speed: c.speed,
             });
         }
@@ -718,6 +740,7 @@ impl Engine {
                         fade_in: c.fade_in,
                         fade_out: c.fade_out,
                         fade_curve: c.fade_curve,
+                        chain: c.chain_slot,
                         speed: c.speed,
                     });
                 }
@@ -856,7 +879,11 @@ impl Engine {
             meters,
             ..
         } = self;
-        let RenderConfig { plan, rack: fx } = config;
+        let RenderConfig {
+            plan,
+            rack: fx,
+            clips: clip_fx,
+        } = config;
 
         let count = plan.buffer_count;
         for step in plan.steps.iter() {
@@ -874,7 +901,7 @@ impl Engine {
                         continue;
                     }
                     let (l, r) = scratch.one(dst, offset, n);
-                    voices.render_track(track, assets, l, r);
+                    voices.render_track(track, assets, clip_fx, l, r);
                 }
                 Step::Fx { node, buf } => {
                     if buf >= count {

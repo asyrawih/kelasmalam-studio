@@ -34,7 +34,7 @@ use std::collections::BTreeMap;
 
 use daw_engine::snapshot::{
     BusDesc, ClipDesc, EqBandSettings, FxSlotDesc, Project, TrackDesc, EQ_BANDS, FADE_EQUAL_POWER,
-    FADE_LINEAR, MAX_CHAIN_LEN,
+    FADE_LINEAR, MAX_CHAIN_LEN, MAX_CLIP_CHAINS,
 };
 
 use serde::Deserialize;
@@ -215,6 +215,9 @@ pub struct ClipJson {
     /// Pemisahan stem. Belum diproses engine — lihat `StemJson`.
     #[serde(default)]
     pub stem: Option<StemJson>,
+    /// Insert chain khusus clip ini.
+    #[serde(default)]
+    pub chain: Vec<FxJson>,
 }
 
 fn one_f64() -> f64 {
@@ -369,6 +372,9 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
     }];
     let mut tracks: Vec<TrackDesc> = Vec::new();
     let mut clips: Vec<ClipDesc> = Vec::new();
+    // Chain per-clip dialokasikan slot di sini, sekali per project. Batasnya
+    // keras dan disebutkan ke user — lihat `MAX_CLIP_CHAINS`.
+    let mut clip_chains: Vec<Vec<FxSlotDesc>> = Vec::new();
 
     // Solo global: kalau ADA lane yang solo, lane tanpa solo terhitung mute.
     // Ini `isAudible()` di model.ts, ditulis ulang di sini karena engine tidak
@@ -498,6 +504,25 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
                 fade_in = fade_in.saturating_sub(over - cut);
             }
 
+            let chain_slot = if clip.chain.is_empty() {
+                None
+            } else if clip_chains.len() < MAX_CLIP_CHAINS {
+                let mapped = map_chain(
+                    &format!("Clip \"{}\"", clip.id),
+                    &clip.chain,
+                    &mut warnings,
+                );
+                clip_chains.push(mapped);
+                Some((clip_chains.len() - 1) as u8)
+            } else {
+                warnings.push(format!(
+                    "Clip \"{}\" punya efek, tapi engine hanya menyediakan {MAX_CLIP_CHAINS} \
+                     chain per-clip dalam satu project — clip ini berbunyi tanpa efek.",
+                    clip.id
+                ));
+                None
+            };
+
             clips.push(ClipDesc {
                 track: track_index,
                 asset: clip.asset_id as u16,
@@ -512,6 +537,7 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
                 fade_in,
                 fade_out,
                 fade_curve,
+                chain_slot,
                 speed,
             });
         }
@@ -527,6 +553,7 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
             tracks,
             buses,
             clips,
+            clip_chains,
             // Loop TIDAK ikut ke export: user meminta satu file sepanjang
             // timeline, bukan satu file yang mengulang selamanya.
             loop_range: None,
@@ -1100,5 +1127,70 @@ mod tests {
                 "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 1000 }] }] }"#;
         let m = mapping_from_json(json).unwrap();
         assert!(!m.warnings.iter().any(|w| w.contains("REMOVE")));
+    }
+
+    // ── Chain per-clip ────────────────────────────────────────────────────
+
+    fn project_with_clip_chains(n: usize) -> Mapping {
+        let clips: Vec<String> = (0..n)
+            .map(|i| {
+                format!(
+                    r#"{{ "id": "c{i}", "assetId": 0, "start": {}, "len": 1000,
+                          "chain": [{{ "kind": "eq4" }}] }}"#,
+                    i * 2000
+                )
+            })
+            .collect();
+        let json = format!(
+            r#"{{ "sampleRate": 48000, "speed": 1,
+                  "lanes": [{{ "id": "L1", "gainDb": 0, "speedRatio": 1,
+                               "clips": [{}] }}] }}"#,
+            clips.join(",")
+        );
+        mapping_from_json(&json).unwrap()
+    }
+
+    #[test]
+    fn a_clip_chain_gets_its_own_pool_slot() {
+        let m = project_with_clip_chains(2);
+        assert_eq!(m.project.clip_chains.len(), 2);
+        assert_eq!(m.project.clips[0].chain_slot, Some(0));
+        assert_eq!(m.project.clips[1].chain_slot, Some(1));
+    }
+
+    #[test]
+    fn clips_without_a_chain_get_no_slot() {
+        let json = r#"{ "sampleRate": 48000, "speed": 1,
+            "lanes": [{ "id": "L1", "gainDb": 0, "speedRatio": 1,
+                "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 1000 }] }] }"#;
+        let m = mapping_from_json(json).unwrap();
+        assert!(m.project.clip_chains.is_empty());
+        assert_eq!(m.project.clips[0].chain_slot, None);
+    }
+
+    /// Batasnya keras dan HARUS disebutkan. Clip yang kelebihan tetap berbunyi
+    /// — kehilangan efeknya jauh lebih baik daripada kehilangan audionya.
+    #[test]
+    fn clips_beyond_the_pool_cap_are_reported_and_still_play() {
+        let n = MAX_CLIP_CHAINS + 3;
+        let m = project_with_clip_chains(n);
+        assert_eq!(m.project.clip_chains.len(), MAX_CLIP_CHAINS);
+        assert_eq!(m.project.clips.len(), n, "clip kelebihan ikut hilang");
+        assert_eq!(m.project.clips[MAX_CLIP_CHAINS].chain_slot, None);
+        assert!(
+            m.warnings.iter().any(|w| w.contains("chain per-clip")),
+            "batas pool dilewati tanpa peringatan: {:?}",
+            m.warnings
+        );
+    }
+
+    #[test]
+    fn clip_chains_survive_a_postcard_roundtrip() {
+        let m = project_with_clip_chains(2);
+        let bytes = m.project.to_bytes().unwrap();
+        let back = Project::from_bytes(&bytes).unwrap();
+        assert_eq!(m.project, back);
+        assert_eq!(back.clip_chains.len(), 2);
+        assert_eq!(back.clips[1].chain_slot, Some(1));
     }
 }

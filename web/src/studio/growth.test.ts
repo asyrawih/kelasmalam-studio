@@ -19,6 +19,7 @@ function makeClip(id: string, startSec: number, lenSec: number): StudioClip {
     fadeOutMs: 0,
     fadeCurve: DEFAULT_FADE_CURVE,
     seed: 1,
+    chain: [],
   };
 }
 

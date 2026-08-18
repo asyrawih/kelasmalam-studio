@@ -149,6 +149,7 @@ export async function importBytesToLane(
     const clip: StudioClip = {
       id: studioActions.newClipId(),
       assetId,
+      chain: [],
       start: Math.max(0, Math.round(startSamples)),
       len: frames,
       sourceStart: 0,

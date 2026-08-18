@@ -31,6 +31,7 @@
 //! tetap berlaku saat katalog efek bertambah.
 
 pub mod arena;
+pub mod clip_pool;
 pub mod comp;
 #[cfg(test)]
 mod behaviour;
@@ -49,6 +50,7 @@ pub mod reverb;
 pub mod spiral;
 
 pub use arena::{FxArena, MemHandle, FX_ARENA_FLOATS};
+pub use clip_pool::ClipFxPool;
 pub use comp::CompNode;
 pub use desc::{Category, EffectDesc, ParamDesc, Smoothing, Taper, Unit};
 pub use eq::Eq4;

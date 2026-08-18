@@ -16,14 +16,14 @@ import { useState } from 'react';
 import { Badge, Card } from '../../ui/cyber';
 import type { EffectDesc } from '../../audio/fx-catalog';
 import { defaultParams } from '../../audio/fx-catalog';
-import type { FxInsert } from '../model';
+import type { FxInsert, FxTarget } from '../model';
 import { studioActions, useStudio } from '../rail/store-adapter';
 import { FxParamRow } from './FxParamRow';
 import { sortedEffects, useFxCatalog } from './useFxCatalog';
 
 const MONO = 'var(--cy-font-mono)';
 
-type Target = 'lane' | 'master';
+type TargetKind = FxTarget['kind'];
 
 function iconButton(label: string, onClick: () => void, disabled = false): JSX.Element {
   return (
@@ -52,42 +52,67 @@ function iconButton(label: string, onClick: () => void, disabled = false): JSX.E
 
 export function FxCard(): JSX.Element {
   const { catalog, error } = useFxCatalog();
-  const [target, setTarget] = useState<Target>('lane');
-  const selectedId = useStudio((s) => s.selectedLaneId);
+  const [kind, setKind] = useState<TargetKind>('lane');
+  const selectedLaneId = useStudio((s) => s.selectedLaneId);
+  const selectedClipId = useStudio((s) => s.selectedClipId);
   const lanes = useStudio((s) => s.lanes);
   const masterChain = useStudio((s) => s.masterChain);
 
-  const lane = lanes.find((l) => l.id === selectedId) ?? lanes[0] ?? null;
-  const onMaster = target === 'master' || lane === null;
-  const laneId = onMaster ? null : lane!.id;
-  const chain: readonly FxInsert[] = onMaster ? masterChain : lane!.chain;
+  const lane = lanes.find((l) => l.id === selectedLaneId) ?? lanes[0] ?? null;
+  const clip =
+    selectedClipId === null
+      ? null
+      : (lanes.flatMap((l) => l.clips).find((c) => c.id === selectedClipId) ?? null);
+
+  // Target yang tidak punya sasaran jatuh ke master, bukan menghilang: panel
+  // yang kosong tanpa penjelasan lebih membingungkan daripada panel master.
+  const effective: TargetKind =
+    kind === 'clip' && clip === null ? 'master' : kind === 'lane' && lane === null ? 'master' : kind;
+
+  const target: FxTarget =
+    effective === 'master'
+      ? { kind: 'master' }
+      : effective === 'clip'
+        ? { kind: 'clip', id: clip!.id }
+        : { kind: 'lane', id: lane!.id };
+
+  const chain: readonly FxInsert[] =
+    effective === 'master' ? masterChain : effective === 'clip' ? clip!.chain : lane!.chain;
+
+  const subtitle =
+    effective === 'master' ? 'MASTER' : effective === 'clip' ? (clip?.label ?? '') : (lane?.name ?? '');
 
   return (
-    <Card title="FX" subtitle={onMaster ? 'MASTER' : (lane?.name ?? '')} notched>
+    <Card title="FX" subtitle={subtitle} notched>
       <div style={{ display: 'grid', gap: '10px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-          {(['lane', 'master'] as const).map((t) => {
-            const active = onMaster ? t === 'master' : t === 'lane';
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
+          {(['lane', 'clip', 'master'] as const).map((t) => {
+            const active = effective === t;
+            const disabled = (t === 'lane' && lane === null) || (t === 'clip' && clip === null);
             return (
               <button
                 key={t}
                 type="button"
                 className="cy-btn-reset"
                 aria-pressed={active}
-                onClick={() => setTarget(t)}
-                disabled={t === 'lane' && lane === null}
+                onClick={() => setKind(t)}
+                disabled={disabled}
                 style={{
                   height: '26px',
                   border: `1px solid ${active ? 'var(--cy-accent)' : 'var(--cy-border)'}`,
                   background: active ? 'var(--cy-accent)' : 'transparent',
-                  color: active ? 'var(--cy-text-on-accent)' : 'var(--cy-text-dim)',
+                  color: disabled
+                    ? 'var(--cy-border)'
+                    : active
+                      ? 'var(--cy-text-on-accent)'
+                      : 'var(--cy-text-dim)',
                   fontFamily: MONO,
                   fontSize: '10px',
                   letterSpacing: '.12em',
-                  cursor: 'pointer',
+                  cursor: disabled ? 'default' : 'pointer',
                 }}
               >
-                {t === 'lane' ? 'LANE' : 'MASTER'}
+                {t.toUpperCase()}
               </button>
             );
           })}
@@ -107,7 +132,7 @@ export function FxCard(): JSX.Element {
         ) : (
           <AddPicker
             effects={sortedEffects(catalog)}
-            onPick={(id) => studioActions.addFx(laneId, id)}
+            onPick={(id) => studioActions.addFx(target, id)}
           />
         )}
 
@@ -123,7 +148,7 @@ export function FxCard(): JSX.Element {
               index={i}
               last={i === chain.length - 1}
               desc={catalog?.get(fx.kind) ?? null}
-              laneId={laneId}
+              target={target}
             />
           ))
         )}
@@ -168,9 +193,9 @@ function FxSlotRow(props: {
   index: number;
   last: boolean;
   desc: EffectDesc | null;
-  laneId: string | null;
+  target: FxTarget;
 }): JSX.Element {
-  const { fx, index, last, desc, laneId } = props;
+  const { fx, index, last, desc, target } = props;
   // Efek yang tidak dikenal katalog TIDAK disembunyikan: ia ada di project dan
   // akan dilewati engine, jadi user harus bisa melihat dan menghapusnya.
   const values = desc === null ? [] : defaultParams(desc).map((d, i) => {
@@ -189,7 +214,7 @@ function FxSlotRow(props: {
           className="cy-btn-reset"
           aria-label={fx.enabled ? 'Bypass efek' : 'Aktifkan efek'}
           aria-pressed={!fx.enabled}
-          onClick={() => studioActions.setFxEnabled(laneId, index, !fx.enabled)}
+          onClick={() => studioActions.setFxEnabled(target, index, !fx.enabled)}
           style={{
             height: '20px',
             padding: '0 6px',
@@ -204,9 +229,9 @@ function FxSlotRow(props: {
         >
           {fx.enabled ? 'ON' : 'BYP'}
         </button>
-        {iconButton('Naikkan', () => studioActions.moveFx(laneId, index, index - 1), index === 0)}
-        {iconButton('Turunkan', () => studioActions.moveFx(laneId, index, index + 1), last)}
-        {iconButton('Hapus', () => studioActions.removeFx(laneId, index))}
+        {iconButton('Naikkan', () => studioActions.moveFx(target, index, index - 1), index === 0)}
+        {iconButton('Turunkan', () => studioActions.moveFx(target, index, index + 1), last)}
+        {iconButton('Hapus', () => studioActions.removeFx(target, index))}
       </div>
 
       {desc === null ? (
@@ -219,7 +244,7 @@ function FxSlotRow(props: {
             key={p.id}
             desc={p}
             value={values[i]!}
-            onChange={(v) => studioActions.setFxParam(laneId, index, p.id, v)}
+            onChange={(v) => studioActions.setFxParam(target, index, p.id, v)}
           />
         ))
       )}
