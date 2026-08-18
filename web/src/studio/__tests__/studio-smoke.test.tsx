@@ -48,7 +48,7 @@ describe('App', () => {
     expectNoConsoleError(() => {
       render(<App />);
     });
-    expect(screen.getByText('AUDIO STUDIO')).toBeTruthy();
+    expect(screen.getByText('KELAS MALAM STUDIO')).toBeTruthy();
     expect(screen.getByText(/TIMELINE MIX/)).toBeTruthy();
     expect(screen.getAllByText('DROP AUDIO DI SINI').length).toBeGreaterThan(0);
   });

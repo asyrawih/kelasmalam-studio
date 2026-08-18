@@ -38,7 +38,7 @@ export function StudioHeader({ onClose }: StudioHeaderProps): JSX.Element {
             color: 'var(--cy-text)',
           }}
         >
-          AUDIO STUDIO
+          KELAS MALAM STUDIO
         </span>
         <span style={{ fontSize: '11px', letterSpacing: '.16em', color: 'var(--cy-accent)' }}>
           // TIMELINE MIX
