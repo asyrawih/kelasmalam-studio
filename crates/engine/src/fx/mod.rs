@@ -32,6 +32,8 @@
 
 pub mod arena;
 pub mod comp;
+#[cfg(test)]
+mod conformance;
 pub mod desc;
 pub mod eq;
 pub mod params;

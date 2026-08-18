@@ -185,7 +185,16 @@ impl Effect for CompNode {
         }
     }
 
+    /// Termasuk envelope detektornya, bukan hanya angka yang dibaca meter.
+    ///
+    /// `fx.rs` versi lama hanya menolkan `last_gr_db` di sini, jadi envelope
+    /// kompresor selamat dari `reset_all()` — yang dipanggil saat SEEK dan saat
+    /// plan diganti. Akibatnya render yang dimulai dari seek membawa sisa
+    /// kompresi dari posisi sebelumnya, sementara bounce offline memulainya
+    /// bersih: dua hasil yang seharusnya identik jadi berbeda. Ditemukan oleh
+    /// `conformance::reset_returns_an_effect_to_its_initial_state`.
     fn reset(&mut self, _mem: &mut [f32]) {
+        self.comp.reset();
         self.last_gr_db = 0.0;
     }
 

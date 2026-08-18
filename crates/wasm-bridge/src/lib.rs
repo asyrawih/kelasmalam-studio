@@ -23,6 +23,7 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 pub mod bindgen;
+pub mod catalog;
 pub mod raw;
 pub mod studio;
 

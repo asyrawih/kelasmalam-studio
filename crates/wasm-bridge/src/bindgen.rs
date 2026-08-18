@@ -64,6 +64,33 @@ pub fn build_has_simd() -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Katalog efek — sumber tunggal untuk UI
+// ---------------------------------------------------------------------------
+
+/// Seluruh katalog efek sebagai JSON.
+///
+/// Ini yang membuat menambah efek tidak menambah kode UI. Tiap efek
+/// mendeklarasikan parameternya sebagai data statis (`ParamDesc`: rentang,
+/// default, taper, satuan, label), dan panel FX merakit knob-nya dari sini —
+/// jadi efek ke-20 muncul di UI tanpa satu baris pun TypeScript baru.
+///
+/// Dipanggil SEKALI saat boot main thread. Sengaja tidak ada di surface `raw`:
+/// worklet berjalan di jalur realtime dan tidak pernah butuh string.
+#[wasm_bindgen(js_name = fxCatalogJson)]
+pub fn fx_catalog_json() -> String {
+    crate::catalog::fx_catalog_json()
+}
+
+/// Peta slot blok parameter, untuk dibandingkan dengan `web/src/audio/param-map.ts`.
+///
+/// Kembarannya `daw_rt::layout::layout_json`; keduanya ada supaya kontrak
+/// Rust↔TS diperiksa mesin, bukan diingat manusia.
+#[wasm_bindgen(js_name = paramMapJson)]
+pub fn param_map_json() -> String {
+    crate::catalog::param_map_json().into()
+}
+
+// ---------------------------------------------------------------------------
 // Snapshot dari model studio (JSON) — docs/03 §3a
 // ---------------------------------------------------------------------------
 
@@ -647,3 +674,4 @@ pub fn detect_tempo(left: &[f32], right: &[f32], sample_rate: f32) -> Option<Tem
         beat_offset_sec: e.beat_offset_sec,
     })
 }
+
