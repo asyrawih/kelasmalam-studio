@@ -85,6 +85,11 @@ Kode konkret ada di repo ini (bukan di dokumen):
 - **j)** Signal flow diagram: [docs/07-gain-speed.md](docs/07-gain-speed.md)
 - **k)** Tabel mapping komponen design: [docs/08-ui-mapping.md](docs/08-ui-mapping.md)
 
+Tambahan di luar daftar semula:
+
+- Deteksi tempo (BPM) gaya DJ: `crates/analysis/` + `web/src/audio/tempo-worker.ts` —
+  [docs/10-tempo-detection.md](docs/10-tempo-detection.md)
+
 ## Quickstart
 
 ```bash

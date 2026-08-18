@@ -4,6 +4,7 @@ members = [
     "crates/dsp",
     "crates/rt",
     "crates/timeline-core",
+    "crates/analysis",
     "crates/engine",
     "crates/export",
     "crates/wasm-bridge",
@@ -25,6 +26,7 @@ publish = false
 daw-dsp      = { path = "crates/dsp" }
 daw-rt       = { path = "crates/rt" }
 daw-timeline = { path = "crates/timeline-core" }
+daw-analysis = { path = "crates/analysis" }
 daw-engine   = { path = "crates/engine" }
 daw-export   = { path = "crates/export" }
 
