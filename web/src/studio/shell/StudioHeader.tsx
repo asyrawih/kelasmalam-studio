@@ -12,7 +12,6 @@ export interface StudioHeaderProps {
 }
 
 export function StudioHeader({ onClose }: StudioHeaderProps): JSX.Element {
-  const projectName = useStudio((s) => s.projectName);
   const laneCount = useStudio((s) => s.lanes.length);
   const sampleRate = useStudio((s) => s.sampleRate);
   const engineReady = useStudio((s) => s.engineReady);
@@ -55,7 +54,7 @@ export function StudioHeader({ onClose }: StudioHeaderProps): JSX.Element {
           textOverflow: 'ellipsis',
         }}
       >
-        {`${projectName} · ${laneCount} LANES · ${Math.round(sampleRate / 1000)} kHz · STEREO`}
+        {`${laneCount} LANES · ${Math.round(sampleRate / 1000)} kHz · STEREO`}
       </div>
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
         {/* Design menulis READY tanpa syarat. Kita tidak boleh mengklaim siap
