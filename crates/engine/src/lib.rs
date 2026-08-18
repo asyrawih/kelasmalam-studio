@@ -398,7 +398,11 @@ impl Engine {
         layout
             .assign_memory(self.sample_rate, &mut arena)
             .map_err(EngineError::Plan)?;
-        let rack = FxRack::build(&layout, self.sample_rate, arena);
+        // `mut` karena setting EQ/kompresor diisi ke rak INI, bukan ke
+        // `self.config.rack`. Rak yang sedang berbunyi akan digantikan oleh rak
+        // ini di awal blok berikutnya, jadi mengisi yang lama berarti seluruh
+        // setting EQ hilang tiap kali project dimuat — tanpa error apa pun.
+        let mut rack = FxRack::build(&layout, self.sample_rate, arena);
 
         // Parameter mixer + FX.
         for (i, t) in project.tracks.iter().enumerate() {
@@ -414,10 +418,10 @@ impl Engine {
                     g.set_immediate(s.amount);
                 }
             }
-            if let Some(eq) = self.config.rack.eq_mut(u) {
+            if let Some(eq) = rack.eq_mut(u) {
                 eq.set_all(&t.eq);
             }
-            if let Some(c) = self.config.rack.comp_mut(u) {
+            if let Some(c) = rack.comp_mut(u) {
                 c.set_settings(&t.comp);
             }
         }
@@ -428,10 +432,10 @@ impl Engine {
                 p.set_pan(b.pan);
                 p.snap();
             }
-            if let Some(eq) = self.config.rack.eq_mut(u) {
+            if let Some(eq) = rack.eq_mut(u) {
                 eq.set_all(&b.eq);
             }
-            if let Some(c) = self.config.rack.comp_mut(u) {
+            if let Some(c) = rack.comp_mut(u) {
                 c.set_settings(&b.comp);
             }
         }

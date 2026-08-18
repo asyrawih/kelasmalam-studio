@@ -42,6 +42,7 @@ import {
   type AuditionVoice,
   type LaneNodes,
 } from './graph-builder';
+import { pushFxParams, registerFxWorklet } from './fx-node';
 import { updateStemNodes, type StemNodes } from './stem-chain';
 
 /**
@@ -140,6 +141,8 @@ let auditionVoice: AuditionVoice | null = null;
  * export selevel dengan preview.
  */
 let masterGain: GainNode | null = null;
+/** Node `daw-fx` master dari graf yang sedang berbunyi. */
+let masterFxNode: AudioWorkletNode | null = null;
 /**
  * Tap peak SESUDAH amplify. Ada supaya panel Amplify bisa menyatakan level
  * sebenarnya alih-alih menebak: tidak ada limiter di jalur ini, jadi
@@ -161,9 +164,15 @@ export function ensureContext(sampleRate: number): AudioContext | null {
   if (Ctor === null) return null;
   try {
     ctx = new Ctor({ sampleRate });
+    // Fire-and-forget: `addModule` asinkron sementara perakitan graf sinkron.
+    // Sampai ia selesai, `createFxNode` mengembalikan null dan chain tidak
+    // terdengar — sidik jari mix ikut menyertakan kesiapan ini, jadi begitu
+    // siap, penjadwalan ulang berikutnya memasangnya.
+    void registerFxWorklet(ctx);
   } catch {
     // Safari menolak sampleRate tertentu — biarkan browser memilih.
     ctx = new Ctor();
+    void registerFxWorklet(ctx);
   }
   ctxSampleRate = ctx.sampleRate;
   return ctx;
@@ -268,6 +277,7 @@ export function stop(): void {
   stopScrub();
   laneNodes.clear();
   clipStems.clear();
+  masterFxNode = null;
   anchor = null;
   // Master SENGAJA dibiarkan hidup: pemutar audisi menyambung ke sana dan
   // hidupnya tidak terikat transport. Membongkarnya di sini berarti menekan
@@ -432,6 +442,9 @@ export function updateLaneParams(state: StudioAppState): void {
   // Amplify master lewat jalur yang SAMA dengan gain lane: `setTargetAtTime`
   // pada node yang sudah ada. Membangun ulang graf tiap kali slider bergerak
   // satu piksel akan terdengar sebagai deretan klik, bukan perubahan level.
+  if (masterFxNode !== null) {
+    pushFxParams(masterFxNode, state.masterChain);
+  }
   if (masterGain !== null) {
     masterGain.gain.setTargetAtTime(dbToLin(state.masterGainDb), at, PARAM_RAMP_SEC);
   }
@@ -439,6 +452,10 @@ export function updateLaneParams(state: StudioAppState): void {
     const n = laneNodes.get(lane.id);
     if (n === undefined) continue;
     n.gain.gain.setTargetAtTime(dbToLin(lane.gainDb), at, PARAM_RAMP_SEC);
+    // Knob FX ikut jalur yang SAMA dengan gain dan EQ: nilai dikirim ke node
+    // yang sudah berbunyi, bukan memicu perakitan ulang graf. Merakit ulang di
+    // tengah drag terdengar sebagai deretan klik.
+    if (n.fx !== null) pushFxParams(n.fx, lane.chain);
     // Node EQ parametrik bisa digeser MENDATAR juga, jadi frekuensi (dan Q)
     // ikut di-ramp — bukan cuma gain seperti pada EQ 3-slider dulu. Semuanya
     // lewat setTargetAtTime pada node yang SUDAH ADA: membangun ulang rantai
@@ -536,7 +553,9 @@ function startGeneration(
   // melawan ramp yang sedang berjalan.
   laneNodes.clear();
   clipStems.clear();
+  masterFxNode = null;
   for (const [id, ln] of graph.lanes) laneNodes.set(id, ln);
+  masterFxNode = graph.masterFx;
   for (const [id, chain] of graph.clipStems) clipStems.set(id, chain);
 
   anchor = { ctxTime: opts.startAt, timelineSec: opts.timelineSec, speed: state.speed };

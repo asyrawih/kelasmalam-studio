@@ -122,7 +122,7 @@ fn entry_from(desc: &FxSlotDesc, unit: u16, slot: usize, node: usize) -> Option<
 pub fn plan_chains(p: &Project) -> Result<FxLayout, PlanError> {
     let mut entries: Vec<ChainEntry> = Vec::new();
 
-    let mut push_chain = |unit: u16, chain: &[FxSlotDesc], entries: &mut Vec<ChainEntry>| {
+    let push_chain = |unit: u16, chain: &[FxSlotDesc], entries: &mut Vec<ChainEntry>| {
         for (slot, d) in chain.iter().take(MAX_CHAIN_LEN).enumerate() {
             let node = BUILTIN_NODES + entries.len();
             if node > u16::MAX as usize {

@@ -40,6 +40,7 @@
 
 use core::sync::atomic::{fence, AtomicU32, Ordering};
 
+use daw_engine::fx::{FxKind, FxRack};
 use daw_engine::Engine;
 use daw_rt::{Command, SpscConsumer, MAX_BLOCK};
 use daw_timeline::TimelineSample;
@@ -302,6 +303,137 @@ pub unsafe extern "C" fn engine_latch_params(ptr: *mut RtEngine, values: *const 
     // SAFETY: dijamin pemanggil (kepemilikan tunggal).
     let rt = unsafe { &mut *ptr };
     rt.engine.latch_params(src);
+}
+
+// ---------------------------------------------------------------------------
+// Chain FX lepas — jalur preview (worklet `daw-fx`)
+// ---------------------------------------------------------------------------
+
+/// Insert chain yang berdiri sendiri, memproses audio yang MASUK.
+///
+/// `Engine` tidak bisa dipakai untuk ini: ia merender clip dari timeline-nya
+/// sendiri dan tidak punya input. Tapi DSP-nya sama persis — `FxRack::chain`
+/// memakai `FxSlot`, arena, dan logika bypass yang identik dengan yang dipakai
+/// export. Itu yang membuat preview dan file hasil tidak bisa menyimpang untuk
+/// efek: bukan disiplin, tapi karena memang cuma ada satu implementasi.
+pub struct FxChainRt {
+    rack: FxRack,
+    /// Buffer planar in-place: `[0..MAX_BLOCK]` kiri, `[MAX_BLOCK..]` kanan.
+    /// Worklet menulis input ke sini, memanggil process, lalu membaca hasilnya
+    /// dari alamat yang sama — satu buffer, bukan dua.
+    io: Box<[f32]>,
+}
+
+/// Bangun chain. NON-RT.
+///
+/// `kinds` dan `bypass` menunjuk `len` elemen di linear memory (worklet
+/// menyiapkannya lewat `scratch_alloc`). Jenis yang tidak dikenal dilewati.
+///
+/// # Safety
+/// `kinds`/`bypass` harus valid selama panggilan.
+#[no_mangle]
+pub unsafe extern "C" fn fxchain_new(
+    sample_rate: u32,
+    kinds: *const u16,
+    bypass: *const u8,
+    len: u32,
+) -> *mut FxChainRt {
+    if !(8_000..=384_000).contains(&sample_rate) {
+        return core::ptr::null_mut();
+    }
+    let n = len as usize;
+    let mut specs: Vec<(FxKind, bool)> = Vec::with_capacity(n);
+    if n > 0 && !kinds.is_null() && !bypass.is_null() {
+        // SAFETY: dijamin pemanggil.
+        let ks = unsafe { core::slice::from_raw_parts(kinds, n) };
+        let bs = unsafe { core::slice::from_raw_parts(bypass, n) };
+        for i in 0..n {
+            if let Some(k) = FxKind::from_u16(ks[i]) {
+                specs.push((k, bs[i] != 0));
+            }
+        }
+    }
+    let rt = FxChainRt {
+        rack: FxRack::chain(&specs, sample_rate as f32),
+        io: vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
+    };
+    Box::into_raw(Box::new(rt))
+}
+
+/// # Safety
+/// `ptr` harus hasil [`fxchain_new`] yang belum pernah di-free.
+#[no_mangle]
+pub unsafe extern "C" fn fxchain_free(ptr: *mut FxChainRt) {
+    if ptr.is_null() {
+        return;
+    }
+    // SAFETY: dijamin pemanggil (kepemilikan tunggal, free sekali).
+    drop(unsafe { Box::from_raw(ptr) });
+}
+
+/// Alamat buffer in-place. Stabil selama chain hidup.
+///
+/// # Safety
+/// `ptr` harus hasil [`fxchain_new`] yang masih hidup.
+#[no_mangle]
+pub unsafe extern "C" fn fxchain_io_ptr(ptr: *mut FxChainRt) -> *mut f32 {
+    if ptr.is_null() {
+        return core::ptr::null_mut();
+    }
+    // SAFETY: dijamin pemanggil.
+    unsafe { (*ptr).io.as_mut_ptr() }
+}
+
+/// Jarak antar kanal di buffer in-place, dalam f32.
+#[no_mangle]
+pub extern "C" fn fxchain_stride() -> u32 {
+    MAX_BLOCK as u32
+}
+
+/// Proses `frames` sample di tempat. RT: zero alloc, no panic.
+///
+/// # Safety
+/// `ptr` harus hasil [`fxchain_new`] yang masih hidup, dipanggil dari thread
+/// pemiliknya saja.
+#[no_mangle]
+pub unsafe extern "C" fn fxchain_process(ptr: *mut FxChainRt, frames: u32) {
+    if ptr.is_null() {
+        return;
+    }
+    // SAFETY: dijamin pemanggil.
+    let rt = unsafe { &mut *ptr };
+    let n = (frames as usize).min(MAX_BLOCK);
+    if n == 0 {
+        return;
+    }
+    let (l, r) = rt.io.split_at_mut(MAX_BLOCK);
+    if let (Some(l), Some(r)) = (l.get_mut(..n), r.get_mut(..n)) {
+        rt.rack.begin_block();
+        rt.rack.process_all(l, r);
+        rt.rack.end_block(n as u32);
+    }
+}
+
+/// # Safety
+/// `ptr` harus hasil [`fxchain_new`] yang masih hidup.
+#[no_mangle]
+pub unsafe extern "C" fn fxchain_set_param(ptr: *mut FxChainRt, slot: u32, index: u32, value: f32) {
+    if ptr.is_null() || !value.is_finite() {
+        return;
+    }
+    // SAFETY: dijamin pemanggil.
+    unsafe { (*ptr).rack.set_param(slot as usize, index as usize, value) };
+}
+
+/// # Safety
+/// `ptr` harus hasil [`fxchain_new`] yang masih hidup.
+#[no_mangle]
+pub unsafe extern "C" fn fxchain_set_bypass(ptr: *mut FxChainRt, slot: u32, on: u32) {
+    if ptr.is_null() {
+        return;
+    }
+    // SAFETY: dijamin pemanggil.
+    unsafe { (*ptr).rack.set_bypass(slot as usize, on != 0) };
 }
 
 /// Render satu quantum. **Ini satu-satunya fungsi yang dipanggil per 128 frame.**

@@ -34,6 +34,7 @@ import {
   type StudioState,
 } from '../model';
 import { activeLoopLen, loopSourceOffset } from '../timeline/clip-loop';
+import { createFxNode } from './fx-node';
 import { fadeCurveArray, fadeOutGain } from '../timeline/fade';
 import { stemOf } from '../timeline/stem';
 import { buildStemChain, type StemNodes } from './stem-chain';
@@ -58,6 +59,8 @@ export interface LaneNodes {
    *  membuat update parameter bisa dilakukan by-index tanpa mencari-cari. */
   readonly filters: BiquadFilterNode[];
   readonly gain: GainNode;
+  /** Node `daw-fx` lane, kalau chain-nya tidak kosong dan runtime siap. */
+  readonly fx: AudioWorkletNode | null;
 }
 
 export interface BuiltGraph {
@@ -68,6 +71,8 @@ export interface BuiltGraph {
    * membangun ulang graf tiap gerakan slider hanya menghasilkan deretan klik.
    */
   readonly clipStems: Map<string, StemNodes>;
+  /** Node `daw-fx` master, kalau ada. */
+  readonly masterFx: AudioWorkletNode | null;
   /** Source yang sudah di-`start()`; perlu di-`stop()` saat preview berhenti. */
   readonly voices: AudioBufferSourceNode[];
   /** Node non-source (gain, filter) — perlu di-disconnect saat berhenti. */
@@ -223,7 +228,17 @@ export function buildProjectGraph(
   const sr = state.sampleRate;
   const speed = state.speed;
   const { playheadSec, startAt } = opts;
-  const destination = opts.destination ?? audio.destination;
+  const rawDestination = opts.destination ?? audio.destination;
+
+  // Chain master disisipkan SEBELUM tujuan akhir, jadi seluruh lane melewatinya
+  // — urutan yang sama dengan `build_plan` di Rust (master chain berjalan
+  // setelah semua bus dijumlahkan, sebelum fader master).
+  const masterFx = createFxNode(audio, state.masterChain);
+  if (masterFx !== null) {
+    masterFx.connect(rawDestination);
+    nodes.push(masterFx);
+  }
+  const destination: AudioNode = masterFx ?? rawDestination;
 
   for (const lane of state.lanes) {
     if (!isAudible(lane, state.lanes)) continue;
@@ -233,12 +248,22 @@ export function buildProjectGraph(
 
     const laneGainNode = audio.createGain();
     laneGainNode.gain.value = dbToLin(lane.gainDb);
-    const filters = buildEqChain(audio, lane.eq, laneGainNode);
+    // Urutan mengikuti docs/07 dan `build_plan`: EQ bawaan dulu, baru insert
+    // chain user, baru fader lane. Menukarnya membuat preview dan file hasil
+    // export terdengar berbeda untuk chain yang sama.
+    const laneFx = createFxNode(audio, lane.chain);
+    const afterEq: AudioNode = laneFx ?? laneGainNode;
+    if (laneFx !== null) {
+      laneFx.connect(laneGainNode);
+      nodes.push(laneFx);
+    }
+    const filters = buildEqChain(audio, lane.eq, afterEq);
     laneGainNode.connect(destination);
     nodes.push(laneGainNode, ...filters);
-    lanesOut.set(lane.id, { filters, gain: laneGainNode });
-    // Lane tanpa band sama sekali tetap harus berbunyi: masuk langsung ke fader.
-    const eqInput: AudioNode = filters[0] ?? laneGainNode;
+    lanesOut.set(lane.id, { filters, gain: laneGainNode, fx: laneFx });
+    // Lane tanpa band sama sekali tetap harus berbunyi: masuk langsung ke
+    // chain FX kalau ada, atau ke fader.
+    const eqInput: AudioNode = filters[0] ?? afterEq;
 
     for (const clip of lane.clips) {
       // Clip yang sedang diaudisi berbunyi dari pemutar audisi, bukan dari
@@ -325,7 +350,7 @@ export function buildProjectGraph(
     }
   }
 
-  return { lanes: lanesOut, clipStems, voices, nodes };
+  return { lanes: lanesOut, clipStems, masterFx, voices, nodes };
 }
 
 // ── Pemutar audisi ───────────────────────────────────────────────────────────

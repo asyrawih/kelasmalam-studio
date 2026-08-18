@@ -596,3 +596,41 @@ fn chains_survive_a_postcard_roundtrip() {
     assert!(back.tracks[0].chain[0].bypass);
     assert_eq!(back.tracks[0].chain[0].params.len(), 20);
 }
+
+/// Setting EQ dari project harus benar-benar sampai ke rak yang BERBUNYI.
+///
+/// Bug yang ditangkap: `load_project` membangun rak baru lalu memasangnya lewat
+/// `install_config`, tapi loop pengisian setting sempat menulis ke
+/// `self.config.rack` — rak LAMA, yang langsung digantikan. Akibatnya seluruh
+/// setting EQ hilang tiap project dimuat, tanpa error apa pun.
+///
+/// Null-test tidak bisa menangkap ini: ia membandingkan dua render dari engine
+/// yang sama, jadi EQ yang diam-diam mati tetap "cocok" di kedua ukuran blok.
+/// Yang membedakan hanyalah membandingkan terhadap project TANPA EQ.
+#[test]
+fn eq_settings_from_the_project_reach_the_live_rack() {
+    let mut flat = build(1, false, false, 128);
+    let (fl, _) = render_all(&mut flat, 8192, 128);
+
+    let mut eqd = build(1, false, false, 128);
+    let mut p = eqd.engine.project().clone();
+    // Lowpass 120 Hz di band pertama — materi ujinya 220 Hz.
+    p.tracks[0].eq[0] = crate::snapshot::EqBandSettings {
+        kind: 0,
+        freq_hz: 120.0,
+        q: 0.707,
+        gain_db: 0.0,
+        enabled: true,
+    };
+    eqd.engine.load_project(p).expect("plan valid");
+    eqd.engine.play();
+    let (el, _) = render_all(&mut eqd, 8192, 128);
+
+    let a = ac_rms(&fl[4096..]);
+    let b = ac_rms(&el[4096..]);
+    assert!(a > 1.0e-3, "referensi senyap, tes tidak bermakna");
+    assert!(
+        b < a * 0.5,
+        "EQ project tidak sampai ke rak yang berbunyi: {a} -> {b}"
+    );
+}

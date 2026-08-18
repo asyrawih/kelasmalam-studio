@@ -52,6 +52,10 @@ export interface WasmBindgenExports {
    * Rust-nya berubah.
    */
   snapshotFromStudioJson(json: string): StudioSnapshotHandle;
+  /** Katalog efek sebagai JSON — sumber tunggal knob di panel FX. */
+  fxCatalogJson(): string;
+  /** Peta slot blok parameter, dibandingkan CI dengan `param-map.ts`. */
+  paramMapJson(): string;
   OfflineRender: OfflineRenderCtor;
   WavEncoderHandle: WavEncoderCtor;
   WavBits: { Pcm16: number; Pcm24: number; Float32: number };

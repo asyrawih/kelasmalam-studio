@@ -19,6 +19,7 @@
 
 import { useEffect, useRef } from 'react';
 
+import { chainShape, fxPreviewStatus } from './fx-node';
 import { isStemBypass } from '../model';
 import { activeLoopLen } from '../timeline/clip-loop';
 import { studioStore } from '../store';
@@ -60,11 +61,22 @@ export function mixFingerprint(): string {
     //
     // SOLO tetap ikut walau lane-nya kosong: lane kosong yang di-solo
     // membungkam semua lane lain, dan itu jelas terdengar.
+    // BENTUK chain ikut, NILAI parameter tidak — aturan yang sama persis
+    // dengan stem di bawah. Menambah atau mem-bypass efek mengubah susunan node
+    // dan memang harus menjadwalkan ulang; menggeser knob tidak, dan
+    // memasukkannya ke sini akan me-restart audio tiap satu piksel gerakan.
+    chainShape(s.masterChain),
+    // Runtime FX dimuat asinkron. Sampai siap, `createFxNode` mengembalikan
+    // null dan chain tidak terdengar; menyertakan kesiapannya di sini membuat
+    // penjadwalan ulang terjadi sekali begitu ia hidup, alih-alih menunggu
+    // user kebetulan mengubah sesuatu.
+    fxPreviewStatus().ready ? 'fx1' : 'fx0',
     ...s.lanes
       .filter((l) => l.clips.length > 0 || l.solo)
       .map(
         (l) =>
           `${l.id}:${l.mute ? 1 : 0}${l.solo ? 1 : 0}x${l.speedRatio}:` +
+          `${chainShape(l.chain)}:` +
           l.clips
             // Satu BIT stem, bukan nilainya: yang mengharuskan penjadwalan ulang
             // adalah ada/tidaknya rantai stem, sedangkan gain & frekuensinya

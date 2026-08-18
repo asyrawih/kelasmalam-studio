@@ -348,6 +348,70 @@ impl FxRack {
         }
     }
 
+    /// Rak sebagai **chain lepas**: satu deret node tanpa konsep unit.
+    ///
+    /// Dipakai worklet `daw-fx` di jalur preview. Alasan ia memakai ulang
+    /// `FxRack` alih-alih tipe baru: dengan begitu preview dan export
+    /// menjalankan objek DSP yang sama persis — bypass, arena, tidur, dan
+    /// urutan `prepare`/`process`-nya satu implementasi, bukan dua yang mirip.
+    /// Dua implementasi mirip adalah persis cara `clip.stem` bisa terdengar di
+    /// preview tapi hilang dari file export.
+    pub fn chain(kinds: &[(FxKind, bool)], sample_rate: f32) -> Self {
+        let need: usize = kinds
+            .iter()
+            .map(|(k, _)| k.mem_frames(sample_rate))
+            .sum();
+        let mut arena = FxArena::new(need);
+        let mut slots: Vec<FxSlot> = Vec::with_capacity(kinds.len());
+        for (kind, bypass) in kinds.iter() {
+            let mem = arena.alloc(kind.mem_frames(sample_rate)).unwrap_or(MemHandle::EMPTY);
+            let node = {
+                let block = arena.block(mem);
+                FxNode::make(*kind, sample_rate, block)
+            };
+            // Parameter dimulai dari default deskriptor, bukan nol: nol adalah
+            // nilai yang sah untuk sebagian parameter dan akan terdengar
+            // sebagai setelan yang salah sampai UI mengirim yang pertama.
+            let params: Vec<f32> = kind.desc().params.iter().map(|p| p.default).collect();
+            let mut slot = FxSlot::new(node, mem, params, sample_rate);
+            if *bypass {
+                slot.set_bypass(true);
+                slot.in_gain.set_immediate(0.0);
+                slot.dry_gain.set_immediate(1.0);
+            }
+            slots.push(slot);
+        }
+        FxRack {
+            slots: slots.into_boxed_slice(),
+            arena,
+            dry: alloc::vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
+            sample_rate,
+        }
+    }
+
+    /// Jalankan SELURUH slot berurutan pada satu buffer stereo.
+    #[inline]
+    pub fn process_all(&mut self, l: &mut [f32], r: &mut [f32]) {
+        for i in 0..self.slots.len() {
+            self.process_node(i as u16, l, r);
+        }
+    }
+
+    /// Setel satu parameter. Nilainya dibaca `prepare` di awal blok berikutnya.
+    pub fn set_param(&mut self, slot: usize, index: usize, value: f32) {
+        if let Some(s) = self.slots.get_mut(slot) {
+            if let Some(p) = s.params.get_mut(index) {
+                *p = value;
+            }
+        }
+    }
+
+    pub fn set_bypass(&mut self, slot: usize, on: bool) {
+        if let Some(s) = self.slots.get_mut(slot) {
+            s.set_bypass(on);
+        }
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.slots.len()
@@ -518,5 +582,81 @@ impl FxRack {
             // ikut meredam input lagi kalau user mematikannya nanti.
             s.sleeping = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod chain_tests {
+    use super::*;
+
+    /// Chain lepas harus benar-benar memproses audio yang masuk — inilah yang
+    /// dipakai worklet preview, dan kalau ia diam saja maka preview dan file
+    /// hasil export berbeda tanpa ada yang tahu.
+    #[test]
+    fn a_standalone_chain_processes_incoming_audio() {
+        let mut rack = FxRack::chain(&[(FxKind::Eq, false)], 48_000.0);
+        // Highpass 1 kHz pada DC murni: yang tersisa harus mendekati nol.
+        rack.set_param(0, 0, 1.0); // b1_kind = HighPass
+        rack.set_param(0, 1, 1_000.0);
+        rack.set_param(0, 2, 0.707);
+        rack.set_param(0, 4, 1.0); // b1_on
+
+        let mut worst = 0.0f32;
+        for blk in 0..40 {
+            let mut l = alloc::vec![0.5f32; 128];
+            let mut r = alloc::vec![0.5f32; 128];
+            rack.begin_block();
+            rack.process_all(&mut l, &mut r);
+            rack.end_block(128);
+            if blk >= 20 {
+                for v in l.iter().chain(r.iter()) {
+                    worst = worst.max(v.abs());
+                }
+            }
+        }
+        assert!(worst < 0.05, "highpass tidak berjalan, DC tersisa {worst}");
+    }
+
+    /// Chain kosong harus melewatkan sinyal apa adanya — bit demi bit.
+    #[test]
+    fn an_empty_chain_is_bit_transparent() {
+        let mut rack = FxRack::chain(&[], 48_000.0);
+        let src: [f32; 128] = core::array::from_fn(|i| (i as f32) * 0.001 - 0.06);
+        let mut l = src;
+        let mut r = src;
+        rack.begin_block();
+        rack.process_all(&mut l, &mut r);
+        rack.end_block(128);
+        assert_eq!(l, src);
+        assert_eq!(r, src);
+    }
+
+    /// Efek yang dibangun dalam keadaan bypass tidak boleh menyentuh sinyal.
+    #[test]
+    fn a_chain_built_bypassed_passes_signal_through() {
+        let mut rack = FxRack::chain(&[(FxKind::Eq, true)], 48_000.0);
+        rack.set_param(0, 0, 1.0);
+        rack.set_param(0, 1, 1_000.0);
+        rack.set_param(0, 4, 1.0);
+        let src = alloc::vec![0.5f32; 128];
+        let mut l = src.clone();
+        let mut r = src.clone();
+        rack.begin_block();
+        rack.process_all(&mut l, &mut r);
+        rack.end_block(128);
+        for (i, v) in l.iter().enumerate() {
+            assert!((v - 0.5).abs() < 1e-4, "bypass tidak transparan di {i}: {v}");
+        }
+        let _ = r;
+    }
+
+    /// Parameter default diambil dari deskriptor, bukan nol — nol adalah nilai
+    /// yang sah untuk sebagian parameter dan akan terdengar sebagai setelan
+    /// yang salah sampai UI mengirim yang pertama.
+    #[test]
+    fn a_new_chain_starts_from_descriptor_defaults() {
+        let rack = FxRack::chain(&[(FxKind::Comp, false)], 48_000.0);
+        let want: Vec<f32> = FxKind::Comp.desc().params.iter().map(|p| p.default).collect();
+        assert_eq!(rack.slots[0].params, want);
     }
 }
