@@ -24,6 +24,7 @@ import { ExportCancelled, runExport, type ExportEncoder } from '../studio/export
 import { createWasmExportEngine } from '../studio/export/wasm-engine';
 import { createEncoder } from '../encoders';
 import { EXPORT_CANCEL } from './sab-layout';
+import { adoptThreadStack, type StackCapableExports, type ThreadStack } from './thread-stack';
 import { WASM_URLS } from './wasm-urls';
 import type { LoadedWasm, WasmBindgenExports } from './wasm-loader';
 
@@ -33,6 +34,8 @@ export interface ExportWorkerStart {
   module: WebAssembly.Module;
   /** Hanya ada di varian mt (shared). Di st, worker punya memory sendiri. */
   memory: WebAssembly.Memory | null;
+  /** Stack privat thread ini — lihat audio/thread-stack.ts. */
+  stack: ThreadStack | null;
   variant: 'mt' | 'st';
   /** Offset blok kontrol; dipakai membaca flag batal tanpa postMessage. */
   controlPtr: number;
@@ -70,7 +73,15 @@ async function run(m: ExportWorkerStart): Promise<void> {
   // direktori yang salah tanpa error apa pun.
   const glueUrl = WASM_URLS[m.variant].glue;
   const glue = (await import(/* @vite-ignore */ glueUrl)) as WasmBindgenExports;
-  glue.initSync(m.memory ? { module: m.module, memory: m.memory } : { module: m.module });
+  const inst = glue.initSync(
+    m.memory ? { module: m.module, memory: m.memory } : { module: m.module },
+  ) as StackCapableExports | undefined;
+  // Sesegera mungkin sesudah instantiate: di jalur mt thread ini berbagi linear
+  // memory dengan main thread dan worklet, dan tanpa langkah ini ketiganya
+  // menumbuhkan stack di rentang alamat yang sama (audio/thread-stack.ts).
+  // Yang tersisa terpapar hanyalah start function wasm-bindgen di dalam
+  // `initSync` — tidak bisa disisipi dari luar, dan bingkainya dangkal.
+  adoptThreadStack(inst ?? {}, m.stack);
   glue.initNonRealtime();
 
   // `createWasmExportEngine` hanya memakai `exports` dan `memory`; sisanya

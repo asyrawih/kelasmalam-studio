@@ -35,6 +35,7 @@ import {
   type OpCode,
   type TransportState,
 } from './sab-layout';
+import type { ThreadStack } from './thread-stack';
 import { loadWasm, type LoadedWasm } from './wasm-loader';
 
 export const PROCESSOR_NAME = 'daw-engine';
@@ -44,6 +45,8 @@ export interface ProcessorOptionsPayload {
   module: WebAssembly.Module;
   memory: WebAssembly.Memory;
   controlPtr: number;
+  /** Stack privat worklet — lihat audio/thread-stack.ts. `null` di jalur st. */
+  stack: ThreadStack | null;
   sampleRate: number;
   maxFrames: number;
   shared: boolean;
@@ -158,6 +161,10 @@ export class EngineClient {
       module: wasm.module,
       memory: wasm.memory,
       controlPtr: wasm.controlPtr,
+      // Dialokasi DI SINI, di main thread, sebelum worklet ada. Mengalokasinya
+      // dari dalam worklet berarti `malloc` sudah berjalan di atas stack yang
+      // bertabrakan — persis yang mau dihindari.
+      stack: wasm.newThreadStack(),
       sampleRate: ctx.sampleRate,
       maxFrames: 128,
       shared: wasm.variant === 'mt' && wasm.caps.sab,
@@ -479,6 +486,9 @@ export class EngineClient {
         module: this.wasm.module,
         memory: this.shared ? this.wasm.memory : null,
         controlPtr: this.wasm.controlPtr,
+        // Worker ini berbagi linear memory dengan main thread DAN worklet di
+        // jalur mt, jadi ia butuh stack-nya sendiri (audio/thread-stack.ts).
+        stack: this.shared ? this.wasm.newThreadStack() : null,
         variant: this.wasm.variant,
         snapshot: snapshotCopy,
         sampleRate: this.ctx.sampleRate,

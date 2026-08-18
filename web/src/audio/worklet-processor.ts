@@ -45,6 +45,8 @@ interface DawProcessorOptions {
   memory: WebAssembly.Memory;
   /** Offset blok kontrol di dalam `memory`. */
   controlPtr: number;
+  /** Stack privat thread ini (lihat audio/thread-stack.ts). `null` di jalur st. */
+  stack: { ptr: number; top: number } | null;
   /** `ctx.sampleRate` apa adanya — jangan dipaksa 48k (docs/05 §Safari). */
   sampleRate: number;
   /** Blok maksimum yang akan diminta; biasanya 128. */
@@ -56,6 +58,8 @@ interface DawProcessorOptions {
 /** Export mentah dari `crates/wasm-bridge/src/raw.rs`. */
 interface RawExports {
   memory?: WebAssembly.Memory;
+  /** Global `__stack_pointer` — ada hanya di artefak mt yang mengekspornya. */
+  __stack_pointer?: WebAssembly.Global;
   engine_new(sampleRate: number, ctlPtr: number, maxFrames: number): number;
   engine_free(ptr: number): void;
   engine_process(ptr: number, frames: number): number;
@@ -143,6 +147,18 @@ class DawProcessor extends AudioWorkletProcessor {
         buildStubImports(o.module, o.memory),
       );
       const raw = instance.exports as unknown as RawExports;
+
+      // HAL PERTAMA sesudah instantiate, sebelum satu pun fungsi ber-bingkai
+      // dipanggil. Semua instance dari modul mt memulai `__stack_pointer` di
+      // alamat yang SAMA, jadi tanpa langkah ini stack worklet tumbuh persis di
+      // atas stack main thread dan keduanya saling menimpa — kerusakannya baru
+      // meledak jauh kemudian, di kode yang tidak bersalah (lihat
+      // audio/thread-stack.ts). `engine_new` di bawah sudah memakai stack, jadi
+      // urutan dua baris ini tidak boleh ditukar.
+      if (o.stack !== null && raw.__stack_pointer !== undefined) {
+        raw.__stack_pointer.value = o.stack.top;
+      }
+
       const ptr = raw.engine_new(o.sampleRate || sampleRate, o.controlPtr, o.maxFrames || RENDER_QUANTUM);
       if (ptr === 0) throw new Error('engine_new mengembalikan null');
 

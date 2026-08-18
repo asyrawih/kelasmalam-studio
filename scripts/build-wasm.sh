@@ -47,10 +47,29 @@ fi
 # Flag multi-thread sudah ada di .cargo/config.toml. Kita set ulang di sini
 # secara eksplisit supaya skrip ini tetap benar walau dipanggil dengan
 # RUSTFLAGS dari luar (env var MENGGANTI rustflags dari config, bukan menambah).
+# `--export=__stack_pointer` BUKAN opsional di varian mt.
+#
+# Modul ini di-instantiate BERKALI-KALI di atas linear memory yang SAMA (main
+# thread, AudioWorklet, import/export worker). Global wasm bersifat per-instance,
+# jadi tiap thread punya `__stack_pointer` sendiri — TAPI semuanya diinisialisasi
+# ke nilai yang sama (1 MiB, dari -zstack-size di bawah). Artinya semua thread
+# menumbuhkan stack-nya di RENTANG ALAMAT YANG SAMA dan saling menimpa bingkai
+# satu sama lain.
+#
+# Gejalanya tidak pernah menunjuk ke sini: heap jadi rusak secara acak dan yang
+# meledak adalah `free()` milik objek yang tidak bersalah — "attempted to take
+# ownership of Rust value while it was borrowed", atau "memory access out of
+# bounds". Diuji: dua instance di satu memory, satu memanggil `engine_process`
+# terus-menerus, export di instance lain rusak dalam < 3 putaran; dengan stack
+# terpisah, 40 putaran bersih.
+#
+# Mengekspornya membuat JS bisa mengarahkan tiap thread ke stack-nya sendiri —
+# lihat `adoptThreadStack()` di web/src/audio/thread-stack.ts.
 RUSTFLAGS_MT="-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128 \
 -C link-arg=--import-memory \
 -C link-arg=--shared-memory \
 -C link-arg=--max-memory=2147483648 \
+-C link-arg=--export=__stack_pointer \
 -C link-arg=-zstack-size=1048576"
 
 # Varian ST: tanpa atomics dan tanpa shared/imported memory. SIMD tetap boleh —

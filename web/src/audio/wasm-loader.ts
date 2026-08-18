@@ -16,6 +16,7 @@
  */
 
 import { detectCaps, type Caps, type WasmVariant } from './caps';
+import { allocThreadStack, type StackCapableExports, type ThreadStack } from './thread-stack';
 import { WASM_URLS } from './wasm-urls';
 import { SAB_SIZE } from './sab-layout';
 
@@ -156,6 +157,21 @@ export interface LoadedWasm {
   readonly exports: WasmBindgenExports;
   /** Offset blok kontrol di dalam linear memory. */
   readonly controlPtr: number;
+  /**
+   * Export MENTAH instance main thread (`instance.exports`), bukan namespace
+   * glue-nya. Dibutuhkan untuk `scratch_alloc` dan `__stack_pointer` —
+   * keduanya tidak pernah muncul di surface bindgen.
+   */
+  readonly raw: StackCapableExports;
+  /**
+   * Alokasikan stack privat untuk satu thread baru. **Hanya di jalur `mt`**:
+   * di `st` tiap instance punya memory sendiri sehingga stack-nya tidak pernah
+   * bertemu, dan fungsinya mengembalikan `null`.
+   *
+   * Dipanggil dari MAIN THREAD sebelum thread tujuan menjalankan wasm apa pun —
+   * lihat `thread-stack.ts` untuk alasan urutannya.
+   */
+  newThreadStack(): ThreadStack | null;
 }
 
 let loading: Promise<LoadedWasm> | null = null;
@@ -230,7 +246,25 @@ async function doLoad(): Promise<LoadedWasm> {
 
   const controlPtr = glue.allocControlBlock();
 
-  return { module, memory: actualMemory, variant, caps, exports: glue, controlPtr };
+  const raw = (inst ?? {}) as StackCapableExports;
+  // Varian st: memory per instance, jadi tidak ada stack yang bertabrakan dan
+  // tidak ada yang perlu dialokasi. Menyediakannya di sana hanya akan membuang
+  // 1 MiB per worker untuk masalah yang tidak ada.
+  const newThreadStack = (): ThreadStack | null =>
+    variant === 'mt' ? allocThreadStack(raw) : null;
+
+  if (variant === 'mt' && raw.__stack_pointer === undefined) {
+    // Bukan error: artefak lama tetap jalan. Tapi ini HARUS terdengar, karena
+    // tanpa `__stack_pointer` setiap thread berbagi rentang stack yang sama dan
+    // kerusakannya muncul di tempat lain sebagai panic yang tidak masuk akal.
+    console.warn(
+      '[wasm] artefak mt tanpa export __stack_pointer: semua thread akan berbagi ' +
+        'rentang stack yang sama dan bisa saling menimpa. Bangun ulang dengan ' +
+        'scripts/build-wasm.sh terbaru.',
+    );
+  }
+
+  return { module, memory: actualMemory, variant, caps, exports: glue, controlPtr, raw, newThreadStack };
 }
 
 /** Ditandai supaya UI bisa membedakan "belum dibangun" dari error sungguhan. */

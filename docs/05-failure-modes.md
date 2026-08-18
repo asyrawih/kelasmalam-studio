@@ -164,3 +164,67 @@ Implikasi:
 | **SharedArrayBuffer** | Safari mendukung SAB sejak 15.2 **dengan syarat cross-origin isolation** — sama seperti Chrome/Firefox. Yang belum: `COEP: credentialless` (harus `require-corp`), dan `Atomics.waitAsync` baru muncul belakangan. | Kita tidak memakai `credentialless` maupun `waitAsync`. Jalur degraded (Bagian 1d) tetap disiapkan untuk WebView/iframe. |
 | **`AudioWorklet` + WASM** | Ada bug historis Safari di mana modul WASM besar lambat di-instantiate di worklet. Sudah membaik, tapi tetap: instantiate di constructor (bukan di `process()` pertama). | Sudah ditangani (1a). |
 | **OPFS** | Safari mendukung OPFS dan `createSyncAccessHandle` (di Worker). `showSaveFilePicker` **tidak** ada. | Export fallback ke Blob download; OPFS dipakai untuk backing store project (6a). |
+
+---
+
+## Stack bersama antar-thread di varian `mt`
+
+**Gejala.** Panic yang berpindah-pindah tempat dan tidak pernah menunjuk
+penyebabnya:
+
+```
+attempted to take ownership of Rust value while it was borrowed
+index out of bounds: the len is 0 but the index is 0   (crates/export/src/wav.rs)
+RuntimeError: memory access out of bounds               (di dalam free())
+```
+
+Selalu saat COMPILE, selalu di tempat yang berbeda, dan tidak pernah bisa
+diulang persis. Menjalankan jalur export yang sama di Node — dengan snapshot,
+`registerAsset`, render, dan encode yang identik — selalu bersih.
+
+**Penyebab.** Varian `mt` di-link dengan `--import-memory --shared-memory`, dan
+modul yang sama di-instantiate di banyak thread di atas **satu** linear memory:
+main thread (bindgen), AudioWorklet (raw), import/export worker. Global
+WebAssembly bersifat per-instance, jadi tiap thread memang punya
+`__stack_pointer` sendiri — tapi semuanya **diinisialisasi ke nilai yang sama**
+(`-zstack-size=1048576`). Semua thread karenanya menumbuhkan stack-nya di
+rentang alamat yang persis sama dan saling menimpa bingkai.
+
+Korban yang meledak hampir tidak pernah pelakunya. Yang paling sering kena
+adalah export, karena ia satu-satunya yang memakai stack dalam-dalam sementara
+worklet berjalan tanpa henti.
+
+**Bukti.** Dua instance di atas satu memory, satu memanggil `engine_process`
+nonstop:
+
+| Yang dilakukan thread kedua | Hasil export di thread pertama |
+|---|---|
+| hanya instantiate, tidak memanggil apa pun | 40 putaran bersih |
+| memanggil fungsi tanpa bingkai (`abi_version`) berulang | 40 putaran bersih |
+| `engine_process` berulang (bingkai nyata) | **rusak dalam < 3 putaran** |
+| `engine_process` berulang, stack terpisah | 40 putaran bersih |
+
+Pola itu menunjuk stack, bukan heap: kerusakan hanya muncul kalau thread kedua
+benar-benar MEMAKAI kedalaman stack.
+
+**Perbaikan.** `scripts/build-wasm.sh` mengekspor `__stack_pointer` untuk varian
+`mt`, dan setiap thread mengarahkan stack-nya ke blok sendiri sebelum panggilan
+wasm pertamanya — lihat `web/src/audio/thread-stack.ts`. Blok-nya dialokasi di
+**main thread** (`LoadedWasm.newThreadStack()`), bukan di thread yang
+bersangkutan: mengalokasi dari dalam thread baru berarti `malloc` sendiri sudah
+berjalan di atas stack yang bertabrakan.
+
+Dijaga oleh `web/src/audio/thread-stack.test.ts`: satu tes memastikan artefak
+`mt` benar-benar mengekspor `__stack_pointer` (menangkap penyebabnya langsung),
+satu lagi menjalankan ulang situasi race di atas (menangkap kelas kerusakannya
+walau penyebabnya kelak berubah).
+
+**Catatan diagnostik.** Panic di artefak produksi muncul sebagai
+`RuntimeError: unreachable executed` tanpa pesan apa pun, karena
+`panic_immediate_abort`. Untuk membaca pesan Rust yang sebenarnya:
+
+```
+DEBUG_PANIC=1 ./scripts/build-wasm.sh
+```
+
+lalu bangun ulang tanpa flag itu setelah selesai.

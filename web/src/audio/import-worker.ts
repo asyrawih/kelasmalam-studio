@@ -21,6 +21,7 @@ import { WASM_URLS } from './wasm-urls';
  * untuk kedua strategi, jadi hasilnya identik apa pun jalur decode-nya.
  */
 
+import { adoptThreadStack, type StackCapableExports, type ThreadStack } from './thread-stack';
 import type { ImportedAssetHandle, WasmBindgenExports } from './wasm-loader';
 
 /** Sample per bucket di level terendah pyramid (≈ 5 ms @48k). */
@@ -42,6 +43,13 @@ interface ImportMessage {
   variant: 'mt' | 'st';
   /** true kalau linear memory dibagi dengan main thread (tanpa transfer). */
   shared: boolean;
+  /**
+   * Stack privat thread ini. WAJIB (bukan opsional) di jalur mt — lihat
+   * `audio/thread-stack.ts`. Dibuat wajib supaya siapa pun yang kelak
+   * menghidupkan worker ini terpaksa menyediakannya, alih-alih mewarisi
+   * kerusakan memori yang gejalanya muncul di tempat lain.
+   */
+  stack: ThreadStack | null;
 }
 
 export interface ImportResultMessage {
@@ -204,7 +212,13 @@ async function ensureGlue(m: ImportMessage): Promise<WasmBindgenExports> {
   if (glue) return glue;
   const url = WASM_URLS[m.variant].glue;
   const g = (await import(/* @vite-ignore */ url)) as WasmBindgenExports;
-  g.initSync(m.memory ? { module: m.module, memory: m.memory } : { module: m.module });
+  const inst = g.initSync(
+    m.memory ? { module: m.module, memory: m.memory } : { module: m.module },
+  ) as StackCapableExports | undefined;
+  // Di jalur mt worker ini berbagi linear memory dengan main thread dan
+  // worklet; tanpa stack sendiri ketiganya saling menimpa bingkai stack
+  // (audio/thread-stack.ts).
+  adoptThreadStack(inst ?? {}, m.stack);
   g.initNonRealtime();
   glue = g;
   return g;
