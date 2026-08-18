@@ -10,7 +10,7 @@
  * dua kali (atau Enter/Space) membuka `LaneColorModal`.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   isAudible,
@@ -21,7 +21,9 @@ import {
   samplesToSec,
   type StudioLane,
 } from '../model';
-import { studioActions, useStudio } from '../store';
+import { studioActions, studioStore, useStudio } from '../store';
+import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-preview';
+import { lanePulse } from './beat-pulse';
 import { LaneColorModal } from './LaneColorModal';
 
 interface LaneRowProps {
@@ -118,8 +120,29 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
             display: 'grid',
             placeItems: 'center',
             cursor: 'pointer',
+            position: 'relative',
           }}
         >
+          {/*
+            Lapisan DENYUT, terpisah dari bar warnanya sendiri.
+            Elemen sendiri karena gayanya ditulis 60×/detik langsung ke DOM
+            (lihat `useLanePulses`): kalau ia menumpang bar di bawahnya, React
+            akan menimpanya kembali setiap kali baris ini render — dan gejalanya
+            bukan "error", melainkan kedipan yang kadang hilang.
+          */}
+          <span
+            data-lane-pulse={lane.id}
+            aria-hidden
+            style={{
+              position: 'absolute',
+              width: '9px',
+              height: '44px',
+              background: lane.color,
+              boxShadow: `0 0 12px ${lane.color}`,
+              opacity: 0,
+              pointerEvents: 'none',
+            }}
+          />
           <span
             style={{
               display: 'block',
@@ -127,6 +150,7 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
               height: '44px',
               background: lane.color,
               boxShadow: swatchHover ? `0 0 8px ${lane.color}80` : 'none',
+              position: 'relative',
             }}
           />
         </button>
@@ -242,10 +266,70 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
   );
 }
 
+/**
+ * Menyalakan strip lane mengikuti ketukan, 60×/detik, LANGSUNG KE DOM.
+ *
+ * Tidak lewat `setState`: satu render React per frame untuk delapan lane berarti
+ * seluruh header (tombol, dropdown speed, teks meta) direkonsiliasi 60×/detik
+ * demi satu angka opacity. Aturan yang sama sudah dipakai meter dan playhead —
+ * data 60 Hz digambar langsung, tidak menyentuh state.
+ *
+ * Loop-nya HANYA hidup saat ada yang berbunyi. Layar diam tidak perlu digambar
+ * ulang, dan rAF yang berjalan terus hanya membakar baterai untuk gambar yang
+ * sama.
+ */
+function useLanePulses(active: boolean): void {
+  useEffect(() => {
+    const paint = (level: (laneId: string) => number): void => {
+      const nodes = document.querySelectorAll<HTMLElement>('[data-lane-pulse]');
+      for (const el of nodes) {
+        const id = el.dataset.lanePulse;
+        el.style.opacity = id === undefined ? '0' : String(level(id));
+      }
+    };
+
+    if (!active || typeof requestAnimationFrame !== 'function') {
+      paint(() => 0);
+      return;
+    }
+
+    let raf = requestAnimationFrame(function frame(): void {
+      const s = studioStore.getState();
+      const heard = previewPositionSec();
+      const timelineSec = heard ?? s.playhead / s.sampleRate;
+      const auditionSec = auditionPositionSourceSec();
+      const audition =
+        s.clipLoop === null || auditionSec === null
+          ? null
+          : { clipId: s.clipLoop.clipId, sourceSec: auditionSec };
+
+      paint((id) => {
+        const lane = s.lanes.find((l) => l.id === id);
+        if (lane === undefined) return 0;
+        return lanePulse(lane, s.lanes, s.assets, s.sampleRate, timelineSec, audition);
+      });
+      raf = requestAnimationFrame(frame);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      paint(() => 0);
+    };
+  }, [active]);
+}
+
 export function LaneHeaders(): JSX.Element {
   const lanes = useStudio((s) => s.lanes);
   const selectedLaneId = useStudio((s) => s.selectedLaneId);
   const sampleRate = useStudio((s) => s.sampleRate);
+  // Audisi loop ikut menyalakan denyut: ia berbunyi walau transport berhenti.
+  //
+  // DUA hook terpisah, digabung SETELAHNYA — bukan `useStudio(a) || useStudio(b)`.
+  // `||` men-short-circuit, jadi hook kedua tidak selalu dipanggil dan urutan
+  // hook berubah antar render. React menangkapnya sebagai crash, bukan sebagai
+  // gejala halus; itu pun hanya kalau ada tes yang menekan PLAY.
+  const playing = useStudio((s) => s.playing);
+  const auditioning = useStudio((s) => s.clipLoop !== null);
+  useLanePulses(playing || auditioning);
 
   return (
     <div style={{ borderRight: '1px solid var(--cy-border)', minWidth: 0 }}>

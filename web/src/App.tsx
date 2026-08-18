@@ -13,13 +13,15 @@
  */
 
 import { useEffect } from 'react';
-import { StudioRail } from './studio/rail';
 import { ReadoutStrip, StudioHeader, StudioLayout } from './studio/shell';
+import { MenuBar } from './studio/shell/MenuBar';
+import { STUDIO_MENUS } from './studio/shell/StudioMenus';
+import { TransportButtons } from './studio/shell/TransportButtons';
 import { ReorderableStack } from './studio/shell/ReorderableStack';
 import { studioActions, studioStore, useStudio } from './studio/store';
 import { registerExportHost } from './studio/rail/export-bridge';
 import { bufferLookup } from './studio/preview/audio-preview';
-import { BeatBar, BeatProvider, ClipDetailPanel, TimelinePanel } from './studio/timeline';
+import { BeatProvider, TimelinePanel } from './studio/timeline';
 import { usePersistence } from './studio/persist/usePersistence';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
@@ -33,13 +35,15 @@ export interface AppProps {
    */
   readonly createEngine?: () => Promise<unknown>;
   readonly onClose?: () => void;
+  /** Tidak dipakai lagi — rail kanan sudah tidak ada. Dipertahankan supaya
+   *  pemanggil lama tidak perlu ikut diubah. */
   readonly railWidth?: number;
 }
 
 /** Periode tick playhead. 60 ms = angka yang sama dengan interval di design. */
 const TICK_MS = 60;
 
-export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element {
+export function App({ createEngine, onClose }: AppProps): JSX.Element {
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
   // Sambungkan rail ke project + cache PCM. Cache-nya SAMA dengan yang dipakai
@@ -88,31 +92,23 @@ export function App({ createEngine, onClose, railWidth }: AppProps): JSX.Element
   return (
     <BeatProvider>
       <StudioLayout
-        railWidth={railWidth}
         header={<StudioHeader onClose={onClose} />}
         readouts={<ReadoutStrip />}
-        beatBar={<BeatBar />}
+        menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} />}
         main={
-          <ReorderableStack
-            overlayAside={<StudioRail />}
-            items={[
-              { id: 'timeline', node: <TimelinePanel /> },
-              // Clip Detail SELALU ada, juga saat tidak ada yang terpilih.
-              //
-              // Dulu ia hanya dipasang saat ada seleksi, dengan alasan menghemat
-              // ruang vertikal. Itu keliru begitu seleksi jadi sesuatu yang
-              // sering berubah: panel yang muncul-hilang mendorong timeline naik
-              // turun di bawah kursor, jadi klik berikutnya mendarat di tempat
-              // yang berbeda dari yang dilihat mata. Tata letak yang bergerak
-              // sendiri jauh lebih mahal daripada satu kartu berisi judul.
-              //
-              // Tanpa seleksi, panel ini menyusut jadi satu baris judul
-              // ("PILIH CLIP DI TIMELINE") — tingginya tetap, dan itulah intinya.
-              { id: 'clip-detail', node: <ClipDetailPanel /> },
-            ]}
-          />
+          /*
+           * Yang tersisa di kolom kerja HANYA timeline.
+           *
+           * Semua kontrol lain pindah ke toolbar menu di atas: kartu Clip Detail
+           * dan seluruh rail kanan. Alasannya sama untuk keduanya — studio ini
+           * tumbuh sampai punya kontrol untuk grid, loop, potong, stem, fade,
+           * mixer, EQ, master, dan export, dan kalau semuanya harus terlihat
+           * sekaligus, permukaan kerja yang sebenarnya tinggal sepertiga layar.
+           * `ReorderableStack` tetap dipakai supaya timeline masih bisa
+           * dibentangkan penuh layar (⛶).
+           */
+          <ReorderableStack items={[{ id: 'timeline', node: <TimelinePanel /> }]} />
         }
-        rail={<StudioRail />}
       />
     </BeatProvider>
   );

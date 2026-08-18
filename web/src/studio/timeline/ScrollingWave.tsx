@@ -33,6 +33,7 @@ import { samplesToSec, secToSamples, type Samples } from '../model';
 import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-preview';
 import type { StudioAsset } from '../store';
 import { drawBeatGrid, drawPlayhead } from './beat-draw';
+import { drawFadeCurves, type FadeRegions } from './fade-draw';
 import { clipDetailGradient, drawClipWave } from './waveform';
 
 export interface ScrollingWaveProps {
@@ -57,6 +58,12 @@ export interface ScrollingWaveProps {
    * Dipakai saat waveform sedang ditarik dan saat transport diam.
    */
   readonly center?: Samples | null;
+  /**
+   * Daerah fade clip, SOURCE-space. Digambar di jendela ini juga — fade tetap
+   * terdengar saat di-zoom, jadi menyembunyikannya berarti user tidak bisa
+   * melihat sesuatu yang sedang mempengaruhi suaranya.
+   */
+  readonly fade?: FadeRegions | null;
   /** Sorotan region loop, SOURCE-space. */
   readonly region?: { readonly sourceStart: Samples; readonly sourceLen: Samples } | null;
   /** true kalau region itu sedang benar-benar berbunyi (bukan cuma pratinjau). */
@@ -129,6 +136,12 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
           centerLine: '#ffd40024',
         });
         ctx.restore();
+      }
+
+      // Fade DI ATAS waveform, DI BAWAH grid: bidang gelapnya harus menutupi
+      // gelombang (itu bagian yang dibuang), tapi garis bar tetap harus terbaca.
+      if (p.fade != null) {
+        drawFadeCurves(ctx, { ...p.fade, from, len, width: w, height: h });
       }
 
       if (p.grid !== null) {

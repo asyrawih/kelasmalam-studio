@@ -171,6 +171,50 @@ kolom nama lane tidak melompat ke posisi negatif.
 
 ---
 
+## Trim & slip: menarik tepi clip
+
+Tiga gerakan di timeline, semuanya **non-destruktif** — yang berubah adalah
+jendela clip ke dalam materinya, bukan materinya:
+
+| Gerakan | Efek |
+|---|---|
+| Tarik gagang **kanan** | Tepi kiri diam. Memendekkan/memanjangkan apa yang terdengar |
+| Tarik gagang **kiri** | Tepi kanan diam. Menggeser dari bagian mana clip mulai |
+| **Alt + tarik** di badan clip | Kedua tepi diam. Materinya yang bergeser di dalam jendela (*slip*) |
+
+Semuanya bisa dibalik hanya dengan menarik ke arah sebaliknya. Aturan yang
+menjaganya, di `timeline/clip-trim.ts`:
+
+- **Sisi yang seharusnya diam dihitung sebagai angka TETAP**, bukan diturunkan
+  ulang dari sisi yang bergerak. Kalau keduanya dihitung dari selisih,
+  pembulatan sample menumpuk di setiap `pointermove` dan setelah beberapa detik
+  menyeret, tepi yang tidak disentuh sudah berpindah beberapa milidetik. Ada tes
+  yang menarik tepi kiri 60 kali dan memastikan tepi kanan tidak bergerak
+  sesample pun.
+- **Trim bersifat absolut** (`at` = posisi timeline tujuan), jadi memanggilnya
+  berkali-kali selama tarikan tidak menumpuk galat. Yang butuh titik awal justru
+  `slipClip`, dan hanya itu.
+- **Tidak bisa melewati ujung materi.** `AudioBufferSourceNode.start()` melempar
+  di luar batas buffer dan `graph-builder` menangkapnya lalu MELEWATI clip itu —
+  gejalanya clip terlihat ada di layar tapi bisu.
+- Gagang selebar `min(7px, 30%)`: cukup untuk ditunjuk tanpa presisi bedah, tapi
+  menyusut bersama clip pendek supaya badannya tetap bisa diseret.
+- Gagang memanggil `stopPropagation`; tanpa itu satu pointerdown akan memulai
+  trim DAN pemindahan clip sekaligus.
+
+Arah slip mengikuti konvensi yang sama dengan menarik waveform di menu LOOP:
+menyeret ke kanan membawa materi ke kanan, artinya mundur.
+
+Tombol `TRIM` di panel clip **dihapus**. Ia dulu mati permanen dengan alasan
+"butuh engine"; itu keliru — trim murni operasi timeline. Dan tombol yang membuka
+dialog untuk menggeser batas yang sudah terlihat di layar hanya menambah satu
+lompatan.
+
+Belum ada: **stretch** (mengubah durasi tanpa mengubah materi yang terdengar).
+Itu memang ditunda ke fase 2, lihat `docs/07` — sekarang baru varispeed.
+
+---
+
 ## Peta berkas
 
 | Berkas | Isi |
@@ -180,3 +224,4 @@ kolom nama lane tidak melompat ke posisi negatif.
 | `web/src/studio/multi-select.test.ts` | himpunan, invarian, aksi massal |
 | `web/src/studio/timeline/marquee.test.tsx` | jalur pointer + pemetaan koordinat |
 | `web/src/studio/timeline/wheel-zoom.test.tsx` | di mana gulir dianggap zoom |
+| `web/src/studio/timeline/clip-trim.ts` | trim kiri/kanan + slip (murni) |

@@ -47,6 +47,7 @@ import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SP
 } from './model';
 import { createDemoStudio, createInitialStudio } from './demo';
 import { applyLoopCut, type LoopCutSpec } from './timeline/beat-cut';
+import { slipClip, trimLeft, trimRight } from './timeline/clip-trim';
 import { normalizeClipStem } from './timeline/stem';
 import type { Envelope } from './timeline/envelope';
 
@@ -252,18 +253,19 @@ export interface StudioAppState extends StudioState {
   readonly maximizedPanel: PanelId | null;
   /** Tampilan EQ yang dipilih user. Preferensi UI, tidak mempengaruhi audio. */
   readonly eqMode: EqMode;
-  /**
-   * Blok mana saja di Clip Detail yang sedang terbuka.
-   *
-   * Ikut disimpan, seperti `panelOrder` dan `eqMode`: melipat blok adalah
-   * keputusan tata letak yang dibuat sekali, dan memaksanya diulang setiap
-   * refresh mengembalikan persis kepadatan yang ingin dihindari. Berbeda dari
-   * `maximizedPanel`, yang sengaja TIDAK disimpan karena ia menyembunyikan
-   * segalanya dan bisa membingungkan kalau muncul tanpa diingat.
-   */
-  readonly clipDetailSections: Readonly<Record<ClipDetailSectionId, boolean>>;
   /** Tinggi baris lane. Preferensi tata letak, ikut disimpan. */
   readonly laneHeight: LaneHeightId;
+  /**
+   * Menu toolbar yang sedang terbuka, atau null.
+   *
+   * SENGAJA TIDAK DISIMPAN, alasan yang sama dengan `maximizedPanel`: membuka
+   * aplikasi dan langsung mendapati sebuah popup menutupi timeline, tanpa ingat
+   * pernah membukanya, membingungkan. Ini keadaan sesi, bukan bagian dari karya.
+   *
+   * Satu slot, bukan himpunan: hanya satu menu boleh terbuka. Beberapa popup
+   * sekaligus akan menutupi permukaan kerja yang justru sedang dilihat.
+   */
+  readonly openMenu: MenuId | null;
   /** Batas bawah panjang timeline (detik), diatur manual. */
   readonly minDurationSec: number;
   /** Batas atas panjang timeline (detik). null = ikut konten (otomatis). */
@@ -271,26 +273,23 @@ export interface StudioAppState extends StudioState {
 }
 
 /**
- * Blok yang bisa dilipat di dalam Clip Detail.
+ * Menu di toolbar atas. Urutannya = urutan ikon di layar.
  *
- * `beat` sudah TIDAK ADA di sini: kontrol BEAT & LOOP pindah ke bar sticky di
- * atas halaman (`timeline/BeatBar.tsx`) karena ia dipakai berulang-ulang sambil
- * melihat timeline. Project lama yang menyimpan `beat` tetap terbaca — nilainya
- * hanya tidak dipakai lagi.
+ * Dikelompokkan berdasarkan APA YANG DISENTUH, bukan asal panelnya:
+ * `beat`/`loop`/`clip`/`stem` menyentuh satu clip, `mix`/`eq`/`master`/`export`
+ * menyentuh keseluruhan project.
  */
-export type ClipDetailSectionId = 'stem' | 'fade';
-
-/**
- * Semuanya terlipat.
- *
- * Bukan "semua terbuka": tinggi penuh panel ini menutupi timeline, dan blok yang
- * terlipat tetap menampilkan RINGKASAN keadaannya — jadi tidak ada yang hilang
- * tanpa jejak, hanya satu klik lebih jauh.
- */
-export const DEFAULT_CLIP_DETAIL_SECTIONS: Readonly<Record<ClipDetailSectionId, boolean>> = {
-  stem: false,
-  fade: false,
-};
+export type MenuId =
+  | 'transport'
+  | 'beat'
+  | 'loop'
+  | 'clip'
+  | 'stem'
+  | 'mix'
+  | 'eq'
+  | 'master'
+  | 'export'
+  | 'help';
 
 /** Panel yang bisa diurutkan ulang. Dua tumpukan terpisah: kolom kiri & rail. */
 export type PanelId =
@@ -343,8 +342,8 @@ let state: StudioAppState = withDerived({
   railOrder: DEFAULT_RAIL_ORDER,
   maximizedPanel: null,
   eqMode: 'curve',
-  clipDetailSections: DEFAULT_CLIP_DETAIL_SECTIONS,
   laneHeight: DEFAULT_LANE_HEIGHT,
+  openMenu: null,
   minDurationSec: MIN_DURATION_SEC,
   maxDurationSec: null,
   engineError: null,
@@ -727,6 +726,51 @@ export const studioActions = {
         return { ...lane, clips: [...lane.clips, ...incoming].sort((a, b) => a.start - b.start) };
       });
       return { lanes: next };
+    });
+  },
+  /**
+   * Tarik salah satu TEPI clip. Non-destruktif: yang berubah hanya jendela ke
+   * dalam materi, bukan materinya.
+   *
+   * Absolut (`at` = posisi timeline tujuan), bukan berbasis selisih — jadi
+   * memanggilnya berkali-kali selama tarikan tidak menumpuk galat. Yang butuh
+   * titik awal justru `slipClip`, dan hanya itu.
+   */
+  trimClip(clipId: string, edge: 'left' | 'right', at: Samples): void {
+    set((s) => {
+      const hit = findClip(s.lanes, clipId);
+      if (hit === null) return null;
+      const { lane, clip } = hit;
+      const frames = s.assets[clip.assetId]?.frames;
+      const next =
+        edge === 'right'
+          ? trimRight(clip, lane.speedRatio, at, frames)
+          : trimLeft(clip, lane.speedRatio, at);
+      if (next === clip) return null;
+      return {
+        lanes: s.lanes.map((l) =>
+          l.id === lane.id
+            ? { ...l, clips: l.clips.map((c) => (c.id === clipId ? next : c)) }
+            : l,
+        ),
+      };
+    });
+  },
+  /** Geser materi di dalam clip tanpa memindahkan clip-nya (Alt-drag). */
+  slipClip(clipId: string, originSourceStart: Samples, deltaSource: number): void {
+    set((s) => {
+      const hit = findClip(s.lanes, clipId);
+      if (hit === null) return null;
+      const { lane, clip } = hit;
+      const next = slipClip(clip, originSourceStart, deltaSource, s.assets[clip.assetId]?.frames);
+      if (next === clip) return null;
+      return {
+        lanes: s.lanes.map((l) =>
+          l.id === lane.id
+            ? { ...l, clips: l.clips.map((c) => (c.id === clipId ? next : c)) }
+            : l,
+        ),
+      };
     });
   },
   updateClip(clipId: string, patch: Partial<StudioClip>): void {
@@ -1291,14 +1335,15 @@ export const studioActions = {
   setExportProgress(progress: number | null): void {
     set(() => ({ exportProgress: progress }));
   },
+  /** Buka menu ini, atau tutup kalau ia yang sedang terbuka. */
+  toggleMenu(id: MenuId): void {
+    set((s) => ({ openMenu: s.openMenu === id ? null : id }));
+  },
+  closeMenu(): void {
+    set((s) => (s.openMenu === null ? null : { openMenu: null }));
+  },
   setLaneHeight(id: LaneHeightId): void {
     set((s) => (s.laneHeight === id ? null : { laneHeight: id }));
-  },
-  /** Buka/tutup satu blok Clip Detail. */
-  toggleClipDetailSection(id: ClipDetailSectionId): void {
-    set((s) => ({
-      clipDetailSections: { ...s.clipDetailSections, [id]: !s.clipDetailSections[id] },
-    }));
   },
   setEngineStatus(ready: boolean, error: string | null): void {
     set(() => ({ engineReady: ready, engineError: error }));
@@ -1327,8 +1372,8 @@ export const studioActions = {
       railOrder: DEFAULT_RAIL_ORDER,
       maximizedPanel: null,
       eqMode: 'curve',
-      clipDetailSections: DEFAULT_CLIP_DETAIL_SECTIONS,
-      laneHeight: DEFAULT_LANE_HEIGHT,
+          laneHeight: DEFAULT_LANE_HEIGHT,
+      openMenu: null,
       minDurationSec: MIN_DURATION_SEC,
       maxDurationSec: null,
     });

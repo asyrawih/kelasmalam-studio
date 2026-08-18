@@ -15,6 +15,7 @@ import { Card } from '../../ui/cyber';
 import { LANE_HEIGHT_IDS, findClip, samplesToSec } from '../model';
 import { studioActions, useStudio } from '../store';
 import { ClipArea } from './ClipArea';
+import { ClipDetailDialog } from './ClipDetailDialog';
 import { LaneHeaders } from './LaneHeaders';
 import { useClipboardImport } from '../shortcuts/useClipboardImport';
 import { DurationBounds } from './DurationBounds';
@@ -50,6 +51,20 @@ export function TimelinePanel(): JSX.Element {
   const [view, setView] = useState({ left: 0, width: 100 });
   const [fitPxPerSec, setFitPxPerSec] = useState(0);
   const [importError, setImportError] = useState<string | null>(null);
+  /**
+   * Dialog Clip Detail, dibuka double-click di area clip.
+   *
+   * State-nya duduk DI SINI, bukan di dalam `ClipArea`: dialog dipasang lewat
+   * portal, dan React tetap mengalirkan event-nya menyusuri POHON REACT, bukan
+   * pohon DOM. Dipasang di dalam scroller, setiap pointerdown di dalam dialog
+   * (menarik handle fade, menekan tombol) akan sampai ke `beginBackgroundDrag`
+   * milik scroller dan memulai kotak seleksi di belakang dialog.
+   *
+   * Sengaja tidak disimpan di store: ini keadaan sesi yang paling pendek
+   * umurnya — sama seperti `maximizedPanel`, membukanya kembali sendiri setelah
+   * refresh hanya akan menutupi timeline tanpa diminta.
+   */
+  const [detailOpen, setDetailOpen] = useState(false);
   // Tempel URL dari clipboard → clip. Dipasang di sini supaya pesan gagalnya
   // muncul di tempat yang sama dengan kegagalan drop file.
   useClipboardImport(setImportError);
@@ -237,7 +252,7 @@ export function TimelinePanel(): JSX.Element {
     <div ref={cardRef} data-tl-card>
       <Card
         title="Timeline"
-        subtitle="drag = pilih area · spasi+drag = geser · scroll = zoom"
+        subtitle="drag = pilih area · spasi+drag = geser · scroll = zoom · dobel-klik clip = detail"
         notched
         glow
       >
@@ -387,6 +402,7 @@ export function TimelinePanel(): JSX.Element {
                 draggingRef.current = d;
               }}
               onImportError={setImportError}
+              onOpenDetail={() => setDetailOpen(true)}
             />
           </div>
         </div>
@@ -405,6 +421,9 @@ export function TimelinePanel(): JSX.Element {
           </div>
         ) : null}
       </Card>
+      {/* Di luar <Card>, tapi masih di dalam pohon React timeline: isinya
+          membaca clip yang dipajang dari <BeatProvider> di akar aplikasi. */}
+      {detailOpen ? <ClipDetailDialog onClose={() => setDetailOpen(false)} /> : null}
     </div>
   );
 }

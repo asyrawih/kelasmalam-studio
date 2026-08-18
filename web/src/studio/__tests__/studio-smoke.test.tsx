@@ -11,8 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
 import { DEFAULT_FADE_CURVE, findClip, samplesToSec } from '../model';
 import { studioActions, studioStore } from '../store';
-import { BeatBar, BeatProvider, ClipDetailPanel, LaneHeaders, OverviewStrip, TimelinePanel } from '../timeline';
-import { ReadoutStrip, StudioHeader } from '../shell';
+import {
+  BeatProvider,
+  ClipEditPanel,
+  ClipWavePanel,
+  LaneHeaders,
+  OverviewStrip,
+  TimelinePanel,
+} from '../timeline';
+import { MenuBar, ReadoutStrip, STUDIO_MENUS, StudioHeader, TransportButtons } from '../shell';
 
 const RECT = {
   x: 0,
@@ -88,8 +95,17 @@ describe('panel sendiri-sendiri', () => {
     ['StudioHeader', () => <StudioHeader />],
     ['ReadoutStrip', ReadoutStrip],
     ['TimelinePanel', TimelinePanel],
-    ['ClipDetailPanel', () => <BeatProvider><ClipDetailPanel /></BeatProvider>],
-    ['BeatBar', () => <BeatProvider><BeatBar /></BeatProvider>],
+    ['ClipWavePanel', () => <BeatProvider><ClipWavePanel /></BeatProvider>],
+    ['ClipEditPanel', () => <BeatProvider><ClipEditPanel /></BeatProvider>],
+    ['TransportButtons', TransportButtons],
+    [
+      'MenuBar',
+      () => (
+        <BeatProvider>
+          <MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} />
+        </BeatProvider>
+      ),
+    ],
     ['LaneHeaders', LaneHeaders],
     ['OverviewStrip', () => <OverviewStrip viewLeftPct={0} viewWidthPct={100} />],
   ];

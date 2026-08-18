@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { findClip, type StudioClip } from '../model';
 import { studioActions, studioStore } from '../store';
-import { ClipDetailPanel } from './ClipDetailPanel';
+import { ClipEditPanel, ClipWavePanel } from './ClipPanels';
 import { BeatProvider } from './beat-context';
 
 const SR = 48_000;
@@ -35,13 +35,14 @@ function selectedClip(): StudioClip {
 }
 
 /**
- * Clip Detail sekarang mengambil "clip yang dipajang" + state beat dari
- * `BeatProvider`.
+ * Handle fade hidup di `ClipWavePanel`, field & preset di `ClipEditPanel`.
+ * Keduanya mengambil clip yang dipajang dari `BeatProvider`.
  */
 function Studio(): JSX.Element {
   return (
     <BeatProvider>
-      <ClipDetailPanel />
+      <ClipWavePanel />
+      <ClipEditPanel />
     </BeatProvider>
   );
 }
@@ -54,9 +55,6 @@ beforeEach(() => {
   // Clip 10 detik tepat — supaya 1 px = 25 ms dan angkanya mudah dibaca.
   studioActions.updateClip(clip.id, { start: 0, len: 10 * SR, fadeInMs: 0, fadeOutMs: 0 });
   studioActions.selectClip(clip.id, lane.id);
-  // Blok FADE terlipat secara default (panel ini sudah punya empat blok);
-  // tes ini menguji isinya, jadi ia dibuka lebih dulu.
-  studioActions.toggleClipDetailSection('fade');
 });
 
 afterEach(cleanup);

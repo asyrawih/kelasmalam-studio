@@ -1,67 +1,37 @@
 /**
- * Kerangka halaman: grid `auto auto minmax(0,1fr)` (header, readout, body) dan
- * body dua kolom seperti `bodyCols` di design.
+ * Kerangka halaman: satu kolom penuh (header, readout, toolbar menu, body).
  *
- * `minmax(0,…)` di mana-mana bukan hiasan: tanpa itu kolom grid memakai
- * min-content dan timeline yang lebarnya ribuan piksel akan mendorong seluruh
- * halaman melebar, bukan menggulir di dalam dirinya sendiri.
+ * `minmax(0,…)` bukan hiasan: tanpa itu kolom grid memakai min-content dan
+ * timeline yang lebarnya ribuan piksel akan mendorong seluruh halaman melebar,
+ * bukan menggulir di dalam dirinya sendiri.
  */
 
 import type { ReactNode } from 'react';
-
-import { useStudio } from '../store';
-
-/**
- * Lebar rail. Design menulis 360, tapi rail sekarang menyusun kartunya dalam
- * DUA kolom, dan 360 dibagi dua adalah ~165 px per kartu — di sana trek slider
- * Amplify tinggal ~140 px, detent 0 dB-nya ~1,5 px, dan lima preset Render
- * Speed tidak muat sebaris. 600 memberi ~293 px per kartu.
- */
-const DEFAULT_RAIL_WIDTH = 600;
-
-/**
- * Batas atas rail sebagai pecahan lebar body.
- *
- * Rail melebar tidak boleh memakan kolom kerja: timeline adalah permukaan
- * utamanya, jadi ia tetap harus dapat mayoritas. 44% menjaga arrangement di
- * ~56% pada layar mana pun, sekaligus membuat rail menyusut dengan sendirinya
- * di layar sempit — dan begitu ia turun di bawah `MIN_TWO_COLUMN_WIDTH`,
- * `ReorderableStack` yang mengukur lebarnya sendiri jatuh ke satu kolom.
- */
-const RAIL_MAX_FRACTION = '44%';
 
 export interface StudioLayoutProps {
   readonly header: ReactNode;
   readonly readouts: ReactNode;
   /**
-   * Bar yang MENEMPEL di atas halaman (BEAT & LOOP).
+   * Toolbar menu yang MENEMPEL di atas halaman.
    *
    * Halaman ini sengaja tidak punya scroller sendiri — dokumen yang menggulir,
-   * dan `position: sticky` di dalam bar itu bekerja terhadap dokumen. Membuat
-   * body ber-`overflow: auto` di sini akan mematikan sticky-nya tanpa gejala
-   * lain selain "bar-nya tidak menempel".
+   * dan `position: sticky` di dalam toolbar bekerja terhadapnya. Membuat body
+   * ber-`overflow: auto` di sini akan mematikan sticky-nya tanpa gejala lain
+   * selain "toolbar-nya tidak menempel".
    */
-  readonly beatBar?: ReactNode;
+  readonly menuBar?: ReactNode;
   readonly main: ReactNode;
-  readonly rail: ReactNode;
-  /** Lebar maksimum kolom kanan (design: prop `railWidth`). */
-  readonly railWidth?: number;
 }
 
-export function StudioLayout({
-  header,
-  readouts,
-  beatBar,
-  main,
-  rail,
-  railWidth = DEFAULT_RAIL_WIDTH,
-}: StudioLayoutProps): JSX.Element {
-  // Saat ada panel yang dibentangkan, rail dipindahkan ke dalam overlay
-  // fullscreen (lihat FloatingAside di ReorderableStack) dan TIDAK boleh ikut
-  // dirender di sini. Merender keduanya berarti dua instance StudioRail hidup
-  // bersamaan: dua rAF meter, dua AnalyserNode tap, dua langganan store.
-  const maximized = useStudio((s) => s.maximizedPanel) !== null;
-
+/**
+ * Kerangka halaman: satu kolom penuh.
+ *
+ * Rail kanan SUDAH TIDAK ADA — seluruh isinya (mixer, EQ, master, compile,
+ * transport, shortcut) pindah ke toolbar menu di atas. Dengan begitu timeline
+ * mendapat lebar penuh layar, dan tiap kontrol baru yang ditambahkan nanti tidak
+ * lagi memakan bagiannya.
+ */
+export function StudioLayout({ header, readouts, menuBar, main }: StudioLayoutProps): JSX.Element {
   return (
     <div
       style={{
@@ -75,13 +45,11 @@ export function StudioLayout({
     >
       {header}
       {readouts}
-      {beatBar}
+      {menuBar}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: maximized
-            ? 'minmax(0,1fr)'
-            : `minmax(0,1fr) minmax(0,min(${railWidth}px,${RAIL_MAX_FRACTION}))`,
+          gridTemplateColumns: 'minmax(0,1fr)',
           gap: '16px',
           padding: '16px 24px 26px',
           alignItems: 'start',
@@ -89,10 +57,7 @@ export function StudioLayout({
           maxWidth: '100%',
         }}
       >
-        <div style={{ display: 'grid', gap: '16px', minWidth: 0, maxWidth: '100%' }}>{main}</div>
-        {maximized ? null : (
-          <div style={{ display: 'grid', gap: '14px', minWidth: 0 }}>{rail}</div>
-        )}
+        {main}
       </div>
     </div>
   );

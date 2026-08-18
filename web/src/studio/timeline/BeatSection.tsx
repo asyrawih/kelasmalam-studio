@@ -519,19 +519,38 @@ function Caption({
 }
 
 /** Kontrol grid + loop cut, dipasang di bawah kotak waveform. */
+export type BeatGroupId = 'grid' | 'view' | 'loop' | 'cut';
+const ALL_GROUPS: readonly BeatGroupId[] = ['grid', 'view', 'loop', 'cut'];
+
 export function BeatControls({
   beat,
   clip,
   asset,
   sampleRate,
   onCut,
+  groups = ALL_GROUPS,
 }: {
   readonly beat: BeatState;
   readonly clip: StudioClip;
   readonly asset: StudioAsset | undefined;
   readonly sampleRate: number;
   readonly onCut: (note: string) => void;
+  /**
+   * Kelompok mana yang dirender. Ada karena kontrol ini sekarang tersebar di
+   * beberapa popup menu — GRID di menu BEAT, sisanya di menu LOOP — tapi
+   * semuanya tetap satu komponen: dua salinan berarti tombol yang sama bisa
+   * berperilaku beda tergantung dari mana ia dibuka.
+   */
+  readonly groups?: readonly BeatGroupId[];
 }): JSX.Element {
+  const show = (id: BeatGroupId): boolean => groups.includes(id);
+  let firstDrawn = false;
+  /** Kelompok PERTAMA yang benar-benar digambar tidak diberi garis pemisah. */
+  const isFirst = (): boolean => {
+    if (firstDrawn) return false;
+    firstDrawn = true;
+    return true;
+  };
   const { grid, region } = beat;
   const assetId = asset?.id;
 
@@ -546,7 +565,8 @@ export function BeatControls({
 
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', flexWrap: 'wrap' }}>
-      <Group label="GRID" basis={310} min={300} first>
+      {!show('grid') ? null : (
+      <Group label="GRID" basis={310} min={300} first={isFirst()}>
         {assetId === undefined ? (
           <Caption>clip ini belum punya audio</Caption>
         ) : (
@@ -630,8 +650,10 @@ export function BeatControls({
           </>
         )}
       </Group>
+      )}
 
-      <Group label="VIEW" basis={230} min={215}>
+      {!show('view') ? null : (
+      <Group label="VIEW" basis={230} min={215} first={isFirst()}>
         <div style={ROW}>
           <Button
             size="sm"
@@ -671,8 +693,10 @@ export function BeatControls({
             : `jendela ${samplesToSec(beat.windowLen, sampleRate).toFixed(2)} s`}
         </Caption>
       </Group>
+      )}
 
-      <Group label="LOOP" basis={520} min={480}>
+      {!show('loop') ? null : (
+      <Group label="LOOP" basis={520} min={480} first={isFirst()}>
         <div style={ROW}>
           {LOOP_BAR_PRESETS.map((n) => (
             <Button
@@ -742,12 +766,14 @@ export function BeatControls({
               : `region ${regionAtSec.toFixed(2)} s → ${(regionAtSec + regionSec).toFixed(2)} s`}
         </Caption>
       </Group>
+      )}
 
       {/* Kelompok terakhir sengaja dipisah dari LOOP: yang di sebelah kiri
           MENDENGARKAN, yang di sini MENGUBAH clip. Dulu keduanya berdesakan di
           satu baris dan LOOP CUT terdorong ke ujung — terlalu dekat dengan
           tombol yang cuma memutar, padahal ia merusak. */}
-      <Group label="CUT" basis={260} min={250}>
+      {!show('cut') ? null : (
+      <Group label="CUT" basis={260} min={250} first={isFirst()}>
         <div style={ROW}>
           <span style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}>
             ULANG
@@ -804,6 +830,7 @@ export function BeatControls({
         </label>
         <Caption>{region === null ? '—' : `hasil: ${(regionSec * region.repeat).toFixed(2)} s`}</Caption>
       </Group>
+      )}
     </div>
   );
 }

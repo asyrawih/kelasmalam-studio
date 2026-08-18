@@ -37,6 +37,12 @@ export interface ClipAreaProps {
   /** Memberi tahu parent bahwa user sedang men-drag (mematikan auto-follow). */
   readonly onDraggingChange: (dragging: boolean) => void;
   readonly onImportError: (message: string) => void;
+  /**
+   * Double-click pada sebuah clip. Opsional: `ClipArea` tetap berguna tanpa
+   * pemilik dialog (tes memakainya begitu), dan clip-nya sudah terpilih
+   * sebelum panggilan ini — pemanggil hanya perlu memutuskan MENAMPILKAN apa.
+   */
+  readonly onOpenDetail?: (clipId: string) => void;
 }
 
 /** Lebar overlay fade dalam persen lebar clip; dibatasi setengah clip. */
@@ -67,6 +73,25 @@ type Gesture =
       readonly scrollLeft0: number;
     }
   | {
+      readonly kind: 'trim';
+      readonly pointerId: number;
+      readonly clipId: string;
+      readonly edge: 'left' | 'right';
+      readonly samplesPerPx: number;
+      /** Posisi track (px) tempat pointer turun — supaya tepi tidak melompat. */
+      readonly grabOffset: number;
+    }
+  | {
+      readonly kind: 'slip';
+      readonly pointerId: number;
+      readonly clipId: string;
+      readonly x0: number;
+      /** `sourceStart` saat tarikan dimulai. Lihat `slipClip`. */
+      readonly sourceStart0: number;
+      readonly samplesPerPx: number;
+      readonly speedRatio: number;
+    }
+  | {
       readonly kind: 'marquee';
       readonly pointerId: number;
       /** Titik jangkar dalam koordinat TRACK (bukan layar) — lihat catatan. */
@@ -75,6 +100,18 @@ type Gesture =
       /** Seleksi sebelum kotak dimulai; dipertahankan saat Shift/Ctrl ditahan. */
       readonly base: readonly string[];
     };
+
+/**
+ * Ambang double-click: dua ketukan pada clip yang SAMA, dalam jendela waktu ini
+ * dan nyaris tanpa perpindahan.
+ *
+ * 400 ms mengikuti ambang yang lazim dipakai sistem operasi. Batas geraknya ada
+ * karena tangan selalu bergeser sedikit di antara dua ketukan cepat; tanpa
+ * toleransi itu double-click gagal justru bagi orang yang mengetuk paling
+ * cepat.
+ */
+const DOUBLE_TAP_MS = 400;
+const DOUBLE_TAP_PX = 6;
 
 /** Kotak seleksi dalam koordinat track, siap digambar. */
 interface MarqueeBox {
@@ -144,6 +181,7 @@ function ClipView({
   duration,
   sampleRate,
   onPointerDown,
+  onTrimDown,
 }: {
   clip: StudioClip;
   lane: StudioLane;
@@ -154,6 +192,11 @@ function ClipView({
   duration: number;
   sampleRate: number;
   onPointerDown: (e: ReactPointerEvent<HTMLDivElement>, clip: StudioClip) => void;
+  onTrimDown: (
+    e: ReactPointerEvent<HTMLDivElement>,
+    clip: StudioClip,
+    edge: 'left' | 'right',
+  ) => void;
 }): JSX.Element {
   const span = duration > 0 ? duration : 1;
   const left = (clip.start / span) * 100;
@@ -186,6 +229,37 @@ function ClipView({
         touchAction: 'none',
       }}
     >
+      {/*
+        GAGANG TRIM di kedua tepi.
+        Lebarnya 7 px — cukup untuk ditunjuk tanpa presisi bedah, tapi tidak
+        selebar itu sehingga clip pendek jadi tidak bisa diseret sama sekali
+        (di bawah ~22 px keduanya akan menutupi seluruh badan clip, jadi
+        gagangnya menyusut bersama clip-nya).
+        `zIndex` di atas label & waveform: yang dituju mata saat mendekati tepi
+        adalah tepinya, bukan apa pun yang kebetulan digambar di sana.
+      */}
+      {(['left', 'right'] as const).map((edge) => (
+        <div
+          key={edge}
+          data-clip-trim={edge}
+          onPointerDown={(e) => onTrimDown(e, clip, edge)}
+          title={
+            edge === 'left'
+              ? 'tarik untuk memotong dari awal — tepi kanan tetap'
+              : 'tarik untuk memotong dari akhir — tepi kiri tetap'
+          }
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            [edge]: 0,
+            width: 'min(7px, 30%)',
+            cursor: 'ew-resize',
+            zIndex: 2,
+            touchAction: 'none',
+          }}
+        />
+      ))}
       {/*
         Overlay fade: bidang gelap yang menutupi bagian yang diredam, jadi
         bentuknya langsung terbaca sebagai kemiringan pada waveform. Gradiennya
@@ -260,6 +334,7 @@ export function ClipArea({
   onScroll,
   onDraggingChange,
   onImportError,
+  onOpenDetail,
 }: ClipAreaProps): JSX.Element {
   const lanes = useStudio((s) => s.lanes);
   const assets = useStudio((s) => s.assets);
@@ -282,6 +357,8 @@ export function ClipArea({
   const trackRef = useRef<HTMLDivElement>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<MarqueeBox | null>(null);
+  /** Ketukan terakhir pada sebuah clip; dipakai mendeteksi double-click. */
+  const lastTap = useRef<{ id: string; t: number; x: number; y: number } | null>(null);
 
   /**
    * Titik pointer dalam koordinat TRACK.
@@ -328,6 +405,34 @@ export function ClipArea({
     return out;
   };
 
+  /** Pointer turun di salah satu gagang tepi clip. */
+  const beginTrimDrag = (
+    e: ReactPointerEvent<HTMLDivElement>,
+    clip: StudioClip,
+    edge: 'left' | 'right',
+  ): void => {
+    if (e.button !== 0) return;
+    // Gagang menang atas badan clip: tanpa ini, satu pointerdown akan memulai
+    // trim DAN pemindahan clip sekaligus.
+    e.stopPropagation();
+    e.preventDefault();
+    const el = scrollerRef.current;
+    const p = trackPoint(e.clientX, e.clientY);
+    if (el === null || p === null) return;
+    const samplesPerPx = el.scrollWidth > 0 ? duration / el.scrollWidth : 0;
+    const edgeAt = edge === 'left' ? clip.start : clip.start + clip.len;
+    gesture.current = {
+      kind: 'trim',
+      pointerId: e.pointerId,
+      clipId: clip.id,
+      edge,
+      samplesPerPx,
+      grabOffset: p.x - (samplesPerPx > 0 ? edgeAt / samplesPerPx : 0),
+    };
+    capture(e);
+    studioActions.selectClip(clip.id);
+  };
+
   const beginClipDrag = (e: ReactPointerEvent<HTMLDivElement>, clip: StudioClip): void => {
     // Klik clip TIDAK boleh ikut memicu kotak seleksi / pan latar.
     e.stopPropagation();
@@ -337,12 +442,71 @@ export function ClipArea({
     const laneIndex = lanes.findIndex((l) => l.clips.some((c) => c.id === clip.id));
     if (laneIndex < 0) return;
 
+    if (e.altKey) {
+      // SLIP: kedua tepi diam, materinya yang bergeser di dalam jendela.
+      // Alt dipilih karena itu binding yang sama di FL Studio dan Ableton —
+      // dan karena ia tidak mungkin tertekan tanpa sengaja saat menyeret biasa.
+      const samplesPerPx = el.scrollWidth > 0 ? duration / el.scrollWidth : 0;
+      gesture.current = {
+        kind: 'slip',
+        pointerId: e.pointerId,
+        clipId: clip.id,
+        x0: e.clientX,
+        sourceStart0: clip.sourceStart,
+        samplesPerPx,
+        speedRatio: lanes[laneIndex]?.speedRatio ?? 1,
+      };
+      capture(e);
+      studioActions.selectClip(clip.id, lanes[laneIndex]?.id);
+      return;
+    }
+
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     if (additive) {
       // Menambah/membuang dari seleksi, TANPA memulai drag: menyeret sambil
       // menahan Ctrl hampir selalu tidak disengaja, dan kalau ia ikut memindah
       // clip, satu klik salah bisa menggeser materi tanpa disadari.
       studioActions.toggleClipSelection(clip.id, lanes[laneIndex]?.id);
+      return;
+    }
+
+    /*
+     * DOUBLE-CLICK = buka Clip Detail.
+     *
+     * Dideteksi manual dari `pointerdown`, BUKAN lewat `onDoubleClick`: handler
+     * ini memanggil `preventDefault()` supaya drag tidak ikut menyeret seleksi
+     * teks, dan membatalkan `pointerdown` menekan SELURUH compatibility mouse
+     * event — termasuk `dblclick`, yang karenanya tidak pernah sampai ke React.
+     * Melepas `preventDefault()` demi mendapatkan `dblclick` akan menukar satu
+     * fitur dengan kerusakan pada gerakan yang jauh lebih sering dipakai.
+     */
+    const prev = lastTap.current;
+    // Selisih NEGATIF juga ditolak, bukan hanya yang terlalu besar. Dua event
+    // tidak dijamin memakai titik nol yang sama: React menormalkan stempel
+    // waktu sebagai `event.timeStamp || Date.now()`, jadi satu event bernilai 0
+    // diam-diam berubah menjadi waktu epoch — dan selisih terhadapnya adalah
+    // bilangan negatif raksasa yang lolos begitu saja dari batas atas.
+    const dt = prev === null ? Number.NaN : e.timeStamp - prev.t;
+    const isDouble =
+      prev !== null &&
+      prev.id === clip.id &&
+      dt >= 0 &&
+      dt < DOUBLE_TAP_MS &&
+      Math.abs(e.clientX - prev.x) <= DOUBLE_TAP_PX &&
+      Math.abs(e.clientY - prev.y) <= DOUBLE_TAP_PX;
+    // Ketukan kedua MENGHAPUS jejaknya, bukan memperbaruinya: kalau tidak,
+    // ketukan ketiga yang cepat terbaca sebagai double-click lagi dan dialog
+    // yang baru saja ditutup langsung terbuka kembali.
+    lastTap.current = isDouble
+      ? null
+      : { id: clip.id, t: e.timeStamp, x: e.clientX, y: e.clientY };
+    if (isDouble) {
+      // Sengaja TIDAK memulai gesture apa pun. Ketukan pertama sudah memilih
+      // clip ini; memulai drag kedua hanya membuka peluang menggeser materi
+      // beberapa sampel karena tangan bergetar saat men-double-click.
+      gesture.current = null;
+      studioActions.selectClip(clip.id, lanes[laneIndex]?.id);
+      onOpenDetail?.(clip.id);
       return;
     }
 
@@ -431,6 +595,25 @@ export function ClipArea({
       };
       setMarquee(box);
       studioActions.setSelectedClips(clipsInBox(box, g.base));
+      return;
+    }
+    if (g.kind === 'trim') {
+      const p = trackPoint(e.clientX, e.clientY);
+      if (p === null) return;
+      // `grabOffset` menjaga tepi tidak MELOMPAT ke bawah kursor di gerakan
+      // pertama: yang digeser adalah selisih dari titik pointer turun, bukan
+      // posisi absolut kursor.
+      studioActions.trimClip(g.clipId, g.edge, (p.x - g.grabOffset) * g.samplesPerPx);
+      return;
+    }
+    if (g.kind === 'slip') {
+      // TIMELINE → SOURCE: satu piksel di lane 2× lebih cepat memakan dua kali
+      // lipat materi.
+      const deltaSource = (e.clientX - g.x0) * g.samplesPerPx * g.speedRatio;
+      // Menyeret ke KANAN memajukan jendela ke materi yang lebih AWAL — arah
+      // yang sama dengan menggeser kertas di bawah jarum, sama seperti menarik
+      // waveform di Clip Detail.
+      studioActions.slipClip(g.clipId, g.sourceStart0, -deltaSource);
       return;
     }
     const rows = Math.round((e.clientY - g.y0) / laneH);
@@ -565,6 +748,7 @@ export function ClipArea({
                 duration={duration}
                 sampleRate={sampleRate}
                 onPointerDown={beginClipDrag}
+                onTrimDown={beginTrimDrag}
               />
             ))}
             {lane.clips.length === 0 ? (

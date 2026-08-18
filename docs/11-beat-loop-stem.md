@@ -280,9 +280,10 @@ tombol BAKE padanya berarti ia gagal justru saat build WASM belum ada.
 
 ---
 
-## Kontrol BEAT & LOOP ada di bar sticky, bukan di Clip Detail
+## Kontrol BEAT & LOOP ada di toolbar menu
 
-`timeline/BeatBar.tsx` — menempel di atas halaman (`position: sticky; top: 0`).
+Lihat [docs/13-menu-toolbar.md](13-menu-toolbar.md). Kontrolnya dibagi dua menu:
+GRID di menu **BEAT**, sisanya di menu **LOOP** bersama waveform-nya.
 
 Dulu ia satu blok lipat di dalam Clip Detail. Masalahnya: ini kontrol yang
 dipakai BERULANG-ULANG sambil melihat timeline — ganti panjang loop, geser satu
@@ -330,6 +331,36 @@ topbar dan Clip Detail WAJIB menunjuk clip yang sama. Dua tempat yang
 menghitungnya sendiri-sendiri suatu saat akan berbeda tanpa ada yang memberi
 tahu.
 
+## Strip lane berdenyut mengikuti ketukan
+
+`timeline/beat-pulse.ts` + `useLanePulses` di `LaneHeaders.tsx`. Strip warna di
+kiri tiap lane menyala di setiap ketukan — terang penuh di downbeat, separuh di
+ketukan biasa — dan padam sebelum ketukan berikutnya (kilatan memakai sepertiga
+ketukan, meluruh kuadratik). Peluruhan linear terbaca sebagai lampu yang
+diredupkan pelan, bukan sebagai ketukan.
+
+Tiga hal yang membuatnya benar:
+
+1. **Sumber waktunya jam audio**, sama dengan waveform geser:
+   `previewPositionSec()` untuk mix utama, `auditionPositionSourceSec()` untuk
+   lane yang sedang diaudisi (playhead timeline sedang berjalan di tempat lain).
+   Playhead store hanya maju 16×/detik; dipakai di sini, denyutnya tersendat DAN
+   meleset dari yang terdengar — dan meleset di sini langsung ketahuan, karena
+   mata membandingkannya dengan telinga.
+2. **Digambar langsung ke DOM, bukan lewat `setState`.** Satu render React per
+   frame untuk delapan lane berarti seluruh header direkonsiliasi 60×/detik demi
+   satu angka opacity. Aturan yang sama sudah dipakai meter dan playhead.
+   Konsekuensinya: denyut punya elemen `[data-lane-pulse]` SENDIRI, terpisah dari
+   bar warnanya — kalau ia menumpang bar yang gaya-nya ditulis React, React akan
+   menimpanya balik setiap render, dan gejalanya bukan error melainkan kedipan
+   yang kadang hilang.
+3. **Lane bisu tidak berdenyut.** Mute dan "dibungkam solo lane lain" keduanya
+   diperiksa lewat `isAudible` — strip yang tetap berkedip di sana terbaca
+   sebagai "ini masih terdengar".
+
+Rasio kecepatan lane, posisi clip di timeline, dan trim di dalam materi semuanya
+ikut menggeser fase ketukannya; itu yang dikunci `beat-pulse.test.ts`.
+
 ## Blok yang bisa dilipat
 
 Tinggi penuh Clip Detail menutupi timeline — tempat pekerjaan sebenarnya
@@ -360,9 +391,8 @@ sudah di layar.
 | `web/src/studio/timeline/beat-cut.ts` | `applyLoopCut` (murni) |
 | `web/src/studio/timeline/BeatSection.tsx` | overlay grid, region loop, kontrol VIEW/LOOP |
 | `web/src/studio/timeline/beat-draw.ts` | penggambar grid + playhead (dipakai dua tampilan) |
+| `web/src/studio/timeline/beat-pulse.ts` | terang strip lane per frame (murni) |
 | `web/src/studio/timeline/ScrollingWave.tsx` | jendela geser rAF, playhead di tengah |
-| `web/src/studio/timeline/DetailSection.tsx` | blok yang bisa dilipat + ringkasannya |
-| `web/src/studio/timeline/BeatBar.tsx` | bar BEAT & LOOP yang menempel di atas |
 | `web/src/studio/timeline/beat-context.tsx` | state beat + clip yang dipajang, dibagi bersama |
 | `web/src/studio/timeline/stem.ts` | normalisasi & pembacaan `StudioClip.stem` |
 | `web/src/studio/preview/stem-chain.ts` | rantai mid/side di Web Audio |

@@ -93,6 +93,8 @@ Tambahan di luar daftar semula:
   [docs/11-beat-loop-stem.md](docs/11-beat-loop-stem.md)
 - Seleksi banyak clip (kotak seleksi) & tinggi lane —
   [docs/12-timeline-selection.md](docs/12-timeline-selection.md)
+- Toolbar menu ikon + popup (menggantikan rail kanan & kartu Clip Detail) —
+  [docs/13-menu-toolbar.md](docs/13-menu-toolbar.md)
 
 ## Quickstart
 

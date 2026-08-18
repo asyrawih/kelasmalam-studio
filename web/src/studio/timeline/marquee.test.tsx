@@ -182,6 +182,76 @@ describe('klik dan geser clip', () => {
   });
 });
 
+describe('trim & slip di timeline', () => {
+  function trimHandle(id: string, edge: 'left' | 'right'): HTMLElement {
+    const el = document.querySelector(`[data-clip="${id}"] [data-clip-trim="${edge}"]`);
+    if (el === null) throw new Error(`gagang ${edge} clip ${id} tidak ada`);
+    return el as HTMLElement;
+  }
+
+  function clipOf(id: string): StudioClip {
+    return studioStore.getState().lanes.flatMap((l) => l.clips).find((c) => c.id === id)!;
+  }
+
+  it('menarik gagang KANAN memendekkan clip, tepi kiri diam', () => {
+    render(<Harness />);
+    const before = clipOf('a'); // 0–4 detik
+    const h = trimHandle('a', 'right');
+    fireEvent.pointerDown(h, { pointerId: 1, button: 0, clientX: pxAt(4), clientY: 10 });
+    fireEvent.pointerMove(h, { pointerId: 1, clientX: pxAt(2), clientY: 10 });
+    const after = clipOf('a');
+    expect(after.start).toBe(before.start);
+    expect(after.len).toBe(2 * SR);
+    expect(after.sourceStart).toBe(before.sourceStart);
+  });
+
+  it('menarik gagang KIRI memotong dari awal, tepi kanan diam', () => {
+    render(<Harness />);
+    const before = clipOf('a');
+    const right = before.start + before.len;
+    const h = trimHandle('a', 'left');
+    fireEvent.pointerDown(h, { pointerId: 1, button: 0, clientX: pxAt(0), clientY: 10 });
+    fireEvent.pointerMove(h, { pointerId: 1, clientX: pxAt(1), clientY: 10 });
+    const after = clipOf('a');
+    expect(after.start + after.len).toBe(right);
+    expect(after.start).toBe(1 * SR);
+    // Yang berubah adalah JENDELA ke materi, bukan materinya.
+    expect(after.sourceStart).toBe(1 * SR);
+  });
+
+  it('gagang trim TIDAK ikut memindahkan clip', () => {
+    render(<Harness />);
+    const h = trimHandle('b', 'right'); // clip `b` mulai di 20 detik
+    fireEvent.pointerDown(h, { pointerId: 1, button: 0, clientX: pxAt(24), clientY: 10 });
+    fireEvent.pointerMove(h, { pointerId: 1, clientX: pxAt(22), clientY: 10 });
+    expect(clipOf('b').start).toBe(20 * SR);
+  });
+
+  it('Alt-drag menggeser materi di dalam clip, clip-nya diam', () => {
+    render(<Harness />);
+    const before = clipOf('a');
+    const el = clipEl('a');
+    fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: 0, clientY: 0, altKey: true });
+    // Menyeret ke KIRI memajukan jendela ke materi yang lebih akhir.
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: -pxAt(2), clientY: 0 });
+    const after = clipOf('a');
+    expect(after.sourceStart).toBe(2 * SR);
+    expect(after.start).toBe(before.start);
+    expect(after.len).toBe(before.len);
+    expect(after.sourceLen).toBe(before.sourceLen);
+  });
+
+  it('tanpa Alt, tarikan yang sama MEMINDAHKAN clip', () => {
+    render(<Harness />);
+    const el = clipEl('a');
+    fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: pxAt(2), clientY: 0 });
+    const after = clipOf('a');
+    expect(after.start).toBe(2 * SR);
+    expect(after.sourceStart).toBe(0);
+  });
+});
+
 describe('pan', () => {
   it('spasi ditahan mengubah drag latar jadi geser tampilan, bukan seleksi', async () => {
     const { pressSpace, releaseSpace } = await import('../shortcuts/space-pan');

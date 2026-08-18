@@ -4,12 +4,14 @@
  */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerBuffer } from '../preview/audio-preview';
 import { studioActions, studioStore, type StudioAsset } from '../store';
-import { ClipDetailPanel } from './ClipDetailPanel';
-import { BeatProvider } from './beat-context';
+import { ClipWavePanel } from './ClipPanels';
+import { BeatProvider, useBeatShared } from './beat-context';
+import { StemSection } from './StemSection';
 import { buildEnvelope } from './envelope';
 
 const SR = 48_000;
@@ -66,18 +68,30 @@ function setup(channels = 2): void {
     sourceLen: FRAMES,
   });
   studioActions.selectClip(clip.id, lane.id);
-  // Blok REMOVE terlipat secara default; tes ini menguji isinya.
-  studioActions.toggleClipDetailSection('stem');
 }
 
 /**
- * Clip Detail sekarang mengambil "clip yang dipajang" + state beat dari
- * `BeatProvider`.
+ * `StemSection` sekarang berdiri sendiri di dalam popup menu STEM; clip yang
+ * dipajang datang dari `BeatProvider`. `ClipWavePanel` ikut dirender karena
+ * BAKE mengganti asset clip dan waveform-nya harus ikut berubah.
  */
+function StemHost(): JSX.Element {
+  const { shown } = useBeatShared();
+  const [note, setNote] = useState<string | null>(null);
+  if (shown === null) return <span />;
+  return (
+    <>
+      {note === null ? null : <span>{note}</span>}
+      <StemSection clip={shown.clip} onNote={setNote} />
+    </>
+  );
+}
+
 function Studio(): JSX.Element {
   return (
     <BeatProvider>
-      <ClipDetailPanel />
+      <ClipWavePanel />
+      <StemHost />
     </BeatProvider>
   );
 }

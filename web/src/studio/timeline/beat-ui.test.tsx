@@ -6,10 +6,10 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { studioActions, studioStore, type StudioAsset } from '../store';
-import { ClipDetailPanel } from './ClipDetailPanel';
-import { BeatProvider } from './beat-context';
-import { BeatBar } from './BeatBar';
+import { studioActions, studioStore, useStudio, type StudioAsset } from '../store';
+import { ClipEditPanel, ClipWavePanel } from './ClipPanels';
+import { BeatProvider, useBeatShared } from './beat-context';
+import { BeatControls } from './BeatSection';
 import { buildEnvelope } from './envelope';
 
 const SR = 48_000;
@@ -64,14 +64,33 @@ function clips() {
 }
 
 /**
- * Clip Detail sekarang mengambil "clip yang dipajang" + state beat dari
- * `BeatProvider`, dan kontrol BEAT & LOOP hidup di `BeatBar` (topbar sticky).
+ * Kontrol beat sekarang hidup di popup menu (BEAT & LOOP) dan waveform-nya di
+ * `ClipWavePanel`; keduanya mengambil clip yang dipajang dari `BeatProvider`.
+ * Harness ini merender semuanya sekaligus supaya tes tidak perlu membuka menu
+ * lebih dulu — yang diuji di sini adalah kontrolnya, bukan cara membukanya.
  */
+function AllBeatControls(): JSX.Element {
+  const assets = useStudio((s) => s.assets);
+  const sampleRate = useStudio((s) => s.sampleRate);
+  const { shown, beat } = useBeatShared();
+  if (shown === null) return <span />;
+  return (
+    <BeatControls
+      beat={beat}
+      clip={shown.clip}
+      asset={assets[shown.clip.assetId]}
+      sampleRate={sampleRate}
+      onCut={() => undefined}
+    />
+  );
+}
+
 function Studio(): JSX.Element {
   return (
     <BeatProvider>
-      <BeatBar />
-      <ClipDetailPanel />
+      <AllBeatControls />
+      <ClipWavePanel />
+      <ClipEditPanel />
     </BeatProvider>
   );
 }
@@ -400,39 +419,6 @@ describe('kontrol beat di topbar (lanjutan)', () => {
   });
 });
 
-describe('bar BEAT & LOOP menempel di atas', () => {
-  it('kontrolnya ada di bar, BUKAN lagi di Clip Detail', () => {
-    render(<Studio />);
-    const bar = document.querySelector('[data-beat-bar]');
-    expect(bar).not.toBeNull();
-    // Semua tombol yang dulu ada di blok Clip Detail sekarang hidup di bar.
-    for (const name of ['LOOP PLAY', 'LOOP CUT', 'FULL', '1 BAR', 'AUTO']) {
-      const btn = screen.getByRole('button', { name });
-      expect(bar!.contains(btn)).toBe(true);
-    }
-    // Dan blok lipat "beat" sudah tidak ada di Clip Detail.
-    expect(document.querySelector('[data-detail-section="beat"]')).toBeNull();
-  });
-
-  it('menempel lewat position: sticky, bukan fixed', () => {
-    render(<Studio />);
-    const bar = document.querySelector('[data-beat-bar]') as HTMLElement;
-    // `fixed` akan melepasnya dari alur dokumen dan menutupi konten di bawahnya
-    // sejak awal; `sticky` hanya menempel setelah tepi atasnya tercapai.
-    expect(bar.style.position).toBe('sticky');
-    expect(bar.style.top).toBe('0px');
-  });
-
-  it('bar dan Clip Detail menunjuk clip yang SAMA', () => {
-    render(<Studio />);
-    const bar = document.querySelector('[data-beat-bar]') as HTMLElement;
-    const label = studioStore.getState().lanes[0]!.clips[0]!.label;
-    // Dua tempat yang menghitung "clip yang dipajang" sendiri-sendiri suatu saat
-    // akan berbeda tanpa ada yang memberi tahu; keduanya membaca satu context.
-    expect(bar.textContent).toContain(label);
-    expect(screen.getAllByText(label).length).toBeGreaterThan(1);
-  });
-});
 
 describe('susunan bar BEAT & LOOP', () => {
   function group(label: string): HTMLElement {

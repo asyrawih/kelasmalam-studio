@@ -10,7 +10,6 @@
 
 import { DEFAULT_LANE_HEIGHT, type StudioLane, type StudioState } from '../model';
 import {
-  DEFAULT_CLIP_DETAIL_SECTIONS,
   DEFAULT_PANEL_ORDER,
   DEFAULT_RAIL_ORDER,
   studioActions,
@@ -35,8 +34,6 @@ interface PersistedProject {
   readonly minDurationSec: number;
   readonly maxDurationSec: number | null;
   readonly eqMode: StudioAppState['eqMode'];
-  /** Opsional: project lama tidak punya, dan default-nya diisi saat load. */
-  readonly clipDetailSections?: StudioAppState['clipDetailSections'];
   readonly laneHeight?: StudioAppState['laneHeight'];
   readonly panelOrder: StudioAppState['panelOrder'];
   readonly railOrder: StudioAppState['railOrder'];
@@ -86,7 +83,6 @@ export function serialize(s: StudioAppState): string {
     minDurationSec: s.minDurationSec,
     maxDurationSec: s.maxDurationSec,
     eqMode: s.eqMode,
-    clipDetailSections: s.clipDetailSections,
     laneHeight: s.laneHeight,
     panelOrder: s.panelOrder,
     railOrder: s.railOrder,
@@ -168,12 +164,6 @@ export async function restoreProject(
     minDurationSec: data.minDurationSec,
     maxDurationSec: data.maxDurationSec,
     eqMode: data.eqMode,
-    // Blok baru yang belum dikenal project lama tetap memakai default-nya —
-    // `{...default, ...tersimpan}`, bukan menimpa seluruhnya.
-    clipDetailSections: {
-      ...DEFAULT_CLIP_DETAIL_SECTIONS,
-      ...(data.clipDetailSections ?? {}),
-    },
     laneHeight: data.laneHeight ?? DEFAULT_LANE_HEIGHT,
     // Data lama (sebelum panel bisa diurutkan) tidak punya field ini —
     // WAJIB memberi default, bukan `undefined`: menulis key dengan undefined

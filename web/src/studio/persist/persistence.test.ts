@@ -97,24 +97,6 @@ describe('serialisasi project', () => {
     expect(out[0]!.clips[0]!.stem).toBeUndefined();
   });
 
-  it('blok Clip Detail yang dilipat ikut tersimpan', () => {
-    studioActions.toggleClipDetailSection('stem');
-    const back = deserialize(serialize(studioStore.getState()));
-    expect(back!.clipDetailSections).toMatchObject({ stem: true, fade: false });
-  });
-
-  it('project lama tanpa clipDetailSections memakai default, bukan objek kosong', () => {
-    const json = serialize(studioStore.getState()).replace(
-      /"clipDetailSections":\{[^}]*\},/,
-      '',
-    );
-    const back = deserialize(json)!;
-    expect(back.clipDetailSections).toBeUndefined();
-    // Default-nya diisi di `restoreProject`; yang dijaga di sini adalah bahwa
-    // ketiadaannya tidak membuat seluruh project ditolak.
-    expect(back.lanes.length).toBeGreaterThan(0);
-  });
-
   it('tinggi lane ikut tersimpan, dan project lama memakai default', () => {
     studioActions.setLaneHeight('L');
     expect(deserialize(serialize(studioStore.getState()))!.laneHeight).toBe('L');
