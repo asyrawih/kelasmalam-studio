@@ -172,6 +172,23 @@ export function clampStemMix(s: StemMix): StemMix {
   };
 }
 
+/**
+ * Satu efek terpasang di insert chain.
+ *
+ * `kind` adalah id dari katalog Rust (`fxCatalogJson`), dan `params` bernama —
+ * bukan berurutan. Itu yang membuat menambah efek ke-7 tidak mengubah satu
+ * baris pun di model, store, maupun payload: efek baru hanya berarti `kind`
+ * baru dan nama parameter baru, yang keduanya sudah dideklarasikan katalog.
+ *
+ * Parameter yang tidak diisi memakai default katalog (diterapkan di sisi Rust),
+ * jadi menyimpan hanya yang benar-benar diubah user sudah cukup.
+ */
+export interface FxInsert {
+  readonly kind: string;
+  readonly enabled: boolean;
+  readonly params: Readonly<Record<string, number>>;
+}
+
 export interface StudioLane {
   id: string;
   name: string;
@@ -180,6 +197,8 @@ export interface StudioLane {
   mute: boolean;
   solo: boolean;
   gainDb: number;
+  /** Insert chain lane, dijalankan setelah EQ bawaan. */
+  chain: FxInsert[];
   /**
    * Kecepatan lane. 1 = normal, 2 = dua kali lebih cepat. VARISPEED — pitch
    * ikut berubah. Berlaku untuk SEMUA clip di lane ini.
@@ -409,6 +428,8 @@ export interface StudioState {
    * beda level dari yang didengar.
    */
   masterGainDb: number;
+  /** Insert chain master. */
+  masterChain: FxInsert[];
   /**
    * Kecepatan pemutaran yang dipakai SAAT COMPILE. Terpisah dari `speed`
    * (transport) supaya mengubah kecepatan saat mendengarkan tidak diam-diam

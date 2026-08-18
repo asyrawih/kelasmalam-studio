@@ -165,6 +165,7 @@ function lane(o: Partial<StudioLane> & { id: string }): StudioLane {
     gainDb: 0,
     speedRatio: 1,
     eq: defaultEq(),
+    chain: [],
     clips: [],
     ...o,
   } as StudioLane;
@@ -187,6 +188,7 @@ function state(lanes: StudioLane[], format: ExportFormat = 'WAV'): StudioState {
     preset: 'FLAT',
     exportProgress: null,
     masterGainDb: 0,
+    masterChain: [],
     renderSpeed: 1,
     exportFileName: '',
   };
@@ -388,6 +390,7 @@ function twoLaneProject() {
       // Varispeed: durasi timeline clip = sourceLen / speedRatio.
       speedRatio: 1.5,
       eq: tiltedEq(),
+      chain: [],
       clips: [clip({ id: 'b1', assetId: 2, start: 0, len: Math.round(FRAMES / 1.5) })],
     }),
   ];

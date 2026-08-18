@@ -145,6 +145,7 @@ describe('taper fader', () => {
 describe('computeStats', () => {
   const base: StudioState = {
     masterGainDb: 0,
+    masterChain: [],
     renderSpeed: 1,
     exportFileName: '',
     projectName: 'X',
@@ -160,6 +161,7 @@ describe('computeStats', () => {
         gainDb: 0,
         speedRatio: 1,
         eq: defaultEq(),
+        chain: [],
         clips: [
           {
             id: 'c',

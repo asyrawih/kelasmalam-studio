@@ -296,10 +296,15 @@ function buffer(frames: number, channels = 2, sampleRate = 48_000): AudioBuffer 
 }
 
 describe('buildExportPayload', () => {
+  // CATATAN: `as never` di bawah mematikan seluruh pengecekan tipe untuk
+  // fixture ini, jadi field wajib yang baru TIDAK akan ketahuan saat compile —
+  // hanya saat tes gagal. Itu yang terjadi saat `chain` ditambahkan.
   const state = (over: Record<string, unknown> = {}) =>
     ({
       sampleRate: 48_000,
       speed: 1,
+      masterGainDb: 0,
+      masterChain: [],
       lanes: [
         {
           id: 'l1',
@@ -308,6 +313,7 @@ describe('buildExportPayload', () => {
           gainDb: -3,
           speedRatio: 1.5,
           eq: { bands: [{ id: 'low', kind: 'lowshelf', freq: 90, q: 0.7, gainDb: 4 }] },
+          chain: [],
           clips: [
             {
               id: 'c1',

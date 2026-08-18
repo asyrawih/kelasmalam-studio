@@ -127,6 +127,14 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
           gainDb: b.gainDb,
         })),
       },
+      // Disalin apa adanya, termasuk `params`. Nama parameter dan rentangnya
+      // adalah urusan katalog di Rust, jadi menambah efek ke-7 tidak menyentuh
+      // berkas ini sama sekali — itulah gunanya berkas ini tetap BODOH.
+      chain: lane.chain.map((fx) => ({
+        kind: fx.kind,
+        enabled: fx.enabled,
+        params: { ...fx.params },
+      })),
       clips: clips.map((c) => ({
         id: c.id,
         assetId: toDense(c.assetId),
@@ -160,6 +168,11 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
       // Amplify master: diterapkan setelah semua lane dijumlahkan. Dikirim ke
       // engine supaya file hasilnya selevel dengan yang didengar di preview.
       masterGainDb: state.masterGainDb,
+      masterChain: state.masterChain.map((fx) => ({
+        kind: fx.kind,
+        enabled: fx.enabled,
+        params: { ...fx.params },
+      })),
       lanes,
     }),
     assets: [...assets.values()],

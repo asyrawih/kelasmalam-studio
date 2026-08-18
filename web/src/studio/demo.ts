@@ -30,6 +30,7 @@ function lane(
     gainDb: 0,
     speedRatio: 1,
     eq: defaultEq(),
+    chain: [],
     clips: clips.map((c) => ({
       id: c.id,
       assetId: 0,
@@ -104,6 +105,7 @@ export function createDemoStudio(): StudioState {
     preset: 'FLAT',
     exportProgress: null,
     masterGainDb: 0,
+    masterChain: [],
     renderSpeed: 1,
     exportFileName: '',
   };

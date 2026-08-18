@@ -39,6 +39,13 @@ interface PersistedProject {
   readonly panelOrder: StudioAppState['panelOrder'];
   readonly railOrder: StudioAppState['railOrder'];
   readonly masterGainDb: number;
+  /**
+   * Insert chain master. Opsional dan TIDAK menaikkan `SCHEMA_VERSION` —
+   * dibaca dengan `?? []`, jadi project yang tersimpan sebelum FX ada tetap
+   * terbuka. Menaikkan versi berarti membuang project user demi satu array
+   * yang kosong di semuanya.
+   */
+  readonly masterChain?: StudioState['masterChain'];
   readonly renderSpeed: number;
   readonly exportFileName: string;
   readonly selectedLaneId: string | null;
@@ -88,6 +95,7 @@ export function serialize(s: StudioAppState): string {
     panelOrder: s.panelOrder,
     railOrder: s.railOrder,
     masterGainDb: s.masterGainDb,
+    masterChain: s.masterChain,
     renderSpeed: s.renderSpeed,
     exportFileName: s.exportFileName,
     selectedLaneId: s.selectedLaneId,
@@ -121,6 +129,11 @@ export function deserialize(json: string): PersistedProject | null {
 export function normalizeLanes(lanes: StudioLane[]): StudioLane[] {
   return lanes.map((l) => ({
     ...l,
+    // Project yang tersimpan sebelum FX ada tidak punya field ini. Default
+    // WAJIB diberikan di sini, bukan dibiarkan `undefined`: `lane.chain.map`
+    // di payload akan melempar, dan gejalanya muncul saat export — jauh dari
+    // penyebabnya.
+    chain: l.chain ?? [],
     clips: (l.clips ?? []).map((c) => normalizeClipLoop(normalizeClipStem(normalizeClipFade(c)))),
   }));
 }
@@ -173,6 +186,7 @@ export async function restoreProject(
     railOrder: data.railOrder ?? DEFAULT_RAIL_ORDER,
     // Project lama tidak punya field ini — WAJIB di-default, bukan undefined.
     masterGainDb: data.masterGainDb ?? 0,
+    masterChain: data.masterChain ?? [],
     renderSpeed: data.renderSpeed ?? 1,
     exportFileName: data.exportFileName ?? '',
     selectedLaneId: data.selectedLaneId,

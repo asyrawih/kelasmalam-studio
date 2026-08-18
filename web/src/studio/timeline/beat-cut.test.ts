@@ -15,6 +15,7 @@ function lane(speedRatio = 1): StudioLane {
     gainDb: 0,
     speedRatio,
     eq: defaultEq(),
+    chain: [],
     clips: [],
   };
 }

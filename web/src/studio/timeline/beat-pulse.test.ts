@@ -59,6 +59,7 @@ function lane(over: Partial<StudioLane> = {}): StudioLane {
     gainDb: 0,
     speedRatio: 1,
     eq: defaultEq(),
+    chain: [],
     clips: [clip()],
     ...over,
   };
