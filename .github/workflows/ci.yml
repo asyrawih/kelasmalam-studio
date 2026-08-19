@@ -77,19 +77,23 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # `daw-native-host` memakai cpal → alsa-sys, yang menautkan pustaka
-      # sistem lewat pkg-config. Tanpa ini `cargo test --workspace` gagal di
-      # build script alsa-sys, bukan di kode kita.
+      # `daw-native-host` DIKECUALIKAN di sini dan diuji di job `native-host`
+      # tersendiri. Ia satu-satunya crate yang menyeret pustaka sistem
+      # (cpal → alsa-sys → pkg-config → libasound2-dev), dan memasangnya berarti
+      # menaruh apt di jalur kritis.
       #
-      # Lewat pembungkus, BUKAN `apt-get` langsung: apt tanpa batas waktu pernah
-      # menggantung 45 menit di step ini dan mematikan seluruh pipeline. Lihat
-      # .github/scripts/apt-install.sh.
-      - name: pustaka sistem untuk cpal
-        run: ./.github/scripts/apt-install.sh libasound2-dev pkg-config
-
+      # apt di runner GitHub terbukti bisa berhenti merespons tanpa batas waktu
+      # (run 32296099238: menggantung 45 menit; run 32301316989: `apt-get update`
+      # macet 180 detik penuh tiga kali berturut-turut). Selama langkah itu ada
+      # di job ini, satu mirror Ubuntu yang sedang ngambek cukup untuk membuat
+      # fmt, clippy, test, null test, DAN deploy tidak pernah jalan sama sekali
+      # — padahal tidak satu pun dari semuanya membutuhkan ALSA.
+      #
+      # Cakupannya tidak berkurang: yang dikecualikan di sini diuji utuh di job
+      # sebelah. Yang berubah hanya siapa yang ikut mati saat apt bermasalah.
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo clippy --workspace --exclude daw-native-host --all-targets -- -D warnings
+      - run: cargo test --workspace --exclude daw-native-host
 
       # Deteksi alokasi di jalur RT (allocator penjaga, docs/01 §1c).
       - run: cargo test -p daw-engine --features rt-guard
@@ -125,6 +129,37 @@ jobs:
         if: github.event_name != 'pull_request'
         run: cargo bench -p daw-engine --bench render -- --save-baseline main
         continue-on-error: true
+
+  # ----------------------------------------------------------- native-host
+  # Satu-satunya job yang butuh pustaka sistem, jadi satu-satunya job yang bisa
+  # dijatuhkan oleh apt.
+  #
+  # `daw-native-host` adalah binari debugging desktop (cpal → alsa-sys) yang
+  # tidak pernah ikut ke build web — deploy memang sudah tidak pernah
+  # mengujinya. Karena itu ia SENGAJA tidak masuk `needs:` job deploy: mirror
+  # Ubuntu yang sedang bermasalah tidak boleh menghalangi pengiriman kode yang
+  # tidak memakainya. Kegagalannya tetap terlihat merah di run — hanya saja
+  # tidak lagi menyandera hal lain.
+  native-host:
+    name: native-host (clippy, test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (dari rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Lewat pembungkus, BUKAN `apt-get` langsung — lihat
+      # .github/scripts/apt-install.sh soal kenapa `apt-get update` dihindari
+      # selama masih bisa.
+      - name: pustaka sistem untuk cpal
+        run: ./.github/scripts/apt-install.sh libasound2-dev pkg-config
+
+      - run: cargo clippy -p daw-native-host --all-targets -- -D warnings
+      - run: cargo test -p daw-native-host
 
   # ------------------------------------------------------------------ wasm
   wasm:

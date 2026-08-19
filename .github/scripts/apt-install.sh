@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Pasang paket sistem di runner GitHub — DENGAN batas waktu.
+# Pasang paket sistem di runner GitHub — DENGAN batas waktu, dan sebisa mungkin
+# TANPA `apt-get update`.
 #
 # KENAPA SKRIP INI ADA, bukan `sudo apt-get update && sudo apt-get install`:
 # apt tidak punya timeout jaringan default. Kalau mirror Ubuntu di runner
@@ -13,15 +14,25 @@
 #
 #     Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
 #
-# dan seluruh pipeline — CI maupun deploy — ikut mati bersamanya. Build-nya
-# sendiri tidak lambat; apt-lah yang menggantung.
+# dan seluruh pipeline — CI maupun deploy — ikut mati bersamanya.
 #
-# Tiga lapis penjaga di bawah:
-#   1. Acquire::*::Timeout — apt menyerah pada koneksi yang mandek, bukan
-#      menunggu tanpa batas.
-#   2. `timeout` — batas keras kalau apt tetap menggantung di luar lapisan (1),
-#      mis. saat menunggu lock dpkg.
-#   3. Perulangan — kegagalan mirror biasanya sesaat; percobaan kedua lewat.
+# YANG MENGGANTUNG SPESIFIKNYA `apt-get update`, bukan `apt-get install`.
+# Terukur di run 32301316989: tiga percobaan berturut-turut, masing-masing
+# berhenti tepat di batas 180 detik pada `update`, tanpa satu baris keluaran.
+# Karena itu urutannya dibalik di bawah: COBA PASANG DULU dengan daftar paket
+# yang sudah ada di image runner. Daftar itu hampir selalu cukup baru untuk
+# menemukan berkas .deb-nya, dan jalur itu tidak menyentuh berkas InRelease yang
+# jadi sumber kemacetan. `update` hanya dijalankan kalau jalur cepat gagal —
+# mis. saat daftar paketnya memang sudah basi dan URL .deb-nya 404.
+#
+# Penjaga lain:
+#   - Acquire::*::Timeout — apt menyerah pada koneksi mandek, bukan menunggu
+#     tanpa batas.
+#   - `sudo timeout`, BUKAN `timeout sudo` — supaya SIGTERM mendarat di
+#     apt-get yang berjalan sebagai root, bukan di sudo yang harus meneruskannya.
+#   - Anggaran waktu TOTAL, bukan per percobaan. Versi sebelumnya memakai tiga
+#     percobaan × 180 detik dan tetap menghabiskan 9 menit sebelum menyerah;
+#     yang penting bukan berapa kali dicoba, tapi kapan berhenti.
 #
 # ForceIPv4: runner punya alamat IPv6 tapi rute ke mirror sering blackhole.
 # Tanpa ini apt menghabiskan seluruh timeout-nya di alamat yang tidak pernah
@@ -32,6 +43,9 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
+BUDGET="${APT_BUDGET_SECONDS:-240}"
+END=$(( SECONDS + BUDGET ))
+
 APT_OPTS=(
   -o Acquire::Retries=3
   -o Acquire::http::Timeout=20
@@ -39,15 +53,42 @@ APT_OPTS=(
   -o Acquire::ForceIPv4=true
 )
 
-for attempt in 1 2 3; do
-  if timeout 180 sudo apt-get update -qq "${APT_OPTS[@]}" &&
-     timeout 300 sudo apt-get install -y -qq --no-install-recommends "${APT_OPTS[@]}" "$@"; then
+sisa() { echo $(( END - SECONDS )); }
+
+pasang() {
+  local t
+  t="$(sisa)"
+  [ "$t" -gt 10 ] || return 1
+  sudo timeout "$t" apt-get install -y --no-install-recommends "${APT_OPTS[@]}" "$@"
+}
+
+perbarui() {
+  local t
+  t="$(sisa)"
+  [ "$t" -gt 10 ] || return 1
+  # `-q`, bukan `-qq`: saat langkah ini yang macet, keluarannya adalah
+  # satu-satunya petunjuk mirror mana yang berhenti menjawab.
+  sudo timeout "$t" apt-get update -q "${APT_OPTS[@]}"
+}
+
+# --- jalur cepat: daftar paket bawaan image, tanpa menyentuh update ---------
+echo "==> coba pasang dengan daftar paket yang sudah ada"
+if pasang "$@"; then
+  echo "==> terpasang tanpa apt-get update: $*"
+  exit 0
+fi
+
+# --- jalur lambat: segarkan daftar, lalu pasang -----------------------------
+attempt=0
+while [ "$(sisa)" -gt 20 ]; do
+  attempt=$(( attempt + 1 ))
+  echo "==> daftar paket perlu disegarkan (percobaan $attempt, sisa $(sisa)s)"
+  if perbarui && pasang "$@"; then
     echo "==> terpasang: $*"
     exit 0
   fi
-  echo "apt gagal atau melewati batas waktu (percobaan $attempt/3) — ulangi" >&2
-  sleep 5
+  sleep 3
 done
 
-echo "error: apt gagal 3 kali untuk: $*" >&2
+echo "error: apt tidak menyelesaikan pemasangan dalam ${BUDGET}s: $*" >&2
 exit 1
