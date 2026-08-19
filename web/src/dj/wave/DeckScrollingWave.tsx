@@ -19,8 +19,11 @@
  *    mati. Menaruh downbeat di transien butuh 1–2 bar memenuhi layar; pada
  *    8 detik sebuah ketukan hanya selebar beberapa piksel dan tangan tidak
  *    punya sasaran.
- * 2. **Arti menarik**: menggeser GRID, bukan mencari posisi. Playhead tetap di
- *    tengah, garis bar yang berjalan di bawah tangan.
+ * 2. **Arti menarik** BISA diubah jadi menggeser GRID — playhead diam, garis
+ *    bar yang berjalan di bawah tangan — tapi hanya kalau user memilihnya di
+ *    panel (`gridEdit.drag === 'grid'`). Bawaannya tarikan tetap mencari
+ *    posisi, karena itu artinya di seluruh sisa aplikasi ini dan di rekordbox,
+ *    dan menyetel grid justru menuntut playhead sering dipindah.
  *
  * Yang SENGAJA tidak berubah: pemetaan piksel→SOURCE. `onScrub` sudah
  * melaporkan posisi source di tengah jendela dengan matematika yang sama persis
@@ -51,8 +54,15 @@ export interface DeckScrollingWaveProps {
 export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX.Element {
   const { deck, grid } = view;
   const gridDeck = useDj((s) => s.gridEdit.deck);
+  const dragMode = useDj((s) => s.gridEdit.drag);
   const zoomBars = useDj((s) => s.gridEdit.zoomBars);
   const editing = gridDeck === deck.id;
+  /*
+   * Menarik hanya menggeser grid kalau mode grid menyala DAN user memilihnya.
+   * Bawaannya tarikan tetap berarti "cari posisi" — sama seperti di luar mode
+   * grid, dan sama seperti rekordbox, yang mengubah grid lewat tombol saja.
+   */
+  const dragMovesGrid = editing && dragMode === 'grid';
 
   // Jam deck, bukan jam transport Studio. Dibuat sekali per deck supaya
   // identitas fungsinya stabil dan `ScrollingWave` tidak melihatnya berubah.
@@ -99,12 +109,12 @@ export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX
       positionSourceSec={clock}
       anchorAt={anchorAt}
       title={
-        editing
+        dragMovesGrid
           ? 'GRID EDIT — tarik untuk menggeser grid; playhead tidak bergerak'
           : 'tarik untuk mencari posisi · tahan Shift untuk menempel ke ketukan'
       }
       onScrub={(phase, sourceAt: Samples) => {
-        if (!editing) {
+        if (!dragMovesGrid) {
           // Ditandai SELAMA tarikan supaya `startSyncFollow` tidak memfase ulang
           // deck sebelahnya pada tiap `pointermove` — lihat `DeckState.scrubbing`.
           if (phase === 'start') djActions.setScrubbing(deck.id, true);

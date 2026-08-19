@@ -108,6 +108,18 @@ function openGrid(): void {
   run(() => toggleGridEditFor('A'));
 }
 
+/**
+ * Mode grid PLUS tarikan yang menggeser grid.
+ *
+ * Dipisah dari `openGrid` karena keduanya memang keputusan terpisah sejak
+ * tarikan bawaan kembali berarti "cari posisi": membuka panel tidak lagi
+ * merampas satu-satunya gerakan yang dipakai berpindah posisi.
+ */
+function openGridDrag(): void {
+  openGrid();
+  run(() => djActions.setGridDrag('grid'));
+}
+
 function button(re: RegExp): HTMLElement {
   const bar = document.querySelector('[data-grid-edit]');
   if (bar === null) throw new Error('panel grid tidak terbuka');
@@ -137,9 +149,9 @@ describe('membuka panel', () => {
   });
 
   it('strip lagu-penuh tetap ada dan tetap bisa memindahkan playhead saat panel terbuka', () => {
-    // Ini syarat alur kerjanya, bukan detail tata letak: di dalam mode grid,
-    // menarik waveform besar menggeser GRID, jadi strip inilah satu-satunya
-    // cara berpindah posisi tanpa menutup panel lebih dulu.
+    // Strip ini tetap jalan berpindah posisi yang paling langsung saat panel
+    // terbuka — dan satu-satunya kalau user menyalakan TARIK GRID, yang
+    // merampas tarikan waveform besar untuk menggeser grid.
     render(<DjPage />);
     openGrid();
 
@@ -183,6 +195,37 @@ describe('membuka panel', () => {
   });
 });
 
+describe('tombol geser anchor', () => {
+  /** Satu penekanan tetikus penuh: pointerdown → pointerup → click. */
+  function press(el: HTMLElement): void {
+    run(() => {
+      fireEvent.pointerDown(el, { pointerId: 1, button: 0 });
+      fireEvent.pointerUp(el, { pointerId: 1 });
+      fireEvent.click(el);
+    });
+  }
+
+  it('satu penekanan = TEPAT 1 ms — jalur pointer dan jalur klik tidak dobel', () => {
+    // Tombol ini mengulang selama ditahan, jadi ia bekerja di `pointerdown`.
+    // Jalur `click` tetap ada untuk keyboard, dan tanpa penjaga keduanya
+    // berjalan pada satu klik tetikus — langkah 1 ms diam-diam jadi 2 ms.
+    render(<DjPage />);
+    openGrid();
+    const before = anchor();
+    press(button(/◀/));
+    expect(anchor()).toBeCloseTo(before - 0.001, 9);
+  });
+
+  it('FINE TIDAK mengubah langkah geser anchor — ia hanya untuk rapat/renggang', () => {
+    render(<DjPage />);
+    openGrid();
+    run(() => djActions.setGridFine(true));
+    const before = anchor();
+    press(button(/▶/));
+    expect(anchor()).toBeCloseTo(before + 0.001, 9);
+  });
+});
+
 describe('menarik waveform saat mode grid', () => {
   /** Satu tarikan penuh, dari `x0` ke `x1` piksel. */
   function drag(x0: number, x1: number): void {
@@ -194,10 +237,26 @@ describe('menarik waveform saat mode grid', () => {
     });
   }
 
-  it('menggeser GRID dan TIDAK menggerakkan playhead', () => {
+  it('BAWAAN mode grid: tarikan tetap MENCARI POSISI dan grid diam', () => {
+    // Perilaku rekordbox, dan perilaku sisa aplikasi ini. Membuka panel grid
+    // tidak boleh diam-diam mengubah arti satu-satunya gerakan yang dipakai
+    // orang untuk berpindah posisi.
     render(<DjPage />);
     run(() => djActions.seek('A', SR * 60));
     openGrid();
+
+    const before = anchor();
+    const pos = playhead();
+    drag(450, 350);
+
+    expect(anchor()).toBeCloseTo(before, 9);
+    expect(playhead()).not.toBe(pos);
+  });
+
+  it('menggeser GRID dan TIDAK menggerakkan playhead', () => {
+    render(<DjPage />);
+    run(() => djActions.seek('A', SR * 60));
+    openGridDrag();
 
     const before = anchor();
     const pos = playhead();
@@ -210,7 +269,7 @@ describe('menarik waveform saat mode grid', () => {
   it('menarik ke KIRI menggeser grid ke kiri — tandanya, dan ini satu-satunya penjaganya', () => {
     render(<DjPage />);
     run(() => djActions.seek('A', SR * 60));
-    openGrid();
+    openGridDrag();
 
     const before = anchor();
     drag(450, 350);
@@ -220,7 +279,7 @@ describe('menarik waveform saat mode grid', () => {
   it('menarik ke KANAN menggeser grid ke kanan', () => {
     render(<DjPage />);
     run(() => djActions.seek('A', SR * 60));
-    openGrid();
+    openGridDrag();
 
     const before = anchor();
     drag(450, 550);
@@ -242,7 +301,7 @@ describe('menarik waveform saat mode grid', () => {
   it('satu tarikan = SATU entri undo, bukan satu per pointermove', () => {
     render(<DjPage />);
     run(() => djActions.seek('A', SR * 60));
-    openGrid();
+    openGridDrag();
     const start = anchor();
 
     const c = waveCanvas();

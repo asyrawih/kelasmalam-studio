@@ -21,7 +21,6 @@
 
 import {
   MIN_FIT_BARS,
-  NUDGE_STEP_FINE_SEC,
   NUDGE_STEP_SEC,
   WIDEN_STEP_COARSE_SEC,
   WIDEN_STEP_SEC,
@@ -208,8 +207,9 @@ export function setGridBpm(bpm: number, deckId?: DeckId): boolean {
 export function nudgeGrid(dir: number, deckId?: DeckId): boolean {
   const t = gridTarget(deckId);
   if (t === null) return fail(deckId ?? null);
-  const step = djStore.getState().gridEdit.fine ? NUDGE_STEP_FINE_SEC : NUDGE_STEP_SEC;
-  return commit(t, nudgeAnchor(t.anchorSec, Math.sign(dir) * step));
+  // `fine` SENGAJA tidak dibaca di sini: di rekordbox ia hanya mengubah langkah
+  // renggang/rapat. Geser anchor selalu 1 ms, berapa pun keadaan tombol itu.
+  return commit(t, nudgeAnchor(t.anchorSec, Math.sign(dir) * NUDGE_STEP_SEC));
 }
 
 /** Kontrol #5 — renggangkan (`dir > 0`) atau rapatkan jarak ketukan. */

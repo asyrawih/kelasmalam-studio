@@ -608,16 +608,37 @@ export type MetroLevel = 0 | 1 | 2 | 3;
 export const METRO_LEVELS: readonly MetroLevel[] = [0, 1, 2, 3];
 export const GRID_ZOOMS: readonly GridZoom[] = [1, 2, 4, 8];
 
+/** Arti menarik waveform besar saat mode grid menyala. */
+export type GridDragMode = 'seek' | 'grid';
+
 export interface GridEditState {
   /** Deck yang sedang disunting grid-nya. `null` = mode mati. */
   readonly deck: DeckId | null;
   readonly zoomBars: GridZoom;
   /**
-   * `[fine]` rekordbox. Mengubah langkah DUA kontrol ke arah yang BERLAWANAN:
-   * geser anchor jadi lebih halus (mengejar fase), renggang/rapat jadi lebih
-   * kasar (mengejar drift). Lihat `WIDEN_STEP_*` di `analysis/grid-edit.ts`.
+   * `[fine]` rekordbox, dan HANYA seperti rekordbox: ia membesarkan langkah
+   * renggang/rapat dari 1 ms ke 3 ms, dan tidak menyentuh apa pun yang lain.
+   *
+   * Versi sebelumnya ikut menghaluskan geser anchor jadi 0.1 ms. Niatnya baik —
+   * satu kontrol mengejar fase, satunya mengejar drift — tapi satu tombol yang
+   * mengubah dua langkah ke arah BERLAWANAN tidak bisa ditebak dari namanya,
+   * dan tidak ada alat DJ yang berperilaku begitu.
    */
   readonly fine: boolean;
+  /**
+   * Arti MENARIK waveform besar selama mode grid menyala.
+   *
+   * `'seek'` — seperti di luar mode grid, dan seperti rekordbox: tarikan
+   * mencari posisi, grid hanya berubah lewat tombol. Ini bawaannya, karena
+   * menyetel grid menuntut playhead dipindah berkali-kali (ke kick pertama,
+   * lalu ke drop terakhir), dan tarikan adalah cara paling langsung ke sana.
+   *
+   * `'grid'` — tarikan menggeser GRID sementara playhead diam. Lebih cepat
+   * daripada menekan ◀ ▶ puluhan kali, tapi ia MEMBAJAK gerakan yang di
+   * seluruh aplikasi ini berarti "cari posisi", jadi ia harus dipilih dengan
+   * sadar dan tidak boleh jadi bawaan.
+   */
+  readonly drag: GridDragMode;
   /**
    * Cap waktu tombol TAP, ms. Di store dan bukan di komponen karena TAP punya
    * dua pintu masuk (tombol dan keyboard) yang harus menambah ke deretan yang
@@ -636,7 +657,7 @@ export interface GridEditState {
 }
 
 export function defaultGridEdit(): GridEditState {
-  return { deck: null, zoomBars: 2, fine: false, taps: [], metroLevel: 0 };
+  return { deck: null, zoomBars: 2, fine: false, drag: 'seek', taps: [], metroLevel: 0 };
 }
 
 // ── DjState ──────────────────────────────────────────────────────────────────

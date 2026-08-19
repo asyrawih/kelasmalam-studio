@@ -40,7 +40,7 @@
  * store berarti mengetik "1" pada 128 sempat menetapkan grid ke 1 BPM.
  */
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { Button } from '../../ui/cyber';
 import { MAX_GRID_BPM, MIN_GRID_BPM } from '../../studio/analysis/beat-grid';
@@ -64,6 +64,74 @@ import {
   undoGridEdit,
   widenGrid,
 } from './grid-ops';
+
+/**
+ * Tombol yang MENGULANG selama ditahan.
+ *
+ * Menggeser grid 12 ms dengan tombol yang hanya bereaksi pada klik berarti dua
+ * belas klik, dan mata yang sedang mengejar transien tidak bisa menghitung
+ * klik sambil melihat garis. Semua alat yang ditiru halaman ini mengulang saat
+ * ditahan; yang tidak mengulang terasa rusak, bukan hemat.
+ *
+ * Jalur pointer dan jalur klik SENGAJA dipisah dengan `firedByPointer`: tanpa
+ * itu satu klik tetikus berjalan dua kali (`pointerdown` lalu `click`), dan
+ * langkah 1 ms diam-diam jadi 2 ms. Jalur `click` tetap ada karena ia
+ * satu-satunya yang dilewati keyboard — Enter dan Spasi tidak pernah
+ * menghasilkan `pointerdown`.
+ */
+const HOLD_DELAY_MS = 320;
+const HOLD_EVERY_MS = 55;
+
+interface HoldButtonProps {
+  readonly run: () => void;
+  readonly disabled?: boolean;
+  readonly title?: string;
+  readonly children: ReactNode;
+}
+
+function HoldButton({ run, disabled, title, children }: HoldButtonProps): JSX.Element {
+  const delayRef = useRef(0);
+  const everyRef = useRef(0);
+  const firedByPointer = useRef(false);
+
+  const stop = (): void => {
+    window.clearTimeout(delayRef.current);
+    window.clearInterval(everyRef.current);
+    delayRef.current = 0;
+    everyRef.current = 0;
+  };
+
+  useEffect(() => stop, []);
+
+  return (
+    <Button
+      variant="ghost"
+      disabled={disabled}
+      title={title}
+      onPointerDown={() => {
+        if (disabled === true) return;
+        firedByPointer.current = true;
+        run();
+        stop();
+        delayRef.current = window.setTimeout(() => {
+          everyRef.current = window.setInterval(run, HOLD_EVERY_MS);
+        }, HOLD_DELAY_MS);
+      }}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onClick={() => {
+        if (firedByPointer.current) {
+          firedByPointer.current = false;
+          return;
+        }
+        run();
+      }}
+    >
+      {children}
+    </Button>
+  );
+}
 
 const LABEL: CSSProperties = {
   fontSize: '9px',
@@ -111,6 +179,7 @@ export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
   const open = useDj((s) => s.gridEdit.deck === id);
   const zoomBars = useDj((s) => s.gridEdit.zoomBars);
   const fine = useDj((s) => s.gridEdit.fine);
+  const drag = useDj((s) => s.gridEdit.drag);
   const metroLevel = useDj((s) => s.gridEdit.metroLevel);
   const deck = useDj((s) => s.decks[id]);
   const assets = useStudio((s) => s.assets);
@@ -233,22 +302,20 @@ export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
             textAlign: 'right',
           }}
         />
-        <Button
-          variant="ghost"
+        <HoldButton
           disabled={off}
-          onClick={() => widenGrid(-1, id)}
-          title={`rapatkan jarak ketukan ${fine ? '3' : '1'} ms — grid yang tertinggal di belakang transien`}
+          run={() => widenGrid(-1, id)}
+          title={`rapatkan jarak ketukan ${fine ? '3' : '1'} ms — grid yang tertinggal di belakang transien. Tahan untuk mengulang`}
         >
           −
-        </Button>
-        <Button
-          variant="ghost"
+        </HoldButton>
+        <HoldButton
           disabled={off}
-          onClick={() => widenGrid(1, id)}
-          title={`renggangkan jarak ketukan ${fine ? '3' : '1'} ms — grid yang mendahului transien`}
+          run={() => widenGrid(1, id)}
+          title={`renggangkan jarak ketukan ${fine ? '3' : '1'} ms — grid yang mendahului transien. Tahan untuk mengulang`}
         >
           +
-        </Button>
+        </HoldButton>
         <Button variant="ghost" disabled={off} onClick={() => octaveGrid(1, id)} title="×2 BPM">
           ×2
         </Button>
@@ -278,27 +345,25 @@ export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
         >
           {formatAnchor(anchorSec)}
         </span>
-        <Button
-          variant="ghost"
+        <HoldButton
           disabled={off}
-          onClick={() => nudgeGrid(-1, id)}
-          title={`geser seluruh grid ${fine ? '0.1' : '1'} ms ke kiri`}
+          run={() => nudgeGrid(-1, id)}
+          title="geser seluruh grid 1 ms ke kiri. Tahan untuk mengulang"
         >
           ◀
-        </Button>
-        <Button
-          variant="ghost"
+        </HoldButton>
+        <HoldButton
           disabled={off}
-          onClick={() => nudgeGrid(1, id)}
-          title={`geser seluruh grid ${fine ? '0.1' : '1'} ms ke kanan`}
+          run={() => nudgeGrid(1, id)}
+          title="geser seluruh grid 1 ms ke kanan. Tahan untuk mengulang"
         >
           ▶
-        </Button>
+        </HoldButton>
         <Button
           variant="ghost"
           active={fine}
           onClick={() => djActions.setGridFine(!fine)}
-          title="fine — geser anchor jadi lebih halus (0.1 ms), renggang/rapat jadi lebih kasar (3 ms). Arahnya memang berlawanan: yang satu mengejar fase, yang satu mengejar drift."
+          title="fine — langkah rapat/renggang jadi 3 ms, persis seperti [fine] rekordbox. Geser anchor tetap 1 ms."
         >
           FINE
         </Button>
@@ -325,6 +390,27 @@ export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
           }
         >
           PAS DI SINI · {bars.toFixed(1)}
+        </Button>
+      </Row>
+
+      {/* — arti menarik waveform besar — */}
+      <Row>
+        <span style={LABEL}>TARIK</span>
+        <Button
+          variant="ghost"
+          active={drag === 'seek'}
+          onClick={() => djActions.setGridDrag('seek')}
+          title="menarik waveform besar mencari posisi — seperti di luar mode grid, dan seperti rekordbox"
+        >
+          POSISI
+        </Button>
+        <Button
+          variant="ghost"
+          active={drag === 'grid'}
+          onClick={() => djActions.setGridDrag('grid')}
+          title="menarik waveform besar menggeser GRID; playhead diam. Lebih cepat daripada menekan ◀ ▶ puluhan kali, tapi selama menyala tarikan tidak bisa dipakai mencari posisi"
+        >
+          GRID
         </Button>
       </Row>
 
