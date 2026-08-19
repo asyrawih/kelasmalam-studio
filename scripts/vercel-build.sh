@@ -41,8 +41,18 @@ fi
 log "Cek budget ukuran"
 "$ROOT/scripts/size-check.sh"
 
-log "Build frontend"
-( cd "$ROOT/web" && npm run build )
+# Sama alasannya dengan SKIP_WASM: job CI sudah menjalankan `npm run build`
+# untuk menguji hasilnya. Membangun ulang di sini bukan cuma membuang waktu —
+# yang dikirim ke produksi jadi BUKAN berkas yang barusan diuji, melainkan
+# berkas lain yang kebetulan dibangun dari commit yang sama.
+if [ "${SKIP_WEB_BUILD:-0}" = "1" ]; then
+  log "Lewati build frontend (SKIP_WEB_BUILD=1)"
+  [ -d "$DIST" ] && [ -n "$(ls -A "$DIST" 2>/dev/null)" ] || {
+    echo "GAGAL: SKIP_WEB_BUILD=1 tapi $DIST kosong/tidak ada." >&2; exit 1; }
+else
+  log "Build frontend"
+  ( cd "$ROOT/web" && npm run build )
+fi
 
 # Worklet WAJIB berupa JavaScript. `audioWorklet.addModule()` memuatnya sebagai
 # classic script; TypeScript mentah atau satu `import` saja = SyntaxError yang

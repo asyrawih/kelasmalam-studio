@@ -3,8 +3,30 @@ name: CI
 on:
   push:
     branches: [main]
+    # Perubahan yang tidak bisa menjatuhkan build tidak perlu membangunkan
+    # empat runner. Catatan: `docs/` TIDAK ikut ke `web/dist`, jadi melewatinya
+    # juga berarti tidak ada deploy — itu memang yang diinginkan.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'design/**'
+      - '.claude/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'design/**'
+      - '.claude/**'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy setelah semua tes hijau'
+        type: boolean
+        default: false
+      production:
+        description: 'Deploy ke produksi (bukan preview)'
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,25 +35,57 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Jaringan runner sesekali putus; cargo jangan langsung menyerah.
+  CARGO_NET_RETRY: 10
+  # Incremental tidak pernah berguna di CI — tiap job mulai dari cache dingin
+  # atau cache yang dipulihkan utuh, tidak pernah dari build sebelumnya di mesin
+  # yang sama. Yang tersisa hanya ongkosnya: berkas .fingerprint yang membesar
+  # dan memperlambat simpan/pulih cache.
+  CARGO_INCREMENTAL: 0
+  # Debug info penuh untuk tes = target dir berlipat ukurannya, dan cache
+  # rust-cache ikut membengkak (langkah pulih cache sendiri makan ~18 detik).
+  # `line-tables-only` tetap memberi berkas:baris di backtrace — yang benar-benar
+  # dibaca orang saat tes gagal — tanpa tabel variabel DWARF yang tidak pernah
+  # dipakai tanpa debugger.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
 jobs:
   # ---------------------------------------------------------------- native
   native:
-    name: native (fmt, clippy, test, bench)
+    name: native (fmt, clippy, test)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      # rust-toolchain.toml yang menentukan channel + komponen.
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt, clippy, rust-src
+
+      # `rust-toolchain.toml` adalah SATU-SATUNYA sumber versi toolchain.
+      #
+      # Sebelumnya di sini ada `dtolnay/rust-toolchain@nightly`, dan logya
+      # sendiri mengaku sia-sia:
+      #
+      #   nightly-x86_64-unknown-linux-gnu installed - rustc 1.100.0-nightly
+      #   info: note that the toolchain 'nightly-2025-06-15-x86_64-unknown-linux-gnu'
+      #         is currently in use (overridden by '.../rust-toolchain.toml')
+      #
+      # Sepuluh detik dipakai mengunduh toolchain yang lalu tidak dipakai satu
+      # perintah pun, dan toolchain yang SUNGGUHAN dipakai baru diunduh diam-diam
+      # saat cargo pertama kali jalan. `rustup toolchain install` tanpa argumen
+      # membaca berkas itu langsung: satu toolchain, sekali unduh.
+      - name: Rust toolchain (dari rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+
       - uses: Swatinem/rust-cache@v2
 
       # `daw-native-host` memakai cpal → alsa-sys, yang menautkan pustaka
       # sistem lewat pkg-config. Tanpa ini `cargo test --workspace` gagal di
       # build script alsa-sys, bukan di kode kita.
+      #
+      # Lewat pembungkus, BUKAN `apt-get` langsung: apt tanpa batas waktu pernah
+      # menggantung 45 menit di step ini dan mematikan seluruh pipeline. Lihat
+      # .github/scripts/apt-install.sh.
       - name: pustaka sistem untuk cpal
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: ./.github/scripts/apt-install.sh libasound2-dev pkg-config
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -40,11 +94,17 @@ jobs:
       # Deteksi alokasi di jalur RT (allocator penjaga, docs/01 §1c).
       - run: cargo test -p daw-engine --features rt-guard
 
-      # Benchmark: simpan baseline PR. Tidak mem-fail build (angka runner
-      # CI berisik), tapi outputnya terlihat di log untuk perbandingan.
-      - name: bench render
-        run: cargo bench -p daw-engine --bench render -- --save-baseline pr
-        continue-on-error: true
+      # Tes paling berharga: render project referensi lewat dua jalur (realtime
+      # blok-128 vs offline batch) dan bandingkan sample-exact.
+      #
+      # Dulu ini job `golden` tersendiri. Isinya adalah HIMPUNAN BAGIAN dari
+      # `cargo test --workspace` di atas — null test-nya ada di
+      # `crates/engine/src/tests.rs`, jadi baris ini sudah ikut jalan beberapa
+      # langkah yang lalu. Satu runner penuh plus pulih-cache ~26 detik dipakai
+      # untuk menjalankan ulang tes yang sudah hijau. Yang benar-benar
+      # ditambahkan job itu cuma `--nocapture`, dan itu satu langkah 2 detik.
+      - name: golden — null test (bounce == realtime)
+        run: cargo test -p daw-engine null_test -- --nocapture
 
       # Aturan mengikat docs/00 §1: crate inti tidak boleh menyentuh wasm-bindgen.
       - name: no wasm-bindgen in core crates
@@ -57,51 +117,41 @@ jobs:
             fi
           done
 
+      # Benchmark TIDAK jalan di pull request. Ia tidak mem-fail build (angka
+      # runner CI berisik), baselinenya dibuang bersama runner, dan tidak ada
+      # yang membaca 30 detik log itu di tiap PR. Di push ke main ia tetap ada
+      # sebagai catatan historis yang bisa dibandingkan antar-commit.
+      - name: bench render
+        if: github.event_name != 'pull_request'
+        run: cargo bench -p daw-engine --bench render -- --save-baseline main
+        continue-on-error: true
+
   # ------------------------------------------------------------------ wasm
   wasm:
-    name: wasm (headless test, build, size budget)
+    name: wasm (build, size budget)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: wasm32-unknown-unknown
-          components: rust-src
+
+      # rust-toolchain.toml sudah mendaftarkan target wasm32-unknown-unknown
+      # dan komponen rust-src, jadi tidak ada yang perlu ditambahkan di sini.
+      - name: Rust toolchain (dari rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+
       - uses: Swatinem/rust-cache@v2
-      - uses: browser-actions/setup-chrome@v1
 
-      # Toolchain STABIL khusus untuk mem-build perkakas. Perkakas ini tidak
-      # ikut ke artefak; ia hanya perlu bisa dikompilasi.
-      - run: rustup toolchain install stable --profile minimal
+      # CATATAN: `browser-actions/setup-chrome` DIHAPUS bersama langkah
+      # `wasm-pack test --headless --chrome` yang sudah lebih dulu dihapus.
+      # `crates/wasm-bridge` tidak punya satu pun tes browser, jadi Chrome
+      # dipasang 11 detik di tiap run untuk sesuatu yang tidak pernah dijalankan.
+      # Cakupan yang SUNGGUHAN ada: `web/src/studio/export/wasm-integration.test.ts`
+      # di job `web`, yang memuat artefak `st` hasil build ini.
 
-      - name: install tooling
-        run: |
-          set -euo pipefail
-          # `cargo install` TANPA `+stable` memakai toolchain project (nightly
-          # yang dipin di rust-toolchain.toml). Dependensi transitif perkakas
-          # modern menuntut rustc yang lebih baru, jadi instalasinya gagal
-          # dengan pesan yang menunjuk crate asing — bukan masalah kode kita.
-          # Versi dibaca dari Cargo.lock, TIDAK ditulis ulang di sini.
-          # Sebelumnya angkanya di-hardcode (0.2.95) dan tertinggal jauh dari
-          # crate-nya (0.2.127); glue yang dihasilkan lalu tidak cocok dengan
-          # section __wbindgen di .wasm, dan wasm-bindgen gagal dengan pesan
-          # yang menyuruh menginstal ulang versi yang benar. Satu sumber
-          # kebenaran menghapus seluruh kelas kegagalan itu.
-          WANT="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
-          echo "wasm-bindgen dari Cargo.lock: $WANT"
-          cargo +stable install wasm-bindgen-cli --version "$WANT" --locked
-          sudo apt-get update && sudo apt-get install -y binaryen
-
-      # CATATAN: langkah `wasm-pack test --headless --chrome` DIHAPUS.
-      #
-      # `crates/wasm-bridge` tidak punya dev-dependency `wasm-bindgen-test` dan
-      # tidak punya satu pun tes browser, jadi langkah itu tidak pernah bisa
-      # jalan — ia hanya membuat CI merah. Menambahkan tes token sekadar agar
-      # langkahnya hijau berarti CI melaporkan cakupan yang tidak ada.
-      #
-      # Cakupan yang SUNGGUHAN ada sekarang: `web/src/studio/export/
-      # wasm-integration.test.ts` memuat artefak `st` yang benar-benar dibangun
-      # dan menjalankan render + encode sampai menghasilkan berkas.
+      # Binari siap pakai, bukan `cargo install` (61 detik) + `apt-get` (76 detik,
+      # atau menggantung selamanya). Lihat .github/scripts/install-wasm-tools.sh.
+      - name: perkakas wasm (wasm-bindgen + binaryen)
+        run: ./.github/scripts/install-wasm-tools.sh
 
       - name: build wasm (mt + st)
         run: ./scripts/build-wasm.sh
@@ -119,13 +169,12 @@ jobs:
   web:
     name: web (test, build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: wasm
     steps:
       # npm, BUKAN pnpm. Satu-satunya lockfile di repo ini adalah
       # `web/package-lock.json`; `pnpm-lock.yaml` tidak pernah ada, jadi
-      # `pnpm install --frozen-lockfile` di sini memang tidak pernah bisa
-      # jalan. Job deploy sudah memakai npm dan hijau — CI mengikuti jalur
-      # yang sama supaya keduanya menguji hal yang sama.
+      # `pnpm install --frozen-lockfile` di sini memang tidak pernah bisa jalan.
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -144,27 +193,53 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Typecheck + test + build
+      - name: Test
         working-directory: web
-        run: |
-          npx tsc --noEmit
-          npx vitest run
-          npm run build
+        run: npx vitest run
 
-  # ---------------------------------------------------------------- golden
-  golden:
-    name: golden (null test bounce == realtime)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      # `npm run build` = `tsc --noEmit && vite build`. Sebelumnya ada
+      # `npx tsc --noEmit` terpisah tepat di atas baris ini, jadi seluruh
+      # typecheck jalan DUA KALI tiap run — satu-satunya bedanya, yang kedua
+      # dijalankan lewat npm.
+      - name: Typecheck + build
+        working-directory: web
+        run: npm run build
+
+      # Hasil build dipakai apa adanya oleh job deploy. Membangunnya ulang di
+      # sana berarti menjalankan tsc + vite untuk kedua kalinya atas commit yang
+      # sama — dan, lebih buruk, mengirim ke produksi berkas yang BUKAN berkas
+      # yang baru saja diuji.
+      - name: Upload dist
+        if: >-
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' && inputs.deploy)
+        uses: actions/upload-artifact@v4
         with:
-          components: rust-src
-      - uses: Swatinem/rust-cache@v2
-      # Tes paling berharga: render project referensi lewat dua jalur
-      # (realtime blok-128 vs offline batch) dan bandingkan sample-exact.
-      # Null test-nya ada di `crates/engine/src/tests.rs`
-      # (`null_test_block_size_invariance_*`), BUKAN di daw-export sebagai
-      # target tes terpisah — CI sebelumnya menunjuk target yang tidak pernah
-      # ada, jadi job ini selalu merah tanpa pernah menjalankan tesnya.
-      - run: cargo test -p daw-engine null_test -- --nocapture
+          name: web-dist
+          path: web/dist/
+          retention-days: 1
+
+  # ---------------------------------------------------------------- deploy
+  # Deploy adalah KELANJUTAN dari CI, bukan pipeline kedua yang berlomba
+  # dengannya.
+  #
+  # Sebelumnya `deploy.yml` berjalan sendiri dengan pemicu `push: [main]` yang
+  # sama, jadi tiap push ke main menjalankan dua pipeline yang mengulang
+  # pekerjaan yang persis sama: cargo test, build WASM, tsc, vitest, plus
+  # pemasangan toolchain dan binaryen-nya sendiri. Empat menit runner terbuang
+  # tiap commit.
+  #
+  # Dan keduanya tidak saling melihat. Pada run 32197356174 (18 Agt 2026) CI
+  # MERAH dan deploy HIJAU pada commit yang sama — kode yang gagal CI tetap naik
+  # ke produksi, karena satu-satunya gerbang deploy adalah tesnya sendiri yang
+  # lebih longgar (`--exclude daw-native-host`, tanpa clippy, tanpa null test).
+  # `needs:` di bawah membuat keadaan itu tidak mungkin terulang.
+  deploy:
+    needs: [native, wasm, web]
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    uses: ./.github/workflows/deploy.yml
+    with:
+      production: ${{ github.event_name == 'push' || inputs.production }}
+    secrets: inherit
