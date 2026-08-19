@@ -78,6 +78,38 @@ describe('semantik tombol CUE', () => {
     expect(s().decks.A.playhead).toBe(0);
   });
 
+  it('mulai putar dari tengah lagu → CUE balik ke SITU, bukan ke detik nol', () => {
+    load('A');
+    djActions.seek('A', 90 * BEAT);
+    djActions.togglePlay('A'); // tanpa memasang cue secara sadar lebih dulu
+    expect(selectTrackCues('A')(s()).cuePoint).toBe(90 * BEAT);
+    djActions.tick(1_000);
+    djActions.cuePress('A');
+    expect(s().decks.A.playing).toBe(false);
+    expect(s().decks.A.playhead).toBe(90 * BEAT);
+  });
+
+  it('cue yang dipasang sengaja tidak bergeser saat diputar DARI titik itu', () => {
+    load('A');
+    djActions.seek('A', 20 * BEAT);
+    djActions.cuePress('A'); // pasang cue di sini
+    djActions.play('A');
+    expect(selectTrackCues('A')(s()).cuePoint).toBe(20 * BEAT);
+  });
+
+  it('putar → jeda → putar lagi memindahkan cue ke titik jeda itu', () => {
+    load('A');
+    djActions.play('A');
+    djActions.tick(1_000);
+    djActions.pause('A');
+    const at = s().decks.A.playhead;
+    expect(at).toBeGreaterThan(0);
+    djActions.play('A');
+    expect(selectTrackCues('A')(s()).cuePoint).toBe(at);
+    djActions.cuePress('A');
+    expect(s().decks.A.playhead).toBe(at);
+  });
+
   it('sedang playing → lompat ke cue dan BERHENTI', () => {
     load('A');
     djActions.seek('A', 50_000);

@@ -51,6 +51,27 @@ dan *"lagu BERBEDA tidak mewarisi cue lagu lain"*.
 
 ---
 
+## Titik CUE mengikuti tempat lagu MULAI diputar
+
+Menekan PLAY memindahkan `cuePoint` ke posisi playhead saat itu; menekan CUE
+sesudahnya membawa deck kembali ke sana dan berhenti.
+
+Tanpa itu `cuePoint` bertahan di 0 sampai seseorang memasangnya secara sadar,
+dan tombol CUE pertama dalam satu set selalu melempar deck ke detik nol — persis
+kebalikan dari yang dicari orang yang menekannya. CUE di rekordbox adalah
+*current cue*: penanda **temporer** satu per deck yang menjawab "kalau aku
+batal, kembali ke mana?", dan jawabannya adalah tempat lagu tadi dimulai.
+Penanda yang tahan lama tetap hot cue dan memory cue, dan keduanya tidak ikut
+bergeser. Cue yang dipasang sengaja juga aman: memulai putar DARI cue point
+tidak memindahkan apa pun.
+
+Diuji: `store.test.ts` → *"mulai putar dari tengah lagu → CUE balik ke SITU,
+bukan ke detik nol"*, *"cue yang dipasang sengaja tidak bergeser saat diputar
+DARI titik itu"*, dan *"putar → jeda → putar lagi memindahkan cue ke titik jeda
+itu"*.
+
+---
+
 ## Nilai yang sengaja BERBEDA dari Studio
 
 | Nilai | Bentuk | Kenapa bukan seperti Studio |

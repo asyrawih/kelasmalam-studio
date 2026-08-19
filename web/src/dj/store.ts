@@ -155,6 +155,28 @@ function patchChannel(
   return { mixer: { ...s.mixer, channels: { ...s.mixer.channels, [id]: after } } };
 }
 
+/**
+ * Mulai memutar dari posisi kini, DAN pindahkan titik CUE ke sana.
+ *
+ * CUE ("current cue") adalah penanda temporer satu per deck, dan pertanyaan yang
+ * ia jawab adalah "kalau aku batal, kembali ke mana?". Jawabannya adalah tempat
+ * lagu tadi DIMULAI, bukan detik nol: tanpa ini `cuePoint` bertahan di 0 sampai
+ * seseorang memasangnya secara sadar, dan tombol CUE pertama dalam satu set
+ * selalu melempar deck ke awal materi.
+ *
+ * Penanda yang TAHAN LAMA adalah hot cue dan memory cue; keduanya tidak ikut
+ * bergeser di sini. Cue yang dipasang sengaja pun aman: memulai putar DARI cue
+ * point tidak memindahkan apa pun.
+ */
+function startPlaying(s: DjState, id: DeckId): Partial<DjState> | null {
+  const d = s.decks[id];
+  if (d.assetId === null || d.playing) return null;
+  const decks = { ...s.decks, [id]: { ...d, playing: true } };
+  const cues = s.cues[d.assetId] ?? EMPTY_TRACK_CUES;
+  if (cues.cuePoint === d.playhead) return { decks };
+  return { decks, cues: { ...s.cues, [d.assetId]: { ...cues, cuePoint: d.playhead } } };
+}
+
 /** Cue milik asset yang sedang dipegang deck, atau `null` kalau deck kosong. */
 function cuesOf(s: DjState, id: DeckId): TrackCues | null {
   const assetId = s.decks[id].assetId;
@@ -303,9 +325,7 @@ export const djActions = {
 
   /** Pasangan `pause`. Dipakai lapisan audio dan tes; UI memakai `togglePlay`. */
   play(id: DeckId): void {
-    set((s) =>
-      patchDeck(s, id, (d) => (d.playing || d.assetId === null ? d : { ...d, playing: true })),
-    );
+    set((s) => startPlaying(s, id));
   },
 
   pause(id: DeckId): void {
@@ -313,7 +333,12 @@ export const djActions = {
   },
 
   togglePlay(id: DeckId): void {
-    set((s) => patchDeck(s, id, (d) => (d.assetId === null ? d : { ...d, playing: !d.playing })));
+    set((s) => {
+      const d = s.decks[id];
+      if (d.assetId === null) return null;
+      if (d.playing) return patchDeck(s, id, (x) => ({ ...x, playing: false }));
+      return startPlaying(s, id);
+    });
   },
 
   /**
