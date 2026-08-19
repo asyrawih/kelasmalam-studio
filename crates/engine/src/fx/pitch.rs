@@ -148,7 +148,11 @@ impl Effect for PitchFx {
     }
 
     fn new(sample_rate: f32, _mem: &mut [f32]) -> Self {
-        let sr = if sample_rate > 0.0 { sample_rate } else { 48_000.0 };
+        let sr = if sample_rate > 0.0 {
+            sample_rate
+        } else {
+            48_000.0
+        };
         PitchFx {
             sample_rate: sr,
             w: [0, 0],
@@ -167,8 +171,7 @@ impl Effect for PitchFx {
     fn prepare(&mut self, p: &ParamCtx<'_>) {
         let semis = p.at_or(0, 0.0).clamp(-24.0, 24.0);
         let cents = p.at_or(1, 0.0).clamp(-200.0, 200.0);
-        let win = (p.at_or(2, 60.0).clamp(5.0, MAX_WINDOW_MS) * 0.001 * self.sample_rate)
-            .max(8.0);
+        let win = (p.at_or(2, 60.0).clamp(5.0, MAX_WINDOW_MS) * 0.001 * self.sample_rate).max(8.0);
         let fb = p.at_or(3, 0.0).clamp(0.0, 0.9);
         let mix = p.at_or(4, 1.0).clamp(0.0, 1.0);
 

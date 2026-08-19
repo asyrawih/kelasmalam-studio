@@ -273,7 +273,12 @@ fn reset_returns_an_effect_to_its_initial_state() {
         reused.reset(ra.block(rm));
         let after_reset = run(&mut reused, &mut ra, rm);
 
-        assert_first_diff(kind.desc().id, "reset menyisakan state", &first, &after_reset);
+        assert_first_diff(
+            kind.desc().id,
+            "reset menyisakan state",
+            &first,
+            &after_reset,
+        );
     }
 }
 

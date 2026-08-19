@@ -78,9 +78,7 @@ impl ClipFxPool {
                 .unwrap_or(0);
             let kinds: Vec<(FxKind, bool)> = chain
                 .iter()
-                .filter_map(|d: &FxSlotDesc| {
-                    FxKind::from_u16(d.kind).map(|k| (k, d.bypass))
-                })
+                .filter_map(|d: &FxSlotDesc| FxKind::from_u16(d.kind).map(|k| (k, d.bypass)))
                 .collect();
             let mut rack = FxRack::chain(&kinds, sample_rate);
             // Parameter dipasang di sini, sekali, bukan tiap blok.

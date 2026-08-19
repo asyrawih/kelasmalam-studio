@@ -77,7 +77,10 @@ mod tests {
                 assert!(p["flags"].is_number());
                 // Enum bertag: UI membaca `.kind` untuk memilih pemetaan knob.
                 assert!(p["taper"]["kind"].is_string(), "taper tidak bertag: {p}");
-                assert!(p["smoothing"]["kind"].is_string(), "smoothing tidak bertag: {p}");
+                assert!(
+                    p["smoothing"]["kind"].is_string(),
+                    "smoothing tidak bertag: {p}"
+                );
             }
         }
     }

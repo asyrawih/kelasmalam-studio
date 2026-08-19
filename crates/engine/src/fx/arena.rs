@@ -219,10 +219,7 @@ mod tests {
     #[test]
     fn invalid_handle_yields_empty_slice_not_panic() {
         let mut a = FxArena::new(16);
-        let bogus = MemHandle {
-            off: 1000,
-            len: 10,
-        };
+        let bogus = MemHandle { off: 1000, len: 10 };
         assert!(a.block(bogus).is_empty());
         assert!(a.block_ref(bogus).is_empty());
     }

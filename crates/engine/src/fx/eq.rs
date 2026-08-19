@@ -306,7 +306,10 @@ mod tests {
         assert_eq!(Eq4::DESC.params[1].default, d.freq_hz);
         assert_eq!(Eq4::DESC.params[2].default, d.q);
         assert_eq!(Eq4::DESC.params[3].default, d.gain_db);
-        assert_eq!(Eq4::DESC.params[4].default, if d.enabled { 1.0 } else { 0.0 });
+        assert_eq!(
+            Eq4::DESC.params[4].default,
+            if d.enabled { 1.0 } else { 0.0 }
+        );
     }
 
     /// Label jenis filter harus sejajar dengan pemetaan `filter_kind`.

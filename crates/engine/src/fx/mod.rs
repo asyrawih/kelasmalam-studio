@@ -31,10 +31,10 @@
 //! tetap berlaku saat katalog efek bertambah.
 
 pub mod arena;
-pub mod clip_pool;
-pub mod comp;
 #[cfg(test)]
 mod behaviour;
+pub mod clip_pool;
+pub mod comp;
 #[cfg(test)]
 mod conformance;
 pub mod desc;
@@ -413,14 +413,13 @@ impl FxRack {
     /// Dua implementasi mirip adalah persis cara `clip.stem` bisa terdengar di
     /// preview tapi hilang dari file export.
     pub fn chain(kinds: &[(FxKind, bool)], sample_rate: f32) -> Self {
-        let need: usize = kinds
-            .iter()
-            .map(|(k, _)| k.mem_frames(sample_rate))
-            .sum();
+        let need: usize = kinds.iter().map(|(k, _)| k.mem_frames(sample_rate)).sum();
         let mut arena = FxArena::new(need);
         let mut slots: Vec<FxSlot> = Vec::with_capacity(kinds.len());
         for (kind, bypass) in kinds.iter() {
-            let mem = arena.alloc(kind.mem_frames(sample_rate)).unwrap_or(MemHandle::EMPTY);
+            let mem = arena
+                .alloc(kind.mem_frames(sample_rate))
+                .unwrap_or(MemHandle::EMPTY);
             let node = {
                 let block = arena.block(mem);
                 FxNode::make(*kind, sample_rate, block)
@@ -532,10 +531,7 @@ impl FxRack {
     }
 
     pub fn eq_mut(&mut self, unit: u16) -> Option<&mut Eq4> {
-        match self
-            .slots
-            .get_mut(unit as usize * layout::BUILTIN_PER_UNIT)
-        {
+        match self.slots.get_mut(unit as usize * layout::BUILTIN_PER_UNIT) {
             Some(FxSlot {
                 node: FxNode::Eq(e),
                 ..
@@ -721,7 +717,10 @@ mod chain_tests {
         rack.process_all(&mut l, &mut r);
         rack.end_block(128);
         for (i, v) in l.iter().enumerate() {
-            assert!((v - 0.5).abs() < 1e-4, "bypass tidak transparan di {i}: {v}");
+            assert!(
+                (v - 0.5).abs() < 1e-4,
+                "bypass tidak transparan di {i}: {v}"
+            );
         }
         let _ = r;
     }
@@ -732,7 +731,12 @@ mod chain_tests {
     #[test]
     fn a_new_chain_starts_from_descriptor_defaults() {
         let rack = FxRack::chain(&[(FxKind::Comp, false)], 48_000.0);
-        let want: Vec<f32> = FxKind::Comp.desc().params.iter().map(|p| p.default).collect();
+        let want: Vec<f32> = FxKind::Comp
+            .desc()
+            .params
+            .iter()
+            .map(|p| p.default)
+            .collect();
         assert_eq!(rack.slots[0].params, want);
     }
 }

@@ -145,7 +145,11 @@ impl Effect for ReverbFx {
     }
 
     fn new(sample_rate: f32, _mem: &mut [f32]) -> Self {
-        let sr = if sample_rate > 0.0 { sample_rate } else { 48_000.0 };
+        let sr = if sample_rate > 0.0 {
+            sample_rate
+        } else {
+            48_000.0
+        };
         ReverbFx {
             sample_rate: sr,
             net: Fdn8::new(sr),
@@ -163,8 +167,8 @@ impl Effect for ReverbFx {
         let size = p.at_or(1, 0.8);
         let damp = p.at_or(2, 5_000.0);
         let modu = p.at_or(4, 0.35);
-        let pre = (p.at_or(3, 20.0).clamp(0.0, MAX_PREDELAY_MS) * 0.001 * self.sample_rate)
-            .max(1.0);
+        let pre =
+            (p.at_or(3, 20.0).clamp(0.0, MAX_PREDELAY_MS) * 0.001 * self.sample_rate).max(1.0);
         let width = p.at_or(5, 1.0).clamp(0.0, 1.0);
         let mix = p.at_or(6, 0.25).clamp(0.0, 1.0);
 

@@ -90,7 +90,11 @@ impl FxLayout {
     /// ditolak sebelum plan dipasang dan muncul sebagai peringatan di UI —
     /// preseden yang sama dengan `OutOfBuffers`. Yang tidak boleh terjadi
     /// adalah alokasi dadakan di jalur render.
-    pub fn assign_memory(&mut self, sample_rate: f32, arena: &mut FxArena) -> Result<(), PlanError> {
+    pub fn assign_memory(
+        &mut self,
+        sample_rate: f32,
+        arena: &mut FxArena,
+    ) -> Result<(), PlanError> {
         arena.reset();
         for e in self.entries.iter_mut() {
             let need = e.kind.mem_frames(sample_rate);
@@ -179,7 +183,11 @@ mod tests {
         let empty = plan_chains(&project(Vec::new(), Vec::new())).unwrap();
         assert_eq!(empty.total_nodes(), BUILTIN_NODES);
 
-        let full = plan_chains(&project(alloc::vec![slot(0), slot(1)], alloc::vec![slot(0)])).unwrap();
+        let full = plan_chains(&project(
+            alloc::vec![slot(0), slot(1)],
+            alloc::vec![slot(0)],
+        ))
+        .unwrap();
         assert_eq!(full.total_nodes(), BUILTIN_NODES + 3);
         for e in &full.entries {
             assert!(
@@ -219,7 +227,11 @@ mod tests {
     /// Efek yang tidak dikenal versi ini dilewati, bukan membuat project gagal.
     #[test]
     fn unknown_kinds_are_skipped_not_fatal() {
-        let l = plan_chains(&project(alloc::vec![slot(0), slot(9999), slot(1)], Vec::new())).unwrap();
+        let l = plan_chains(&project(
+            alloc::vec![slot(0), slot(9999), slot(1)],
+            Vec::new(),
+        ))
+        .unwrap();
         assert_eq!(l.entries.len(), 2);
         // Dan yang tersisa tetap bernomor padat.
         assert_eq!(l.entries[0].node as usize, BUILTIN_NODES);
@@ -228,7 +240,11 @@ mod tests {
 
     #[test]
     fn entries_are_grouped_by_unit() {
-        let l = plan_chains(&project(alloc::vec![slot(0)], alloc::vec![slot(1), slot(0)])).unwrap();
+        let l = plan_chains(&project(
+            alloc::vec![slot(0)],
+            alloc::vec![slot(1), slot(0)],
+        ))
+        .unwrap();
         assert_eq!(l.entries_for(track_unit(0)).count(), 1);
         assert_eq!(l.entries_for(bus_unit(0)).count(), 2);
         assert_eq!(l.entries_for(track_unit(5)).count(), 0);

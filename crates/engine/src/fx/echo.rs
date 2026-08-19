@@ -157,7 +157,11 @@ impl Effect for EchoFx {
     }
 
     fn new(sample_rate: f32, _mem: &mut [f32]) -> Self {
-        let sr = if sample_rate > 0.0 { sample_rate } else { 48_000.0 };
+        let sr = if sample_rate > 0.0 {
+            sample_rate
+        } else {
+            48_000.0
+        };
         let t = 0.375 * sr;
         EchoFx {
             sample_rate: sr,
