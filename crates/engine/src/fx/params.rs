@@ -162,6 +162,16 @@ mod tests {
     /// Wilayah tidak boleh tumpang tindih: track penuh harus berhenti tepat
     /// sebelum bus, bus sebelum cadangan, dan seterusnya. Ini yang menangkap
     /// "tambah satu parameter per track" yang diam-diam memakan strip bus.
+    // Clippy melihat `assert!(<ekspresi konstanta>)` dan menyimpulkan ia akan
+    // dioptimasi habis. Yang dioptimasi habis hanya kasus BENARNYA — kalau
+    // konstantanya bergeser sehingga ekspresinya salah, assert-nya tetap
+    // meledak saat tes dijalankan, dan itu memang tugasnya di sini.
+    //
+    // (Bentuk `const _: () = assert!(...)` akan menangkapnya lebih awal lagi,
+    // yaitu saat kompilasi. Itu peningkatan tersendiri dan sengaja tidak
+    // dicampur ke sini, karena berarti memindahkan invarian keluar dari tes
+    // yang mendokumentasikannya.)
+    #[allow(clippy::assertions_on_constants)]
     #[test]
     fn regions_do_not_overlap() {
         assert_eq!(MAX_TRACKS * PARAMS_PER_TRACK, BUS_PARAM_BASE);
@@ -172,6 +182,8 @@ mod tests {
     }
 
     /// Slot terakhir tiap wilayah harus muat.
+    // Alasan sama dengan `regions_do_not_overlap` di atas.
+    #[allow(clippy::assertions_on_constants)]
     #[test]
     fn every_slot_stays_inside_its_region() {
         assert!(track_gain_slot(MAX_TRACKS - 1) < BUS_PARAM_BASE);

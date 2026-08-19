@@ -211,6 +211,15 @@ impl Effect for SpiralFx {
             // Luncuran eksponensial dengan batas laju. Batasnya yang mencegah
             // pointer baca menyusul pointer tulis — lihat catatan modul.
             let mut step = (self.target - self.cur) * self.glide_k;
+            // Clippy menyarankan `step.clamp(-MAX_SLEW, MAX_SLEW)`. `f32::clamp`
+            // PANIC kalau batasnya tidak terurut, dan aturan crate ini (docs/01
+            // §1c, diulang di komentar `ParamDesc::clamp`) melarang panic di
+            // jalur render — itu justru kenapa `clampf` ditulis tangan dan
+            // dipakai di mana-mana. Batas di sini memang konstanta, jadi panic
+            // itu tidak akan terjadi; tapi memakai API yang bisa panic di inner
+            // loop RT hanya karena "kebetulan aman di sini" adalah preseden yang
+            // salah untuk baris berikutnya yang menyalinnya.
+            #[allow(clippy::manual_clamp)]
             if step > MAX_SLEW {
                 step = MAX_SLEW;
             } else if step < -MAX_SLEW {
