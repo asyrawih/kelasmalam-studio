@@ -143,6 +143,17 @@ describe('membuka panel', () => {
     expect(document.querySelector('[data-grid-edit]')).toBeNull();
   });
 
+  it('kedua waveform tetap tergambar saat bilah terbuka — ia mendorong, bukan menutupi', () => {
+    // Bilah ini duduk di baris waveform. Kalau ia menutupi atau menggusur salah
+    // satu jalur, yang hilang justru gambar yang dipakai menilai apakah
+    // gridnya sudah pas.
+    render(<DjPage />);
+    const before = document.querySelectorAll('canvas').length;
+    openGrid();
+    expect(document.querySelectorAll('canvas').length).toBe(before);
+    expect(document.querySelector('[data-grid-edit="A"]')).not.toBeNull();
+  });
+
   it('Beat FX TIDAK ikut hilang — baris 4 bukan lagi slot rebutan', () => {
     render(<DjPage />);
     expect(screen.queryByText('BEAT FX')).not.toBeNull();
