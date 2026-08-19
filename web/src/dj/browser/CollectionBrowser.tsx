@@ -15,7 +15,7 @@
  *    sekali. Kolomnya tetap ada karena tempatnya memang di sana.
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { TEMPO_UNCERTAIN, useStudio } from '../../studio/store';
 import { formatDeckTime, type DeckId } from '../model';
@@ -23,6 +23,9 @@ import { djActions, useDj } from '../store';
 import { filterSort, rowsOf, type CollectionRow } from './collection';
 import { importFilesToDeck } from './dj-import';
 import { inspectRemoval, removeAssetFromLibrary } from './dj-remove';
+
+/** Berapa lama konfirmasi hapus tetap bersenjata sebelum batal sendiri. */
+const CONFIRM_MS = 5000;
 
 const HEAD: React.CSSProperties = {
   fontSize: '9px',
@@ -60,14 +63,12 @@ function RemoveCell({
   name,
   pending,
   onArm,
-  onCancel,
   onConfirm,
 }: {
   readonly assetId: number;
   readonly name: string;
   readonly pending: boolean;
   readonly onArm: () => void;
-  readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }): JSX.Element {
   const describe = (): string => {
@@ -90,12 +91,12 @@ function RemoveCell({
         if (pending) onConfirm();
         else onArm();
       }}
-      onPointerLeave={() => {
-        if (pending) onCancel();
-      }}
       style={{
         fontSize: '9px',
-        padding: '1px 6px',
+        // Lebar TETAP: tombol yang membesar saat bersenjata menggeser layout
+        // tepat pada momen tangan sedang menuju klik kedua.
+        width: '46px',
+        padding: '2px 0',
         fontFamily: 'var(--cy-font-mono)',
         color: pending ? 'var(--cy-text-on-accent)' : 'var(--cy-text-muted)',
         background: pending ? '#ff4d4d' : 'transparent',
@@ -124,12 +125,23 @@ export function CollectionBrowser(): JSX.Element {
    * Konfirmasi dua-langkah di dalam barisnya sendiri, bukan dialog: menghapus
    * lagu **tidak bisa dibatalkan** — byte aslinya ikut hilang dari IndexedDB,
    * dan kalau berkasnya sudah tidak ada di disk user, ia hilang untuk selamanya.
-   * Tapi dialog untuk setiap baris di daftar yang bisa berisi ratusan lagu
-   * adalah gangguan yang membuat orang berhenti membacanya, lalu mengklik OK
-   * tanpa melihat. Tombol yang berubah jadi "HAPUS?" di tempatnya menuntut
-   * gerakan kedua di posisi yang sama, dan itu cukup.
+   * Tapi dialog untuk daftar yang bisa berisi ratusan lagu adalah gangguan yang
+   * membuat orang berhenti membacanya, lalu mengklik OK tanpa melihat.
+   *
+   * ## Kenapa TIDAK dibatalkan saat pointer keluar
+   *
+   * Versi pertamanya membatalkan konfirmasi di `onPointerLeave`, dan itu
+   * membuat penghapusan praktis MUSTAHIL diselesaikan: sasarannya selebar 18 px,
+   * dan tangan hampir selalu bergeser sedikit di antara dua klik. Yang terlihat
+   * adalah `HAPUS?` yang berkedip kembali jadi `✕` berulang-ulang — sebuah
+   * tombol yang ditekan berkali-kali dan tidak pernah melakukan apa pun.
+   *
+   * Sekarang konfirmasinya bertahan sampai ditekan, ditekan di baris lain, atau
+   * kedaluwarsa sendiri. Batas waktu itu yang menggantikan peran "keluar":
+   * tombol berbahaya tidak boleh tinggal bersenjata tanpa batas.
    */
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
+  const [localNotice, setLocalNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const rows = useMemo(
@@ -151,10 +163,24 @@ export function CollectionBrowser(): JSX.Element {
     void importFilesToDeck([...files], null, sampleRate);
   };
 
+  // Konfirmasi kedaluwarsa sendiri. `pendingRemove` sengaja jadi dependensi:
+  // menekan baris LAIN memasang ulang hitungannya untuk baris itu.
+  useEffect(() => {
+    if (pendingRemove === null) return undefined;
+    const t = setTimeout(() => setPendingRemove(null), CONFIRM_MS);
+    return () => clearTimeout(t);
+  }, [pendingRemove]);
+
   const remove = (assetId: number): void => {
     void removeAssetFromLibrary(assetId).then((r) => {
       setPendingRemove(null);
-      djActions.setNotice(r.ok ? null : (r.reason ?? 'gagal menghapus'));
+      const message = r.ok ? null : (r.reason ?? 'gagal menghapus');
+      // Dua tempat, dan itu disengaja: baris status di baris FX adalah tempat
+      // SEMUA kegagalan berkumpul, tapi ia berada jauh di atas Collection —
+      // pesan yang muncul di sana saat user sedang menatap daftar lagu praktis
+      // tidak terbaca. Yang lokal muncul TEPAT di tempat perbuatannya.
+      setLocalNotice(message);
+      djActions.setNotice(message);
     });
   };
 
@@ -236,8 +262,19 @@ export function CollectionBrowser(): JSX.Element {
           }}
           style={{ display: 'none' }}
         />
-        <span style={{ fontSize: '9px', color: 'var(--cy-text-muted)', marginLeft: 'auto' }}>
-          jatuhkan berkas audio di mana saja di baris ini
+        <span
+          style={{
+            fontSize: '9px',
+            marginLeft: 'auto',
+            color: localNotice === null ? 'var(--cy-text-muted)' : '#ffb020',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            minWidth: 0,
+          }}
+          title={localNotice ?? undefined}
+        >
+          {localNotice ?? 'jatuhkan berkas audio di mana saja di baris ini'}
         </span>
       </div>
 
@@ -355,7 +392,6 @@ export function CollectionBrowser(): JSX.Element {
                       name={row.name}
                       pending={pendingRemove === row.asset.id}
                       onArm={() => setPendingRemove(row.asset.id)}
-                      onCancel={() => setPendingRemove(null)}
                       onConfirm={() => remove(row.asset.id)}
                     />
                   </td>
