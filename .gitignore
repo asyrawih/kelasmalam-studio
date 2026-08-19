@@ -34,3 +34,8 @@ Thumbs.db
 /.vercel/
 .vercel
 .env*
+
+# --- worktree Claude Code (folder kerja sementara, BUKAN isi repo) ---
+# Pernah ter-`git add -A` sebagai gitlink di ff0cebc dan muncul selamanya
+# sebagai "modified"; isinya sudah punya branch sendiri, tidak perlu dilacak.
+.claude/worktrees/
