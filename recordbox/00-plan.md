@@ -432,8 +432,8 @@ memang di sana) tapi dinonaktifkan dengan alasan yang terbaca ·
 |---|---|---|
 | PLAY / PAUSE | BANGUN | |
 | CUE (semantik CDJ: tahan = putar dari cue, lepas = balik) | BANGUN | tiga jalur di satu tabel tes |
-| Jog wheel — scrub | BANGUN | tarik mendatar = cari posisi |
-| Jog wheel — mode VINYL (scratch) | TIDAK | butuh AudioWorklet resampler; varispeed `playbackRate` tidak bisa mundur |
+| Jog wheel — scrub | BANGUN | tarik mendatar = cari posisi, **dan terdengar saat ditarik** — butir 90 ms yang bertindih, lewat channel strip deck itu (`audio/scrub-voice.ts`). Berlaku sama untuk tarikan pada waveform |
+| Jog wheel — mode VINYL (scratch) | TIDAK | scrub berbunyi sudah ada, tapi butirnya selalu maju. Memutar **balik** butuh AudioWorklet resampler; `playbackRate` negatif tidak diputar browser mana pun |
 | Pitch bend (◀◀ / ▶▶) | BANGUN | ±4% selama ditahan, menulis ke `deck.bend` — **bukan** ke tempo fader, supaya satu dorongan untuk menutup selisih milidetik tidak mengubah tempo lagu secara permanen |
 | Muat / keluarkan lagu dari deck | BANGUN | tombol ⏏ di baris info. Cue TIDAK ikut hilang — ia milik asset |
 | Tempo fader ±6 / ±10 / ±16 / WIDE | BANGUN | travel + range terpisah. **WIDE = ±100%**, bukan sekadar "lebih lebar"; di −100% lagu berhenti. Reset = klik-ganda angka % |

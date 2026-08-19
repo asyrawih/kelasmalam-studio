@@ -101,7 +101,7 @@ export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX
       title={
         editing
           ? 'GRID EDIT — tarik untuk menggeser grid; playhead tidak bergerak'
-          : 'tarik untuk mencari posisi · tahan Shift untuk menempel ke ketukan'
+          : 'tarik untuk mencari posisi — terdengar saat ditarik · tahan Shift untuk menempel ke ketukan'
       }
       onScrub={(phase, sourceAt: Samples) => {
         if (!editing) {

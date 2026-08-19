@@ -67,6 +67,7 @@ interface DeckSnapshot {
   readonly rate: number;
   readonly loopKey: string;
   readonly slip: boolean;
+  readonly scrubbing: boolean;
 }
 
 function loopKeyOf(d: DeckState): string {
@@ -82,6 +83,7 @@ function snapshotOf(d: DeckState): DeckSnapshot {
     rate: effectiveRate(d),
     loopKey: loopKeyOf(d),
     slip: d.slip,
+    scrubbing: d.scrubbing,
   };
 }
 
@@ -92,6 +94,7 @@ const EMPTY_SNAPSHOT: DeckSnapshot = {
   rate: 1,
   loopKey: '',
   slip: false,
+  scrubbing: false,
 };
 
 export class DjAudio {
@@ -227,15 +230,42 @@ export class DjAudio {
 
       if (next.slip !== prev.slip) player.setSlip(next.slip);
 
+      /*
+       * SCRUB MENGAPIT lompatan, dan urutannya adalah kontrak.
+       *
+       * Hari ini penarik waveform dan jog mengirim tanda scrub dan `seek`
+       * sebagai perubahan store yang TERPISAH, jadi keduanya tiba di sini
+       * sebagai dua penerapan dan urutan ini belum menanggung beban apa pun.
+       * Ia tetap ditulis begini karena satu aksi gabungan — `seek` dan tanda
+       * dalam satu `set` — adalah bentuk store yang lebih rapi dan kemungkinan
+       * besar akan ditulis. Pada hari itu, urutan tiga baris di bawah adalah
+       * satu-satunya yang menentukan apa yang terdengar:
+       *
+       *  - `beginScrub` SESUDAH cabang `seekEpoch` → laporan tangan pertama
+       *    masih melihat deck sebagai berjalan biasa dan menjadwalkan ulang
+       *    source utama: satu klik di awal setiap tarikan;
+       *  - `endScrub` SEBELUM cabang `seekEpoch` → source menyala di posisi
+       *    sebelum lompatan penutup, lalu lompatan itu menyalakannya lagi —
+       *    dua source dalam satu frame, dan lagunya lanjut dari tempat yang
+       *    salah.
+       *
+       * Keduanya dikunci di `scrub-transport.test.ts`; keduanya gagal senyap,
+       * tanpa satu pun error.
+       */
+      if (next.scrubbing && !prev.scrubbing) player.beginScrub();
+
       // Lompatan EKSPLISIT: hanya `seekEpoch` yang menandainya.
       if (next.seekEpoch !== prev.seekEpoch && next.assetId !== null) {
-        player.seek(deck.playhead);
+        if (next.scrubbing) player.scrubTo(deck.playhead);
+        else player.seek(deck.playhead);
       }
 
       if (next.playing !== prev.playing) {
         if (next.playing) player.play(deck.playhead);
         else player.pause();
       }
+
+      if (!next.scrubbing && prev.scrubbing) player.endScrub();
 
       this.last[id] = next;
       applyChannel(this.graph.channels[id], s.mixer.channels[id], now);

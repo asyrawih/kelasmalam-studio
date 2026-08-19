@@ -28,6 +28,37 @@ dibangun adalah harga yang salah.
 Konsekuensinya jujur: **scratch, reverse, dan key lock tetap tidak ada**, dan
 itu sama dengan yang sudah dijanjikan matriks sejak awal.
 
+### Yang tetap bisa dibunyikan tanpa membayar harga itu: SCRUB
+
+Menarik jog atau waveform sekarang **terdengar**. Bunyinya bukan dari source
+utama melainkan dari deretan butir 90 ms yang bertindih (`audio/scrub-voice.ts`),
+dan selama tangan menempel source utama justru **diredam**.
+
+Pembagian itu bukan penyederhanaan. `AudioBufferSourceNode` tidak bisa
+dipindahkan posisinya setelah `start()`, jadi "mengikuti tangan" dengan satu
+source berarti menjadwalkan source baru pada **setiap** `pointermove` — enam
+puluh potongan 16 ms per detik, masing-masing dengan tepi keras. Yang terdengar
+dari itu bukan lagu yang dicari melainkan dengung 60 Hz. Butir memecahkan
+persoalan itu dengan memisahkan laju tangan dari laju bunyi: tangan boleh
+melapor sesering apa pun, butirnya tetap paling rapat 45 ms sekali.
+
+Dua batasnya disebut apa adanya:
+
+- **Butir selalu maju.** Menarik mundur membunyikan materi di posisi baru, bukan
+  lagunya diputar balik — itu tetap butuh kursor float. Jadi ini menjawab
+  "materi apa yang ada di sini", bukan "seperti apa bunyinya kalau diputar
+  balik".
+- **Tangan yang DIAM tidak berbunyi.** Butir yang tetap dijadwalkan dari posisi
+  yang sama adalah satu nada 22 Hz yang stabil, bukan lagu.
+
+Butir masuk lewat **masukan channel strip yang sama** dengan source utama, jadi
+TRIM, EQ, COLOR, channel fader, CUE, dan crossfader semuanya berlaku. Ini
+berbeda dari scrub Studio, yang sengaja memintas EQ karena di sana rantainya
+harus dirakit ulang per butir. Di sini rantainya sudah berdiri permanen, dan
+memintasnya justru butuh kerja tambahan untuk hasil yang lebih buruk: DJ mencari
+titik cue dengan channel fader **turun** dan CUE menyala, dan scrub yang
+memintas fader akan menyemburkan lagu berikutnya ke ruangan.
+
 ---
 
 ## Posisi datang dari JANGKAR, bukan akumulasi
@@ -222,6 +253,6 @@ melakukan layout) melainkan ATURAN yang membuat pikselnya benar.
 | | Kenapa |
 |---|---|
 | **MASTER TEMPO / key lock** | Butuh time-stretch realtime. `docs/07 §8c` memilih WSOLA sendiri di Rust, tapi rencananya ditulis untuk **pre-render di worker** — dan itu tidak berlaku untuk deck DJ, karena tempo fader digerakkan saat lagunya berbunyi. Tombolnya ada, mati, dengan alasannya di `title` |
-| **Scratch / reverse / vinyl** | Butuh kursor float yang bisa membaca mundur; `AudioBufferSourceNode` tidak bisa, dan browser tidak memutar `playbackRate` negatif |
+| **Scratch / reverse / vinyl** | Scrub yang berbunyi sudah ada, tapi butirnya selalu maju. Memutar **balik** butuh kursor float yang bisa membaca mundur; `AudioBufferSourceNode` tidak bisa, dan browser tidak memutar `playbackRate` negatif |
 | **Deteksi KEY** | `crates/analysis` belum punya `detect_key`. Kolomnya `—`, bukan tebakan |
 | **SYNC fase / downbeat** | Yang disamakan baru tempo. Label tombolnya berbunyi `SYNC` tapi `title`-nya mengatakan batasnya |

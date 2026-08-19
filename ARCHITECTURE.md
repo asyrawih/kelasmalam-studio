@@ -102,8 +102,10 @@ Tambahan di luar daftar semula:
   daftar aksi.
 - Halaman ketiga `/dj`, mixer DJ 2 deck ala rekordbox — [recordbox/](recordbox/).
   Berbunyi lewat Web Audio (`web/src/dj/audio/`), memakai ulang `AudioContext`
-  dan cache PCM milik preview Studio. MASTER TEMPO, scratch, dan deteksi key
-  sengaja belum ada, dan halamannya mengatakan itu apa adanya.
+  dan cache PCM milik preview Studio. Menarik jog atau waveform terdengar —
+  scrub granular yang meredam source utama selama tangan menempel
+  (`dj/audio/scrub-voice.ts`). MASTER TEMPO, scratch (memutar balik), dan
+  deteksi key sengaja belum ada, dan halamannya mengatakan itu apa adanya.
 
 ## Quickstart
 

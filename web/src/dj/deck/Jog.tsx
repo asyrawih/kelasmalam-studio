@@ -6,9 +6,13 @@
  * dua lapisan compositing yang tidak menghasilkan apa pun yang tidak bisa
  * digambar dengan satu `arc`.
  *
- * Menyeretnya menggeser posisi (scrub). Belum ada scratch — itu butuh resampler
- * AudioWorklet yang bisa membaca mundur, dan `AudioBufferSourceNode` tidak bisa.
- * Karena itu tarikan di sini adalah SCRUB, dan `title`-nya mengatakan begitu.
+ * Menyeretnya menggeser posisi DAN membunyikan materi di bawah tangan — butir
+ * pendek yang bertindih, lihat `audio/scrub-voice.ts`. Yang masih belum ada
+ * adalah SCRATCH: butir selalu berjalan maju, jadi menarik mundur terdengar
+ * seperti mencari posisi, bukan seperti piringan yang diputar balik. Membaca
+ * mundur butuh resampler AudioWorklet berkursor-float, dan `AudioBufferSourceNode`
+ * tidak bisa. Karena itu tarikan di sini adalah SCRUB, dan `title`-nya
+ * mengatakan begitu.
  */
 
 import { useRef } from 'react';
@@ -85,7 +89,14 @@ export function Jog({ view, id, accent, size }: JogProps): JSX.Element {
   );
 
   const drag = useDrag<number>({
-    onStart: () => deck.playhead,
+    onStart: () => {
+      // Ditandai supaya lapisan audio meredam source utama dan menyerahkan
+      // bunyinya ke butir scrub — dan supaya `startSyncFollow` tidak memfase
+      // ulang deck sebelahnya pada tiap `pointermove`. Sama persis dengan yang
+      // dilakukan `DeckScrollingWave`; tanda yang sama, dua tangan berbeda.
+      if (deck.assetId !== null) djActions.setScrubbing(id, true);
+      return deck.playhead;
+    },
     onMove: (ctx, start) => {
       if (deck.assetId === null) return;
       // Tarik ke kanan = maju. Sumbu mendatar saja: memakai sudut sejati
@@ -93,12 +104,17 @@ export function Jog({ view, id, accent, size }: JogProps): JSX.Element {
       const delta = (ctx.dx / Math.max(1, ctx.rect.width)) * SEC_PER_TURN * deck.sampleRate;
       djActions.seek(id, start + delta);
     },
+    // Dilepas SETELAH `seek` terakhir dari `onMove`, bukan sebelum: `endScrub`
+    // yang menyalakan kembali source, dan ia harus menyala di posisi PENUTUP.
+    onEnd: () => {
+      if (deck.assetId !== null) djActions.setScrubbing(id, false);
+    },
   });
 
   return (
     <div
       {...drag}
-      title="tarik mendatar untuk mencari posisi — scratch belum ada (butuh resampler AudioWorklet)"
+      title="tarik mendatar untuk mencari posisi — terdengar saat ditarik; scratch (putar balik) belum ada"
       style={{
         position: 'relative',
         width: `${size}px`,
