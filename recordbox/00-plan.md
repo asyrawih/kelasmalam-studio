@@ -576,6 +576,7 @@ menjelaskan **kenapa**, bukan **apa**.
 | `recordbox/03-layout-komponen.md` | Pohon komponen + tabel mapping "elemen rekordbox → data model → aksi → state" meniru `docs/08-ui-mapping.md`; grid 100vh dan aturan degradasinya |
 | `recordbox/04-integrasi.md` | Diff `ScrollingWave`, ekstraksi `importBytesToAsset`, registry `asset-roots`, `loadLibraryIntoStore` — semua yang menyentuh kode yang sudah ada |
 | `recordbox/05-audio.md` | Rencana graf Web Audio D5–D8, `fxchain_set_tempo`, dan syarat MASTER TEMPO |
+| `recordbox/06-grid-edit.md` | Panel `[GRID EDIT]`: 11 kontrol rekordbox vs yang sudah ada, kunci-dua-titik sebagai jawaban Utang 3a, fase G1–G4, dan kenapa `[Dynamic]` ditunda |
 
 `ARCHITECTURE.md` mendapat satu baris di tabel index-nya yang menunjuk ke
 `recordbox/00-plan.md`, supaya folder ini tidak jadi dokumen yatim.
