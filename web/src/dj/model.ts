@@ -342,6 +342,15 @@ export interface DeckState {
   readonly slip: boolean;
 
   readonly sync: SyncRole;
+  /**
+   * true selama waveform deck ini SEDANG DITARIK.
+   *
+   * State sesi murni, tapi harus di store karena pembacanya bukan komponen yang
+   * menariknya: `startSyncFollow` memakainya untuk TIDAK memfase ulang follower
+   * pada tiap `pointermove`. Tanpa ini, satu tarikan di deck master
+   * menghasilkan puluhan lompatan di deck sebelahnya.
+   */
+  readonly scrubbing: boolean;
   readonly padMode: PadMode;
   /** Quantize per deck; PEMBAGIANNYA global (`DjState.quantizeDiv`). */
   readonly quantize: boolean;
@@ -360,6 +369,7 @@ export function emptyDeck(id: DeckId): DeckState {
     cueHeld: false,
     activeHotCue: null,
     slip: false,
+    scrubbing: false,
     loop: NO_LOOP,
     tempo: DEFAULT_TEMPO,
     bend: 1,

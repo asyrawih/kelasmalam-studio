@@ -142,6 +142,25 @@ Yang sengaja **tidak** memicu:
 - Lompatan follower sendiri — user sedang mengambil keputusan, bukan berbuat
   salah. **Quantize yang menjaganya**: setelah kedua grid sejajar, menempel ke
   grid sendiri berarti mendarat di ketukan leader juga.
+- **Tarikan waveform yang masih berlangsung.** Satu tarikan menghasilkan puluhan
+  `seek`; `DeckState.scrubbing` menahan langganan sampai jari diangkat, lalu
+  seluruh tarikan ditanggapi SEKALI.
+
+Dan satu batas yang lebih keras dari semuanya:
+
+> **Follower yang SEDANG BERBUNYI tidak pernah digeser.**
+
+Itu apa yang sedang didengar orang. Memindahkan posisinya karena user menyentuh
+deck *lain* berarti lagu yang mengudara melompat tanpa ada yang menyentuhnya.
+Mixxx boleh melakukannya karena ia mengoreksi lewat RATE beberapa persen —
+perubahan yang tidak terdengar sebagai lompatan; kita menggeser POSISI, dan
+lompatan posisi selalu terdengar. Fase follower yang berbunyi karena itu jadi
+keputusan user lewat tombol SYNC, dan `PhaseMeter` yang memberi tahu kapan
+perlu.
+
+Versi pertama fitur ini melewatkan kedua hal di atas, dan gejalanya persis:
+menarik waveform deck MASTER menyeret deck sebelahnya ikut berjalan, sambil
+menjadwalkan ulang audionya puluhan kali dalam satu gerakan tangan.
 
 ### Leader dan rentang
 

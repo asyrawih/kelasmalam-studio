@@ -782,6 +782,11 @@ export const djActions = {
    * state 60×/detik untuk angka yang hanya dibaca pada satu momen — saat slip
    * dilepas.
    */
+  /** Tandai bahwa waveform deck ini sedang ditarik. Lihat `DeckState.scrubbing`. */
+  setScrubbing(id: DeckId, v: boolean): void {
+    set((s) => patchDeck(s, id, (d) => (d.scrubbing === v ? d : { ...d, scrubbing: v })));
+  },
+
   toggleSlip(id: DeckId): void {
     set((s) => patchDeck(s, id, (d) => ({ ...d, slip: !d.slip })));
   },

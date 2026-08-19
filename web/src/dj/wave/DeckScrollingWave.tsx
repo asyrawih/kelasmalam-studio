@@ -105,7 +105,14 @@ export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX
       }
       onScrub={(phase, sourceAt: Samples) => {
         if (!editing) {
+          // Ditandai SELAMA tarikan supaya `startSyncFollow` tidak memfase ulang
+          // deck sebelahnya pada tiap `pointermove` — lihat `DeckState.scrubbing`.
+          if (phase === 'start') djActions.setScrubbing(deck.id, true);
           if (phase === 'move' || phase === 'end') djActions.seek(deck.id, sourceAt);
+          // Dilepas SETELAH `seek` terakhir, bukan sebelum: kalau dilepas dulu,
+          // langganan sync melihat tarikan sudah selesai lalu `seek` penutupnya
+          // datang belakangan sebagai lompatan kedua.
+          if (phase === 'end') djActions.setScrubbing(deck.id, false);
           return;
         }
 

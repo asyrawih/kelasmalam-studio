@@ -107,9 +107,22 @@ export function toggleSyncFor(id: DeckId): SyncResult {
  * LOMPATAN posisi. Yang berasal dari quantize tidak merusaknya — setelah kedua
  * grid sejajar, menempel ke grid sendiri berarti mendarat di ketukan leader
  * juga — jadi yang tersisa hanya lompatan tak-terkuantisasi dan seek leader.
+ *
+ * **Deck yang SEDANG BERBUNYI tidak pernah digeser.** Ini aturan yang tidak
+ * bisa ditawar dan bukan sekadar kehati-hatian: follower yang berbunyi adalah
+ * apa yang SEDANG DIDENGAR ORANG. Memindahkan posisinya karena user menyentuh
+ * deck LAIN berarti lagu yang sedang mengudara melompat tanpa ada yang
+ * menyentuhnya.
+ *
+ * Mixxx boleh melakukannya karena ia mengoreksi fase dengan menggeser RATE
+ * beberapa persen — perubahan yang tidak terdengar sebagai lompatan. Kita
+ * menggeser POSISI (lihat kepala `sync.ts` kenapa), dan lompatan posisi selalu
+ * terdengar. Konsekuensinya: fase follower yang berbunyi jadi tanggung jawab
+ * user lewat tombol SYNC, dan `PhaseMeter` yang memberi tahu kapan perlu.
  */
 export function resyncPhase(id: DeckId): void {
-  if (djStore.getState().decks[id].sync !== 'follower') return;
+  const deck = djStore.getState().decks[id];
+  if (deck.sync !== 'follower' || deck.playing) return;
   applySyncTo(id);
 }
 
@@ -163,6 +176,14 @@ export function startSyncFollow(): () => void {
       lastLeader = null;
       return;
     }
+
+    // Selama waveform leader DITARIK, tidak ada yang dikerjakan — dan `lastEpoch`
+    // sengaja TIDAK diperbarui. Satu tarikan menghasilkan puluhan `seek`; kalau
+    // tiap satu ditanggapi, deck sebelahnya ikut terseret dan lapisan audio
+    // menjadwalkan ulang puluhan kali dalam satu gerakan tangan. Dengan
+    // `lastEpoch` dibiarkan basi, tarikannya jadi SATU perubahan yang
+    // ditanggapi sekali saat jari diangkat.
+    if (s.decks[leaderId].scrubbing) return;
 
     const epoch = s.decks[leaderId].seekEpoch;
     const changed = leaderId === lastLeader && lastEpoch !== null && epoch !== lastEpoch;

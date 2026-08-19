@@ -188,7 +188,57 @@ describe('fase', () => {
 });
 
 describe('fase ulang saat LEADER melompat', () => {
-  it('follower ikut difase ulang', () => {
+  it('follower yang SEDANG BERBUNYI tidak pernah digeser', () => {
+    // Ini apa yang SEDANG DIDENGAR ORANG. Memindahkannya karena user menyentuh
+    // deck LAIN berarti lagu yang mengudara melompat tanpa ada yang
+    // menyentuhnya. Gejalanya dulu: menarik waveform deck master menyeret deck
+    // sebelahnya ikut jalan, dan menjadwalkan ulang audionya puluhan kali.
+    load('A', 1, 128);
+    load('B', 2, 128);
+    djActions.setMasterDeck('A');
+    toggleSyncFor('B');
+    djActions.play('B');
+
+    const stop = startSyncFollow();
+    try {
+      const before = s().decks.B.playhead;
+      const epoch = s().decks.B.seekEpoch;
+      for (let i = 1; i <= 30; i++) djActions.seek('A', SR * 10 + i * 700);
+      expect(s().decks.B.playhead).toBe(before);
+      expect(s().decks.B.seekEpoch).toBe(epoch);
+    } finally {
+      stop();
+    }
+  });
+
+  it('tarikan = SATU kali fase ulang saat jari diangkat, bukan satu per pointermove', () => {
+    load('A', 1, 128);
+    load('B', 2, 128);
+    djActions.setMasterDeck('A');
+    toggleSyncFor('B'); // B berhenti, jadi ia memang boleh digeser
+
+    const stop = startSyncFollow();
+    try {
+      const epoch = s().decks.B.seekEpoch;
+      djActions.setScrubbing('A', true);
+      for (let i = 1; i <= 30; i++) djActions.seek('A', SR * 10 + i * 700);
+      // Selama jari masih turun: belum ada apa-apa.
+      expect(s().decks.B.seekEpoch).toBe(epoch);
+
+      // Urutan `end` mengikuti `DeckScrollingWave`: `seek` penutup DULU, baru
+      // flag dilepas. Kebalikannya menghasilkan DUA fase ulang — sekali saat
+      // flag lepas, sekali lagi saat seek penutup datang.
+      djActions.seek('A', SR * 10 + 31 * 700);
+      djActions.setScrubbing('A', false);
+      // Tepat satu.
+      expect(s().decks.B.seekEpoch).toBe(epoch + 1);
+      expect(phaseErrorOf('B')!).toBeCloseTo(0, 3);
+    } finally {
+      stop();
+    }
+  });
+
+  it('follower yang BERHENTI ikut difase ulang', () => {
     load('A', 1, 128);
     load('B', 2, 128);
     djActions.setMasterDeck('B');
