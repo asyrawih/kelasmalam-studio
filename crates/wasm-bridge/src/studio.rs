@@ -435,11 +435,7 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
             sends: Vec::new(),
             eq,
             comp: Default::default(),
-            chain: map_chain(
-                &format!("Lane \"{}\"", lane.id),
-                &lane.chain,
-                &mut warnings,
-            ),
+            chain: map_chain(&format!("Lane \"{}\"", lane.id), &lane.chain, &mut warnings),
         });
 
         if !audible {
@@ -507,11 +503,8 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
             let chain_slot = if clip.chain.is_empty() {
                 None
             } else if clip_chains.len() < MAX_CLIP_CHAINS {
-                let mapped = map_chain(
-                    &format!("Clip \"{}\"", clip.id),
-                    &clip.chain,
-                    &mut warnings,
-                );
+                let mapped =
+                    map_chain(&format!("Clip \"{}\"", clip.id), &clip.chain, &mut warnings);
                 clip_chains.push(mapped);
                 Some((clip_chains.len() - 1) as u8)
             } else {
@@ -965,7 +958,9 @@ mod tests {
         let m = lane_with_chain(r#"[{ "kind": "flux-capacitor" }]"#);
         assert!(m.project.tracks[0].chain.is_empty());
         assert!(
-            m.warnings.iter().any(|w| w.contains("tidak dikenal engine")),
+            m.warnings
+                .iter()
+                .any(|w| w.contains("tidak dikenal engine")),
             "efek asing hilang tanpa peringatan: {:?}",
             m.warnings
         );
@@ -992,7 +987,10 @@ mod tests {
     fn missing_params_fall_back_to_catalog_defaults() {
         let m = lane_with_chain(r#"[{ "kind": "eq4", "params": { "b1_freq": 500 } }]"#);
         let slot = &m.project.tracks[0].chain[0];
-        let desc = daw_engine::fx::CATALOG.iter().find(|d| d.id == "eq4").unwrap();
+        let desc = daw_engine::fx::CATALOG
+            .iter()
+            .find(|d| d.id == "eq4")
+            .unwrap();
         assert_eq!(slot.params.len(), desc.params.len());
         assert_eq!(slot.params[1], 500.0);
         for (i, pd) in desc.params.iter().enumerate() {
@@ -1048,7 +1046,11 @@ mod tests {
                         "fadeInMs": 0, "fadeOutMs": 0, "fadeCurve": "linear" }] }]
         }"#;
         let mapping = mapping_from_json(json).unwrap();
-        assert_eq!(mapping.project.tracks[0].chain.len(), 1, "chain tidak ter-mapping");
+        assert_eq!(
+            mapping.project.tracks[0].chain.len(),
+            1,
+            "chain tidak ter-mapping"
+        );
 
         let bytes = mapping.project.to_bytes().unwrap();
         let mut engine = Engine::from_snapshot(&bytes, 48_000).unwrap();

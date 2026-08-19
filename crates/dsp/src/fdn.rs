@@ -163,7 +163,15 @@ impl Fdn8 {
         // non-RT, supaya inner loop tidak pernah perlu memeriksanya.
         let rt60 = clampf(if rt60_s.is_finite() { rt60_s } else { 2.0 }, 0.05, 60.0);
         self.size = clampf(if size.is_finite() { size } else { 1.0 }, 0.3, 1.0);
-        let depth = clampf(if mod_depth.is_finite() { mod_depth } else { 0.0 }, 0.0, 1.0);
+        let depth = clampf(
+            if mod_depth.is_finite() {
+                mod_depth
+            } else {
+                0.0
+            },
+            0.0,
+            1.0,
+        );
         self.mod_depth_samples = depth * MOD_MS * 0.001 * self.sample_rate;
 
         let total = rt60 * self.sample_rate;
@@ -229,7 +237,8 @@ impl Fdn8 {
     /// fungsi ini mengembalikan senyap alih-alih panic.
     #[inline]
     pub fn tick(&mut self, mem: &mut [f32], in_l: f32, in_r: f32) -> (f32, f32) {
-        let need = self.lines[FDN_LINES - 1].off as usize + self.lines[FDN_LINES - 1].mask as usize + 1;
+        let need =
+            self.lines[FDN_LINES - 1].off as usize + self.lines[FDN_LINES - 1].mask as usize + 1;
         if mem.len() < need {
             return (0.0, 0.0);
         }
@@ -313,7 +322,12 @@ mod tests {
         householder8(&mut y);
         householder8(&mut y);
         for i in 0..FDN_LINES {
-            assert!((y[i] - x[i]).abs() < 1e-5, "elemen {i}: {} vs {}", y[i], x[i]);
+            assert!(
+                (y[i] - x[i]).abs() < 1e-5,
+                "elemen {i}: {} vs {}",
+                y[i],
+                x[i]
+            );
         }
     }
 

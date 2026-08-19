@@ -519,7 +519,6 @@ impl Engine {
         self.config.clips.len()
     }
 
-
     pub fn rack(&self) -> &FxRack {
         &self.config.rack
     }
@@ -601,7 +600,7 @@ impl Engine {
                     fade_in: c.fade_in,
                     fade_out: c.fade_out,
                     fade_curve: c.fade_curve,
-                chain: c.chain_slot,
+                    chain: c.chain_slot,
                     speed: c.speed,
                 });
             }
@@ -852,7 +851,8 @@ impl Engine {
         // Gain reduction kompresor → meter.
         for i in 0..self.project.tracks.len().min(MAX_TRACKS) {
             let u = track_unit(i);
-            self.meters.set_gain_reduction(u, self.config.rack.gain_reduction(u));
+            self.meters
+                .set_gain_reduction(u, self.config.rack.gain_reduction(u));
         }
         if let Some(m) = self.project.master_bus() {
             self.meters.set_gain_reduction(

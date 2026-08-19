@@ -456,7 +456,10 @@ mod tests {
         assert!(!bad.is_valid(), "log dengan min=0 harus ditolak");
 
         // Default di luar rentang.
-        let bad = ParamDesc { default: 9.0, ..LIN };
+        let bad = ParamDesc {
+            default: 9.0,
+            ..LIN
+        };
         assert!(!bad.is_valid());
 
         // min > max.

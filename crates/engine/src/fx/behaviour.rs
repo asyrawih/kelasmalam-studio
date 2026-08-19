@@ -235,7 +235,10 @@ fn flanger_only_moves_when_depth_is_nonzero() {
 
     let still = envelope_spread(0.0);
     let moving = envelope_spread(4.0);
-    assert!(moving > still * 3.0 + 0.01, "flanger tidak menyapu: {still} vs {moving}");
+    assert!(
+        moving > still * 3.0 + 0.01,
+        "flanger tidak menyapu: {still} vs {moving}"
+    );
 }
 
 // ── REVERB ────────────────────────────────────────────────────────────────
@@ -275,7 +278,10 @@ fn reverb_decay_parameter_changes_the_tail_length() {
     }
     let short = tail_energy(400.0);
     let long = tail_energy(8_000.0);
-    assert!(long > short * 2.0, "decay tidak berpengaruh: {short} vs {long}");
+    assert!(
+        long > short * 2.0,
+        "decay tidak berpengaruh: {short} vs {long}"
+    );
 }
 
 // ── PITCH ─────────────────────────────────────────────────────────────────
@@ -302,7 +308,6 @@ fn pitch_up_one_octave_doubles_the_frequency() {
     );
 }
 
-
 #[test]
 fn pitch_down_one_octave_halves_the_frequency() {
     let mut rig = Rig::new(FxKind::Pitch);
@@ -323,7 +328,6 @@ fn pitch_down_one_octave_halves_the_frequency() {
     );
 }
 
-
 /// Nol semitone harus melewatkan nada apa adanya.
 #[test]
 fn pitch_at_zero_leaves_the_frequency_alone() {
@@ -339,7 +343,6 @@ fn pitch_at_zero_leaves_the_frequency_alone() {
         "0 st mengubah nada: {got} vs {want}"
     );
 }
-
 
 // ── FILTER (lihat juga tes di filter.rs) ──────────────────────────────────
 

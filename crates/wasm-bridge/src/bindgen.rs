@@ -674,4 +674,3 @@ pub fn detect_tempo(left: &[f32], right: &[f32], sample_rate: f32) -> Option<Tem
         beat_offset_sec: e.beat_offset_sec,
     })
 }
-

@@ -548,8 +548,16 @@ fn an_empty_chain_is_bit_identical_to_no_chain() {
 #[test]
 fn the_plan_and_the_rack_agree_on_node_numbering() {
     let chain = alloc::vec![
-        FxSlotDesc { kind: 0, bypass: false, params: eq_lowpass_params(500.0) },
-        FxSlotDesc { kind: 1, bypass: false, params: alloc::vec![-24.0, 8.0, 6.0, 10.0, 120.0, 0.0, 0.0, 0.0, 1.0] },
+        FxSlotDesc {
+            kind: 0,
+            bypass: false,
+            params: eq_lowpass_params(500.0)
+        },
+        FxSlotDesc {
+            kind: 1,
+            bypass: false,
+            params: alloc::vec![-24.0, 8.0, 6.0, 10.0, 120.0, 0.0, 0.0, 0.0, 1.0]
+        },
     ];
     let mut f = with_track_chain(chain);
     // `install_config` menunda swap ke awal blok berikutnya, jadi konfigurasi
@@ -573,9 +581,11 @@ fn the_plan_and_the_rack_agree_on_node_numbering() {
     // Dan tiap entri chain harus benar-benar diemit sebagai step.
     for e in &layout.entries {
         assert!(
-            f.engine.plan().steps.iter().any(
-                |s| matches!(*s, crate::plan::Step::Fx { node, .. } if node == e.node)
-            ),
+            f.engine
+                .plan()
+                .steps
+                .iter()
+                .any(|s| matches!(*s, crate::plan::Step::Fx { node, .. } if node == e.node)),
             "entri chain node {} tidak pernah diemit",
             e.node
         );
@@ -707,7 +717,10 @@ fn a_clip_chain_tail_outlives_the_clip() {
     let (l, _) = render_all(&mut f, 30_000, 128);
     // Jendela SETELAH clip berakhir tapi SEBELUM clip kedua (start 30_000).
     let tail = ac_rms(&l[22_000..28_000]);
-    assert!(tail > 1.0e-4, "ekor per-clip terpotong saat clip berakhir: {tail}");
+    assert!(
+        tail > 1.0e-4,
+        "ekor per-clip terpotong saat clip berakhir: {tail}"
+    );
 }
 
 /// Ekor yang selamat dari seek membuat render dari seek berbeda dari bounce
@@ -753,7 +766,6 @@ fn an_unreferenced_chain_slot_stays_silent() {
     let (fl, _) = render_all(&mut f, 8192, 128);
     assert_eq!(bl, fl, "slot tanpa clip mengubah audio");
 }
-
 
 /// Uji langsung klaim "jalan keluar per-clip tidak mengalokasi".
 ///

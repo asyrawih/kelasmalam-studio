@@ -125,8 +125,8 @@ pub fn param_map_json() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use daw_rt::MAX_TRACKS;
     use crate::snapshot::MAX_BUSES;
+    use daw_rt::MAX_TRACKS;
 
     /// JSON di atas ditulis tangan supaya bisa `no_std`; tes ini yang menjaga
     /// ia tidak berbohong. Kalau ada yang menggeser konstanta tanpa memperbarui

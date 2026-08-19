@@ -174,7 +174,11 @@ impl Effect for FilterFx {
     };
 
     fn new(sample_rate: f32, _mem: &mut [f32]) -> Self {
-        let sr = if sample_rate > 0.0 { sample_rate } else { 48_000.0 };
+        let sr = if sample_rate > 0.0 {
+            sample_rate
+        } else {
+            48_000.0
+        };
         let mut f = FilterFx {
             sample_rate: sr,
             lp_log2: Smoother::new(sr, 25.0, log2f(sr * 0.49)),
@@ -308,11 +312,17 @@ mod tests {
     fn turning_left_removes_highs_and_right_removes_lows() {
         let mut lp = FilterFx::new(SR, &mut []);
         let hi = run(&mut lp, -1.0, 0.0, &sine(8_000.0, 8192));
-        assert!(peak(&hi[4096..]) < 0.02, "lowpass penuh masih meloloskan 8 kHz");
+        assert!(
+            peak(&hi[4096..]) < 0.02,
+            "lowpass penuh masih meloloskan 8 kHz"
+        );
 
         let mut hp = FilterFx::new(SR, &mut []);
         let lo = run(&mut hp, 1.0, 0.0, &sine(60.0, 8192));
-        assert!(peak(&lo[4096..]) < 0.02, "highpass penuh masih meloloskan 60 Hz");
+        assert!(
+            peak(&lo[4096..]) < 0.02,
+            "highpass penuh masih meloloskan 60 Hz"
+        );
     }
 
     /// INI alasan dua biquad selalu terpasang, bukan satu yang ditukar jenisnya.
