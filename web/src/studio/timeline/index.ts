@@ -47,6 +47,8 @@ export {
   drawLoopedClipWave,
   drawPlaceholderWave,
   clipDetailGradient,
+  BAND_COLORS,
+  type BandColors,
   type WaveStyle,
 } from './waveform';
 export {
@@ -65,6 +67,8 @@ export {
 } from './fade';
 export {
   BUCKET_SIZES,
+  LOW_HZ,
+  HIGH_HZ,
   allocColumns,
   buildEnvelope,
   envelopeBytes,

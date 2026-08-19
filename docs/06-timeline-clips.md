@@ -458,6 +458,16 @@ ratusan juta pembacaan per frame — bukan lambat, mustahil.
 Pyramid memindahkan biaya itu ke waktu import dan membuat biaya render
 proporsional terhadap **lebar pixel**, bukan panjang audio.
 
+**DIVERGENSI YANG DIAKUI: pita frekuensi hanya ada di TypeScript.**
+`web/src/studio/timeline/envelope.ts` kini menyimpan `low`/`mid`/`high`
+(|puncak| per bucket setelah crossover 200 Hz / 2 kHz) supaya waveform DJ bisa
+berwarna seperti rekordbox; `peaks.rs` masih murni `MinMax`. Selama import
+berjalan lewat `decodeAudioData` di halaman, ini tidak menimbulkan dua sumber
+kebenaran — yang Rust belum pernah dipakai untuk menggambar. Begitu import
+pindah ke `audio/import-worker` dan pyramid dibangun di Rust, `build_pyramid`
+WAJIB ikut memancarkan ketiga pita, atau waveform akan kehilangan warnanya
+persis pada hari pipeline-nya "diperbaiki".
+
 **Min/max, bukan RMS atau abs-max.** Satu bucket digambar sebagai satu batang
 vertikal; yang benar secara visual adalah rentang yang ditempuh sinyal, `[min,max]`.
 `abs_max` menggambar waveform simetris palsu (sinyal asimetris seperti vokal dan

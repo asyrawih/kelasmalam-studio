@@ -13,7 +13,7 @@
 import { useRef } from 'react';
 
 import { useCanvasDraw } from '../../ui/lib/canvas';
-import { drawAssetWave, drawPlaceholderWave } from '../../studio/timeline/waveform';
+import { BAND_COLORS, drawAssetWave, drawPlaceholderWave } from '../../studio/timeline/waveform';
 import type { DeckView } from '../deck-view';
 import { HOT_CUE_SLOTS, type DeckId, type TrackCues } from '../model';
 import { djActions } from '../store';
@@ -39,12 +39,17 @@ export function DeckOverview({ view, cues, id, accent, height }: DeckOverviewPro
         return;
       }
 
+      // Berwarna per pita, sama seperti jendela besar. Di strip seluruh lagu
+      // inilah warna paling berguna: intro tanpa kick, breakdown, dan drop
+      // terbaca sebagai BLOK warna sebelum satu detik pun diputar — yang tidak
+      // bisa dilakukan siluet amber, karena ketiganya sama-sama "agak keras".
       drawAssetWave(ctx, asset, 0, frames, s.width, s.height, s.dpr, {
         outline: accent,
         body: accent,
         outlineAlpha: 0.3,
-        bodyAlpha: 0.62,
+        bodyAlpha: 0.92,
         centerLine: null,
+        bands: BAND_COLORS,
       });
 
       const x = (at: number): number => (at / frames) * s.width;
