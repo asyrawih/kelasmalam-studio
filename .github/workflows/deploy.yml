@@ -1,109 +1,75 @@
-# Build di CI, deploy hasil jadinya ke Vercel.
+# Rakit dan kirim hasil build ke Vercel. TIDAK membangun apa pun sendiri.
 #
-# Vercel TIDAK mem-build apa pun di sini (`--prebuilt`). Alasannya ada di
+# Vercel juga tidak mem-build (`--prebuilt`). Alasannya ada di
 # `scripts/vercel-build.sh`: engine butuh Rust nightly + rust-src +
 # wasm-bindgen-cli + binaryen, dan `-Z build-std` mengompilasi ulang `std`.
-# Toolchain itu memang sudah ada di CI untuk `cargo test`, jadi membangunnya
-# di sini gratis; memasangnya di build image Vercel tidak.
+# Build image Vercel tidak punya semua itu.
+#
+# KENAPA WORKFLOW INI TIDAK PUNYA PEMICUNYA SENDIRI:
+# dulu ia dipicu `push: [main]`, pemicu yang sama dengan ci.yml, dan mengulang
+# seluruh isi CI — cargo test, build WASM, tsc, vitest — di runner terpisah.
+# Dua pipeline, pekerjaan yang sama, ~4 menit runner terbuang tiap commit, dan
+# keduanya buta terhadap hasil satu sama lain (CI merah + deploy hijau pernah
+# terjadi pada commit yang sama).
+#
+# Sekarang ia `workflow_call` yang dipanggil ci.yml lewat `needs:`, jadi:
+#   - tidak mungkin jalan sebelum native + wasm + web hijau;
+#   - artefak yang di-deploy adalah artefak yang BARU SAJA DIUJI, diambil dari
+#     run yang sama lewat download-artifact — bukan hasil build ulang yang
+#     kebetulan mirip.
+# Yang tersisa di sini hanyalah merakit `.vercel/output` dan mengirimnya.
 name: deploy
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
     inputs:
       production:
         description: 'Deploy ke produksi (bukan preview)'
         type: boolean
         default: false
 
-concurrency:
-  # Deploy tidak boleh saling menyalip: dua build paralel bisa membuat
-  # deployment yang lebih lama menimpa yang lebih baru.
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
+    concurrency:
+      # Deploy tidak boleh saling menyalip: dua build paralel bisa membuat
+      # deployment yang lebih lama menimpa yang lebih baru.
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 
-      # ── Toolchain ──────────────────────────────────────────────────────────
-      # Versi nightly dibaca dari rust-toolchain.toml, jadi tidak ada dua tempat
-      # yang menyebut versi dan bisa berselisih.
-      - name: Rust toolchain
-        run: |
-          rustup show active-toolchain || rustup toolchain install
-          rustup component add rust-src
-          rustup target add wasm32-unknown-unknown
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      # Perkakas dibangun dengan toolchain STABIL, bukan nightly project:
-      # dependensi transitifnya menuntut rustc lebih baru dari pin kita.
-      - run: rustup toolchain install stable --profile minimal
-
-      - name: wasm-bindgen CLI
-        run: |
-          # Versinya HARUS sama persis dengan crate wasm-bindgen; kalau beda,
-          # glue yang dihasilkan tidak cocok dengan section __wbindgen di .wasm.
-          WANT="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
-          HAVE="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
-          if [ "$HAVE" != "$WANT" ]; then
-            cargo +stable install wasm-bindgen-cli --version "$WANT" --locked --force
-          fi
-
-      - name: binaryen (wasm-opt)
-        run: sudo apt-get update && sudo apt-get install -y binaryen
-
+      # Hanya untuk menjalankan `npx vercel`. Tidak ada `npm ci` di sini —
+      # frontend-nya sudah jadi, dependensinya tidak dibutuhkan lagi.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      # ── Gate ───────────────────────────────────────────────────────────────
-      # Deploy hanya boleh jalan kalau tesnya hijau. Menemukan regresi lewat
-      # aplikasi yang sudah live adalah cara paling mahal untuk mengetahuinya.
-      - name: Test Rust
-        # `daw-native-host` DIKECUALIKAN dengan sengaja: ia binari debugging
-        # desktop (cpal → alsa-sys) yang tidak pernah ikut ke build web, dan
-        # menyertakannya berarti memasang pustaka ALSA di runner hanya untuk
-        # sesuatu yang tidak di-deploy. CI penuh (ci.yml) tetap mengujinya.
-        run: cargo test --workspace --exclude daw-native-host
+      # Kedua artefak berasal dari run CI yang sama dengan yang memanggil
+      # workflow ini, jadi tidak perlu run-id maupun token lintas-workflow.
+      - name: Ambil artefak WASM
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: web/src/wasm/
 
-      # Artefak WASM dibangun SEBELUM tes web: tes integrasi Node memuat
-      # `web/src/wasm/st/engine_bg.wasm` yang sungguhan, jadi tanpa langkah ini
-      # suite-nya gagal dengan "Does the file exist?" — bukan karena kodenya
-      # salah, tapi karena belum ada yang membangunnya.
-      - name: Build WASM
-        run: ./scripts/build-wasm.sh
+      - name: Ambil hasil build frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
 
-      - name: Install web deps
-        working-directory: web
-        run: npm ci
-
-      - name: Typecheck + test web
-        working-directory: web
-        run: |
-          npx tsc --noEmit
-          npx vitest run
-
-      # ── Build + deploy ─────────────────────────────────────────────────────
-      - name: Build .vercel/output
+      # SKIP_WASM + SKIP_WEB_BUILD: keduanya sudah ada, diunduh di atas. Yang
+      # dikerjakan skrip di sini tinggal gerbang ukuran, verifikasi worklet, dan
+      # perakitan .vercel/output — semuanya berjalan atas berkas yang persis
+      # akan dikirim.
+      - name: Rakit .vercel/output
         env:
-          SKIP_WASM: '1' # sudah dibangun di langkah "Build WASM" di atas
+          SKIP_WASM: '1'
+          SKIP_WEB_BUILD: '1'
         run: ./scripts/vercel-build.sh
 
       - name: Deploy
@@ -111,15 +77,16 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          PRODUCTION: ${{ inputs.production }}
         run: |
+          set -euo pipefail
           if [ -z "${VERCEL_TOKEN:-}" ]; then
             echo "VERCEL_TOKEN belum diset — lewati deploy." >&2
-            echo "Artefak tetap dibangun dan diverifikasi." >&2
+            echo "Artefak tetap dirakit dan diverifikasi." >&2
             exit 0
           fi
           PROD=""
-          if [ "${{ github.event_name }}" = "push" ] || \
-             [ "${{ inputs.production }}" = "true" ]; then
+          if [ "$PRODUCTION" = "true" ]; then
             PROD="--prod"
           fi
           npx --yes vercel@latest deploy --prebuilt $PROD --token "$VERCEL_TOKEN" --yes
