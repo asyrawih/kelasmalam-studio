@@ -1,31 +1,28 @@
 /**
- * Panel GRID EDIT — popup yang duduk DI DALAM deck yang sedang disunting.
+ * Panel GRID EDIT — bilah kontrol yang duduk TEPAT DI ATAS waveform besar.
  *
- * ## Kenapa popup, dan kenapa di sini
+ * ## Kenapa di sini, dan bukan lagi popup di dalam deck
  *
- * Versi pertama menumpang baris 4 menggantikan Beat FX. Itu bekerja, tapi salah
- * tempat: kontrolnya berada sejauh setengah layar dari waveform dan dari angka
- * BPM yang sedang dikoreksi, padahal satu-satunya alasan panel ini dibuka
- * adalah karena ada yang salah PADA DECK ITU. Mata harus bolak-balik antara dua
- * ujung layar untuk satu pekerjaan.
+ * Yang sedang dikoreksi adalah garis grid, dan garis grid hanya terlihat di
+ * waveform besar. Panel yang duduk di deck — setengah layar di bawahnya —
+ * memaksa mata bolak-balik antara tombol dan akibatnya untuk tiap 1 ms.
+ * rekordbox menaruh bilah ini menempel pada waveform yang disunting, dan
+ * alasannya sama.
  *
- * Sekarang ia melayang di deck yang bersangkutan, dan baris 4 kembali jadi Beat
- * FX seutuhnya — tidak ada lagi dua fitur yang berebut satu baris.
+ * Versi sebelumnya popup melayang di dalam deck karena satu batasan yang kini
+ * sudah hilang: dulu menarik waveform besar berarti MENGGESER GRID, jadi
+ * satu-satunya cara berpindah posisi adalah strip lagu-penuh di deck, dan panel
+ * tidak boleh menutupinya. Sejak tarikan kembali berarti "cari posisi"
+ * (`gridEdit.drag`), syarat itu lenyap — dan bersamanya alasan panel ini berada
+ * jauh dari barang yang diurusnya.
  *
- * ## Kenapa menempel di BAWAH, dan kenapa tanpa backdrop
+ * ## Ia MENDORONG, bukan menutupi
  *
- * Ini bukan selera tata letak, melainkan syarat alur kerjanya. Menyetel grid
- * butuh MEMINDAHKAN PLAYHEAD berkali-kali — ke kick pertama, lalu ke drop
- * terakhir — dan di dalam mode grid, menarik waveform besar menggeser GRID,
- * bukan posisi. Jadi satu-satunya cara berpindah posisi tanpa keluar dari mode
- * adalah mengklik `DeckOverview`, strip lagu-penuh di bagian atas deck.
- *
- * Popup yang menutup seluruh deck — atau yang datang dengan backdrop gelap yang
- * menangkap klik — menutup strip itu juga, dan alur kerjanya jadi mustahil
- * diselesaikan tanpa membuka-tutup panel di antara tiap langkah. Karena itu ia
- * berhenti tepat di bawah strip, dan tidak ada backdrop sama sekali: yang
- * tertutup hanya pad, transport, dan jog, dan ketiganya memang tidak dipakai
- * saat menyetel grid.
+ * Bilah ini bagian dari tata letak baris waveform, bukan lapisan di atasnya.
+ * Waveform menyusut selama panel terbuka. Overlay akan menutup materi yang
+ * justru sedang dibaca user untuk menilai apakah gridnya sudah pas — dan
+ * menyembunyikan bukti tepat saat seseorang mencarinya adalah kegagalan yang
+ * tidak sebanding dengan beberapa piksel yang dihemat.
  *
  * ## Panel ini TIDAK menyimpan grid
  *
@@ -141,14 +138,14 @@ const LABEL: CSSProperties = {
 };
 
 /**
- * Tinggi yang DIJAMIN tetap terlihat di atas panel, piksel.
+ * Batas tinggi bilah, piksel.
  *
- * Cukup untuk baris BPM plus strip lagu-penuh pada band tertinggi — keduanya
- * harus tetap bisa diklik selama panel terbuka (lihat kepala berkas). Angkanya
- * dilebihkan sedikit; salah di sisi ini hanya membuat panel lebih pendek,
- * sedangkan salah di sisi lain membuat alur kerjanya buntu.
+ * Ia MENDORONG waveform, jadi tanpa batas ini layar pendek bisa berakhir dengan
+ * panel penuh tombol dan waveform setinggi beberapa piksel — yaitu kehilangan
+ * satu-satunya benda yang membuat panel ini berguna. Setelah batas tercapai
+ * bilahnya menggulir sendiri.
  */
-const KEEP_CLEAR_PX = 104;
+const MAX_BAR_HEIGHT_PX = 132;
 
 /** `112.418` → `01:52.418`. Anchor pantas dibaca sampai milidetik: itu satuan
  *  kerjanya, dan `formatClock` yang membulatkan ke detik menyembunyikannya. */
@@ -160,22 +157,41 @@ function formatAnchor(sec: number): string {
   return `${sign}${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
-function Row({ children }: { readonly children: ReactNode }): JSX.Element {
+/**
+ * Satu KELOMPOK kontrol di dalam bilah.
+ *
+ * `flexShrink: 0` bukan hiasan: kelompok yang boleh menyusut akan meremas
+ * tombol jadi lebih sempit daripada labelnya sebelum bilahnya membungkus, dan
+ * yang terlihat adalah deretan tombol yang terpotong, bukan baris kedua.
+ */
+function Row({
+  children,
+  push,
+}: {
+  readonly children: ReactNode;
+  readonly push?: boolean;
+}): JSX.Element {
   return (
     <div
-      style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', minWidth: 0 }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        flexShrink: 0,
+        marginLeft: push === true ? 'auto' : undefined,
+      }}
     >
       {children}
     </div>
   );
 }
 
-export interface GridEditPopupProps {
-  /** Deck tempat popup ini digambar. */
+export interface GridEditBarProps {
+  /** Deck yang grid-nya sedang disunting. */
   readonly id: DeckId;
 }
 
-export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
+export function GridEditBar({ id }: GridEditBarProps): JSX.Element | null {
   const open = useDj((s) => s.gridEdit.deck === id);
   const zoomBars = useDj((s) => s.gridEdit.zoomBars);
   const fine = useDj((s) => s.gridEdit.fine);
@@ -243,30 +259,23 @@ export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
        */
       onPointerDown={(e) => e.stopPropagation()}
       style={{
-        position: 'absolute',
-        left: '6px',
-        right: '6px',
-        bottom: '6px',
-        // Batas atasnya: sisa tinggi deck. Baris BPM dan strip lagu-penuh di
-        // atasnya TIDAK pernah tertutup — lihat catatan di kepala berkas.
-        maxHeight: `calc(100% - ${KEEP_CLEAR_PX}px)`,
-        overflowY: 'auto',
-        zIndex: 5,
         display: 'flex',
-        flexDirection: 'column',
-        gap: '5px',
-        padding: '7px',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        // Kolom, bukan baris tunggal: pada layar sempit kontrolnya membungkus,
+        // dan `MAX_BAR_HEIGHT_PX` menjaga waveform tetap punya tempat kalau ia
+        // membungkus lebih jauh daripada yang muat.
+        gap: '4px 10px',
+        maxHeight: `${MAX_BAR_HEIGHT_PX}px`,
+        overflowY: 'auto',
+        flexShrink: 0,
+        padding: '5px 7px',
         background: 'var(--cy-surface-2)',
-        border: `1px solid ${accent}`,
-        boxShadow: '0 6px 24px #000a',
+        borderBottom: `1px solid ${accent}`,
       }}
     >
       <Row>
         <span style={{ ...LABEL, color: accent, fontSize: '10px' }}>GRID · DECK {id}</span>
-        <div style={{ flex: 1, minWidth: '4px' }} />
-        <Button variant="ghost" onClick={() => djActions.closeGridEdit()} title="tutup (Esc)">
-          ✕
-        </Button>
       </Row>
 
       {blocked !== null ? (
@@ -484,6 +493,11 @@ export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
           }
         >
           {locked ? '🔒' : '🔓'}
+        </Button>
+      </Row>
+      <Row push>
+        <Button variant="ghost" onClick={() => djActions.closeGridEdit()} title="tutup (Esc)">
+          ✕
         </Button>
       </Row>
     </div>

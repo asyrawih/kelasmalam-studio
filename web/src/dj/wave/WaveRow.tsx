@@ -11,6 +11,8 @@
  */
 
 import { DECK_ACCENT, type DeckId } from '../model';
+import { GridEditBar } from '../grid/GridEditBar';
+import { useDj } from '../store';
 import type { DeckView } from '../deck-view';
 import { DeckScrollingWave } from './DeckScrollingWave';
 
@@ -19,17 +21,35 @@ export interface WaveRowProps {
 }
 
 export function WaveRow({ views }: WaveRowProps): JSX.Element {
+  /*
+   * Bilah GRID EDIT hidup DI SINI, bukan di dalam deck: yang sedang dikoreksi
+   * adalah garis grid, dan garis grid hanya terlihat di baris ini. Ia mendorong
+   * kedua jalur waveform ke bawah alih-alih menutupinya — lihat kepala
+   * `GridEditBar.tsx`.
+   */
+  const gridDeck = useDj((s) => s.gridEdit.deck);
+
   return (
     <div
       style={{
-        display: 'grid',
-        gridTemplateRows: 'minmax(0,1fr) minmax(0,1fr)',
+        display: 'flex',
+        flexDirection: 'column',
         height: '100%',
         minHeight: 0,
-        gap: '1px',
         background: 'var(--cy-border)',
       }}
     >
+      {gridDeck === null ? null : <GridEditBar id={gridDeck} />}
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: 'minmax(0,1fr) minmax(0,1fr)',
+          flex: 1,
+          minHeight: 0,
+          gap: '1px',
+        }}
+      >
       {(['A', 'B'] as const).map((id) => (
         <div
           key={id}
@@ -67,8 +87,9 @@ export function WaveRow({ views }: WaveRowProps): JSX.Element {
               pointerEvents: 'none',
             }}
           />
-        </div>
-      ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

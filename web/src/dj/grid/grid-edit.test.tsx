@@ -129,13 +129,15 @@ function button(re: RegExp): HTMLElement {
 }
 
 describe('membuka panel', () => {
-  it('popup muncul DI DALAM deck yang disunting, bukan di deck sebelahnya', () => {
+  it('bilah muncul di baris waveform dan menyebut deck yang disunting', () => {
+    // Bukan di dalam deck: yang dikoreksi adalah garis grid, dan garis grid
+    // hanya terlihat di waveform besar.
     render(<DjPage />);
     expect(document.querySelector('[data-grid-edit]')).toBeNull();
 
     openGrid();
-    expect(document.querySelector('[data-dj-deck="A"] [data-grid-edit]')).not.toBeNull();
-    expect(document.querySelector('[data-dj-deck="B"] [data-grid-edit]')).toBeNull();
+    expect(document.querySelector('[data-dj-deck="A"] [data-grid-edit]')).toBeNull();
+    expect(document.querySelector('[data-grid-edit="A"]')).not.toBeNull();
 
     openGrid();
     expect(document.querySelector('[data-grid-edit]')).toBeNull();
