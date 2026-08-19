@@ -420,3 +420,94 @@ segmen), beat jump, dan tampilan BPM di deck. Perkirakan pekerjaan segmen itu
    **Cabut cue, dengarkan master: senyap.**
 8. Refresh. Grid, kunci, dan zoom bertahan. Buka `/studio`, Clip Detail lagu
    yang sama: grid-nya identik.
+
+---
+
+## 10. Yang benar-benar dibangun (G1–G4 selesai)
+
+Dokumen di atas adalah rencananya; bagian ini mencatat hasilnya, termasuk yang
+menyimpang dari rencana dan alasannya. Semuanya lulus `tsc --noEmit`,
+`vitest run` (991 tes, 90 berkas), dan `vite build`.
+
+### Berkas
+
+| Berkas | Isi |
+|---|---|
+| `studio/analysis/grid-edit.ts` | matematika murni: `rawAnchorSec`, `setDownbeatAt`, `nudgeAnchor`, `setBpm`, `widenBeat`, `shiftOctave`, `fitBpmToPoint`, `barsBetween`, `nearestBarSec`, `currentBpm` |
+| `studio/analysis/tap-tempo.ts` | `tapTempo` (median + kunci oktaf), `trimTapRun` |
+| `dj/grid/grid-ops.ts` | lapisan keputusan: satu pintu untuk panel, keyboard, dan tes |
+| `dj/grid/grid-history.ts` | undo/redo per asset, 32 entri, langganan sendiri |
+| `dj/grid/GridEditBar.tsx` | panel baris 4 |
+| `dj/audio/metronome.ts` | penjadwal klik dengan jam audio |
+| + 4 berkas tes | 29 + 14 + 17 + 10 tes |
+
+### Semua 11 kontrol rekordbox, dan di mana
+
+| # | Kontrol | Di sini |
+|---|---|---|
+| 1 | downbeat di posisi ini | `SET DI SINI` · `shift+G` — menempel ke garis bar terdekat dalam 30 ms |
+| 2 | ketik BPM | kotak BPM, **tiga angka di belakang koma** |
+| 3 | TAP | `TAP` · `shift+T` |
+| 4 | geser grid ±1 ms | `◀ ▶` (0.1 ms saat `FINE`) |
+| 5 | renggang/rapat ±1 ms | `− +` (3 ms saat `FINE`) |
+| 6 | ×2 / ÷2 | `×2 ÷2` — menulis ke `bpmOverride`, bukan `tempoOctave` |
+| 7 | cakupan seluruh-lagu vs dari-sini | **tidak** — `[Dynamic]` ditunda (§3, §8) |
+| 8 | set ulang grid dari posisi ini | diganti **`PAS DI SINI`** · `shift+F` (§3) |
+| 9 | undo / redo | `UNDO REDO`, per asset |
+| 10 | metronom + 3 volume | `METRO ✕ ▁ ▃ █` |
+| 11 | Analysis Lock | `🔒`, menjaga tiga aksi store |
+
+Plus yang tidak ada di panel rekordbox: **menarik waveform menggeser grid**, dan
+**zoom 1/2/4/8 bar** pada deck yang sedang disunting.
+
+### Enam penyimpangan dari rencana
+
+1. **Tombol GRID duduk di `DeckReadout`, bersebelahan dengan angka BPM** — bukan
+   di header. Panelnya sendiri tidak bisa jadi tempat menyalakannya, dan BPM
+   adalah angka yang salah saat seseorang merasa perlu membukanya. Ia memakai
+   gaya tombol kecil `DeckReadout`, bukan `Button` 32 px, supaya baris itu tidak
+   tumbuh di layar yang tidak menggulir.
+2. **Klik metronom masuk ke `cueLevel`, bukan ke `cueSide`.** Lewat `cueSide` ia
+   ikut hilang saat `[MIX]` digeser penuh ke MASTER — padahal ia bukan bagian
+   dari lagu yang dimonitor, melainkan alat ukur di atasnya. Aturan "tidak pernah
+   ke master" tetap dijamin TOPOLOGI: `cueLevel` hanya tersambung ke `cueOut`,
+   dan `dj-graph.test.ts` mengunci ketiadaan jalan itu.
+3. **`MIN_FIT_BARS = 8`.** Di bawah itu `PAS DI SINI` menolak dengan kalimat yang
+   menyebut jaraknya sekarang. Delapan bar belum masuk anggaran ±0.0089 BPM —
+   yang masuk adalah jarak beberapa menit — tapi setidaknya ia perbaikan, bukan
+   kerusakan.
+4. **`resetAssetBeatGrid` sekarang ikut membuang `tempoOctave`.** Ini utang §7
+   yang dilunasi, dan ia mengubah perilaku tombol AUTO di Studio juga — memang
+   itu maksudnya.
+5. **Kunci analisis menjaga TIGA aksi store** (`setAssetBeatGrid`,
+   `resetAssetBeatGrid`, `markAssetTempoPending`), bukan hanya AUTO. Penjagaan
+   di store adalah CADANGAN; UI mematikan kontrolnya lebih dulu, karena setter
+   yang diam-diam mengabaikan tulisan adalah kegagalan yang paling sulit dilacak.
+6. **Hanya empat chord keyboard** — `G`, `shift+G`, `shift+F`, `shift+T`. Sisanya
+   lewat command palette. Registry keymap tidak punya konsep MODE, jadi chord
+   apa pun berlaku sama saja apakah panelnya terbuka atau tidak; mengikat lebih
+   banyak berarti merampas tombol transport demi pekerjaan yang dilakukan sekali
+   per lagu. `AUTO` sengaja tanpa chord, alasan yang sama dengan
+   `dj.browse.remove`.
+
+### Yang dijaga tes, dan tidak bisa dilihat dari kode
+
+- **Tanda tarikan** — menarik ke kiri menggeser grid ke kiri, dan playhead tidak
+  bergerak sepiksel pun (`dj/grid/grid-edit.test.tsx`).
+- **Anggaran presisi** — `fitBpmToPoint` dengan galat tangan 10 ms pada jarak
+  300 detik menghasilkan < 0.0089 BPM, sedangkan satu langkah renggang 1 ms
+  menggerakkan BPM 0.27. Keduanya dikunci angka.
+- **Loop yang berputar tidak melompat** saat BPM diubah — janji yang dibaca user
+  sebagai kalimat peringatan di layar.
+- **Satu entri undo per gestur**, bukan per `pointermove`.
+- **Metronom tidak punya jalan apa pun** ke `destination`, `master`, maupun
+  `masterFxIn`.
+- **rAF 60×/detik tidak menghasilkan 60 klik per ketukan.**
+
+### Yang masih terbuka
+
+- `[Dynamic]` / multi-marker (§8) — belum, dan sengaja.
+- Presisi detektor (Utang 3a) — Grid Edit adalah katup pengamannya, bukan
+  perbaikannya. `PAS DI SINI` membuat kegagalan detektor tidak lagi buntu.
+- Fase grid yang bergantung browser (Utang 3b) — `beatOffsetOverride` menyerapnya
+  dengan tangan; perbaikan sesungguhnya ada di jalur decode.

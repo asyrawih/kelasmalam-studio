@@ -74,6 +74,13 @@ export interface DjGraph {
   readonly masterSide: GainNode;
   /** Volume headphone keseluruhan. */
   readonly cueLevel: GainNode;
+  /**
+   * Klik metronom. Tersambung ke `cueLevel` SAJA — lihat aturan di kepala
+   * `metronome.ts`. Ia sengaja TIDAK lewat `cueSide`, supaya klik tetap
+   * terdengar walau `[MIX]` digeser penuh ke MASTER: ia bukan bagian dari
+   * lagu yang sedang dimonitor, melainkan alat ukur di atasnya.
+   */
+  readonly metronome: GainNode;
   readonly cueOut: MediaStreamAudioDestinationNode | null;
 }
 
@@ -161,8 +168,12 @@ export function buildDjGraph(ctx: AudioContext): DjGraph {
   masterSide.gain.value = 0;
   cueLevel.gain.value = 0;
 
+  const metronome = ctx.createGain();
+  metronome.gain.value = 0;
+
   cueBus.connect(cueSide);
   cueSide.connect(cueLevel);
+  metronome.connect(cueLevel);
   master.connect(masterSide);
   masterSide.connect(cueLevel);
 
@@ -197,6 +208,7 @@ export function buildDjGraph(ctx: AudioContext): DjGraph {
     cueSide,
     masterSide,
     cueLevel,
+    metronome,
     cueOut,
   };
 }

@@ -22,6 +22,7 @@ function asset(id: number): StudioAsset {
     tempoOctave: 0,
     bpmOverride: null,
     beatOffsetOverride: null,
+    analysisLock: false,
   };
 }
 
@@ -65,7 +66,18 @@ describe('serialisasi project', () => {
     studioActions.setAssetBeatGrid(1, { bpm: 128, offsetSec: 0.25 });
 
     const back = deserialize(serialize(studioStore.getState()));
-    expect(back!.assetGrids).toEqual({ 1: { bpm: 128, offsetSec: 0.25 } });
+    expect(back!.assetGrids).toEqual({ 1: { bpm: 128, offsetSec: 0.25, lock: false } });
+  });
+
+  it('lagu yang DIKUNCI ikut tersimpan walau grid-nya tidak pernah dikoreksi', () => {
+    // Mengunci tanpa mengoreksi adalah keadaan yang sah — artinya "hasil
+    // deteksinya sudah benar, jangan disentuh lagi". Kalau syarat penyimpanan
+    // hanya melihat kedua override, kunci itu hilang tiap refresh.
+    studioActions.registerAsset(asset(1));
+    studioActions.setAnalysisLock(1, true);
+
+    const back = deserialize(serialize(studioStore.getState()));
+    expect(back!.assetGrids).toEqual({ 1: { bpm: null, offsetSec: null, lock: true } });
   });
 
   it('project lama tanpa assetGrids tetap terbaca', () => {

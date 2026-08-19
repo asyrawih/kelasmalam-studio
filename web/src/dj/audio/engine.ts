@@ -49,6 +49,7 @@ import {
   type DjState,
 } from '../model';
 import { FxInsertSlot } from './fx-insert';
+import { Metronome } from './metronome';
 import { CueOutput } from './cue-output';
 import {
   applyChannel,
@@ -96,6 +97,7 @@ const EMPTY_SNAPSHOT: DeckSnapshot = {
 export class DjAudio {
   readonly graph: DjGraph;
   readonly cue = new CueOutput();
+  private readonly metronome: Metronome;
   private readonly fxSlot = new FxInsertSlot();
   /** Dipasang pemanggil supaya kegagalan FX terbaca di layar, bukan senyap. */
   onFxFault: ((message: string) => void) | null = null;
@@ -104,6 +106,7 @@ export class DjAudio {
 
   constructor(graph: DjGraph) {
     this.graph = graph;
+    this.metronome = new Metronome(graph.ctx, graph.metronome);
     this.peakBuf = new Float32Array(new ArrayBuffer(graph.masterAnalyser.fftSize * 4));
     if (graph.cueOut !== null) this.cue.attach(graph.cueOut.stream);
   }
@@ -135,6 +138,46 @@ export class DjAudio {
     const p = this.graph.channels[id].player;
     if (!p.hasBuffer) return null;
     return p.positionAt(this.ctx.currentTime);
+  }
+
+  /**
+   * Jadwalkan klik metronom untuk deck yang sedang disunting grid-nya.
+   *
+   * Dipanggil TIAP FRAME dari `useDjAudio`, bukan dari `apply`: `apply` hanya
+   * berjalan saat store berubah, dan penjadwalan yang menunggu store berubah
+   * akan berhenti persis saat tidak ada yang menyentuh kontrol — yaitu saat
+   * orang sedang mendengarkan.
+   */
+  tickMetronome(s: DjState): void {
+    const id = s.gridEdit.deck;
+    if (id === null || s.gridEdit.metroLevel === 0) {
+      this.metronome.setLevel(0);
+      return;
+    }
+
+    const level = s.gridEdit.metroLevel;
+    const deck = s.decks[id];
+    const asset = deck.assetId === null ? undefined : studioStore.getState().assets[deck.assetId];
+    const grid = asset === undefined ? null : resolveBeatGrid(asset);
+    const player = this.graph.channels[id].player;
+    const pos = this.positionSamples(id);
+
+    if (grid === null || pos === null || !deck.playing) {
+      // Deck diam atau tanpa grid: tidak ada yang perlu diaudit, dan klik yang
+      // berjalan sendiri di atas lagu yang berhenti hanya membingungkan.
+      this.metronome.setLevel(level);
+      this.metronome.reset();
+      return;
+    }
+
+    this.metronome.schedule({
+      grid,
+      level,
+      positionSamples: pos,
+      rate: player.playbackRate,
+      sampleRate: player.sampleRate,
+      now: this.ctx.currentTime,
+    });
   }
 
   /** Peak linear 0..1 dari analyser. Dipakai meter; nol berarti benar-benar nol. */

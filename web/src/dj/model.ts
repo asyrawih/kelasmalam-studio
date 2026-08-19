@@ -578,6 +578,57 @@ export function defaultBrowse(): BrowseState {
   return { query: '', sort: 'name', ascending: true, selectedAssetId: null };
 }
 
+// ── Grid edit ────────────────────────────────────────────────────────────────
+
+/**
+ * Lebar jendela waveform saat menyunting grid, dalam BAR.
+ *
+ * Preset yang sama dengan `ZOOM_BAR_PRESETS` di `timeline/BeatSection.tsx`, dan
+ * itu disengaja: dua skala zoom yang berbeda untuk pekerjaan yang sama berarti
+ * grid yang terlihat rapi di satu halaman terlihat meleset di halaman lain,
+ * tanpa satu pun angka yang berubah.
+ *
+ * `DECK_WINDOW_SEC` (8 detik) yang dipakai di luar mode grid TIDAK cukup di
+ * sini: menaruh downbeat di transien butuh 1–2 bar memenuhi layar.
+ */
+export type GridZoom = 1 | 2 | 4 | 8;
+/** Mati + tiga tingkat. Definisinya di `audio/metronome.ts`, di-reekspor di
+ *  sini supaya `model.ts` tetap tidak meng-import apa pun yang berbau audio. */
+export type MetroLevel = 0 | 1 | 2 | 3;
+export const METRO_LEVELS: readonly MetroLevel[] = [0, 1, 2, 3];
+export const GRID_ZOOMS: readonly GridZoom[] = [1, 2, 4, 8];
+
+export interface GridEditState {
+  /** Deck yang sedang disunting grid-nya. `null` = mode mati. */
+  readonly deck: DeckId | null;
+  readonly zoomBars: GridZoom;
+  /**
+   * `[fine]` rekordbox. Mengubah langkah DUA kontrol ke arah yang BERLAWANAN:
+   * geser anchor jadi lebih halus (mengejar fase), renggang/rapat jadi lebih
+   * kasar (mengejar drift). Lihat `WIDEN_STEP_*` di `analysis/grid-edit.ts`.
+   */
+  readonly fine: boolean;
+  /**
+   * Cap waktu tombol TAP, ms. Di store dan bukan di komponen karena TAP punya
+   * dua pintu masuk (tombol dan keyboard) yang harus menambah ke deretan yang
+   * SAMA — dua deretan terpisah berarti menepuk bergantian menghasilkan angka
+   * yang tidak berarti apa-apa.
+   */
+  readonly taps: readonly number[];
+  /**
+   * Metronom: mati, lalu tiga tingkat volume — persis rekordbox.
+   *
+   * Nilainya di sini, bukan di lapisan audio, karena ia keputusan UI dan harus
+   * bertahan saat context audio dibangun ulang (perangkat keluaran berganti,
+   * tab dibangunkan). Lihat `audio/metronome.ts` untuk aturan routing-nya.
+   */
+  readonly metroLevel: MetroLevel;
+}
+
+export function defaultGridEdit(): GridEditState {
+  return { deck: null, zoomBars: 2, fine: false, taps: [], metroLevel: 0 };
+}
+
 // ── DjState ──────────────────────────────────────────────────────────────────
 
 export interface DjState {
@@ -590,6 +641,16 @@ export interface DjState {
   readonly mixer: MixerState;
   readonly fx: FxState;
   readonly browse: BrowseState;
+  /**
+   * Mode GRID EDIT. Di `DjState` dan bukan di komponen karena command keyboard
+   * harus bisa menyalakannya, dan karena `DeckScrollingWave` perlu tahu apakah
+   * tarikan pointer berarti "cari posisi" atau "geser grid".
+   *
+   * SENGAJA tidak ikut di-persist (lihat `persist/dj-session.ts`): ini keadaan
+   * pekerjaan, bukan keputusan atas materi. Yang layak bertahan adalah grid
+   * hasil suntingannya, dan itu sudah disimpan `assetGrids` milik Studio.
+   */
+  readonly gridEdit: GridEditState;
   readonly quantizeDiv: QuantizeDiv;
   /** Deck acuan tempo, atau null. Direkonsiliasi di `withDerived`. */
   readonly masterDeck: DeckId | null;
@@ -624,6 +685,7 @@ export function createInitialDj(): DjState {
     mixer: defaultMixer(),
     fx: defaultFx(),
     browse: defaultBrowse(),
+    gridEdit: defaultGridEdit(),
     quantizeDiv: DEFAULT_QUANTIZE_DIV,
     masterDeck: null,
     focusedDeck: 'A',

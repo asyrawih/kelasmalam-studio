@@ -88,6 +88,7 @@ function asset(id: number, bpm: number, confidence: number): StudioAsset {
     tempoOctave: 0,
     bpmOverride: null,
     beatOffsetOverride: null,
+    analysisLock: false,
   };
 }
 

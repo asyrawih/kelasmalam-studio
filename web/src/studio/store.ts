@@ -138,6 +138,22 @@ export interface StudioAsset {
    * downbeat-nya meleset tidak bisa dipakai memotong apa pun.
    */
   readonly beatOffsetOverride: number | null;
+  /**
+   * `[Analysis Lock]` rekordbox: *"Set to disable re-analysis and grid edit."*
+   *
+   * Di rekordbox kunci ini ada karena analisis ulang MENIMPA koreksi grid
+   * manual. Di sini tidak: `resolveBeatGrid` membaca `bpmOverride ?? deteksi`,
+   * jadi override user sudah kebal dengan sendirinya. Yang tersisa untuk
+   * dijaga kunci ini adalah jalan HILANGNYA koreksi itu — tombol AUTO, yang
+   * satu klik salahnya membuang kerja sepuluh menit — dan mencegah lagu ini
+   * ikut antre analisis batch yang tidak akan mengubah apa pun untuknya.
+   *
+   * Penjagaannya ada di `setAssetBeatGrid`, `resetAssetBeatGrid`, dan
+   * `markAssetTempoPending`. Ketiganya adalah CADANGAN, bukan jalur utama: UI
+   * mematikan kontrolnya lebih dulu, karena setter yang diam-diam mengabaikan
+   * tulisan adalah bentuk kegagalan yang paling sulit dilacak dari layar.
+   */
+  readonly analysisLock: boolean;
 }
 
 /**
@@ -1120,7 +1136,10 @@ export const studioActions = {
   markAssetTempoPending(id: number): void {
     set((s) => {
       const asset = s.assets[id];
-      if (asset === undefined || asset.tempoPending) return {};
+      // Lagu terkunci dilewati analisis batch: hasilnya tidak akan dipakai
+      // (`bpmOverride` menang) dan `tempoPending` hanya membuat UI menulis
+      // "ANALISIS…" pada grid yang justru sudah final.
+      if (asset === undefined || asset.tempoPending || asset.analysisLock) return {};
       return { assets: { ...s.assets, [id]: { ...asset, tempoPending: true } } };
     });
   },
@@ -1142,7 +1161,7 @@ export const studioActions = {
   setAssetBeatGrid(id: number, patch: { bpm?: number | null; offsetSec?: number | null }): void {
     set((s) => {
       const asset = s.assets[id];
-      if (asset === undefined) return {};
+      if (asset === undefined || asset.analysisLock) return {};
       const bpmOverride = 'bpm' in patch ? clampGridBpmOrNull(patch.bpm) : asset.bpmOverride;
       const nextOffset = patch.offsetSec ?? null;
       const beatOffsetOverride =
@@ -1157,15 +1176,45 @@ export const studioActions = {
       return { assets: { ...s.assets, [id]: { ...asset, bpmOverride, beatOffsetOverride } } };
     });
   },
-  /** Buang SEMUA koreksi manual dan kembali ke hasil deteksi. */
+  /**
+   * Buang SEMUA koreksi manual dan kembali ke hasil deteksi — termasuk
+   * `tempoOctave`.
+   *
+   * Oktafnya dulu TIDAK ikut, dan itu adalah cacat: ada dua jalan menuju
+   * "BPM-nya separuh" (`tempoOctave` lewat tombol ×2/÷2, dan `bpmOverride`
+   * lewat angka yang diketik), keduanya terlihat sama di layar, dan AUTO hanya
+   * membersihkan salah satunya. Akibatnya user menekan AUTO, BPM-nya tetap
+   * salah oktaf, dan tidak ada satu kontrol pun yang terlihat menjelaskan
+   * kenapa. Tombol yang bernama AUTO harus mengembalikan SEMUA yang manual.
+   */
   resetAssetBeatGrid(id: number): void {
     set((s) => {
       const asset = s.assets[id];
-      if (asset === undefined) return {};
-      if (asset.bpmOverride === null && asset.beatOffsetOverride === null) return {};
+      if (asset === undefined || asset.analysisLock) return {};
+      if (
+        asset.bpmOverride === null &&
+        asset.beatOffsetOverride === null &&
+        asset.tempoOctave === 0
+      ) {
+        return {};
+      }
       return {
-        assets: { ...s.assets, [id]: { ...asset, bpmOverride: null, beatOffsetOverride: null } },
+        assets: {
+          ...s.assets,
+          [id]: { ...asset, bpmOverride: null, beatOffsetOverride: null, tempoOctave: 0 },
+        },
       };
+    });
+  },
+  /**
+   * Kunci/buka `[Analysis Lock]`. Sengaja TIDAK ikut terkunci oleh dirinya
+   * sendiri — kunci yang tidak bisa dibuka bukan kunci, melainkan kerusakan.
+   */
+  setAnalysisLock(id: number, locked: boolean): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined || asset.analysisLock === locked) return {};
+      return { assets: { ...s.assets, [id]: { ...asset, analysisLock: locked } } };
     });
   },
   /** Batas panjang timeline manual. `max === null` = kembali otomatis. */

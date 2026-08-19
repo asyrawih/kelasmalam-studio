@@ -38,6 +38,21 @@ import { removeAssetFromLibrary } from './browser/dj-remove';
 import { deckView } from './deck-view';
 import { BEAT_LOOP_PRESETS, DECK_IDS, HOT_CUE_SLOTS, type DeckId } from './model';
 import { djActions, djStore } from './store';
+import {
+  autoGrid,
+  fitGridHere,
+  gridBlockedReason,
+  gridHistoryState,
+  nudgeGrid,
+  octaveGrid,
+  redoGridEdit,
+  setDownbeatHere,
+  tapGrid,
+  toggleGridEditFor,
+  toggleGridLock,
+  undoGridEdit,
+  widenGrid,
+} from './grid/grid-ops';
 
 const s = () => djStore.getState();
 
@@ -438,7 +453,155 @@ function browserCommands(): Command[] {
   ];
 }
 
+/**
+ * Command GRID EDIT.
+ *
+ * Hampir semuanya TANPA binding bawaan, dan itu bukan kemalasan: papan ketik di
+ * halaman ini sudah penuh oleh transport dua deck, dan registry ini tidak punya
+ * konsep MODE — sebuah chord berlaku sama saja apakah panel grid sedang terbuka
+ * atau tidak. Mengikat `KeyS` ke "geser grid" berarti merampasnya dari SYNC
+ * selamanya, demi pekerjaan yang dilakukan sekali per lagu.
+ *
+ * Yang mendapat tombol hanyalah empat yang benar-benar berulang saat menyetel
+ * satu lagu, dan semuanya memakai `shift` supaya tidak bertabrakan dengan
+ * transport: SET DI SINI, PAS DI SINI, TAP, serta membuka panelnya sendiri.
+ * Sisanya lewat command palette, tempat namanya bisa dibaca.
+ */
+function gridCommands(): Command[] {
+  const group = 'Grid edit';
+  /** Deck yang sedang disunting, atau deck yang sedang fokus kalau panel tutup. */
+  const target = (): DeckId => s().gridEdit.deck ?? s().focusedDeck;
+  const editable = (): boolean => gridBlockedReason(target()) === null;
+
+  return [
+    {
+      id: 'dj.grid.toggle',
+      title: 'GRID EDIT — buka / tutup',
+      group,
+      defaultChord: 'KeyG',
+      enabled: () => s().decks[s().focusedDeck].assetId !== null,
+      run: () => toggleGridEditFor(target()),
+    },
+    {
+      id: 'dj.grid.setDownbeat',
+      title: 'Jadikan posisi sekarang awal bar',
+      group,
+      defaultChord: 'shift+KeyG',
+      enabled: editable,
+      run: () => void setDownbeatHere(target()),
+    },
+    {
+      id: 'dj.grid.fitHere',
+      title: 'PAS DI SINI — kunci BPM dari dua titik',
+      group,
+      defaultChord: 'shift+KeyF',
+      enabled: editable,
+      run: () => void fitGridHere(target()),
+    },
+    {
+      id: 'dj.grid.tap',
+      title: 'TAP tempo',
+      group,
+      defaultChord: 'shift+KeyT',
+      enabled: editable,
+      run: () => void tapGrid(performance.now(), target()),
+    },
+    {
+      id: 'dj.grid.nudgeLeft',
+      title: 'Geser grid ke kiri',
+      group,
+      defaultChord: null,
+      enabled: editable,
+      run: () => void nudgeGrid(-1, target()),
+    },
+    {
+      id: 'dj.grid.nudgeRight',
+      title: 'Geser grid ke kanan',
+      group,
+      defaultChord: null,
+      enabled: editable,
+      run: () => void nudgeGrid(1, target()),
+    },
+    {
+      id: 'dj.grid.narrow',
+      title: 'Rapatkan jarak ketukan',
+      group,
+      defaultChord: null,
+      enabled: editable,
+      run: () => void widenGrid(-1, target()),
+    },
+    {
+      id: 'dj.grid.widen',
+      title: 'Renggangkan jarak ketukan',
+      group,
+      defaultChord: null,
+      enabled: editable,
+      run: () => void widenGrid(1, target()),
+    },
+    {
+      id: 'dj.grid.double',
+      title: 'Grid ×2 BPM',
+      group,
+      defaultChord: null,
+      enabled: editable,
+      run: () => void octaveGrid(1, target()),
+    },
+    {
+      id: 'dj.grid.halve',
+      title: 'Grid ÷2 BPM',
+      group,
+      defaultChord: null,
+      enabled: editable,
+      run: () => void octaveGrid(-1, target()),
+    },
+    {
+      id: 'dj.grid.undo',
+      title: 'Batalkan suntingan grid',
+      group,
+      defaultChord: null,
+      enabled: () => gridHistoryState(s().decks[target()].assetId).canUndo,
+      run: () => void undoGridEdit(target()),
+    },
+    {
+      id: 'dj.grid.redo',
+      title: 'Ulangi suntingan grid',
+      group,
+      defaultChord: null,
+      enabled: () => gridHistoryState(s().decks[target()].assetId).canRedo,
+      run: () => void redoGridEdit(target()),
+    },
+    {
+      id: 'dj.grid.auto',
+      title: 'AUTO — buang semua koreksi grid manual',
+      group,
+      /*
+       * Tanpa binding, dengan alasan yang sama seperti `dj.browse.remove`:
+       * AUTO membuang penyetelan yang bisa memakan sepuluh menit, dan
+       * mengembalikannya butuh mengulang seluruh pekerjaan. Lewat palette,
+       * namanya harus diketik dan dipilih.
+       */
+      defaultChord: null,
+      enabled: editable,
+      run: () => void autoGrid(target()),
+    },
+    {
+      id: 'dj.grid.lock',
+      title: 'Kunci / buka kunci analisis lagu ini',
+      group,
+      defaultChord: null,
+      enabled: () => s().decks[target()].assetId !== null,
+      run: () => void toggleGridLock(target()),
+    },
+  ];
+}
+
 /** Seluruh command halaman DJ. Dibangun sekali; `run` membaca store saat dipanggil. */
 export function djCommands(): Command[] {
-  return [...deckCommands('A'), ...deckCommands('B'), ...globalCommands(), ...browserCommands()];
+  return [
+    ...deckCommands('A'),
+    ...deckCommands('B'),
+    ...globalCommands(),
+    ...gridCommands(),
+    ...browserCommands(),
+  ];
 }

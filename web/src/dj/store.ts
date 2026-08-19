@@ -37,6 +37,7 @@ import { useSyncExternalStore } from 'react';
 
 import type { BeatGrid } from '../studio/analysis/beat-grid';
 import { samplesPerBeat } from '../studio/analysis/beat-grid';
+import { trimTapRun } from '../studio/analysis/tap-tempo';
 import {
   EMPTY_TRACK_CUES,
   EQ_KILL_DB,
@@ -64,7 +65,9 @@ import {
   type DjState,
   type EqBandDj,
   type FxTargetDj,
+  type GridZoom,
   type HotCueSlot,
+  type MetroLevel,
   type LoopState,
   type PadMode,
   type QuantizeDiv,
@@ -930,6 +933,52 @@ export const djActions = {
         ? null
         : { browse: { ...s.browse, selectedAssetId: assetId } },
     );
+  },
+
+  // — grid edit —
+
+  /**
+   * Nyalakan mode grid untuk sebuah deck, atau matikan kalau deck yang sama
+   * ditekan lagi. Deretan TAP ikut dibuang tiap kali mode berpindah: ketukan
+   * yang ditepuk untuk lagu lain tidak berarti apa-apa di sini.
+   */
+  toggleGridEdit(id: DeckId): void {
+    set((s) => {
+      const deck = s.gridEdit.deck === id ? null : id;
+      return { gridEdit: { ...s.gridEdit, deck, taps: [] } };
+    });
+  },
+
+  closeGridEdit(): void {
+    set((s) =>
+      s.gridEdit.deck === null
+        ? null
+        : { gridEdit: { ...s.gridEdit, deck: null, taps: [], metroLevel: 0 } },
+    );
+  },
+
+  setGridZoom(zoomBars: GridZoom): void {
+    set((s) => (s.gridEdit.zoomBars === zoomBars ? null : { gridEdit: { ...s.gridEdit, zoomBars } }));
+  },
+
+  setGridFine(fine: boolean): void {
+    set((s) => (s.gridEdit.fine === fine ? null : { gridEdit: { ...s.gridEdit, fine } }));
+  },
+
+  /** Catat satu TAP. Deretan lama yang sudah terputus jeda panjang dibuang. */
+  pushGridTap(nowMs: number): void {
+    set((s) => ({ gridEdit: { ...s.gridEdit, taps: trimTapRun([...s.gridEdit.taps, nowMs]) } }));
+  },
+
+  /** Metronom mati / 1 / 2 / 3. Mematikannya saat panel ditutup diurus
+   *  `closeGridEdit` — klik yang tetap berbunyi setelah panelnya hilang tidak
+   *  punya satu pun kontrol yang terlihat untuk mematikannya. */
+  setMetroLevel(metroLevel: MetroLevel): void {
+    set((s) => (s.gridEdit.metroLevel === metroLevel ? null : { gridEdit: { ...s.gridEdit, metroLevel } }));
+  },
+
+  clearGridTaps(): void {
+    set((s) => (s.gridEdit.taps.length === 0 ? null : { gridEdit: { ...s.gridEdit, taps: [] } }));
   },
 
   // — meta —

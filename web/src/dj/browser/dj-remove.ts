@@ -27,6 +27,7 @@ import { unregisterBuffer } from '../../studio/preview/audio-preview';
 import { assetUsage, studioActions, studioStore } from '../../studio/store';
 import { DECK_IDS, type DeckId } from '../model';
 import { djActions, djStore } from '../store';
+import { forgetGridHistory } from '../grid/grid-history';
 
 export interface RemovalReport {
   /** Clip di timeline Studio yang memakai lagu ini. */
@@ -72,6 +73,10 @@ export async function removeAssetFromLibrary(assetId: number): Promise<RemoveRes
   // dilepas.
   for (const id of report.decks) djActions.ejectDeck(id);
   djActions.forgetCues(assetId);
+  // Riwayat grid ikut dilupakan. Id asset dipakai ulang, dan tumpukan undo yang
+  // tertinggal akan memindahkan grid lagu BARU ke tempat yang tidak pernah
+  // dilihat user — dengan tombol yang bernama UNDO.
+  forgetGridHistory(assetId);
   if (djStore.getState().browse.selectedAssetId === assetId) {
     djActions.selectBrowseAsset(null);
   }

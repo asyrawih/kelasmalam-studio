@@ -106,6 +106,12 @@ export interface ScrollingWaveProps {
   readonly regionStroke?: string;
   /** Tooltip canvas. Default menjelaskan tarik-untuk-loop ala Studio. */
   readonly title?: string;
+  /**
+   * Anchor grid (SOURCE-space) untuk digambar sebagai segitiga merah, atau
+   * `null`. Hanya halaman DJ yang mengisinya, saat mode GRID EDIT menyala —
+   * lihat `anchorAt` di `beat-draw.ts`.
+   */
+  readonly anchorAt?: Samples | null;
 }
 
 export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
@@ -190,6 +196,7 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
           // sedang bekerja.
           regionTint: p.regionTint ?? (p.regionLive === true ? '#6ee7ff28' : '#6ee7ff10'),
           regionStroke: p.regionStroke ?? (p.regionLive === true ? '#6ee7ff' : '#6ee7ff66'),
+          anchorAt: p.anchorAt ?? null,
         });
       }
       // Playhead selalu tepat di tengah — itu seluruh gunanya tampilan ini.

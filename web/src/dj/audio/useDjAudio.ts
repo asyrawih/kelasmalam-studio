@@ -87,6 +87,12 @@ export function useDjAudio(rootRef: RefObject<HTMLElement>): void {
         djActions.setAudioStatus(audio.running, djAudioError());
       }
 
+      // Metronom dijadwalkan tiap frame, bukan tiap perubahan store: klik-nya
+      // dijadwalkan KE DEPAN dengan jam audio, dan jendela lihat-ke-depannya
+      // hanya 150 ms. Menunggu store berubah berarti berhenti berbunyi persis
+      // saat tidak ada yang menyentuh kontrol — yaitu saat orang mendengarkan.
+      audio.tickMetronome(djStore.getState());
+
       // Deteksi ujung materi berjalan tiap frame — menundanya sampai kiriman
       // posisi berikutnya berarti deck "berbunyi" sampai 60 ms setelah lagunya
       // habis, dan tombol PLAY tetap menyala di layar.

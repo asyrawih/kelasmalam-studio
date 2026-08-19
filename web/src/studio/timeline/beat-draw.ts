@@ -37,6 +37,20 @@ export interface BeatGridDrawOptions {
   readonly regionTint?: string;
   /** Warna garis batas region. */
   readonly regionStroke?: string;
+  /**
+   * Posisi ANCHOR grid (SOURCE-space), digambar sebagai segitiga merah.
+   *
+   * Hanya diisi saat mode GRID EDIT menyala. Tanpa penanda ini, tombol ×2/÷2
+   * dan renggang/rapat terasa acak: semuanya mem-pivot di anchor, dan anchor
+   * adalah satu-satunya garis yang TIDAK ikut bergerak — tapi ia tidak bisa
+   * dibedakan dari 200 garis bar lain yang bentuknya sama persis.
+   *
+   * Segitiga merah, mengikuti rekordbox (`recordbox/01a` §5: *"red triangle =
+   * first beat of bar"*). Bentuk, bukan warna saja: garis bar di sini sudah
+   * memakai putih transparan, dan menambah warna kelima ke bidang yang sama
+   * membuat semuanya berhenti terbaca.
+   */
+  readonly anchorAt?: Samples | null;
 }
 
 /** Sorotan region + garis bar/beat + nomor bar. Tidak menyentuh playhead. */
@@ -91,6 +105,25 @@ export function drawBeatGrid(ctx: CanvasRenderingContext2D, o: BeatGridDrawOptio
     ctx.lineTo(px, h);
   }
   ctx.stroke();
+
+  const anchorAt = o.anchorAt ?? null;
+  if (anchorAt !== null && anchorAt >= from && anchorAt < from + len) {
+    const ax = Math.round(x(anchorAt)) + 0.5;
+    ctx.strokeStyle = '#ff4d4d';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ax, 0);
+    ctx.lineTo(ax, h);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ff4d4d';
+    ctx.beginPath();
+    ctx.moveTo(ax - 5, 0);
+    ctx.lineTo(ax + 5, 0);
+    ctx.lineTo(ax, 8);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   if (barPx >= MIN_BAR_LABEL_PX) {
     ctx.fillStyle = '#ffffff66';

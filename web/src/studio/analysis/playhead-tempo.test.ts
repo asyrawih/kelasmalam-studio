@@ -18,6 +18,7 @@ function asset(id: number, bpm: number | null, opts: Partial<StudioAsset> = {}):
     tempoOctave: 0,
     bpmOverride: null,
     beatOffsetOverride: null,
+    analysisLock: false,
     ...opts,
   };
 }

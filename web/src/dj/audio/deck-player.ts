@@ -93,6 +93,11 @@ export class DeckPlayer {
     return this.buffer !== null;
   }
 
+  /** Laju baca yang sedang berlaku. Dibaca metronom supaya kliknya ikut tempo. */
+  get playbackRate(): number {
+    return this.rate;
+  }
+
   /** Materi baru. Menghentikan apa pun yang sedang berbunyi. */
   load(buffer: AudioBuffer | null, atSample: number): void {
     this.stopSource(0);

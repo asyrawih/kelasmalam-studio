@@ -68,14 +68,23 @@ interface PersistedProject {
 interface PersistedGrid {
   readonly bpm: number | null;
   readonly offsetSec: number | null;
+  /** Opsional: project lama tidak punya field ini dan dibaca sebagai `false`. */
+  readonly lock?: boolean;
 }
 
-/** Hanya asset yang BENAR-BENAR dikoreksi yang ikut disimpan. */
+/**
+ * Hanya asset yang BENAR-BENAR dikoreksi yang ikut disimpan.
+ *
+ * Kunci analisis ikut jadi syarat, bukan hanya ikut jadi field: lagu yang
+ * dikunci TANPA koreksi grid — sah, artinya "hasil deteksinya sudah benar,
+ * jangan disentuh lagi" — akan kehilangan kuncinya tiap refresh kalau
+ * syaratnya hanya melihat kedua override.
+ */
 function collectAssetGrids(s: StudioAppState): Record<number, PersistedGrid> {
   const out: Record<number, PersistedGrid> = {};
   for (const a of Object.values(s.assets)) {
-    if (a.bpmOverride === null && a.beatOffsetOverride === null) continue;
-    out[a.id] = { bpm: a.bpmOverride, offsetSec: a.beatOffsetOverride };
+    if (a.bpmOverride === null && a.beatOffsetOverride === null && !a.analysisLock) continue;
+    out[a.id] = { bpm: a.bpmOverride, offsetSec: a.beatOffsetOverride, lock: a.analysisLock };
   }
   return out;
 }
@@ -203,7 +212,11 @@ export async function restoreProject(
   // SETELAH hydrate, bukan sebelum: `setAssetBeatGrid` menolak asset yang belum
   // terdaftar, dan pendaftarannya baru terjadi lewat `decodeAsset` di atas.
   for (const [id, grid] of Object.entries(data.assetGrids ?? {})) {
+    // Grid DULU, kunci belakangan. `setAssetBeatGrid` menolak asset yang
+    // terkunci, jadi urutan terbalik akan memulihkan kuncinya dan membuang
+    // justru koreksi yang dikunci itu.
     studioActions.setAssetBeatGrid(Number(id), { bpm: grid.bpm, offsetSec: grid.offsetSec });
+    if (grid.lock === true) studioActions.setAnalysisLock(Number(id), true);
   }
 
   return { restored: true, missingAssets: missing };

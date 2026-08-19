@@ -157,6 +157,23 @@ describe('topologi', () => {
     expect(reachable(g.cueBus as unknown as Node).has(DESTINATION as unknown as Node)).toBe(false);
   });
 
+  it('METRONOM tidak punya JALAN APA PUN ke destination — aturan yang tidak bisa ditawar', () => {
+    // Klik yang bocor ke keluaran utama terdengar oleh seluruh ruangan, dan ia
+    // TIDAK akan ketahuan saat menguji dengan satu perangkat keluaran — persis
+    // keadaan yang paling sering dipakai saat mengembangkan. Karena itu yang
+    // dijaga di sini adalah topologinya, bukan nilai gain-nya.
+    const from = reachable(g.metronome as unknown as Node);
+    expect(from.has(DESTINATION as unknown as Node)).toBe(false);
+    expect(from.has(g.master as unknown as Node)).toBe(false);
+    expect(from.has(g.masterFxIn as unknown as Node)).toBe(false);
+    // Tapi ia memang sampai ke headphone.
+    expect(from.has(g.cueLevel as unknown as Node)).toBe(true);
+  });
+
+  it('metronom lahir SENYAP — gain 0 sampai user memilih tingkatnya', () => {
+    expect((g.metronome.gain as unknown as FakeParam).value).toBe(0);
+  });
+
   it('campuran headphone menerima KEDUA sumber: bus CUE dan master', () => {
     const level = g.cueLevel as unknown as Node;
     expect(reachable(g.cueSide as unknown as Node).has(level)).toBe(true);

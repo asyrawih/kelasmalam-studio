@@ -46,6 +46,7 @@ function asset(): StudioAsset {
     tempoOctave: 0,
     bpmOverride: null,
     beatOffsetOverride: null,
+    analysisLock: false,
   };
 }
 

@@ -14,7 +14,8 @@
 
 import { studioActions } from '../../studio/store';
 import { formatDeckTime, formatTempoPct, type DeckId } from '../model';
-import { djActions } from '../store';
+import { djActions, useDj } from '../store';
+import { toggleGridEditFor } from '../grid/grid-ops';
 import type { DeckView } from '../deck-view';
 
 export interface DeckReadoutProps {
@@ -69,6 +70,7 @@ const CELL: React.CSSProperties = {
 export function DeckReadout({ view, id, accent, mirrored }: DeckReadoutProps): JSX.Element {
   const { deck, effBpm, baseBpm, tempoPct, analyzing, bpmUncertain, missing } = view;
   const loaded = deck.assetId !== null;
+  const gridOn = useDj((s) => s.gridEdit.deck === id);
 
   return (
     <div
@@ -141,6 +143,34 @@ export function DeckReadout({ view, id, accent, mirrored }: DeckReadoutProps): J
           {loaded ? `${formatDeckTime(view.positionSec)} · −${formatDeckTime(view.remainingSec)}` : '—'}
         </div>
       </div>
+
+      {/*
+        GRID EDIT dinyalakan DARI SINI, bersebelahan dengan angka BPM, dan bukan
+        dari panelnya sendiri — panel itu baru ada setelah modenya menyala.
+        Tempatnya di sebelah BPM karena itulah angka yang salah saat seseorang
+        merasa perlu membuka grid edit.
+      */}
+      <button
+        type="button"
+        className="cy-btn-reset"
+        disabled={!loaded}
+        onClick={() => toggleGridEditFor(id)}
+        title="GRID EDIT — rapikan beat grid lagu ini"
+        style={{
+          fontSize: '9px',
+          padding: '2px 5px',
+          fontFamily: 'var(--cy-font-mono)',
+          letterSpacing: '.12em',
+          color: gridOn ? accent : 'var(--cy-text-muted)',
+          border: `1px solid ${gridOn ? accent : 'var(--cy-border)'}`,
+          background: 'transparent',
+          cursor: loaded ? 'pointer' : 'not-allowed',
+          opacity: loaded ? 1 : 0.35,
+          flexShrink: 0,
+        }}
+      >
+        GRID
+      </button>
 
       <div style={{ textAlign: 'center', flexShrink: 0 }}>
         <div style={CELL}>KEY</div>

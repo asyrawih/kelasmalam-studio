@@ -27,6 +27,7 @@ function asset(over: Partial<StudioAsset> = {}): StudioAsset {
     tempoOctave: 0,
     bpmOverride: null,
     beatOffsetOverride: null,
+    analysisLock: false,
     ...over,
   };
 }

@@ -42,6 +42,7 @@ export function assetFromBuffer(id: number, name: string, buffer: AudioBuffer): 
     tempoOctave: 0,
     bpmOverride: null,
     beatOffsetOverride: null,
+    analysisLock: false,
   };
 }
 

@@ -10,20 +10,35 @@
  * konsekuensi langsung dari "deck memutar SATU LAGU UTUH": dua koordinat
  * docs/07 §8d memang tidak punya arti di sini.
  *
- * `positionSourceSec` mengembalikan `null` di iterasi ini karena tidak ada yang
- * berbunyi, jadi jendela mengikuti `deck.playhead` yang dimajukan
- * `djActions.tick`. Di fase audio ia diganti jam deck sungguhan, dan **tidak
- * ada baris lain di halaman ini yang perlu berubah.**
+ * ## MODE GRID EDIT
+ *
+ * Saat deck ini sedang disunting grid-nya, dua hal berubah dan tidak ada yang
+ * ketiga:
+ *
+ * 1. **Lebar jendela** jadi sekian BAR (`gridEdit.zoomBars`), bukan 8 detik
+ *    mati. Menaruh downbeat di transien butuh 1–2 bar memenuhi layar; pada
+ *    8 detik sebuah ketukan hanya selebar beberapa piksel dan tangan tidak
+ *    punya sasaran.
+ * 2. **Arti menarik**: menggeser GRID, bukan mencari posisi. Playhead tetap di
+ *    tengah, garis bar yang berjalan di bawah tangan.
+ *
+ * Yang SENGAJA tidak berubah: pemetaan piksel→SOURCE. `onScrub` sudah
+ * melaporkan posisi source di tengah jendela dengan matematika yang sama persis
+ * dengan yang dipakai menggambar; menulis pemetaan kedua di sini berarti grid
+ * bisa meleset dari gambarnya sendiri, dan itu jenis cacat yang mustahil
+ * dilacak dari layar (alasan yang sama sudah ditulis di kepala `beat-draw.ts`).
  */
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import { BAND_COLORS, ScrollingWave } from '../../studio/timeline';
+import { rawAnchorSec } from '../../studio/analysis/grid-edit';
 import { deckClockSec } from '../audio/deck-clock';
 import type { StudioAsset } from '../../studio/store';
 import { loopRegion, type DeckView } from '../deck-view';
+import { beginAnchorDrag, dragAnchorTo } from '../grid/grid-ops';
 import type { Samples } from '../model';
-import { djActions } from '../store';
+import { djActions, useDj } from '../store';
 
 /** Lebar jendela dalam detik. 8 detik ≈ tampilan CDJ pada zoom menengah. */
 export const DECK_WINDOW_SEC = 8;
@@ -35,10 +50,33 @@ export interface DeckScrollingWaveProps {
 
 export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX.Element {
   const { deck, grid } = view;
-  const windowLen = Math.max(1, Math.round(DECK_WINDOW_SEC * deck.sampleRate));
+  const gridDeck = useDj((s) => s.gridEdit.deck);
+  const zoomBars = useDj((s) => s.gridEdit.zoomBars);
+  const editing = gridDeck === deck.id;
+
   // Jam deck, bukan jam transport Studio. Dibuat sekali per deck supaya
   // identitas fungsinya stabil dan `ScrollingWave` tidak melihatnya berubah.
   const clock = useMemo(() => deckClockSec(deck.id), [deck.id]);
+
+  const windowLen = useMemo(() => {
+    if (editing && grid !== null) {
+      const barSec = (60 / grid.bpm) * grid.beatsPerBar;
+      return Math.max(1, Math.round(barSec * zoomBars * deck.sampleRate));
+    }
+    return Math.max(1, Math.round(DECK_WINDOW_SEC * deck.sampleRate));
+  }, [editing, grid, zoomBars, deck.sampleRate]);
+
+  /**
+   * Keadaan awal satu tarikan grid: di mana anchor berada, dan materi mana yang
+   * ada di bawah playhead saat jari turun. Keduanya dibutuhkan karena `onScrub`
+   * melaporkan POSISI, sedangkan yang dipakai di sini adalah SELISIHNYA.
+   */
+  const dragBase = useRef<{ anchorSec: number; centerSample: number } | null>(null);
+
+  const anchorAt =
+    editing && view.asset !== undefined
+      ? Math.round(rawAnchorSec(view.asset) * deck.sampleRate)
+      : null;
 
   return (
     <ScrollingWave
@@ -59,9 +97,41 @@ export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX
       regionTint={`${accent}28`}
       regionStroke={accent}
       positionSourceSec={clock}
-      title="tarik untuk mencari posisi · tahan Shift untuk menempel ke ketukan"
+      anchorAt={anchorAt}
+      title={
+        editing
+          ? 'GRID EDIT — tarik untuk menggeser grid; playhead tidak bergerak'
+          : 'tarik untuk mencari posisi · tahan Shift untuk menempel ke ketukan'
+      }
       onScrub={(phase, sourceAt: Samples) => {
-        if (phase === 'move' || phase === 'end') djActions.seek(deck.id, sourceAt);
+        if (!editing) {
+          if (phase === 'move' || phase === 'end') djActions.seek(deck.id, sourceAt);
+          return;
+        }
+
+        if (phase === 'start') {
+          const anchorSec = beginAnchorDrag(deck.id);
+          dragBase.current = anchorSec === null ? null : { anchorSec, centerSample: sourceAt };
+          return;
+        }
+
+        const base = dragBase.current;
+        if (base === null) return;
+
+        // TANDA MINUS-NYA WAJIB, dan ini satu-satunya tempat ia bisa salah.
+        //
+        // `onScrub` melaporkan materi mana yang HARUS berada di bawah playhead
+        // setelah tarikan: menarik ke kiri berarti meminta materi yang lebih
+        // belakangan, jadi `sourceAt` NAIK. Yang diinginkan user saat menarik
+        // ke kiri adalah gridnya ikut ke kiri — yaitu anchor TURUN. Karena itu
+        // selisihnya dikurangkan, bukan ditambahkan.
+        //
+        // Salah tanda menghasilkan kontrol yang bergerak terbalik dua kali
+        // lebih cepat, dan yang disalahkan akan trackpad-nya.
+        const deltaSec = (sourceAt - base.centerSample) / deck.sampleRate;
+        dragAnchorTo(deck.id, base.anchorSec - deltaSec);
+
+        if (phase === 'end') dragBase.current = null;
       }}
     />
   );
