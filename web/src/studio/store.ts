@@ -19,7 +19,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-import { clampGridBpm } from './analysis/beat-grid';
+import { clampGridBpm, MAX_BEAT_ANCHORS, type BeatAnchor } from './analysis/beat-grid';
 import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SPEED, type EqMode, timelineLenFor, MAX_LANE_SPEED, MIN_LANE_SPEED,
   EQ_PRESETS,
   cloneEq,
@@ -153,6 +153,17 @@ export interface StudioAsset {
    * mematikan kontrolnya lebih dulu, karena setter yang diam-diam mengabaikan
    * tulisan adalah bentuk kegagalan yang paling sulit dilacak dari layar.
    */
+  /**
+   * Anchor tempo TAMBAHAN, urut menaik — `[Dynamic]` rekordbox.
+   *
+   * `null` (yang biasa) berarti satu tempo untuk seluruh lagu, dan seluruh
+   * jalur lama berjalan persis seperti sebelumnya. Begitu ada isinya, grid
+   * lagu ini dibaca per posisi lewat `resolveBeatGridAt`.
+   *
+   * Disimpan di ASSET, bukan di deck, karena ia koreksi atas MATERI — sama
+   * dengan `bpmOverride` di atasnya, dan dengan alasan yang sama.
+   */
+  readonly beatAnchors?: readonly BeatAnchor[] | null;
   readonly analysisLock: boolean;
 }
 
@@ -1177,6 +1188,73 @@ export const studioActions = {
     });
   },
   /**
+   * Pasang (atau ganti) satu anchor tempo di `atSec` — `[Dynamic]` rekordbox.
+   *
+   * Anchor yang jatuh di detik yang sama dengan yang sudah ada DIGANTI, bukan
+   * ditumpuk: dua anchor di satu titik berarti ruas selebar nol, dan yang
+   * terlihat user adalah tombol yang tidak melakukan apa-apa pada tekanan
+   * kedua. `EPS_SEC` sengaja sekasar 1 ms — itu langkah terkecil yang bisa
+   * dihasilkan panel grid, jadi tidak ada anchor sah yang lebih rapat.
+   */
+  setAssetBeatAnchor(id: number, at: BeatAnchor): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined || asset.analysisLock) return {};
+      if (!Number.isFinite(at.atSec) || !Number.isFinite(at.bpm) || at.bpm <= 0) return {};
+      const bpm = clampGridBpm(at.bpm);
+      const EPS_SEC = 0.001;
+      const kept = (asset.beatAnchors ?? []).filter((a) => Math.abs(a.atSec - at.atSec) > EPS_SEC);
+      if (kept.length >= MAX_BEAT_ANCHORS) return {};
+      const beatAnchors = [...kept, { atSec: at.atSec, bpm }].sort((a, b) => a.atSec - b.atSec);
+      return { assets: { ...s.assets, [id]: { ...asset, beatAnchors } } };
+    });
+  },
+  /**
+   * Ganti SELURUH daftar anchor sekaligus.
+   *
+   * Ada demi undo/redo, yang harus bisa mengembalikan keadaan apa pun dalam
+   * satu langkah — memulihkannya lewat `setAssetBeatAnchor` satu per satu
+   * berarti keadaan setengah jadi yang sempat terlihat dan sempat terdengar.
+   */
+  setAssetBeatAnchors(id: number, anchors: readonly BeatAnchor[] | null): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined || asset.analysisLock) return {};
+      const next =
+        anchors === null || anchors.length === 0
+          ? null
+          : anchors
+              .filter((a) => Number.isFinite(a.atSec) && Number.isFinite(a.bpm) && a.bpm > 0)
+              .slice(0, MAX_BEAT_ANCHORS)
+              .map((a) => ({ atSec: a.atSec, bpm: clampGridBpm(a.bpm) }))
+              .sort((a, b) => a.atSec - b.atSec);
+      return { assets: { ...s.assets, [id]: { ...asset, beatAnchors: next } } };
+    });
+  },
+  /** Buang anchor ruas TERDEKAT dari `atSec`, kalau ada yang cukup dekat. */
+  removeAssetBeatAnchorNear(id: number, atSec: number, withinSec: number): void {
+    set((s) => {
+      const asset = s.assets[id];
+      if (asset === undefined || asset.analysisLock) return {};
+      const anchors = asset.beatAnchors ?? null;
+      if (anchors === null || anchors.length === 0) return {};
+      let bestI = -1;
+      let bestD = Infinity;
+      anchors.forEach((a, i) => {
+        const d = Math.abs(a.atSec - atSec);
+        if (d < bestD) {
+          bestD = d;
+          bestI = i;
+        }
+      });
+      if (bestI < 0 || bestD > withinSec) return {};
+      const rest = anchors.filter((_, i) => i !== bestI);
+      return {
+        assets: { ...s.assets, [id]: { ...asset, beatAnchors: rest.length === 0 ? null : rest } },
+      };
+    });
+  },
+  /**
    * Buang SEMUA koreksi manual dan kembali ke hasil deteksi — termasuk
    * `tempoOctave`.
    *
@@ -1194,6 +1272,7 @@ export const studioActions = {
       if (
         asset.bpmOverride === null &&
         asset.beatOffsetOverride === null &&
+        (asset.beatAnchors ?? null) === null &&
         asset.tempoOctave === 0
       ) {
         return {};
@@ -1201,7 +1280,13 @@ export const studioActions = {
       return {
         assets: {
           ...s.assets,
-          [id]: { ...asset, bpmOverride: null, beatOffsetOverride: null, tempoOctave: 0 },
+          [id]: {
+            ...asset,
+            bpmOverride: null,
+            beatOffsetOverride: null,
+            beatAnchors: null,
+            tempoOctave: 0,
+          },
         },
       };
     });

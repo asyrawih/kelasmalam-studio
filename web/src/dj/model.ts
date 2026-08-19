@@ -611,6 +611,19 @@ export const GRID_ZOOMS: readonly GridZoom[] = [1, 2, 4, 8];
 /** Arti menarik waveform besar saat mode grid menyala. */
 export type GridDragMode = 'seek' | 'grid';
 
+/**
+ * Cakupan suntingan grid — kontrol #7 rekordbox.
+ *
+ * `'track'` — satu tempo untuk SELURUH lagu (`[Normal]` rekordbox). Ini yang
+ * benar untuk materi elektronik, dan ia bawaannya.
+ *
+ * `'here'` — suntingan hanya berlaku DARI POSISI INI ke belakang, dengan
+ * membuat anchor ruas baru (`[Dynamic]`). Untuk lagu yang direkam manusia dan
+ * temponya bergeser di tengah jalan: tanpa ini, memperbaiki reff berarti
+ * merusak intro.
+ */
+export type GridScope = 'track' | 'here';
+
 export interface GridEditState {
   /** Deck yang sedang disunting grid-nya. `null` = mode mati. */
   readonly deck: DeckId | null;
@@ -639,6 +652,8 @@ export interface GridEditState {
    * sadar dan tidak boleh jadi bawaan.
    */
   readonly drag: GridDragMode;
+  /** Cakupan suntingan: seluruh lagu, atau dari posisi ini ke belakang. */
+  readonly scope: GridScope;
   /**
    * Cap waktu tombol TAP, ms. Di store dan bukan di komponen karena TAP punya
    * dua pintu masuk (tombol dan keyboard) yang harus menambah ke deretan yang
@@ -657,7 +672,7 @@ export interface GridEditState {
 }
 
 export function defaultGridEdit(): GridEditState {
-  return { deck: null, zoomBars: 2, fine: false, drag: 'seek', taps: [], metroLevel: 0 };
+  return { deck: null, zoomBars: 2, fine: false, drag: 'seek', scope: 'track', taps: [], metroLevel: 0 };
 }
 
 // ── DjState ──────────────────────────────────────────────────────────────────

@@ -5,7 +5,9 @@ import {
   BEATS_PER_BAR,
   MAX_GRID_BPM,
   beatLinesIn,
+  gridSegments,
   resolveBeatGrid,
+  resolveBeatGridAt,
   samplesPerBar,
   samplesPerBeat,
   snapSourceToBeat,
@@ -142,5 +144,61 @@ describe('snapSourceToBeat', () => {
   it('sourceAtBeat kebalikan dari indeks ketukan', () => {
     expect(sourceAtBeat(4, GRID, SR)).toBe(2 * SR);
     expect(sourceAtBeat(-2, GRID, SR)).toBe(-1 * SR);
+  });
+});
+
+describe('ruas tempo — [Dynamic]', () => {
+  it('lagu tanpa anchor tambahan: satu ruas, dan sama persis dengan resolveBeatGrid', () => {
+    const a = asset();
+    const segs = gridSegments(a);
+    expect(segs).toHaveLength(1);
+    expect(segs[0]!.grid).toEqual(resolveBeatGrid(a));
+    // Berapa pun posisinya, jawabannya sama — inilah yang menjamin lagu lama
+    // tidak berubah perilaku sedikit pun.
+    expect(resolveBeatGridAt(a, 0)!.bpm).toBe(120);
+    expect(resolveBeatGridAt(a, 3600)!.bpm).toBe(120);
+  });
+
+  it('anchor membelah lagu: sebelum titiknya tetap grid dasar, sesudahnya tempo baru', () => {
+    const a = asset({ beatAnchors: [{ atSec: 100, bpm: 90 }] });
+    expect(resolveBeatGridAt(a, 99.999)!.bpm).toBe(120);
+    expect(resolveBeatGridAt(a, 100)!.bpm).toBe(90);
+    expect(resolveBeatGridAt(a, 500)!.bpm).toBe(90);
+  });
+
+  it('grid sebuah ruas lewat PERSIS di titik anchor-nya', () => {
+    // Kalau tidak, garis bar meleset dari titik yang barusan ditunjuk user, dan
+    // tidak ada satu pun kontrol di layar yang menjelaskan kenapa.
+    const at = 137.421;
+    const a = asset({ beatAnchors: [{ atSec: at, bpm: 97 }] });
+    const g = resolveBeatGridAt(a, at)!;
+    const barSec = (60 / g.bpm) * g.beatsPerBar;
+    const phase = ((at - g.offsetSec) % barSec + barSec) % barSec;
+    expect(Math.min(phase, barSec - phase)).toBeLessThan(1e-6);
+  });
+
+  it('anchor diurutkan walau diberikan terbalik', () => {
+    const a = asset({
+      beatAnchors: [
+        { atSec: 200, bpm: 80 },
+        { atSec: 100, bpm: 90 },
+      ],
+    });
+    expect(gridSegments(a).map((s) => s.grid.bpm)).toEqual([120, 90, 80]);
+    expect(resolveBeatGridAt(a, 150)!.bpm).toBe(90);
+    expect(resolveBeatGridAt(a, 250)!.bpm).toBe(80);
+  });
+
+  it('anchor rusak (NaN / BPM nol) dibuang, bukan menghasilkan ruas hantu', () => {
+    const a = asset({
+      beatAnchors: [
+        { atSec: Number.NaN, bpm: 100 },
+        { atSec: 100, bpm: 0 },
+        { atSec: 150, bpm: 100 },
+      ],
+    });
+    expect(gridSegments(a)).toHaveLength(2);
+    expect(resolveBeatGridAt(a, 120)!.bpm).toBe(120);
+    expect(resolveBeatGridAt(a, 160)!.bpm).toBe(100);
   });
 });

@@ -66,6 +66,7 @@ import {
   type EqBandDj,
   type FxTargetDj,
   type GridDragMode,
+  type GridScope,
   type GridZoom,
   type HotCueSlot,
   type MetroLevel,
@@ -998,6 +999,10 @@ export const djActions = {
 
   setGridDrag(drag: GridDragMode): void {
     set((s) => (s.gridEdit.drag === drag ? null : { gridEdit: { ...s.gridEdit, drag } }));
+  },
+
+  setGridScope(scope: GridScope): void {
+    set((s) => (s.gridEdit.scope === scope ? null : { gridEdit: { ...s.gridEdit, scope } }));
   },
 
   /** Catat satu TAP. Deretan lama yang sudah terputus jeda panjang dibuang. */

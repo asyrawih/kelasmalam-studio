@@ -36,6 +36,7 @@ import { useMemo, useRef } from 'react';
 
 import { BAND_COLORS, ScrollingWave } from '../../studio/timeline';
 import { rawAnchorSec } from '../../studio/analysis/grid-edit';
+import { gridSegments } from '../../studio/analysis/beat-grid';
 import { deckClockSec } from '../audio/deck-clock';
 import type { StudioAsset } from '../../studio/store';
 import { loopRegion, type DeckView } from '../deck-view';
@@ -63,6 +64,17 @@ export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX
    * grid, dan sama seperti rekordbox, yang mengubah grid lewat tombol saja.
    */
   const dragMovesGrid = editing && dragMode === 'grid';
+
+  /*
+   * Ruas tempo lagu ini. Dikirim SELALU, bukan hanya saat mode grid menyala:
+   * ruas mengubah letak garis grid yang sesungguhnya dipakai quantize dan
+   * metronom, jadi menyembunyikannya di luar mode grid berarti waveform
+   * berbohong justru saat orang sedang memainkan lagunya.
+   */
+  const segments = useMemo(
+    () => (view.asset === undefined ? null : gridSegments(view.asset)),
+    [view.asset],
+  );
 
   // Jam deck, bukan jam transport Studio. Dibuat sekali per deck supaya
   // identitas fungsinya stabil dan `ScrollingWave` tidak melihatnya berubah.
@@ -108,6 +120,7 @@ export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX
       regionStroke={accent}
       positionSourceSec={clock}
       anchorAt={anchorAt}
+      gridSegments={segments}
       title={
         dragMovesGrid
           ? 'GRID EDIT — tarik untuk menggeser grid; playhead tidak bergerak'

@@ -40,7 +40,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { Button } from '../../ui/cyber';
-import { MAX_GRID_BPM, MIN_GRID_BPM } from '../../studio/analysis/beat-grid';
+import { MAX_GRID_BPM, MIN_GRID_BPM, gridSegments } from '../../studio/analysis/beat-grid';
 import { MIN_FIT_BARS, barsBetween, currentBpm, rawAnchorSec } from '../../studio/analysis/grid-edit';
 import { useStudio } from '../../studio/store';
 import { DECK_ACCENT, GRID_ZOOMS, METRO_LEVELS, type DeckId, type GridZoom } from '../model';
@@ -54,6 +54,7 @@ import {
   nudgeGrid,
   octaveGrid,
   redoGridEdit,
+  removeSegmentHere,
   setDownbeatHere,
   setGridBpm,
   tapGrid,
@@ -196,6 +197,7 @@ export function GridEditBar({ id }: GridEditBarProps): JSX.Element | null {
   const zoomBars = useDj((s) => s.gridEdit.zoomBars);
   const fine = useDj((s) => s.gridEdit.fine);
   const drag = useDj((s) => s.gridEdit.drag);
+  const scope = useDj((s) => s.gridEdit.scope);
   const metroLevel = useDj((s) => s.gridEdit.metroLevel);
   const deck = useDj((s) => s.decks[id]);
   const assets = useStudio((s) => s.assets);
@@ -244,6 +246,17 @@ export function GridEditBar({ id }: GridEditBarProps): JSX.Element | null {
   const locked = asset?.analysisLock === true;
   const { canUndo, canRedo } = gridHistoryState(assetId);
   const bars = bpm === null ? 0 : Math.abs(barsBetween(anchorSec, bpm, atSec));
+
+  /*
+   * Ruas mana yang sedang diinjak playhead, dan ada berapa semuanya.
+   *
+   * Ditampilkan hanya kalau lagunya memang punya ruas tambahan: pada lagu
+   * bertempo tetap — hampir semuanya — "RUAS 1/1" adalah kebisingan yang
+   * menyiratkan ada sesuatu untuk diurus padahal tidak ada.
+   */
+  const segs = gridSegments(asset);
+  const segIndex = segs.reduce((acc, s, i) => (s.fromSec <= atSec ? i : acc), 0);
+  const inSegment = segs.length > 1 && segIndex > 0;
   const fitReady = bars >= MIN_FIT_BARS;
   const off = blocked !== null;
   const accent = DECK_ACCENT[id];
@@ -400,6 +413,48 @@ export function GridEditBar({ id }: GridEditBarProps): JSX.Element | null {
         >
           PAS DI SINI · {bars.toFixed(1)}
         </Button>
+      </Row>
+
+      {/* — cakupan suntingan (#7): seluruh lagu vs dari posisi ini — */}
+      <Row>
+        <span style={LABEL}>CAKUPAN</span>
+        <Button
+          variant="ghost"
+          active={scope === 'track'}
+          onClick={() => djActions.setGridScope('track')}
+          title="satu tempo untuk SELURUH lagu — [Normal] rekordbox, dan yang benar untuk materi elektronik"
+        >
+          SELURUH LAGU
+        </Button>
+        <Button
+          variant="ghost"
+          active={scope === 'here'}
+          onClick={() => djActions.setGridScope('here')}
+          title="suntingan berlaku DARI POSISI INI ke belakang, dengan membuat ruas tempo baru — [Dynamic] rekordbox, untuk lagu yang temponya bergeser di tengah jalan"
+        >
+          DARI SINI
+        </Button>
+        {segs.length > 1 ? (
+          <span
+            style={{
+              ...LABEL,
+              color: 'var(--cy-text)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            RUAS {segIndex + 1}/{segs.length}
+          </span>
+        ) : null}
+        {inSegment ? (
+          <Button
+            variant="ghost"
+            disabled={off}
+            onClick={() => removeSegmentHere(id)}
+            title="buang ruas ini — bagian lagu ini kembali memakai grid dasar"
+          >
+            HAPUS RUAS
+          </Button>
+        ) : null}
       </Row>
 
       {/* — arti menarik waveform besar — */}

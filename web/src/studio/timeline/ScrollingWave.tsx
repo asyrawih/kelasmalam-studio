@@ -28,7 +28,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { fitCanvas } from '../../ui/lib/canvas';
-import type { BeatGrid } from '../analysis/beat-grid';
+import type { BeatGrid, GridSegment } from '../analysis/beat-grid';
 import { samplesToSec, secToSamples, type Samples } from '../model';
 import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-preview';
 import type { StudioAsset } from '../store';
@@ -112,6 +112,16 @@ export interface ScrollingWaveProps {
    * lihat `anchorAt` di `beat-draw.ts`.
    */
   readonly anchorAt?: Samples | null;
+  /**
+   * Ruas tempo lagu ini (`[Dynamic]`), kalau ada lebih dari satu.
+   *
+   * Diisi hanya oleh halaman DJ. Tanpa ini, satu `grid` dipakai untuk seluruh
+   * jendela — dan begitu jendela melewati batas ruas, garis yang tergambar
+   * adalah garis yang TIDAK dipakai quantize maupun metronom di sana. Grid yang
+   * berbohong lebih buruk daripada tidak ada grid: ia terlihat sama persis
+   * dengan yang benar.
+   */
+  readonly gridSegments?: readonly GridSegment[] | null;
 }
 
 export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
@@ -182,8 +192,7 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
       }
 
       if (p.grid !== null) {
-        drawBeatGrid(ctx, {
-          grid: p.grid,
+        const common = {
           sampleRate: sr,
           from,
           len,
@@ -196,8 +205,48 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
           // sedang bekerja.
           regionTint: p.regionTint ?? (p.regionLive === true ? '#6ee7ff28' : '#6ee7ff10'),
           regionStroke: p.regionStroke ?? (p.regionLive === true ? '#6ee7ff' : '#6ee7ff66'),
-          anchorAt: p.anchorAt ?? null,
-        });
+        };
+
+        const segs = p.gridSegments ?? null;
+        if (segs === null || segs.length <= 1) {
+          drawBeatGrid(ctx, { ...common, grid: p.grid, anchorAt: p.anchorAt ?? null });
+        } else {
+          /*
+           * Tiap ruas digambar dengan PEMETAAN YANG SAMA, lalu dipotong ke
+           * rentang x-nya sendiri lewat `clip`.
+           *
+           * Cara yang tampak lebih lurus — memanggil `drawBeatGrid` dengan
+           * jendela kecil per ruas — menuntut penggambar tahu offset x, yaitu
+           * pemetaan piksel→SOURCE yang KEDUA. Aturan berkas ini cuma satu dan
+           * ia ada di kepalanya: pemetaan itu ditulis sekali. Memotong bidang
+           * gambar tidak menyentuh pemetaan sama sekali, dan sebagai bonus
+           * sorotan region tidak pernah tergambar dua kali di piksel yang sama.
+           */
+          const end = from + len;
+          for (let i = 0; i < segs.length; i++) {
+            const seg = segs[i]!;
+            const segFrom = Math.max(from, Number.isFinite(seg.fromSec) ? seg.fromSec * sr : -Infinity);
+            const next = segs[i + 1];
+            const segEnd = next === undefined ? end : Math.min(end, next.fromSec * sr);
+            if (!(segEnd > segFrom)) continue;
+
+            const x0 = ((segFrom - from) / len) * w;
+            const x1 = ((segEnd - from) / len) * w;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x0, 0, x1 - x0, h);
+            ctx.clip();
+            drawBeatGrid(ctx, {
+              ...common,
+              grid: seg.grid,
+              // Ruas dasar memakai anchor yang dikirim pemanggil; ruas tambahan
+              // ditandai di titik mulainya sendiri, karena di situlah pivot
+              // ×2/÷2 dan renggang/rapat berada untuk bagian lagu ini.
+              anchorAt: i === 0 ? (p.anchorAt ?? null) : Math.round(seg.fromSec * sr),
+            });
+            ctx.restore();
+          }
+        }
       }
       // Playhead selalu tepat di tengah — itu seluruh gunanya tampilan ini.
       drawPlayhead(ctx, from + len / 2, from, len, w, h, '#ffffff');

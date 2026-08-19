@@ -458,19 +458,20 @@ menyimpang dari rencana dan alasannya. Semuanya lulus `tsc --noEmit`,
 | 1 | downbeat di posisi ini | `SET DI SINI` · `shift+G` — menempel ke garis bar terdekat dalam 30 ms |
 | 2 | ketik BPM | kotak BPM, **tiga angka di belakang koma** |
 | 3 | TAP | `TAP` · `shift+T` |
-| 4 | geser grid ±1 ms | `◀ ▶` (0.1 ms saat `FINE`) |
+| 4 | geser grid ±1 ms | `◀ ▶` — selalu 1 ms, dan **mengulang saat ditahan** |
 | 5 | renggang/rapat ±1 ms | `− +` (3 ms saat `FINE`) |
 | 6 | ×2 / ÷2 | `×2 ÷2` — menulis ke `bpmOverride`, bukan `tempoOctave` |
-| 7 | cakupan seluruh-lagu vs dari-sini | **tidak** — `[Dynamic]` ditunda (§3, §8) |
+| 7 | cakupan seluruh-lagu vs dari-sini | `CAKUPAN · SELURUH LAGU / DARI SINI` + `HAPUS RUAS` — `[Dynamic]` lewat `beatAnchors` (§8) |
 | 8 | set ulang grid dari posisi ini | diganti **`PAS DI SINI`** · `shift+F` (§3) |
 | 9 | undo / redo | `UNDO REDO`, per asset |
 | 10 | metronom + 3 volume | `METRO ✕ ▁ ▃ █` |
 | 11 | Analysis Lock | `🔒`, menjaga tiga aksi store |
 
-Plus yang tidak ada di panel rekordbox: **menarik waveform menggeser grid**, dan
-**zoom 1/2/4/8 bar** pada deck yang sedang disunting.
+Sebelas dari sebelas. Plus yang tidak ada di panel rekordbox: **menarik waveform
+menggeser grid** (di balik `TARIK · GRID`, bukan bawaan — lihat penyimpangan 7)
+dan **zoom 1/2/4/8 bar** pada deck yang sedang disunting.
 
-### Enam penyimpangan dari rencana
+### Sepuluh penyimpangan dari rencana
 
 1. **Tombol GRID duduk di `DeckReadout`, bersebelahan dengan angka BPM** — bukan
    di header. Panelnya sendiri tidak bisa jadi tempat menyalakannya, dan BPM
@@ -504,6 +505,29 @@ Plus yang tidak ada di panel rekordbox: **menarik waveform menggeser grid**, dan
    per lagu. `AUTO` sengaja tanpa chord, alasan yang sama dengan
    `dj.browse.remove`.
 
+7. **Tarikan waveform TIDAK lagi otomatis menggeser grid.** Rencana §4 #2
+   menukar arti tarikan begitu mode grid menyala. Itu membajak satu-satunya
+   gerakan yang di seluruh aplikasi ini berarti "cari posisi", padahal menyetel
+   grid justru menuntut playhead sering dipindah — dan rekordbox sendiri
+   mengubah grid lewat tombol saja. Sekarang ia pilihan sadar (`gridEdit.drag`),
+   bawaannya `POSISI`. Konsekuensi yang menyenangkan: alasan panel harus
+   berhenti di bawah strip lagu-penuh ikut lenyap (lihat 8).
+8. **Panel bukan popup di deck lagi, melainkan BILAH di atas waveform besar**
+   (`GridEditBar.tsx`). Yang dikoreksi adalah garis grid, dan garis grid hanya
+   terlihat di sana. Ia MENDORONG waveform, tidak menutupinya.
+9. **`FINE` hanya mengubah langkah rapat/renggang**, persis `[fine]` rekordbox.
+   Versi sebelumnya ikut menghaluskan geser anchor jadi 0.1 ms — satu tombol
+   yang mengubah dua langkah ke arah berlawanan tidak bisa ditebak dari namanya.
+10. **`[Dynamic]` dibangun lebih awal daripada rencana §8**, tapi dalam bentuk
+    yang §8 sendiri usulkan: `StudioAsset.beatAnchors`, `resolveBeatGrid` tetap
+    mengembalikan ruas pertama, dan `resolveBeatGridAt` untuk pemanggil yang
+    butuh grid lokal. Yang membuatnya murah adalah satu baris di `deck-view.ts`:
+    deck membaca gridnya **di posisi playhead**, jadi quantize, loop, beat jump,
+    SYNC, metronom, dan FX ikut pindah ruas tanpa satu pun tahu tentang ruas.
+    Yang belum: pemanggil di `/studio` masih memakai ruas pertama, dan itu benar
+    untuk sekarang — timeline Studio memotong materi, bukan memainkannya per
+    posisi.
+
 ### Yang dijaga tes, dan tidak bisa dilihat dari kode
 
 - **Tanda tarikan** — menarik ke kiri menggeser grid ke kiri, dan playhead tidak
@@ -520,7 +544,10 @@ Plus yang tidak ada di panel rekordbox: **menarik waveform menggeser grid**, dan
 
 ### Yang masih terbuka
 
-- `[Dynamic]` / multi-marker (§8) — belum, dan sengaja.
+- `[Dynamic]` / multi-marker (§8) — **sudah**, lihat penyimpangan 10. Yang masih
+  terbuka darinya: penggambaran ruas di timeline `/studio`, dan UI untuk
+  memindahkan batas ruas dengan tetikus (sekarang lewat `◀ ▶` dalam cakupan
+  `DARI SINI`).
 - Presisi detektor (Utang 3a) — Grid Edit adalah katup pengamannya, bukan
   perbaikannya. `PAS DI SINI` membuat kegagalan detektor tidak lagi buntu.
 - Fase grid yang bergantung browser (Utang 3b) — `beatOffsetOverride` menyerapnya

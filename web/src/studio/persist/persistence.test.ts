@@ -80,6 +80,20 @@ describe('serialisasi project', () => {
     expect(back!.assetGrids).toEqual({ 1: { bpm: null, offsetSec: null, lock: true } });
   });
 
+  it('ruas tempo ikut tersimpan, dan lagu tanpa ruas tidak menumbuhkan JSON', () => {
+    // Ruas adalah keputusan user atas MATERI — kalau ia tidak bertahan, koreksi
+    // lagu bertempo goyah harus diulang tiap kali tab dibuka.
+    studioActions.registerAsset(asset(1));
+    studioActions.registerAsset(asset(2));
+    studioActions.setAssetBeatAnchor(1, { atSec: 120, bpm: 96 });
+
+    const back = deserialize(serialize(studioStore.getState()));
+    expect(back!.assetGrids).toEqual({
+      1: { bpm: null, offsetSec: null, lock: false, anchors: [{ atSec: 120, bpm: 96 }] },
+    });
+    expect(back!.assetGrids![2]).toBeUndefined();
+  });
+
   it('project lama tanpa assetGrids tetap terbaca', () => {
     const json = serialize(studioStore.getState()).replace(/,"assetGrids":\{[^}]*\}/, '');
     expect(deserialize(json)).not.toBeNull();

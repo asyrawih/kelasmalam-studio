@@ -12,7 +12,7 @@
  * dari luar deck, turunkan — jangan simpan.**
  */
 
-import { resolveBeatGrid, type BeatGrid } from '../studio/analysis/beat-grid';
+import { resolveBeatGridAt, type BeatGrid } from '../studio/analysis/beat-grid';
 import { TEMPO_UNCERTAIN, type StudioAsset } from '../studio/store';
 import {
   deckPositionSec,
@@ -57,7 +57,21 @@ export interface DeckView {
 
 export function deckView(deck: DeckState, asset: StudioAsset | undefined): DeckView {
   const missing = deck.assetId !== null && asset === undefined;
-  const grid = asset === undefined ? null : resolveBeatGrid(asset);
+  /*
+   * Grid dibaca DI POSISI PLAYHEAD, bukan di awal lagu.
+   *
+   * Untuk lagu bertempo tetap — yaitu hampir semuanya — keduanya sama persis.
+   * Bedanya baru muncul pada lagu yang punya anchor ruas (`[Dynamic]`), dan di
+   * sanalah satu baris ini menjadi seluruh perbedaannya: SEMUA yang menumpang
+   * grid deck (quantize, loop, beat jump, SYNC, metronom, FX) membacanya dari
+   * `view.grid`, jadi mereka ikut pindah ruas tanpa satu pun tahu tentang ruas.
+   *
+   * Titik masuk tunggal itu yang membuat `[Dynamic]` mungkin tanpa menyisir
+   * ulang enam pemanggil — dan yang menjamin mereka tidak pernah bisa memakai
+   * ruas yang berbeda dari yang digambar.
+   */
+  const sr = deck.sampleRate > 0 ? deck.sampleRate : 48_000;
+  const grid = asset === undefined ? null : resolveBeatGridAt(asset, deck.playhead / sr);
   const baseBpm = grid === null ? null : grid.bpm;
   const len = loopLen(deck.loop);
 

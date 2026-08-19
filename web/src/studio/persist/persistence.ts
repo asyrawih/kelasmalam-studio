@@ -70,6 +70,12 @@ interface PersistedGrid {
   readonly offsetSec: number | null;
   /** Opsional: project lama tidak punya field ini dan dibaca sebagai `false`. */
   readonly lock?: boolean;
+  /**
+   * Anchor ruas (`[Dynamic]`). Opsional dengan alasan yang sama: project yang
+   * ditulis sebelum fitur ini ada membacanya sebagai "tidak ada ruas tambahan",
+   * yang memang keadaan mereka.
+   */
+  readonly anchors?: readonly { readonly atSec: number; readonly bpm: number }[];
 }
 
 /**
@@ -83,8 +89,23 @@ interface PersistedGrid {
 function collectAssetGrids(s: StudioAppState): Record<number, PersistedGrid> {
   const out: Record<number, PersistedGrid> = {};
   for (const a of Object.values(s.assets)) {
-    if (a.bpmOverride === null && a.beatOffsetOverride === null && !a.analysisLock) continue;
-    out[a.id] = { bpm: a.bpmOverride, offsetSec: a.beatOffsetOverride, lock: a.analysisLock };
+    const anchors = a.beatAnchors ?? null;
+    if (
+      a.bpmOverride === null &&
+      a.beatOffsetOverride === null &&
+      anchors === null &&
+      !a.analysisLock
+    ) {
+      continue;
+    }
+    out[a.id] = {
+      bpm: a.bpmOverride,
+      offsetSec: a.beatOffsetOverride,
+      lock: a.analysisLock,
+      // Dihilangkan kalau kosong, supaya project lama dan project baru tanpa
+      // ruas tambahan menghasilkan JSON yang identik.
+      ...(anchors === null ? null : { anchors }),
+    };
   }
   return out;
 }
@@ -216,6 +237,7 @@ export async function restoreProject(
     // terkunci, jadi urutan terbalik akan memulihkan kuncinya dan membuang
     // justru koreksi yang dikunci itu.
     studioActions.setAssetBeatGrid(Number(id), { bpm: grid.bpm, offsetSec: grid.offsetSec });
+    studioActions.setAssetBeatAnchors(Number(id), grid.anchors ?? null);
     if (grid.lock === true) studioActions.setAnalysisLock(Number(id), true);
   }
 

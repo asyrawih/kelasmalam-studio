@@ -31,12 +31,19 @@
 import { useSyncExternalStore } from 'react';
 
 import { studioActions, studioStore } from '../../studio/store';
+import type { BeatAnchor } from '../../studio/analysis/beat-grid';
 
 /** Keadaan grid sebuah asset yang bisa dikembalikan seutuhnya. */
 export interface GridSnapshot {
   readonly bpm: number | null;
   readonly offsetSec: number | null;
   readonly octave: number;
+  /**
+   * Anchor ruas (`[Dynamic]`). Ikut di snapshot karena UNDO yang mengembalikan
+   * BPM tapi meninggalkan ruas yang barusan dibuat akan memulihkan keadaan yang
+   * tidak pernah ada — dan itu lebih buruk daripada tidak punya undo.
+   */
+  readonly anchors: readonly BeatAnchor[] | null;
 }
 
 /**
@@ -76,16 +83,33 @@ export function snapshotOf(assetId: number): GridSnapshot | null {
     bpm: asset.bpmOverride,
     offsetSec: asset.beatOffsetOverride,
     octave: asset.tempoOctave,
+    anchors: asset.beatAnchors ?? null,
   };
 }
 
+function sameAnchors(
+  a: readonly BeatAnchor[] | null,
+  b: readonly BeatAnchor[] | null,
+): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (a.length !== b.length) return false;
+  return a.every((x, i) => x.atSec === b[i]?.atSec && x.bpm === b[i]?.bpm);
+}
+
 function sameSnapshot(a: GridSnapshot, b: GridSnapshot): boolean {
-  return a.bpm === b.bpm && a.offsetSec === b.offsetSec && a.octave === b.octave;
+  return (
+    a.bpm === b.bpm &&
+    a.offsetSec === b.offsetSec &&
+    a.octave === b.octave &&
+    sameAnchors(a.anchors, b.anchors)
+  );
 }
 
 /** Tulis sebuah snapshot kembali ke store. Tidak menyentuh riwayat. */
 function applySnapshot(assetId: number, snap: GridSnapshot): void {
   studioActions.setAssetBeatGrid(assetId, { bpm: snap.bpm, offsetSec: snap.offsetSec });
+  studioActions.setAssetBeatAnchors(assetId, snap.anchors);
   const asset = studioStore.getState().assets[assetId];
   if (asset !== undefined && asset.tempoOctave !== snap.octave) {
     studioActions.shiftAssetTempoOctave(assetId, snap.octave - asset.tempoOctave);

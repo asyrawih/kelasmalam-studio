@@ -36,11 +36,11 @@ import {
   widenBeat,
   type GridPatch,
 } from '../../studio/analysis/grid-edit';
-import { BEATS_PER_BAR } from '../../studio/analysis/beat-grid';
+import { BEATS_PER_BAR, gridSegments } from '../../studio/analysis/beat-grid';
 import { tapTempo } from '../../studio/analysis/tap-tempo';
 import { studioActions, studioStore, type StudioAsset } from '../../studio/store';
 import { djActions, djStore } from '../store';
-import type { DeckId } from '../model';
+import type { DeckId, GridScope } from '../model';
 import { canRedoGrid, canUndoGrid, recordGrid, redoGrid, undoGrid } from './grid-history';
 
 /**
@@ -60,11 +60,21 @@ export interface GridTarget {
   readonly deckId: DeckId;
   readonly assetId: number;
   readonly asset: StudioAsset;
-  /** Anchor MENTAH (jebakan 1 `analysis/grid-edit.ts`). */
+  /**
+   * Anchor MENTAH (jebakan 1 `analysis/grid-edit.ts`) — ATAU anchor ruas yang
+   * berlaku di playhead, kalau cakupannya `'here'`. Lihat `gridTarget`.
+   */
   readonly anchorSec: number;
   readonly bpm: number;
   /** Posisi playhead deck, detik. */
   readonly atSec: number;
+  /** Cakupan yang berlaku saat target ini dibaca. */
+  readonly scope: GridScope;
+  /**
+   * Awal ruas yang memuat playhead, atau `null` kalau playhead masih di ruas
+   * DASAR (lagu tanpa anchor tambahan, atau posisi sebelum anchor pertama).
+   */
+  readonly segStartSec: number | null;
 }
 
 /**
@@ -88,13 +98,35 @@ export function gridTarget(deckId?: DeckId): GridTarget | null {
   if (bpm === null) return null;
 
   const sr = deck.sampleRate > 0 ? deck.sampleRate : 48_000;
+  const atSec = deck.playhead / sr;
+  const scope = s.gridEdit.scope;
+
+  /*
+   * Ruas yang memuat playhead — hanya yang BUKAN ruas dasar.
+   *
+   * Ruas dasar sengaja dilaporkan `null` alih-alih `-Infinity`: pembedaannya
+   * bukan kosmetik, melainkan yang memberi tahu `commit` apakah suntingan
+   * "dari sini" harus MEMBUAT anchor baru atau MEMPERBAIKI yang sudah ada.
+   */
+  const segs = gridSegments(asset);
+  const seg = segs.filter((x) => Number.isFinite(x.fromSec) && x.fromSec <= atSec).at(-1) ?? null;
+
+  /*
+   * Kalau cakupannya "dari sini" DAN playhead berada di dalam sebuah ruas,
+   * angka yang disunting adalah angka RUAS ITU — bukan grid dasar. Kalau tidak,
+   * keduanya sama, dan seluruh jalur lama berjalan persis seperti sebelumnya.
+   */
+  const local = scope === 'here' && seg !== null;
+
   return {
     deckId: id,
     assetId: deck.assetId,
     asset,
-    anchorSec: rawAnchorSec(asset),
-    bpm,
-    atSec: deck.playhead / sr,
+    anchorSec: local ? seg.fromSec : rawAnchorSec(asset),
+    bpm: local ? seg.grid.bpm : bpm,
+    atSec,
+    scope,
+    segStartSec: seg?.fromSec ?? null,
   };
 }
 
@@ -118,17 +150,74 @@ export function gridBlockedReason(deckId: DeckId | null): string | null {
   return null;
 }
 
-/** Terapkan patch: catat riwayat, tulis, laporkan. */
+/**
+ * Terapkan patch: catat riwayat, tulis, laporkan.
+ *
+ * SATU tempat yang membaca cakupan (kontrol #7). Operasi di bawah tidak tahu
+ * apa-apa tentang ruas — mereka menghitung "grid seperti apa yang diinginkan",
+ * dan fungsi ini yang memutuskan grid itu ditulis ke SELURUH lagu atau ke
+ * sebuah anchor ruas. Menyebar keputusan itu ke sebelas operasi berarti
+ * menyediakan sebelas tempat untuk lupa.
+ */
 function commit(t: GridTarget, patch: GridPatch): boolean {
   if (t.asset.analysisLock) {
     djActions.setNotice(`${t.asset.name} terkunci — buka 🔒 untuk menyunting grid`);
     return false;
   }
+
+  if (t.scope === 'here') {
+    const bpm = patch.bpm ?? t.bpm;
+    /*
+     * Anchor ruasnya di mana?
+     *
+     *  - Kalau patch MEMINDAHKAN FASE (SET DI SINI, geser ±1 ms), titik yang
+     *    diminta itulah anchornya.
+     *  - Kalau tidak, dan playhead sudah di dalam sebuah ruas, ruas itu yang
+     *    diperbaiki di tempat — menekan ×2 dua kali tidak boleh meninggalkan
+     *    dua ruas.
+     *  - Kalau tidak, ruas baru mulai di GARIS BAR terdekat dari playhead,
+     *    bukan di playhead persis. Ini yang menjaga kesinambungan: ruas baru
+     *    berangkat dari ketukan yang sudah ada, jadi tidak ada setengah
+     *    ketukan yang menganga di batas ruas.
+     */
+    const phaseMoved = patch.offsetSec !== undefined && patch.offsetSec !== t.anchorSec;
+    const atSec = phaseMoved
+      ? patch.offsetSec!
+      : (t.segStartSec ?? nearestBarSec(t.anchorSec, t.bpm, t.atSec, BEATS_PER_BAR));
+
+    recordGrid(t.assetId);
+    studioActions.setAssetBeatAnchor(t.assetId, { atSec, bpm });
+    return true;
+  }
+
   recordGrid(t.assetId);
   studioActions.setAssetBeatGrid(t.assetId, {
     bpm: patch.bpm ?? t.asset.bpmOverride,
     offsetSec: patch.offsetSec ?? t.asset.beatOffsetOverride,
   });
+  return true;
+}
+
+/**
+ * Buang ruas yang memuat playhead, mengembalikan bagian itu ke grid dasar.
+ *
+ * Ada karena membuat ruas tanpa bisa membuangnya berarti satu tekanan tombol
+ * yang salah menempel di lagu itu selamanya — dan AUTO, satu-satunya jalan
+ * keluar yang tersisa, ikut membuang seluruh koreksi lain yang benar.
+ */
+export function removeSegmentHere(deckId?: DeckId): boolean {
+  const t = gridTarget(deckId);
+  if (t === null) return fail(deckId ?? null);
+  if (t.asset.analysisLock) {
+    djActions.setNotice(`${t.asset.name} terkunci — buka 🔒 untuk menyunting grid`);
+    return false;
+  }
+  if (t.segStartSec === null) {
+    djActions.setNotice('tidak ada ruas di posisi ini — yang berlaku di sini grid dasar');
+    return false;
+  }
+  recordGrid(t.assetId);
+  studioActions.removeAssetBeatAnchorNear(t.assetId, t.segStartSec, 0.001);
   return true;
 }
 

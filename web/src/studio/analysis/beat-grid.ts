@@ -122,6 +122,82 @@ export function resolveBeatGrid(asset: StudioAsset | undefined): BeatGrid | null
   };
 }
 
+/**
+ * Satu titik tempat tempo BERGANTI, dan tempo yang berlaku sejak titik itu.
+ *
+ * Ini `[Dynamic]` rekordbox dalam bentuk paling kecil yang masih jujur: lagu
+ * yang direkam manusia melambat dan mempercepat, dan satu BPM untuk seluruh
+ * lagu memaksa user memilih bagian mana yang boleh benar. Anchor menjawabnya
+ * dengan membelah lagu jadi ruas-ruas, masing-masing dengan tempo sendiri.
+ *
+ * `atSec` adalah anchor DAN batas kiri ruasnya sekaligus — grid ruas itu lewat
+ * persis di sana. Keduanya sengaja satu angka: dua angka terpisah berarti ada
+ * keadaan tempat garis grid tidak mendarat di titik yang barusan ditunjuk user,
+ * dan tidak ada cara melihat kenapa dari layar.
+ */
+export interface BeatAnchor {
+  readonly atSec: number;
+  readonly bpm: number;
+}
+
+/** Satu ruas tempo: grid yang berlaku mulai `fromSec` sampai ruas berikutnya. */
+export interface GridSegment {
+  readonly fromSec: number;
+  readonly grid: BeatGrid;
+}
+
+/**
+ * Batas jumlah anchor per lagu. rekordbox sendiri tidak mengumumkan angkanya;
+ * yang dijaga di sini adalah loop penggambar, bukan selera.
+ */
+export const MAX_BEAT_ANCHORS = 256;
+
+/** Ruas grid sebuah asset, urut menaik. Ruas PERTAMA selalu grid dasarnya. */
+export function gridSegments(asset: StudioAsset | undefined): readonly GridSegment[] {
+  const base = resolveBeatGrid(asset);
+  if (base === null) return [];
+  // Ruas dasar mulai dari −∞, bukan dari 0: materi sebelum anchor pertama tetap
+  // harus punya grid, dan `beatIndexAt` memang boleh negatif.
+  const out: GridSegment[] = [{ fromSec: -Infinity, grid: base }];
+
+  const anchors = asset?.beatAnchors ?? null;
+  if (anchors === null) return out;
+
+  const sane = anchors
+    .filter((a) => Number.isFinite(a.atSec) && Number.isFinite(a.bpm) && a.bpm > 0)
+    .slice(0, MAX_BEAT_ANCHORS)
+    .slice()
+    .sort((a, b) => a.atSec - b.atSec);
+
+  for (const a of sane) {
+    const bpm = clampGridBpm(a.bpm);
+    const barSec = (60 / bpm) * BEATS_PER_BAR;
+    // `atSec` dinormalkan dengan cara yang SAMA dengan `resolveBeatGrid`, jadi
+    // grid ruas ini lewat persis di `atSec` — lihat catatan di `BeatAnchor`.
+    const offsetSec = ((a.atSec % barSec) + barSec) % barSec;
+    out.push({ fromSec: a.atSec, grid: { bpm, offsetSec, beatsPerBar: BEATS_PER_BAR, manual: true } });
+  }
+  return out;
+}
+
+/**
+ * Grid yang berlaku DI SATU POSISI. Untuk lagu tanpa anchor tambahan ia
+ * mengembalikan hal yang sama persis dengan `resolveBeatGrid`.
+ *
+ * Inilah yang dipakai deck: satu titik masuk, supaya quantize, loop, SYNC, dan
+ * metronom tidak pernah bisa memakai ruas yang berbeda dari yang digambar.
+ */
+export function resolveBeatGridAt(asset: StudioAsset | undefined, atSec: number): BeatGrid | null {
+  const segs = gridSegments(asset);
+  if (segs.length === 0) return null;
+  let found = segs[0]!;
+  for (const s of segs) {
+    if (s.fromSec <= atSec) found = s;
+    else break;
+  }
+  return found.grid;
+}
+
 /** Indeks ketukan (pecahan) di posisi source tertentu. Bisa negatif. */
 export function beatIndexAt(at: Samples, grid: BeatGrid, sr: number): number {
   return (at - grid.offsetSec * sr) / samplesPerBeat(grid, sr);
