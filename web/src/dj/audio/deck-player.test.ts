@@ -211,3 +211,133 @@ describe('loop yang dipersempit di bawah posisi sekarang', () => {
     expect(player.positionAt(ctx.currentTime)).toBeCloseTo(SR, 3);
   });
 });
+
+/**
+ * SCRUB — yang diuji di sini adalah PEMBAGIAN PERAN, bukan bunyinya.
+ *
+ * Selama tangan menarik, posisi tidak boleh maju sendiri (yang menggerakkannya
+ * hanya tangan) dan source utama tidak boleh dijadwalkan ulang (itu tugas
+ * `ScrubVoice`). Keduanya tidak terlihat dari layar: yang pertama muncul
+ * sebagai lagu yang "meluncur" di bawah jari, yang kedua sebagai dengung.
+ */
+describe('scrub', () => {
+  it('membekukan posisi meski waktu berjalan dan PLAY masih menyala', () => {
+    player.play(0);
+    ctx.advance(2);
+    player.beginScrub();
+    ctx.advance(5);
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(2 * SR, 3);
+  });
+
+  it('mengambil posisi SEBELUM membeku — tidak melompat mundur saat disentuh', () => {
+    // Kalau `scrubbing` dinyalakan lebih dulu, `positionAt` sudah membeku dan
+    // yang dijangkarkan adalah posisi jangkar LAMA. Gejalanya: lagu melompat
+    // mundur tepat pada saat jari menyentuh piringan.
+    player.play(0);
+    ctx.advance(3);
+    player.beginScrub();
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(3 * SR, 3);
+  });
+
+  it('tangan yang menggerakkan posisi, dan hanya tangan', () => {
+    player.play(0);
+    player.beginScrub();
+    player.scrubTo(30 * SR);
+    ctx.advance(4);
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(30 * SR, 3);
+  });
+
+  it('melanjutkan dari tempat tangan meninggalkannya', () => {
+    player.play(0);
+    ctx.advance(1);
+    player.beginScrub();
+    player.scrubTo(60 * SR);
+    player.endScrub();
+    ctx.advance(2);
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(62 * SR, 3);
+  });
+
+  it('deck yang DIAM tetap diam setelah tangan diangkat', () => {
+    player.beginScrub();
+    player.scrubTo(60 * SR);
+    player.endScrub();
+    ctx.advance(5);
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(60 * SR, 3);
+  });
+
+  it('PLAY yang ditekan saat tangan masih menempel baru berjalan setelah dilepas', () => {
+    player.beginScrub();
+    player.play(10 * SR);
+    ctx.advance(3);
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(10 * SR, 3);
+    player.endScrub();
+    ctx.advance(2);
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(12 * SR, 3);
+  });
+
+  it('laju yang sedang berlaku ikut terpakai setelah tangan diangkat', () => {
+    player.setRate(2);
+    player.play(0);
+    player.beginScrub();
+    player.scrubTo(10 * SR);
+    player.endScrub();
+    ctx.advance(1);
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(12 * SR, 3);
+  });
+
+  it('ujung materi TIDAK dilaporkan selama tangan menarik', () => {
+    // Kalau dilaporkan, `useDjAudio` mematikan PLAY di tengah tarikan — dan
+    // tangan yang menarik balik menemukan deck yang sudah berhenti sendiri.
+    player.play(0);
+    player.beginScrub();
+    player.scrubTo(300 * SR);
+    expect(player.reachedEnd(ctx.currentTime)).toBe(false);
+    player.endScrub();
+    expect(player.reachedEnd(ctx.currentTime)).toBe(true);
+  });
+
+  it('dijepit ke ujung materi, sama seperti lompatan biasa', () => {
+    player.beginScrub();
+    player.scrubTo(9_999 * SR);
+    expect(player.positionAt(ctx.currentTime)).toBe(300 * SR);
+    player.scrubTo(-5 * SR);
+    expect(player.positionAt(ctx.currentTime)).toBe(0);
+  });
+
+  it('`beginScrub` berulang tidak menggeser posisi', () => {
+    player.play(0);
+    ctx.advance(2);
+    player.beginScrub();
+    ctx.advance(3);
+    player.beginScrub();
+    expect(player.positionAt(ctx.currentTime)).toBeCloseTo(2 * SR, 3);
+    expect(player.isScrubbing).toBe(true);
+  });
+
+  it('`endScrub` tanpa tarikan tidak menyalakan apa pun', () => {
+    ctx.advance(1);
+    player.endScrub();
+    ctx.advance(5);
+    expect(player.isScrubbing).toBe(false);
+    expect(player.positionAt(ctx.currentTime)).toBe(0);
+  });
+
+  it('SLIP tetap berjalan di bawah tangan — itu gunanya', () => {
+    player.play(0);
+    player.setSlip(true);
+    player.beginScrub();
+    ctx.advance(4);
+    player.scrubTo(90 * SR);
+    // Bayangan slip mengabaikan tarikan; melepas SLIP mengembalikan deck ke
+    // tempat lagu SEHARUSNYA berada.
+    expect(player.slipPositionAt(ctx.currentTime)).toBeCloseTo(4 * SR, 3);
+    expect(player.setSlip(false)).toBeCloseTo(4 * SR, 3);
+  });
+
+  it('memuat materi baru membatalkan tarikan yang sedang berjalan', () => {
+    player.play(0);
+    player.beginScrub();
+    player.load(fakeBuffer(120), 0);
+    expect(player.isScrubbing).toBe(false);
+  });
+});

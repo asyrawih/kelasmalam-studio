@@ -30,7 +30,25 @@
  *
  * Tiap perubahan laju memasang jangkar BARU pada posisi saat itu, jadi
  * matematikanya tetap potongan-lurus dan tidak pernah perlu integrasi.
+ *
+ * ## SCRUB: source utama DIAM, butir yang berbunyi
+ *
+ * Selama tangan menarik (jog atau waveform), source utama dimatikan dan yang
+ * terdengar datang dari `ScrubVoice`. Itu keputusan, bukan penyederhanaan:
+ * kalau source utama dibiarkan hidup, tiap `pointermove` menjadwalkannya ulang
+ * di posisi baru — enam puluh potongan 16 ms per detik, yang terdengar sebagai
+ * dengung, bukan sebagai lagu (alasan lengkapnya di kepala `scrub-voice.ts`).
+ * Membiarkan keduanya berbunyi bersama akan menumpuk dengung itu DI ATAS
+ * butir-butirnya.
+ *
+ * `playing` TIDAK ikut dimatikan selama scrub: ia berarti "PLAY menyala", yaitu
+ * niat user, dan tangan yang menyentuh piringan tidak membatalkan niat itu —
+ * persis seperti CDJ. Yang membekukan posisi adalah `scrubbing`, dan `endScrub`
+ * membaca `playing` untuk tahu apakah lagunya harus lanjut berjalan saat tangan
+ * diangkat.
  */
+
+import { ScrubVoice } from './scrub-voice';
 
 /** Fade masuk/keluar saat melompat. Cukup untuk membunuh klik, terlalu pendek
  *  untuk terdengar sebagai fade. Sama dengan micro-fade docs/06 §6d. */
@@ -76,9 +94,17 @@ export class DeckPlayer {
   private slipArmed = false;
   private slipAnchor: Anchor = { at: 0, pos: 0, rate: 1 };
 
+  /** Butir-butir yang berbunyi selama tangan menarik. Lihat `scrub-voice.ts`. */
+  private readonly scrub: ScrubVoice;
+  /** true selama tangan menarik. Membekukan posisi; tidak menyentuh `playing`. */
+  private scrubbing = false;
+
   constructor(o: DeckPlayerOptions) {
     this.ctx = o.ctx;
     this.out = o.destination;
+    // Tujuan yang SAMA dengan source utama: butir scrub harus lewat TRIM, EQ,
+    // fader, dan CUE seperti lagunya sendiri.
+    this.scrub = new ScrubVoice({ ctx: o.ctx, destination: o.destination });
   }
 
   get sampleRate(): number {
@@ -101,8 +127,10 @@ export class DeckPlayer {
   /** Materi baru. Menghentikan apa pun yang sedang berbunyi. */
   load(buffer: AudioBuffer | null, atSample: number): void {
     this.stopSource(0);
+    this.scrub.setBuffer(buffer);
     this.buffer = buffer;
     this.playing = false;
+    this.scrubbing = false;
     this.anchor = { at: this.ctx.currentTime, pos: atSample, rate: this.rate };
     this.slipAnchor = this.anchor;
   }
@@ -115,7 +143,9 @@ export class DeckPlayer {
    * yang sama supaya angka di layar tidak menyimpang dari yang terdengar.
    */
   positionAt(now: number): number {
-    const a = this.playing ? this.anchor : { ...this.anchor, rate: 0 };
+    // Selama scrub, posisi hanya berpindah karena tangan — bukan karena waktu.
+    const moving = this.playing && !this.scrubbing;
+    const a = moving ? this.anchor : { ...this.anchor, rate: 0 };
     const raw = a.pos + (now - a.at) * a.rate * this.sampleRate;
     return this.foldLoop(raw);
   }
@@ -136,8 +166,16 @@ export class DeckPlayer {
 
   play(fromSample: number): void {
     if (this.buffer === null) return;
-    this.startSource(Math.min(Math.max(0, fromSample), this.frames));
+    const pos = Math.min(Math.max(0, fromSample), this.frames);
     this.playing = true;
+    if (this.scrubbing) {
+      // PLAY ditekan saat tangan masih di piringan: niatnya dicatat, tapi yang
+      // berbunyi tetap butir scrub sampai tangan diangkat. `endScrub` yang
+      // menyalakan source-nya.
+      this.anchor = { at: this.ctx.currentTime, pos, rate: this.rate };
+      return;
+    }
+    this.startSource(pos);
   }
 
   pause(): void {
@@ -161,7 +199,9 @@ export class DeckPlayer {
   seek(toSample: number): void {
     const now = this.ctx.currentTime;
     const pos = Math.min(Math.max(0, toSample), this.frames);
-    if (this.playing) {
+    // `!this.scrubbing` WAJIB: menjadwalkan ulang source pada tiap laporan
+    // tangan adalah persis dengung yang `ScrubVoice` ada untuk menghindarinya.
+    if (this.playing && !this.scrubbing) {
       this.startSource(pos);
     } else {
       this.stopSource(MICRO_FADE_SEC);
@@ -259,14 +299,79 @@ export class DeckPlayer {
     return this.slipArmed;
   }
 
+  // ── SCRUB ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Tangan turun. Source utama diredam; sejak sini yang berbunyi hanya butir.
+   *
+   * Posisi dibaca SEBELUM `scrubbing` dinyalakan — kalau dibalik, `positionAt`
+   * sudah membeku dan yang dijangkarkan adalah posisi lama, sehingga lagunya
+   * melompat mundur sejauh waktu sejak jangkar terakhir tepat saat disentuh.
+   */
+  beginScrub(): void {
+    if (this.scrubbing) return;
+    const now = this.ctx.currentTime;
+    const pos = this.positionAt(now);
+    this.scrubbing = true;
+    this.stopSource(MICRO_FADE_SEC);
+    this.anchor = { at: now, pos, rate: this.rate };
+    // SLIP tidak ikut dibekukan: seluruh gunanya adalah bayangan yang terus
+    // berjalan di bawah tangan, dan scrub justru saat itu paling berguna.
+    if (!this.slipArmed) this.slipAnchor = { at: now, pos, rate: this.rate };
+  }
+
+  /**
+   * Tangan bergerak ke `toSample`. Memindahkan posisi DAN membunyikan butir.
+   *
+   * Kalau dipanggil tanpa `beginScrub`, ia hanya melompat — tanpa bunyi, sama
+   * seperti sebelumnya. Lebih baik begitu daripada membunyikan butir di atas
+   * source utama yang masih berjalan.
+   */
+  scrubTo(toSample: number): void {
+    this.seek(toSample);
+    if (!this.scrubbing) return;
+    /*
+     * Yang dibunyikan adalah posisi SESUDAH pelipatan loop — yaitu angka yang
+     * sama dengan yang digambar layar — bukan angka mentah dari tangan.
+     *
+     * Tanpa ini, menarik ke luar loop yang aktif menampilkan playhead yang
+     * melipat kembali ke dalam sementara yang terdengar materi di luarnya. Itu
+     * jenis cacat yang sama dengan yang sudah dijaga `setLoop`: dua kebenaran
+     * yang berbeda tentang hal yang sama, dan yang satu tidak bisa dilacak dari
+     * yang lain.
+     */
+    this.scrub.emit(this.positionAt(this.ctx.currentTime), this.rate);
+  }
+
+  /**
+   * Tangan diangkat. Kalau PLAY menyala, lagunya lanjut dari tempat tangan
+   * meninggalkannya.
+   */
+  endScrub(): void {
+    if (!this.scrubbing) return;
+    const now = this.ctx.currentTime;
+    const pos = this.positionAt(now);
+    this.scrubbing = false;
+    this.scrub.stop();
+    if (this.playing) this.startSource(pos);
+    else this.anchor = { at: now, pos, rate: this.rate };
+  }
+
+  get isScrubbing(): boolean {
+    return this.scrubbing;
+  }
+
   /** true kalau materi sudah habis (dan tidak sedang loop). */
   reachedEnd(now: number): boolean {
-    if (!this.playing || this.buffer === null || this.loop !== null) return false;
+    // Selama scrub posisinya beku, jadi "sudah sampai ujung" bukan peristiwa
+    // yang boleh mematikan PLAY — tangan masih bisa menariknya balik.
+    if (!this.playing || this.scrubbing || this.buffer === null || this.loop !== null) return false;
     return this.positionAt(now) >= this.frames - 1;
   }
 
   dispose(): void {
     this.stopSource(0);
+    this.scrub.stop();
     this.buffer = null;
   }
 
