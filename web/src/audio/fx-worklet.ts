@@ -60,6 +60,7 @@ interface FxRawExports {
   fxchain_process(ptr: number, frames: number): void;
   fxchain_set_param(ptr: number, slot: number, index: number, value: number): void;
   fxchain_set_bypass(ptr: number, slot: number, on: number): void;
+  fxchain_set_tempo(ptr: number, framesPerBeat: number): void;
 }
 
 /**
@@ -165,9 +166,15 @@ class FxProcessor extends AudioWorkletProcessor {
       index?: number;
       value?: number;
       on?: boolean;
+      framesPerBeat?: number;
     };
     if (d.type === 'param') {
       raw.fxchain_set_param(this.chainPtr, d.slot ?? 0, d.index ?? 0, d.value ?? 0);
+    } else if (d.type === 'tempo') {
+      // Tanpa ini `ParamCtx::frames_per_beat` tetap di nilai lahirnya (120 BPM)
+      // dan tiap parameter bersatuan Beats berhitung di tempo itu — gejalanya
+      // cuma bisa DIDENGAR sebagai "echo 1/4 ketukan tidak nyambung".
+      raw.fxchain_set_tempo(this.chainPtr, d.framesPerBeat ?? 0);
     } else if (d.type === 'bypass') {
       raw.fxchain_set_bypass(this.chainPtr, d.slot ?? 0, d.on ? 1 : 0);
     } else if (d.type === 'dispose') {

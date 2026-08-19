@@ -16,6 +16,7 @@ Dokumen ini adalah index. Detail per bagian:
 | [docs/07-gain-speed.md](docs/07-gain-speed.md) | Signal flow, gain staging, metering, varispeed + time-stretch, dua koordinat space |
 | [docs/08-ui-mapping.md](docs/08-ui-mapping.md) | Mapping komponen design → data model → engine command |
 | [docs/09-roadmap.md](docs/09-roadmap.md) | Milestone M0–M9 dengan definisi "done" yang testable |
+| [recordbox/00-plan.md](recordbox/00-plan.md) | Halaman `/dj` — mixer 2 deck ala rekordbox: keputusan, empat utang yang dinyatakan terbuka, fase D0–D9 |
 
 ---
 
@@ -95,6 +96,10 @@ Tambahan di luar daftar semula:
   [docs/12-timeline-selection.md](docs/12-timeline-selection.md)
 - Toolbar menu ikon + popup (menggantikan rail kanan & kartu Clip Detail) —
   [docs/13-menu-toolbar.md](docs/13-menu-toolbar.md)
+- Halaman ketiga `/dj`, mixer DJ 2 deck ala rekordbox — [recordbox/](recordbox/).
+  Berbunyi lewat Web Audio (`web/src/dj/audio/`), memakai ulang `AudioContext`
+  dan cache PCM milik preview Studio. MASTER TEMPO, scratch, dan deteksi key
+  sengaja belum ada, dan halamannya mengatakan itu apa adanya.
 
 ## Quickstart
 

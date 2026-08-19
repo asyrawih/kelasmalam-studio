@@ -8,11 +8,8 @@
 
 import { useEffect, useState } from 'react';
 
-import { studioActions } from '../store';
-import { ensureContext, registerBuffer } from '../preview/audio-preview';
+import { decodeStoredAsset } from './decode-asset';
 import { restoreProject, startAutosave } from './persistence';
-import { assetFromBuffer } from '../timeline/audio-import';
-import { requestAssetTempo } from '../analysis/tempo-client';
 
 export type PersistenceStatus =
   | { readonly phase: 'loading' }
@@ -26,32 +23,11 @@ export function usePersistence(sampleRate: number): PersistenceStatus {
     let cancelled = false;
     let stopAutosave: (() => void) | undefined;
 
-    const decodeAsset = async (
-      id: number,
-      name: string,
-      bytes: ArrayBuffer,
-    ): Promise<boolean> => {
-      const ctx = ensureContext(sampleRate);
-      if (ctx === null) return false;
-      try {
-        // `decodeAudioData` MEMAKAN buffer-nya (detached) di sebagian browser,
-        // jadi salin dulu — kalau tidak, percobaan berikutnya dapat buffer kosong.
-        const buffer = await ctx.decodeAudioData(bytes.slice(0));
-        registerBuffer(id, buffer);
-        // Persis fungsi yang dipakai jalur import: envelope hasil pemulihan
-        // dijamin identik dengan envelope saat file pertama kali di-drop.
-        studioActions.registerAsset(assetFromBuffer(id, name, buffer));
-        // Tempo TIDAK ikut disimpan di IndexedDB, jadi dianalisis ulang di sini.
-        // Yang disimpan hanya byte file asli (lihat persist/db.ts); menambah
-        // hasil turunan ke sana berarti satu bentuk data lagi yang bisa basi
-        // terhadap perbaikan algoritma, dan analisisnya sendiri hanya ratusan
-        // milidetik di worker.
-        requestAssetTempo(id, buffer);
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    // Jalur decode-nya hidup di `decode-asset.ts` karena halaman `/dj` juga
+    // memakainya — dan envelope hasil pemulihan wajib identik dari halaman mana
+    // pun, jadi ia tidak boleh punya dua salinan.
+    const decodeAsset = (id: number, name: string, bytes: ArrayBuffer): Promise<boolean> =>
+      decodeStoredAsset(id, name, bytes, sampleRate);
 
     void restoreProject(decodeAsset).then((r) => {
       if (cancelled) return;

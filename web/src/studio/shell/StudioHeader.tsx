@@ -9,9 +9,11 @@ import { useStudio } from '../store';
 
 export interface StudioHeaderProps {
   readonly onClose?: () => void;
+  /** Buka mixer DJ. Opsional supaya pemanggil lama (dan tes) tidak perlu ikut berubah. */
+  readonly onOpenDj?: () => void;
 }
 
-export function StudioHeader({ onClose }: StudioHeaderProps): JSX.Element {
+export function StudioHeader({ onClose, onOpenDj }: StudioHeaderProps): JSX.Element {
   const laneCount = useStudio((s) => s.lanes.length);
   const sampleRate = useStudio((s) => s.sampleRate);
   const engineReady = useStudio((s) => s.engineReady);
@@ -62,6 +64,11 @@ export function StudioHeader({ onClose }: StudioHeaderProps): JSX.Element {
         <Badge tone={engineReady ? 'success' : 'default'} dot>
           {engineReady ? 'READY' : 'UI ONLY'}
         </Badge>
+        {onOpenDj !== undefined && (
+          <Button size="sm" variant="outline" onClick={onOpenDj}>
+            MODE DJ
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={onClose}>
           ✕ CLOSE
         </Button>

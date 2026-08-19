@@ -1,0 +1,156 @@
+/**
+ * SATU deck. Komponen ini dirender DUA KALI — sekali per sisi layar.
+ *
+ * ## Bagaimana pencerminannya dinyatakan
+ *
+ * Hanya lewat tiga hal: `flexDirection` (`row` ↔ `row-reverse`), `textAlign`,
+ * dan satu CSS variable `--dj-deck-accent` yang diset di elemen akar sehingga
+ * SELURUH anak DOM cukup menulis `var(--dj-deck-accent)` tanpa tahu ia deck
+ * mana.
+ *
+ * **`transform: scaleX(-1)` TIDAK dipakai, dan itu bukan selera.** Ia membalik
+ * teks, membalik arah drag (fader tempo jadi terbalik tanpa satu baris kode pun
+ * yang mengatakannya), dan membuat `getBoundingClientRect` di `useDrag`
+ * menghasilkan fraksi terbalik — bug yang hanya muncul di satu deck dan
+ * mustahil ditebak dari kodenya.
+ *
+ * Canvas tidak bisa membaca custom property CSS dengan murah, jadi `accent`
+ * TETAP diteruskan sebagai prop — tapi hanya ke penggambar canvas.
+ */
+
+import { useMemo } from 'react';
+
+import { studioStore, useStudio } from '../../studio/store';
+import { deckView } from '../deck-view';
+import { DECK_ACCENT, type DeckId, type DeckSide } from '../model';
+import { djActions, djStore, selectDeck, selectTrackCues, useDj } from '../store';
+import { DeckLoop } from './DeckLoop';
+import { DeckPads } from './DeckPads';
+import { DeckReadout } from './DeckReadout';
+import { DeckTempo } from './DeckTempo';
+import { DeckTransport } from './DeckTransport';
+import { Jog } from './Jog';
+import { DeckOverview } from '../wave/DeckOverview';
+
+export interface DeckProps {
+  readonly id: DeckId;
+  readonly side: DeckSide;
+  /** Tinggi jog & fader tempo; menyusut hanya saat layar benar-benar pendek. */
+  readonly compact: boolean;
+}
+
+export function Deck({ id, side, compact }: DeckProps): JSX.Element {
+  const deck = useDj(selectDeck(id));
+  const cues = useDj(selectTrackCues(id));
+  const masterDeck = useDj((s) => s.masterDeck);
+  const quantizeDiv = useDj((s) => s.quantizeDiv);
+  // Selector di-index dengan -1 saat deck kosong: `assets` berkunci number, dan
+  // -1 tidak pernah dipakai sebagai id asset.
+  const asset = useStudio((s) => s.assets[deck.assetId ?? -1]);
+
+  const view = useMemo(() => deckView(deck, asset), [deck, asset]);
+  const accent = DECK_ACCENT[id];
+  const mirrored = side === 'right';
+  /** Satu helper untuk SELURUH pencerminan — dua tempat pasti menyimpang. */
+  const mir = <T,>(a: T, b: T): T => (mirrored ? b : a);
+
+  const jogSize = compact ? 96 : 128;
+  const faderH = compact ? 96 : 132;
+
+  return (
+    <div
+      data-dj-deck={id}
+      style={{
+        // Satu-satunya tempat warna deck ditetapkan untuk seluruh subpohon DOM.
+        ['--dj-deck-accent' as string]: accent,
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+        minHeight: 0,
+        gap: '6px',
+        padding: '6px',
+        background: 'var(--cy-surface-1)',
+        borderLeft: mirrored ? '1px solid var(--cy-border)' : 'none',
+        borderRight: mirrored ? 'none' : '1px solid var(--cy-border)',
+        overflow: 'hidden',
+      }}
+    >
+      <DeckReadout view={view} id={id} accent={accent} mirrored={mirrored} />
+
+      <DeckOverview view={view} cues={cues} id={id} accent={accent} height={compact ? 26 : 34} />
+
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: mir('row', 'row-reverse'),
+          gap: '8px',
+          minHeight: 0,
+          flex: 1,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            flex: 1,
+            minWidth: 0,
+            justifyContent: 'space-between',
+          }}
+        >
+          <DeckLoop deck={deck} id={id} grid={view.grid} />
+          <DeckPads
+            deck={deck}
+            id={id}
+            cues={cues}
+            grid={view.grid}
+            accent={accent}
+            quantizeDiv={quantizeDiv}
+          />
+          <DeckTransport deck={deck} id={id} accent={accent} />
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: mir('row', 'row-reverse'),
+            alignItems: 'center',
+            gap: '4px',
+            flexShrink: 0,
+          }}
+        >
+          <Jog view={view} id={id} accent={accent} size={jogSize} />
+          <DeckTempo
+            deck={deck}
+            id={id}
+            accent={accent}
+            isMaster={masterDeck === id}
+            height={faderH}
+            onSync={() => {
+              const other: DeckId = id === 'A' ? 'B' : 'A';
+              const otherBpm = otherDeckBaseBpm(other);
+              const r = djActions.toggleSync(id, view.baseBpm, otherBpm);
+              djActions.setNotice(r.ok ? null : (r.reason ?? 'SYNC gagal'));
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * BPM materi deck lain, dibaca dari store SAAT DIBUTUHKAN alih-alih dijadikan
+ * prop.
+ *
+ * Menjadikannya prop berarti deck A ikut me-render tiap kali apa pun di deck B
+ * berubah — termasuk playhead-nya, 16×/detik. SYNC ditekan beberapa kali per
+ * lagu; membaca snapshot pada saat itu gratis, dan tidak menambah satu pun
+ * langganan.
+ */
+function otherDeckBaseBpm(other: DeckId): number | null {
+  const deck = djStore.getState().decks[other];
+  if (deck.assetId === null) return null;
+  const asset = studioStore.getState().assets[deck.assetId];
+  return deckView(deck, asset).baseBpm;
+}

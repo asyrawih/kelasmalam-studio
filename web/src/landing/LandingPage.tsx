@@ -36,6 +36,8 @@ import './landing.css';
 export interface LandingPageProps {
   /** Dipanggil oleh setiap CTA yang membuka studio. */
   readonly onOpenStudio: () => void;
+  /** Dipanggil oleh CTA yang membuka mixer DJ (`/dj`). */
+  readonly onOpenDj?: () => void;
 }
 
 /** Label bernomor di atas tiap judul section ("01 / FITUR"). */
@@ -85,7 +87,7 @@ function Bullet({ children }: { children: string }): JSX.Element {
   );
 }
 
-export function LandingPage({ onOpenStudio }: LandingPageProps): JSX.Element {
+export function LandingPage({ onOpenStudio, onOpenDj }: LandingPageProps): JSX.Element {
   // Paket yang sedang disorot. Belum ada checkout — memilih hanya mengubah
   // sorotan kartunya, sama seperti di design.
   const [plan, setPlan] = useState<PlanId>('d7');
@@ -150,6 +152,16 @@ export function LandingPage({ onOpenStudio }: LandingPageProps): JSX.Element {
             <a href="#harga" style={NAV_LINK}>
               HARGA
             </a>
+            {onOpenDj !== undefined && (
+              <Button
+                size="sm"
+                variant="outline"
+                style={{ height: '34px' }}
+                onClick={onOpenDj}
+              >
+                MODE DJ
+              </Button>
+            )}
             <Button size="sm" style={{ height: '34px' }} onClick={onOpenStudio}>
               BUKA STUDIO
             </Button>

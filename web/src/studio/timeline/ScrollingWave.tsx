@@ -78,6 +78,27 @@ export interface ScrollingWaveProps {
    * kapan tarikan selesai.
    */
   readonly onScrub?: (phase: 'start' | 'move' | 'end', sourceAt: Samples, fine: boolean) => void;
+  /**
+   * Jam yang BENAR-BENAR terdengar, dalam detik, pada koordinat yang sama
+   * dengan `playhead`. `null` = tidak ada yang berbunyi, jadi `playhead` yang
+   * dipakai.
+   *
+   * Default-nya `previewPositionSec` — jam transport Studio. Prop ini ada
+   * supaya PEMAKAI KEDUA, deck DJ di `web/src/dj/`, bisa menyuntikkan jamnya
+   * sendiri (satu per deck) tanpa menyalin seluruh komponen ini beserta ketiga
+   * aturan di kepala berkas.
+   *
+   * Bentuknya FUNGSI, bukan angka, dan itu penting: ia dipanggil DI DALAM loop
+   * rAF, jadi posisinya boleh bergerak 60×/detik tanpa satu render React pun.
+   * Prop `center` di bawah tidak bisa dipakai untuk itu — ia dibaca dari
+   * `latest.current`, yang hanya segar saat React me-render.
+   */
+  readonly positionSourceSec?: () => number | null;
+  /** Warna sorotan region. Default cyan Studio; halaman DJ memakai amber deck. */
+  readonly regionTint?: string;
+  readonly regionStroke?: string;
+  /** Tooltip canvas. Default menjelaskan tarik-untuk-loop ala Studio. */
+  readonly title?: string;
 }
 
 export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
@@ -157,8 +178,8 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
           // "kalau LOOP PLAY ditekan sekarang, ini yang akan berulang". Satu
           // warna untuk dua keadaan membuat user tidak bisa tahu mana yang
           // sedang bekerja.
-          regionTint: p.regionLive === true ? '#6ee7ff28' : '#6ee7ff10',
-          regionStroke: p.regionLive === true ? '#6ee7ff' : '#6ee7ff66',
+          regionTint: p.regionTint ?? (p.regionLive === true ? '#6ee7ff28' : '#6ee7ff10'),
+          regionStroke: p.regionStroke ?? (p.regionLive === true ? '#6ee7ff' : '#6ee7ff66'),
         });
       }
       // Playhead selalu tepat di tengah — itu seluruh gunanya tampilan ini.
@@ -249,7 +270,10 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
     <canvas
       ref={ref}
       data-scrolling-wave
-      title="tarik untuk memindahkan posisi loop · tahan Shift untuk menempel ke ketukan, bukan bar"
+      title={
+        props.title ??
+        'tarik untuk memindahkan posisi loop · tahan Shift untuk menempel ke ketukan, bukan bar'
+      }
       onPointerDown={begin}
       onPointerMove={move}
       onPointerUp={end}
@@ -281,7 +305,7 @@ function centerOf(p: ScrollingWaveProps, sr: number): Samples {
     const src = auditionPositionSourceSec();
     if (src !== null) return secToSamples(src, sr);
   }
-  const heardSec = previewPositionSec();
+  const heardSec = (p.positionSourceSec ?? previewPositionSec)();
   const timelineAt = heardSec === null || !p.playing ? p.playhead : secToSamples(heardSec, sr);
   return p.clipSourceStart + (timelineAt - p.clipStart) * p.speedRatio;
 }

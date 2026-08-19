@@ -316,6 +316,18 @@ pub struct FxRack {
     /// bersarang, jadi satu buffer cukup untuk seluruh rak.
     dry: Box<[f32]>,
     sample_rate: f32,
+    /// Panjang satu ketukan dalam frame, dipakai parameter bersatuan
+    /// [`Unit::Beats`].
+    ///
+    /// Disimpan di rak, bukan diturunkan per-node, karena SELURUH efek dalam
+    /// satu rak berbagi tempo yang sama — dan karena nilainya harus bisa
+    /// diperbarui dari luar tanpa membangun ulang apa pun.
+    ///
+    /// Awalnya `sample_rate * 0.5`, yaitu 120 BPM. Itu bukan default yang
+    /// netral melainkan TEBAKAN, dan sebelum ada [`FxRack::set_frames_per_beat`]
+    /// ia satu-satunya nilai yang pernah dipakai: label "1/4 beat" berbohong
+    /// pada setiap lagu yang bukan 120 BPM.
+    frames_per_beat: f32,
 }
 
 impl FxRack {
@@ -341,6 +353,8 @@ impl FxRack {
             arena: FxArena::empty(),
             dry: alloc::vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
             sample_rate,
+            // 120 BPM sampai ada yang memberi tahu tempo sebenarnya.
+            frames_per_beat: sample_rate * 0.5,
         }
     }
 
@@ -385,6 +399,8 @@ impl FxRack {
             arena,
             dry: alloc::vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
             sample_rate,
+            // 120 BPM sampai ada yang memberi tahu tempo sebenarnya.
+            frames_per_beat: sample_rate * 0.5,
         }
     }
 
@@ -426,6 +442,8 @@ impl FxRack {
             arena,
             dry: alloc::vec![0.0f32; MAX_BLOCK * 2].into_boxed_slice(),
             sample_rate,
+            // 120 BPM sampai ada yang memberi tahu tempo sebenarnya.
+            frames_per_beat: sample_rate * 0.5,
         }
     }
 
@@ -569,6 +587,7 @@ impl FxRack {
     /// Sekali di AWAL tiap blok penuh (bukan sub-blok).
     pub fn begin_block(&mut self) {
         let sr = self.sample_rate;
+        let fpb = self.frames_per_beat;
         let FxRack { slots, arena, .. } = self;
         for s in slots.iter_mut() {
             if s.sleeping {
@@ -576,9 +595,26 @@ impl FxRack {
             }
             let mem = arena.block(s.mem);
             s.node.begin_block(mem);
-            let ctx = ParamCtx::new(&s.params, sr, sr * 0.5);
+            let ctx = ParamCtx::new(&s.params, sr, fpb);
             s.node.prepare(&ctx);
         }
+    }
+
+    /// Perbarui panjang ketukan. NON-RT aman dipanggil kapan saja; berlaku
+    /// mulai blok berikutnya lewat [`FxRack::begin_block`].
+    ///
+    /// Nilai yang tidak masuk akal DIABAIKAN alih-alih dijepit: tempo nol atau
+    /// negatif berarti pemanggilnya salah, dan menjepitnya diam-diam ke sesuatu
+    /// yang "kelihatan jalan" hanya menyembunyikan kesalahan itu sampai
+    /// seseorang bertanya kenapa echo-nya tidak nyambung.
+    pub fn set_frames_per_beat(&mut self, frames_per_beat: f32) {
+        if frames_per_beat.is_finite() && frames_per_beat > 1.0 {
+            self.frames_per_beat = frames_per_beat;
+        }
+    }
+
+    pub fn frames_per_beat(&self) -> f32 {
+        self.frames_per_beat
     }
 
     /// Sekali di AKHIR tiap blok penuh.
@@ -733,6 +769,48 @@ mod grid_tests {
         assert_eq!(whole, split, "grid bergeser saat blok dipecah 8×128");
         assert_eq!(whole, ragged, "grid bergeser pada pemecahan tidak rata");
         assert_eq!(whole.len(), 1024 / GRID as usize);
+    }
+
+    /// Tempo yang dikirim harus SAMPAI ke `ParamCtx` yang dilihat node.
+    ///
+    /// Sebelum `set_frames_per_beat` ada, `begin_block` menulis `sr * 0.5`
+    /// secara harfiah — 120 BPM, berapa pun tempo materinya. Bug-nya tidak
+    /// pernah muncul sebagai error; ia hanya bisa DIDENGAR sebagai "echo 1/4
+    /// ketukan tidak nyambung". Tes ini yang menahannya supaya tidak kembali.
+    #[test]
+    fn frames_per_beat_is_settable_and_defaults_to_120_bpm() {
+        let sr = 48_000.0f32;
+        let mut rack = FxRack::chain(&[(FxKind::Echo, false)], sr);
+
+        // Lahir di 120 BPM: setengah detik per ketukan.
+        assert_eq!(rack.frames_per_beat(), sr * 0.5);
+
+        // 128 BPM → 60/128 detik per ketukan.
+        let fpb = (60.0 / 128.0) * sr;
+        rack.set_frames_per_beat(fpb);
+        assert_eq!(rack.frames_per_beat(), fpb);
+
+        // Nilai tak masuk akal DIABAIKAN, bukan dijepit diam-diam ke sesuatu
+        // yang "kelihatan jalan".
+        rack.set_frames_per_beat(0.0);
+        rack.set_frames_per_beat(-1.0);
+        rack.set_frames_per_beat(f32::NAN);
+        assert_eq!(rack.frames_per_beat(), fpb);
+    }
+
+    /// `beats_to_frames` harus mengikuti tempo yang dipasang, bukan tempo lahir.
+    #[test]
+    fn beats_resolve_against_the_configured_tempo() {
+        let sr = 48_000.0f32;
+        let fpb = (60.0 / 128.0) * sr; // 128 BPM
+        let ctx = ParamCtx::new(&[], sr, fpb);
+        // Seperempat ketukan pada 128 BPM = 117.19 ms.
+        let frames = ctx.beats_to_frames(0.25);
+        assert!(
+            (frames / sr - 0.117_187_5).abs() < 1e-4,
+            "0.25 ketukan @128 BPM = {} detik",
+            frames / sr
+        );
     }
 
     #[test]

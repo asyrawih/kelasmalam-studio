@@ -174,6 +174,21 @@ export function pushFxParams(node: AudioWorkletNode, chain: readonly FxInsert[])
  * nilainya. Memasukkan nilai parameter akan menjadwalkan ulang seluruh audio
  * tiap knob bergerak satu piksel.
  */
+/**
+ * Beri tahu node berapa panjang satu ketukan, dalam frame.
+ *
+ * Dipisah dari `pushFxParams` karena tempo BUKAN parameter efek: ia milik
+ * materi yang sedang diproses, dan satu perubahan tempo harus sampai ke
+ * seluruh slot sekaligus tanpa menyentuh satu pun nilai knob.
+ *
+ * Aman dipanggil sering; worklet hanya meneruskannya ke rak, dan rak menolak
+ * nilai yang tidak masuk akal.
+ */
+export function pushFxTempo(node: AudioWorkletNode, framesPerBeat: number): void {
+  if (!Number.isFinite(framesPerBeat) || framesPerBeat <= 1) return;
+  node.port.postMessage({ type: 'tempo', framesPerBeat });
+}
+
 export function chainShape(chain: readonly FxInsert[]): string {
   return chain.map((f) => `${f.kind}${f.enabled ? '' : '!'}`).join('>');
 }

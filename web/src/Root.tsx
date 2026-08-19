@@ -1,33 +1,47 @@
 /**
- * Router seadanya: `/` menampilkan landing page, `/studio` menampilkan editor.
+ * Router seadanya: `/` landing, `/studio` editor timeline, `/dj` mixer 2 deck.
  *
- * Tidak ada react-router di sini dan sengaja tidak ditambahkan — hanya ada dua
- * halaman, tanpa parameter path, tanpa nested route. Satu `useState` +
+ * Tidak ada react-router di sini dan sengaja tidak ditambahkan — hanya ada
+ * beberapa halaman, tanpa parameter path, tanpa nested route. Satu `useState` +
  * `history.pushState` sudah cukup, dan ~10 kB dependency untuk itu tidak
  * sebanding di aplikasi yang bundle-nya sudah berisi WASM engine.
  *
- * Deep link ke `/studio` bekerja karena hosting-nya sudah punya SPA fallback:
- * `deploy/nginx.conf` (`try_files ... /index.html`) dan
- * `deploy/vercel-config.json` (rewrite terakhir ke `/index.html`).
+ * Pemetaannya sekarang TABEL, bukan perbandingan kesetaraan tunggal seperti
+ * versi dua-halaman. Dengan tabel, halaman keempat cukup menambah satu baris
+ * dan tidak menyentuh logikanya sama sekali.
  *
- * Studio TIDAK dirender saat berada di landing. Ini bukan sekadar hemat
- * render: App memasang interval playhead, autosave persistence, dan mencoba
- * membangun AudioContext begitu ia mount — semuanya tidak boleh jalan di
- * halaman marketing.
+ * Deep link bekerja karena hosting-nya sudah punya SPA fallback:
+ * `deploy/nginx.conf` (`try_files ... /index.html`) dan
+ * `deploy/vercel-config.json` (rewrite terakhir ke `/index.html`). Tidak ada
+ * konfigurasi yang perlu diubah untuk path baru.
+ *
+ * Halaman berat TIDAK dirender saat tidak sedang dibuka. Ini bukan sekadar
+ * hemat render: `App` memasang interval playhead, autosave persistence, dan
+ * mencoba membangun AudioContext begitu ia mount — semuanya tidak boleh jalan
+ * di halaman marketing, dan `DjPage` punya interval-nya sendiri yang juga tidak
+ * boleh jalan saat user sedang di Studio.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { App } from './App';
+import { DjPage } from './dj';
 import { LandingPage } from './landing';
 
-const STUDIO_PATH = '/studio';
 const HOME_PATH = '/';
+export const STUDIO_PATH = '/studio';
+export const DJ_PATH = '/dj';
 
-export type Route = 'landing' | 'studio';
+export type Route = 'landing' | 'studio' | 'dj';
+
+/** Path → route. Landing adalah jawaban default untuk apa pun yang tidak dikenal. */
+const ROUTES: Readonly<Record<string, Route>> = {
+  [STUDIO_PATH]: 'studio',
+  [DJ_PATH]: 'dj',
+};
 
 /** Trailing slash diabaikan supaya `/studio/` tidak jatuh ke landing. */
 export function routeOf(pathname: string): Route {
-  return pathname.replace(/\/+$/, '') === STUDIO_PATH ? 'studio' : 'landing';
+  return ROUTES[pathname.replace(/\/+$/, '')] ?? 'landing';
 }
 
 export interface RootProps {
@@ -53,7 +67,21 @@ export function Root({ createEngine }: RootProps): JSX.Element {
   }, []);
 
   if (route === 'studio') {
-    return <App createEngine={createEngine} onClose={() => navigate(HOME_PATH)} />;
+    return (
+      <App
+        createEngine={createEngine}
+        onClose={() => navigate(HOME_PATH)}
+        onOpenDj={() => navigate(DJ_PATH)}
+      />
+    );
   }
-  return <LandingPage onOpenStudio={() => navigate(STUDIO_PATH)} />;
+  if (route === 'dj') {
+    return <DjPage onClose={() => navigate(HOME_PATH)} />;
+  }
+  return (
+    <LandingPage
+      onOpenStudio={() => navigate(STUDIO_PATH)}
+      onOpenDj={() => navigate(DJ_PATH)}
+    />
+  );
 }

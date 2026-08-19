@@ -21,6 +21,16 @@ const DB_VERSION = 1;
 const STORE_PROJECT = 'project';
 const STORE_ASSETS = 'assets';
 const PROJECT_KEY = 'current';
+/**
+ * Sesi halaman `/dj`, di object store `project` yang SUDAH ADA.
+ *
+ * Bukan store baru, dan itu keputusan: store baru menuntut `DB_VERSION` 1→2,
+ * sementara `openDb` di bawah sudah memutuskan `onblocked` → `resolve(null)`.
+ * Artinya satu tab lama yang masih terbuka akan mematikan persistensi SECARA
+ * SENYAP di tab baru — kegagalan tanpa gejala, demi satu kunci yang sama saja
+ * bisa hidup di store yang sudah ada.
+ */
+const DJ_KEY = 'dj';
 
 export interface StoredAsset {
   readonly id: number;
@@ -98,6 +108,16 @@ export async function saveProjectJson(json: string): Promise<boolean> {
 
 export async function loadProjectJson(): Promise<string | null> {
   const r = await tx<string>(STORE_PROJECT, 'readonly', (s) => s.get(PROJECT_KEY));
+  return typeof r === 'string' ? r : null;
+}
+
+export async function saveDjSession(json: string): Promise<boolean> {
+  const r = await tx<IDBValidKey>(STORE_PROJECT, 'readwrite', (s) => s.put(json, DJ_KEY));
+  return r !== null;
+}
+
+export async function loadDjSession(): Promise<string | null> {
+  const r = await tx<string>(STORE_PROJECT, 'readonly', (s) => s.get(DJ_KEY));
   return typeof r === 'string' ? r : null;
 }
 

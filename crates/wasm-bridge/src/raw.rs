@@ -425,6 +425,27 @@ pub unsafe extern "C" fn fxchain_set_param(ptr: *mut FxChainRt, slot: u32, index
     unsafe { (*ptr).rack.set_param(slot as usize, index as usize, value) };
 }
 
+/// Beri tahu chain berapa panjang satu ketukan, dalam frame.
+///
+/// Tanpa ini, [`ParamCtx::frames_per_beat`] tetap di nilai lahirnya —
+/// `sample_rate * 0.5`, yaitu 120 BPM — dan setiap parameter bersatuan
+/// [`Unit::Beats`] berhitung di tempo itu berapa pun tempo materinya. Gejalanya
+/// bukan error melainkan "kok echo 1/4 ketukan tidak nyambung", dan itu hanya
+/// bisa didengar, tidak bisa dilihat.
+///
+/// Nilai yang tidak masuk akal diabaikan di sisi rak, bukan dijepit di sini.
+///
+/// # Safety
+/// `ptr` harus hasil [`fxchain_new`] yang masih hidup.
+#[no_mangle]
+pub unsafe extern "C" fn fxchain_set_tempo(ptr: *mut FxChainRt, frames_per_beat: f32) {
+    if ptr.is_null() {
+        return;
+    }
+    // SAFETY: dijamin pemanggil.
+    unsafe { (*ptr).rack.set_frames_per_beat(frames_per_beat) };
+}
+
 /// # Safety
 /// `ptr` harus hasil [`fxchain_new`] yang masih hidup.
 #[no_mangle]

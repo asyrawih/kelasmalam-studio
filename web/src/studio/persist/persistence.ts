@@ -19,6 +19,7 @@ import {
 import { normalizeClipLoop } from '../timeline/clip-loop';
 import { normalizeClipFade } from '../timeline/fade';
 import { normalizeClipStem } from '../timeline/stem';
+import { collectAssetRoots } from './asset-roots';
 import { loadAllAssets, loadProjectJson, pruneAssets, saveProjectJson } from './db';
 
 /** Naikkan kalau bentuk data berubah dan yang lama tidak bisa dibaca lagi. */
@@ -209,6 +210,25 @@ export async function restoreProject(
 }
 
 /**
+ * Himpunan asset yang MASIH DIPAKAI: clip di lane ∪ semua akar terdaftar.
+ *
+ * Fungsi terpisah dan diekspor supaya bisa dites tanpa IndexedDB dan tanpa
+ * timer. Yang bisa salah diam-diam di sini adalah HIMPUNANNYA, bukan penulisan
+ * ke DB — dan bug-nya berbentuk data user yang hilang setelah refresh, yaitu
+ * kelas bug yang paling mahal untuk ditemukan dari layar.
+ *
+ * Akar didaftarkan lewat `asset-roots.ts`; halaman `/dj` memakainya untuk
+ * lagu yang duduk di deck tanpa satu pun clip.
+ */
+export function assetsInUse(s: StudioAppState): Set<number> {
+  const used = collectAssetRoots();
+  for (const lane of s.lanes) {
+    for (const clip of lane.clips) used.add(clip.assetId);
+  }
+  return used;
+}
+
+/**
  * Mulai menyimpan otomatis. Mengembalikan fungsi untuk berhenti.
  *
  * Di-debounce, DAN dilewati selama drag/scrub: satu drag clip menghasilkan
@@ -226,9 +246,8 @@ export function startAutosave(delayMs = 600): () => void {
     if (json === lastJson) return;
     lastJson = json;
     void saveProjectJson(json);
-    // Asset yang clip-nya sudah dihapus tidak perlu ikut memenuhi kuota.
-    const used = new Set(s.lanes.flatMap((l) => l.clips.map((c) => c.assetId)));
-    void pruneAssets(used);
+    // Asset yang tidak dipakai siapa pun lagi tidak perlu ikut memenuhi kuota.
+    void pruneAssets(assetsInUse(s));
   };
 
   const schedule = (): void => {

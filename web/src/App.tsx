@@ -35,6 +35,8 @@ export interface AppProps {
    */
   readonly createEngine?: () => Promise<unknown>;
   readonly onClose?: () => void;
+  /** Buka halaman `/dj`. Diteruskan apa adanya ke header. */
+  readonly onOpenDj?: () => void;
   /** Tidak dipakai lagi — rail kanan sudah tidak ada. Dipertahankan supaya
    *  pemanggil lama tidak perlu ikut diubah. */
   readonly railWidth?: number;
@@ -43,7 +45,7 @@ export interface AppProps {
 /** Periode tick playhead. 60 ms = angka yang sama dengan interval di design. */
 const TICK_MS = 60;
 
-export function App({ createEngine, onClose }: AppProps): JSX.Element {
+export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element {
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
   // Sambungkan rail ke project + cache PCM. Cache-nya SAMA dengan yang dipakai
@@ -92,7 +94,7 @@ export function App({ createEngine, onClose }: AppProps): JSX.Element {
   return (
     <BeatProvider>
       <StudioLayout
-        header={<StudioHeader onClose={onClose} />}
+        header={<StudioHeader onClose={onClose} onOpenDj={onOpenDj} />}
         readouts={<ReadoutStrip />}
         menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} />}
         main={

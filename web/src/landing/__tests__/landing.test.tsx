@@ -63,6 +63,13 @@ describe('routeOf', () => {
     expect(routeOf('/apa-saja')).toBe('landing');
     expect(routeOf('/studio')).toBe('studio');
     expect(routeOf('/studio/')).toBe('studio');
+    expect(routeOf('/dj')).toBe('dj');
+    expect(routeOf('/dj/')).toBe('dj');
+  });
+
+  it('path yang tidak dikenal jatuh ke landing, bukan melempar', () => {
+    expect(routeOf('/dj/extra')).toBe('landing');
+    expect(routeOf('')).toBe('landing');
   });
 });
 
@@ -72,6 +79,19 @@ describe('Root', () => {
     render(<Root />);
     expect(screen.getByRole('button', { name: 'MULAI MIXING GRATIS' })).toBeTruthy();
     // Header studio hanya ada di halaman studio.
+    expect(screen.queryByRole('button', { name: /CLOSE/ })).toBeNull();
+  });
+
+  it('membuka halaman DJ lewat CTA, TANPA me-mount studio', () => {
+    window.history.pushState(null, '', '/');
+    render(<Root />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'MODE DJ' })[0] as HTMLElement);
+    expect(window.location.pathname).toBe('/dj');
+    expect(screen.getByText('KELAS MALAM DJ')).toBeTruthy();
+    // `App` memasang interval playhead, autosave, dan mencoba membangun
+    // AudioContext begitu ia mount — jadi bukti bahwa ia TIDAK ter-mount
+    // adalah bagian dari kontrak router, bukan detail kosmetik.
+    expect(screen.queryByText('KELAS MALAM STUDIO')).toBeNull();
     expect(screen.queryByRole('button', { name: /CLOSE/ })).toBeNull();
   });
 

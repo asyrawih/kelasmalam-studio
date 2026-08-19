@@ -1,0 +1,72 @@
+/**
+ * Baris waveform besar: satu jendela bergeser per deck, ditumpuk.
+ *
+ * Di rekordbox baris ini menumpuk kedua lagu di satu bidang. Di sini keduanya
+ * dipisah jadi dua jalur bertumpuk, dan itu keputusan sadar: waveform kita
+ * belum berwarna per pita frekuensi (`envelope.ts` menyimpan min/max/rms mono),
+ * jadi dua bentuk amber di bidang yang sama tidak bisa dibedakan mana milik
+ * siapa. Yang bisa dibedakan justru posisinya — jadi posisinya yang dipakai.
+ */
+
+import { DECK_ACCENT, type DeckId } from '../model';
+import type { DeckView } from '../deck-view';
+import { DeckScrollingWave } from './DeckScrollingWave';
+
+export interface WaveRowProps {
+  readonly views: Readonly<Record<DeckId, DeckView>>;
+}
+
+export function WaveRow({ views }: WaveRowProps): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateRows: 'minmax(0,1fr) minmax(0,1fr)',
+        height: '100%',
+        minHeight: 0,
+        gap: '1px',
+        background: 'var(--cy-border)',
+      }}
+    >
+      {(['A', 'B'] as const).map((id) => (
+        <div
+          key={id}
+          style={{
+            position: 'relative',
+            minHeight: 0,
+            background: 'var(--cy-surface-1)',
+            overflow: 'hidden',
+          }}
+        >
+          <DeckScrollingWave view={views[id]} accent={DECK_ACCENT[id]} />
+          <span
+            style={{
+              position: 'absolute',
+              left: '6px',
+              top: '4px',
+              fontSize: '10px',
+              letterSpacing: '.16em',
+              color: DECK_ACCENT[id],
+              pointerEvents: 'none',
+              textShadow: '0 0 6px #000',
+            }}
+          >
+            {id}
+          </span>
+          {/* Playhead tetap di TENGAH — itu seluruh guna tampilan ini. */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: 0,
+              bottom: 0,
+              width: '1px',
+              background: '#ffffff',
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}

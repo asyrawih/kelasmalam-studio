@@ -71,20 +71,37 @@ export async function importFileToLane(
 }
 
 /**
- * Jalur import sesungguhnya, berbasis byte — dipakai oleh drop file MAUPUN
- * import dari URL. Satu jalur berarti sniffing, gunzip, decode, peak, dan
- * pembuatan clip berperilaku persis sama dari sumber mana pun.
+ * BYTE → ASSET TERDAFTAR. Ini jalur decode SATU-SATUNYA di aplikasi:
+ * sniff → gunzip → `decodeAudioData` → peak pyramid → `registerAsset` →
+ * `requestAssetTempo` → `registerBuffer` → `saveAsset`.
+ *
+ * Ia sengaja TIDAK membuat clip dan TIDAK menyentuh lane, karena tidak setiap
+ * pemakai punya lane: halaman `/dj` memuat lagu ke DECK, bukan ke timeline.
+ * Kalau jalur ini digandakan, sniffing, envelope, dan penyimpanan byte bisa
+ * menyimpang antara dua halaman — dan gejalanya adalah waveform yang berubah
+ * bentuk hanya karena file-nya diimpor dari tempat lain, persis cacat yang
+ * `assetFromBuffer` sendiri sudah ada untuk mencegahnya.
+ *
+ * Tipe kegagalannya MEWAJIBKAN `reason` (beda dari `DropResult`, yang
+ * membuatnya opsional) supaya tidak ada pemanggil baru yang bisa gagal bisu.
  */
-export async function importBytesToLane(
+export interface ImportedAsset {
+  readonly ok: true;
+  readonly assetId: number;
+  readonly name: string;
+  readonly frames: number;
+  readonly sampleRate: number;
+}
+export type ImportAssetResult = ImportedAsset | { readonly ok: false; readonly reason: string };
+
+export async function importBytesToAsset(
   input: ArrayBuffer,
   name: string,
-  laneId: string,
-  startSamples: number,
   projectSampleRate: number,
-): Promise<DropResult> {
+): Promise<ImportAssetResult> {
   // Context dipinjam dari modul preview: dia yang memilikinya, supaya
-  // `AudioBuffer` hasil decode bisa dipakai ulang untuk playback tanpa
-  // decode dua kali (lihat studio/preview/audio-preview.ts).
+  // `AudioBuffer` hasil decode bisa dipakai ulang untuk playback tanpa decode
+  // dua kali (lihat studio/preview/audio-preview.ts).
   const ctx = ensureContext(projectSampleRate);
   if (ctx === null) {
     return { ok: false, reason: 'Web Audio tidak tersedia di lingkungan ini' };
@@ -146,24 +163,56 @@ export async function importBytesToLane(
     // di-`await`: import tidak boleh menunggu I/O penyimpanan.
     void saveAsset({ id: assetId, name, bytes });
 
-    const clip: StudioClip = {
-      id: studioActions.newClipId(),
-      assetId,
-      chain: [],
-      start: Math.max(0, Math.round(startSamples)),
-      len: frames,
-      sourceStart: 0,
-      sourceLen: frames,
-      label: name.toUpperCase(),
-      gainDb: 0,
-      fadeInMs: 0,
-      fadeOutMs: 0,
-      fadeCurve: DEFAULT_FADE_CURVE,
-      seed: assetId % 97,
-    };
-    studioActions.addClip(laneId, clip);
-    return { ok: true };
+    return { ok: true, assetId, name, frames, sampleRate: buffer.sampleRate };
   } catch (err: unknown) {
     return { ok: false, reason: err instanceof Error ? err.message : 'gagal men-decode file' };
   }
+}
+
+/** Pembungkus `File` untuk pemakai yang tidak punya lane (halaman `/dj`). */
+export async function importFileToAsset(
+  file: File,
+  projectSampleRate: number,
+): Promise<ImportAssetResult> {
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await file.arrayBuffer();
+  } catch (err: unknown) {
+    return { ok: false, reason: err instanceof Error ? err.message : 'gagal membaca file' };
+  }
+  return importBytesToAsset(bytes, file.name, projectSampleRate);
+}
+
+/**
+ * Jalur import ke LANE — sekarang tipis: decode lewat `importBytesToAsset`,
+ * lalu satu clip. Dipakai drop file MAUPUN import dari URL, jadi keduanya tetap
+ * berperilaku persis sama.
+ */
+export async function importBytesToLane(
+  input: ArrayBuffer,
+  name: string,
+  laneId: string,
+  startSamples: number,
+  projectSampleRate: number,
+): Promise<DropResult> {
+  const got = await importBytesToAsset(input, name, projectSampleRate);
+  if (!got.ok) return { ok: false, reason: got.reason };
+
+  const clip: StudioClip = {
+    id: studioActions.newClipId(),
+    assetId: got.assetId,
+    chain: [],
+    start: Math.max(0, Math.round(startSamples)),
+    len: got.frames,
+    sourceStart: 0,
+    sourceLen: got.frames,
+    label: name.toUpperCase(),
+    gainDb: 0,
+    fadeInMs: 0,
+    fadeOutMs: 0,
+    fadeCurve: DEFAULT_FADE_CURVE,
+    seed: got.assetId % 97,
+  };
+  studioActions.addClip(laneId, clip);
+  return { ok: true };
 }
