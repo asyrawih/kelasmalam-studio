@@ -35,9 +35,9 @@ import type { Command } from '../app-shell';
 import { resolveBeatGrid } from '../studio/analysis/beat-grid';
 import { studioStore } from '../studio/store';
 import { removeAssetFromLibrary } from './browser/dj-remove';
-import { deckView } from './deck-view';
 import { BEAT_LOOP_PRESETS, DECK_IDS, HOT_CUE_SLOTS, type DeckId } from './model';
 import { djActions, djStore } from './store';
+import { toggleSyncFor } from './sync-ops';
 import {
   autoGrid,
   fitGridHere,
@@ -64,11 +64,6 @@ function gridOf(id: DeckId) {
   return asset === undefined ? null : resolveBeatGrid(asset);
 }
 
-function baseBpmOf(id: DeckId): number | null {
-  const deck = s().decks[id];
-  if (deck.assetId === null) return null;
-  return deckView(deck, studioStore.getState().assets[deck.assetId]).baseBpm;
-}
 
 const loaded = (id: DeckId) => (): boolean => s().decks[id].assetId !== null;
 
@@ -147,9 +142,8 @@ function deckCommands(id: DeckId): Command[] {
       defaultChord: k.sync ?? null,
       enabled: loaded(id),
       run: () => {
-        const other: DeckId = id === 'A' ? 'B' : 'A';
-        const r = djActions.toggleSync(id, baseBpmOf(id), baseBpmOf(other));
-        djActions.setNotice(r.ok ? null : (r.reason ?? 'SYNC gagal'));
+        const r = toggleSyncFor(id);
+        if (!r.ok) djActions.setNotice(r.reason ?? 'SYNC gagal');
       },
     },
     {

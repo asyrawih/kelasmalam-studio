@@ -37,6 +37,7 @@ import { useViewport } from './layout/useViewportBand';
 import { MixerSection } from './mixer/MixerSection';
 import { SIDE_OF } from './model';
 import { djCommands } from './commands';
+import { startSyncFollow } from './sync-ops';
 import { djActions, djAssetIds, useDj } from './store';
 import { WaveRow } from './wave/WaveRow';
 
@@ -116,6 +117,10 @@ export function DjPage({ onClose }: DjPageProps): JSX.Element {
   // audio belum dibangun (sebelum gestur pertama), tidak ada yang bergerak —
   // dan itu benar: tidak ada yang berbunyi.
   useDjAudio(rootRef);
+
+  // Follower difase ulang tiap kali LEADER melompat. Satu langganan di tepi,
+  // bukan panggilan dari dalam `seek()` — lihat `startSyncFollow`.
+  useEffect(() => startSyncFollow(), []);
 
   /*
    * Command halaman ini didaftarkan ke shell selama halaman hidup — bukan ke

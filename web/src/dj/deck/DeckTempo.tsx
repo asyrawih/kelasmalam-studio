@@ -36,6 +36,8 @@ import { djActions } from '../store';
  */
 const BEND = 0.04;
 
+import { PhaseMeter } from './PhaseMeter';
+
 export interface DeckTempoProps {
   readonly deck: DeckState;
   readonly id: DeckId;
@@ -176,12 +178,14 @@ export function DeckTempo({
         title={
           deck.sync === 'follower'
             ? 'matikan SYNC — tempo fader TETAP di tempatnya, karena mematikan SYNC berarti mengambil alih tempo yang sudah selaras'
-            : 'SYNC menyamakan TEMPO saja — penyelarasan fase/downbeat belum ada'
+            : 'SYNC menyamakan tempo DAN menyejajarkan ketukan. Tempo yang beda oktaf (87 lawan 174) diikuti pada rasio 2:1, bukan dipaksa naik satu oktaf.'
         }
         style={{ height: '22px', padding: '0 6px', fontSize: '9px', width: '100%' }}
       >
         SYNC
       </Button>
+
+      <PhaseMeter id={id} accent={accent} />
 
       <Button
         size="sm"

@@ -4,7 +4,6 @@ import type { BeatGrid } from '../studio/analysis/beat-grid';
 import {
   EMPTY_TRACK_CUES,
   bandDb,
-  effectiveBpm,
   effectiveRate,
   tempoRatio,
   type TempoRange,
@@ -304,59 +303,10 @@ describe('hot cue dari KEYBOARD', () => {
   });
 });
 
-describe('SYNC bisa dimatikan', () => {
-  it('menekan SYNC yang menyala mematikannya', () => {
-    load('A');
-    load('B', 2);
-    djActions.setMasterDeck('B');
-    expect(djActions.toggleSync('A', 128, 130).ok).toBe(true);
-    expect(s().decks.A.sync).toBe('follower');
-
-    expect(djActions.toggleSync('A', 128, 130).ok).toBe(true);
-    expect(s().decks.A.sync).toBe('off');
-  });
-
-  it('mematikan SYNC MENINGGALKAN tempo fader di tempatnya', () => {
-    load('A');
-    load('B', 2);
-    djActions.setMasterDeck('B');
-    djActions.toggleSync('A', 128, 132);
-    const fader = s().decks.A.tempo.fader;
-    expect(fader).not.toBe(0);
-
-    // Mengembalikan fader ke nol akan melempar lagunya keluar dari beat tepat
-    // saat DJ mengambil alih tempo — kebalikan dari yang ia maksud.
-    djActions.toggleSync('A', 128, 132);
-    expect(s().decks.A.tempo.fader).toBeCloseTo(fader, 12);
-  });
-});
-
 describe('sync', () => {
-  it('menolak dengan ALASAN, bukan diam, kalau belum ada master', () => {
-    load('A');
-    const r = djActions.applySync('A', 128, 130);
-    expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/MASTER/i);
-  });
-
-  it('menolak dengan alasan kalau selisihnya di luar rentang', () => {
-    load('A');
-    load('B', 2);
-    djActions.setMasterDeck('B');
-    const r = djActions.applySync('A', 128, 160); // butuh +25%, rentang ±10%
-    expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/rentang/);
-    expect(s().decks.A.tempo.fader).toBe(0);
-  });
-
-  it('menyamakan BPM efektif saat masih di dalam rentang', () => {
-    load('A');
-    load('B', 2);
-    djActions.setMasterDeck('B');
-    expect(djActions.applySync('A', 128, 132).ok).toBe(true);
-    expect(effectiveBpm(128, s().decks.A.tempo) as number).toBeCloseTo(132, 9);
-    expect(s().decks.A.sync).toBe('follower');
-  });
+  // Perilaku SYNC yang sebenarnya — tempo, oktaf, fase, leader — dites di
+  // `sync.test.ts` (murni) dan `sync-ops.test.ts` (bersama kepustakaan). Yang
+  // tinggal di sini hanya invarian milik STORE, yang tidak butuh grid apa pun.
 
   it('hanya satu deck yang boleh jadi MASTER', () => {
     load('A');

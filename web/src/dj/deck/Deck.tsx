@@ -20,13 +20,14 @@
 
 import { useMemo } from 'react';
 
-import { studioStore, useStudio } from '../../studio/store';
+import { useStudio } from '../../studio/store';
 import { deckView } from '../deck-view';
 import { DECK_ACCENT, type DeckId, type DeckSide } from '../model';
-import { djActions, djStore, selectDeck, selectTrackCues, useDj } from '../store';
+import { djActions, selectDeck, selectTrackCues, useDj } from '../store';
 import { DeckLoop } from './DeckLoop';
 import { DeckPads } from './DeckPads';
 import { GridEditPopup } from '../grid/GridEditPopup';
+import { toggleSyncFor } from '../sync-ops';
 import { DeckReadout } from './DeckReadout';
 import { DeckTempo } from './DeckTempo';
 import { DeckTransport } from './DeckTransport';
@@ -144,10 +145,11 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
             isMaster={masterDeck === id}
             height={faderH}
             onSync={() => {
-              const other: DeckId = id === 'A' ? 'B' : 'A';
-              const otherBpm = otherDeckBaseBpm(other);
-              const r = djActions.toggleSync(id, view.baseBpm, otherBpm);
-              djActions.setNotice(r.ok ? null : (r.reason ?? 'SYNC gagal'));
+              // BPM-nya TIDAK dikirim dari sini lagi. Dulu begitu, dan yang
+              // terkirim adalah BPM *base* master alih-alih yang efektif —
+              // lihat kepala `sync-ops.ts`.
+              const r = toggleSyncFor(id);
+              if (!r.ok) djActions.setNotice(r.reason ?? 'SYNC gagal');
             }}
           />
         </div>
@@ -156,18 +158,3 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
   );
 }
 
-/**
- * BPM materi deck lain, dibaca dari store SAAT DIBUTUHKAN alih-alih dijadikan
- * prop.
- *
- * Menjadikannya prop berarti deck A ikut me-render tiap kali apa pun di deck B
- * berubah — termasuk playhead-nya, 16×/detik. SYNC ditekan beberapa kali per
- * lagu; membaca snapshot pada saat itu gratis, dan tidak menambah satu pun
- * langganan.
- */
-function otherDeckBaseBpm(other: DeckId): number | null {
-  const deck = djStore.getState().decks[other];
-  if (deck.assetId === null) return null;
-  const asset = studioStore.getState().assets[deck.assetId];
-  return deckView(deck, asset).baseBpm;
-}

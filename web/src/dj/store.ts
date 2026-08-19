@@ -38,6 +38,7 @@ import { useSyncExternalStore } from 'react';
 import type { BeatGrid } from '../studio/analysis/beat-grid';
 import { samplesPerBeat } from '../studio/analysis/beat-grid';
 import { trimTapRun } from '../studio/analysis/tap-tempo';
+import type { SyncPlan } from './sync';
 import {
   EMPTY_TRACK_CUES,
   EQ_KILL_DB,
@@ -54,7 +55,6 @@ import {
   createInitialDj,
   effectiveRate,
   emptyDeck,
-  faderForBpm,
   loopLen,
   quantized,
   type BrowseSort,
@@ -730,44 +730,44 @@ export const djActions = {
    * mengaku SYNC hanya ketahuan lewat telinga, setelah dua lagu terlanjur
    * melenceng di depan orang.
    */
-  applySync(id: DeckId, selfBpm: number | null, masterBpm: number | null): SyncResult {
-    const s0 = state;
-    if (s0.masterDeck === null || s0.masterDeck === id) {
-      return { ok: false, reason: 'belum ada deck MASTER' };
-    }
-    if (selfBpm === null) return { ok: false, reason: `deck ${id} belum punya beat grid` };
-    if (masterBpm === null) {
-      return { ok: false, reason: `deck ${s0.masterDeck} belum punya beat grid` };
-    }
-    const range = s0.decks[id].tempo.rangePct;
-    const fader = faderForBpm(masterBpm, selfBpm, range);
-    if (fader === null) {
-      return {
-        ok: false,
-        reason: `selisih tempo di luar rentang ±${range}% — ganti rentang tempo dulu`,
-      };
-    }
-    set((sx) =>
-      patchDeck(sx, id, (d) => ({ ...d, sync: 'follower', tempo: { ...d.tempo, fader } })),
+  /**
+   * Terapkan rencana sync: tempo, rentang, DAN fase.
+   *
+   * Rencananya dihitung di `sync.ts` (murni) dan dirakit di `sync-ops.ts`, yang
+   * punya akses ke grid milik `studioStore`. Store ini sengaja tidak tahu apa
+   * pun tentang asset — lihat "YANG SENGAJA TIDAK ADA DI SINI" di kepala
+   * berkas — jadi ia hanya menerima jawabannya, tidak menghitungnya.
+   *
+   * `seekEpoch` DINAIKKAN kalau fase digeser: itu satu-satunya penanda "posisi
+   * melompat" yang dibaca lapisan audio untuk menjadwalkan ulang source.
+   * Menggeser playhead tanpa menaikkannya berarti angka di layar pindah tapi
+   * yang terdengar tidak — kelas cacat yang hanya bisa didengar.
+   */
+  applySyncPlan(id: DeckId, plan: SyncPlan): void {
+    set((s) =>
+      patchDeck(s, id, (d) => {
+        const playhead = clamp(d.playhead + plan.deltaSamples, 0, d.frames);
+        const moved = plan.deltaSamples !== 0 && playhead !== d.playhead;
+        return {
+          ...d,
+          sync: 'follower',
+          tempo: { ...d.tempo, fader: plan.fader, rangePct: plan.rangePct },
+          playhead,
+          seekEpoch: moved ? d.seekEpoch + 1 : d.seekEpoch,
+        };
+      }),
     );
-    return { ok: true };
   },
 
   /**
-   * SYNC nyala ↔ mati.
+   * Matikan SYNC, **meninggalkan tempo fader di tempatnya**.
    *
-   * Menyalakan menghitung ulang tempo terhadap master; mematikan **meninggalkan
-   * tempo fader di tempatnya**. Itu perilaku yang benar dan bukan kemalasan:
-   * DJ mematikan SYNC justru untuk mengambil alih tempo yang sudah selaras,
-   * dan mengembalikan fader ke nol akan melempar lagunya keluar dari beat
-   * tepat pada saat ia mengambil kendali.
+   * Itu perilaku yang benar dan bukan kemalasan: DJ mematikan SYNC justru untuk
+   * mengambil alih tempo yang sudah selaras, dan mengembalikan fader ke nol
+   * akan melempar lagunya keluar dari beat tepat pada saat ia mengambil kendali.
    */
-  toggleSync(id: DeckId, selfBpm: number | null, masterBpm: number | null): SyncResult {
-    if (state.decks[id].sync === 'follower') {
-      set((s) => patchDeck(s, id, (d) => ({ ...d, sync: 'off' })));
-      return { ok: true };
-    }
-    return djActions.applySync(id, selfBpm, masterBpm);
+  clearSync(id: DeckId): void {
+    set((s) => patchDeck(s, id, (d) => (d.sync === 'follower' ? { ...d, sync: 'off' } : d)));
   },
 
   setQuantizeDiv(div: QuantizeDiv): void {
