@@ -31,7 +31,6 @@ import { CollectionBrowser } from './browser/CollectionBrowser';
 import { Deck } from './deck/Deck';
 import { deckView } from './deck-view';
 import { BeatFxBar } from './fx/BeatFxBar';
-import { GridEditBar } from './grid/GridEditBar';
 import { DjHeader } from './header/DjHeader';
 import { DjLayout } from './layout/DjLayout';
 import { useViewport } from './layout/useViewportBand';
@@ -61,7 +60,6 @@ export function DjPage({ onClose }: DjPageProps): JSX.Element {
   const deckA = useDj((s) => s.decks.A);
   const deckB = useDj((s) => s.decks.B);
   const assets = useStudio((s) => s.assets);
-  const gridEditing = useDj((s) => s.gridEdit.deck !== null);
 
   const views = useMemo(
     () => ({ A: deckView(deckA, assets[deckA.assetId ?? -1]), B: deckView(deckB, assets[deckB.assetId ?? -1]) }),
@@ -152,13 +150,7 @@ export function DjPage({ onClose }: DjPageProps): JSX.Element {
           <Deck id="B" side={SIDE_OF.B} compact={compact} />
         </div>
       }
-      /*
-       * Baris 4 adalah SLOT, bukan dua baris. Menyetel grid adalah pekerjaan
-       * persiapan dan Beat FX adalah pertunjukan; keduanya tidak pernah dipakai
-       * bersamaan, dan menyediakan tinggi untuk keduanya berarti mencuri tinggi
-       * dari pad dan jog. Alasan lengkapnya di kepala `grid/GridEditBar.tsx`.
-       */
-      fx={gridEditing ? <GridEditBar /> : <BeatFxBar />}
+      fx={<BeatFxBar />}
       browser={<CollectionBrowser />}
     />
   );

@@ -1,0 +1,405 @@
+/**
+ * Panel GRID EDIT — popup yang duduk DI DALAM deck yang sedang disunting.
+ *
+ * ## Kenapa popup, dan kenapa di sini
+ *
+ * Versi pertama menumpang baris 4 menggantikan Beat FX. Itu bekerja, tapi salah
+ * tempat: kontrolnya berada sejauh setengah layar dari waveform dan dari angka
+ * BPM yang sedang dikoreksi, padahal satu-satunya alasan panel ini dibuka
+ * adalah karena ada yang salah PADA DECK ITU. Mata harus bolak-balik antara dua
+ * ujung layar untuk satu pekerjaan.
+ *
+ * Sekarang ia melayang di deck yang bersangkutan, dan baris 4 kembali jadi Beat
+ * FX seutuhnya — tidak ada lagi dua fitur yang berebut satu baris.
+ *
+ * ## Kenapa menempel di BAWAH, dan kenapa tanpa backdrop
+ *
+ * Ini bukan selera tata letak, melainkan syarat alur kerjanya. Menyetel grid
+ * butuh MEMINDAHKAN PLAYHEAD berkali-kali — ke kick pertama, lalu ke drop
+ * terakhir — dan di dalam mode grid, menarik waveform besar menggeser GRID,
+ * bukan posisi. Jadi satu-satunya cara berpindah posisi tanpa keluar dari mode
+ * adalah mengklik `DeckOverview`, strip lagu-penuh di bagian atas deck.
+ *
+ * Popup yang menutup seluruh deck — atau yang datang dengan backdrop gelap yang
+ * menangkap klik — menutup strip itu juga, dan alur kerjanya jadi mustahil
+ * diselesaikan tanpa membuka-tutup panel di antara tiap langkah. Karena itu ia
+ * berhenti tepat di bawah strip, dan tidak ada backdrop sama sekali: yang
+ * tertutup hanya pad, transport, dan jog, dan ketiganya memang tidak dipakai
+ * saat menyetel grid.
+ *
+ * ## Panel ini TIDAK menyimpan grid
+ *
+ * Semua tombol memanggil `grid-ops.ts`, yang menulis ke `studioStore`. Tidak
+ * ada salinan grid di `djStore` — aturan `deck-view.ts`: *kalau sebuah nilai
+ * bisa berubah dari luar deck, turunkan, jangan simpan.* Konsekuensinya yang
+ * bisa dilihat: grid yang disunting di sini langsung benar di `/studio` tanpa
+ * satu baris sinkronisasi, dan sebaliknya.
+ *
+ * Satu-satunya keadaan lokal di berkas ini adalah TEKS yang sedang diketik di
+ * kotak BPM, dan itu memang harus lokal: mengirim tiap penekanan tombol ke
+ * store berarti mengetik "1" pada 128 sempat menetapkan grid ke 1 BPM.
+ */
+
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+
+import { Button } from '../../ui/cyber';
+import { MAX_GRID_BPM, MIN_GRID_BPM } from '../../studio/analysis/beat-grid';
+import { MIN_FIT_BARS, barsBetween, currentBpm, rawAnchorSec } from '../../studio/analysis/grid-edit';
+import { useStudio } from '../../studio/store';
+import { DECK_ACCENT, GRID_ZOOMS, METRO_LEVELS, type DeckId, type GridZoom } from '../model';
+import { djActions, useDj } from '../store';
+import { useGridHistoryVersion } from './grid-history';
+import {
+  autoGrid,
+  fitGridHere,
+  gridBlockedReason,
+  gridHistoryState,
+  nudgeGrid,
+  octaveGrid,
+  redoGridEdit,
+  setDownbeatHere,
+  setGridBpm,
+  tapGrid,
+  toggleGridLock,
+  undoGridEdit,
+  widenGrid,
+} from './grid-ops';
+
+const LABEL: CSSProperties = {
+  fontSize: '9px',
+  letterSpacing: '.16em',
+  color: 'var(--cy-text-dim)',
+  flexShrink: 0,
+};
+
+/**
+ * Tinggi yang DIJAMIN tetap terlihat di atas panel, piksel.
+ *
+ * Cukup untuk baris BPM plus strip lagu-penuh pada band tertinggi — keduanya
+ * harus tetap bisa diklik selama panel terbuka (lihat kepala berkas). Angkanya
+ * dilebihkan sedikit; salah di sisi ini hanya membuat panel lebih pendek,
+ * sedangkan salah di sisi lain membuat alur kerjanya buntu.
+ */
+const KEEP_CLEAR_PX = 104;
+
+/** `112.418` → `01:52.418`. Anchor pantas dibaca sampai milidetik: itu satuan
+ *  kerjanya, dan `formatClock` yang membulatkan ke detik menyembunyikannya. */
+function formatAnchor(sec: number): string {
+  const sign = sec < 0 ? '-' : '';
+  const abs = Math.abs(sec);
+  const m = Math.floor(abs / 60);
+  const s = abs - m * 60;
+  return `${sign}${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
+}
+
+function Row({ children }: { readonly children: ReactNode }): JSX.Element {
+  return (
+    <div
+      style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', minWidth: 0 }}
+    >
+      {children}
+    </div>
+  );
+}
+
+export interface GridEditPopupProps {
+  /** Deck tempat popup ini digambar. */
+  readonly id: DeckId;
+}
+
+export function GridEditPopup({ id }: GridEditPopupProps): JSX.Element | null {
+  const open = useDj((s) => s.gridEdit.deck === id);
+  const zoomBars = useDj((s) => s.gridEdit.zoomBars);
+  const fine = useDj((s) => s.gridEdit.fine);
+  const metroLevel = useDj((s) => s.gridEdit.metroLevel);
+  const deck = useDj((s) => s.decks[id]);
+  const assets = useStudio((s) => s.assets);
+  // Riwayat hidup di luar React (lihat `grid-history.ts`); ini yang membuat
+  // tombol UNDO/REDO ikut redup pada saat yang tepat.
+  useGridHistoryVersion();
+
+  const assetId = deck.assetId;
+  const asset = assetId === null ? undefined : assets[assetId];
+  const bpm = currentBpm(asset);
+
+  const [draft, setDraft] = useState('');
+  // Kotak BPM mengikuti grid yang berlaku SELAMA user tidak sedang mengetik di
+  // dalamnya. Tanpa ini, menekan ×2 tidak terlihat di kotak, dan user mengetik
+  // ulang angka yang sebenarnya sudah benar.
+  useEffect(() => {
+    setDraft(bpm === null ? '' : bpm.toFixed(3));
+  }, [bpm, assetId]);
+
+  /*
+   * Esc menutup panel. TIDAK lewat registry command, pola yang sama dengan
+   * overlay di `AppShell.tsx`: ini perilaku dialog, dan mengikatnya ke command
+   * berarti user bisa melepasnya lalu terkurung di dalam panel.
+   *
+   * Kotak BPM dilewati — di sana Esc sudah punya arti sendiri (membatalkan
+   * ketikan), dan menutup panel sekaligus membuang keduanya dalam satu tekan.
+   */
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      const el = e.target as HTMLElement | null;
+      if (el !== null && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+      djActions.closeGridEdit();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  if (!open) return null;
+
+  const anchorSec = rawAnchorSec(asset);
+  const sr = deck.sampleRate > 0 ? deck.sampleRate : 48_000;
+  const atSec = deck.playhead / sr;
+  const blocked = gridBlockedReason(id);
+  const locked = asset?.analysisLock === true;
+  const { canUndo, canRedo } = gridHistoryState(assetId);
+  const bars = bpm === null ? 0 : Math.abs(barsBetween(anchorSec, bpm, atSec));
+  const fitReady = bars >= MIN_FIT_BARS;
+  const off = blocked !== null;
+  const accent = DECK_ACCENT[id];
+
+  return (
+    <div
+      data-grid-edit={id}
+      /*
+       * `pointerdown` dihentikan di sini supaya klik di dalam panel tidak ikut
+       * memicu `onPointerDownCapture` milik `Deck` — bukan karena fokusnya
+       * salah (panel ini memang milik deck itu), melainkan supaya tiap klik
+       * tombol tidak menghasilkan satu `set` store tambahan.
+       */
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        position: 'absolute',
+        left: '6px',
+        right: '6px',
+        bottom: '6px',
+        // Batas atasnya: sisa tinggi deck. Baris BPM dan strip lagu-penuh di
+        // atasnya TIDAK pernah tertutup — lihat catatan di kepala berkas.
+        maxHeight: `calc(100% - ${KEEP_CLEAR_PX}px)`,
+        overflowY: 'auto',
+        zIndex: 5,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '5px',
+        padding: '7px',
+        background: 'var(--cy-surface-2)',
+        border: `1px solid ${accent}`,
+        boxShadow: '0 6px 24px #000a',
+      }}
+    >
+      <Row>
+        <span style={{ ...LABEL, color: accent, fontSize: '10px' }}>GRID · DECK {id}</span>
+        <div style={{ flex: 1, minWidth: '4px' }} />
+        <Button variant="ghost" onClick={() => djActions.closeGridEdit()} title="tutup (Esc)">
+          ✕
+        </Button>
+      </Row>
+
+      {blocked !== null ? (
+        <span style={{ ...LABEL, whiteSpace: 'normal' }}>{blocked.toUpperCase()}</span>
+      ) : null}
+
+      {/* — spasi grid sebagai BPM (#2), renggang/rapat (#5), oktaf (#6), TAP (#3) — */}
+      <Row>
+        <span style={LABEL}>BPM</span>
+        <input
+          aria-label="BPM grid"
+          value={draft}
+          disabled={off}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            const n = Number(draft);
+            if (Number.isFinite(n) && n > 0) setGridBpm(n, id);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+            if (e.key === 'Escape') setDraft(bpm === null ? '' : bpm.toFixed(3));
+          }}
+          inputMode="decimal"
+          title={`BPM grid (${MIN_GRID_BPM}–${MAX_GRID_BPM}). Tiga angka di belakang koma memang perlu: 0.01 BPM saja sudah menggeser grid melewati transien dalam enam menit.`}
+          style={{
+            width: '76px',
+            background: 'var(--cy-surface-1)',
+            color: 'var(--cy-accent)',
+            border: '1px solid var(--cy-border-strong)',
+            fontFamily: 'var(--cy-font-mono)',
+            fontSize: '11px',
+            padding: '3px 5px',
+            textAlign: 'right',
+          }}
+        />
+        <Button
+          variant="ghost"
+          disabled={off}
+          onClick={() => widenGrid(-1, id)}
+          title={`rapatkan jarak ketukan ${fine ? '3' : '1'} ms — grid yang tertinggal di belakang transien`}
+        >
+          −
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={off}
+          onClick={() => widenGrid(1, id)}
+          title={`renggangkan jarak ketukan ${fine ? '3' : '1'} ms — grid yang mendahului transien`}
+        >
+          +
+        </Button>
+        <Button variant="ghost" disabled={off} onClick={() => octaveGrid(1, id)} title="×2 BPM">
+          ×2
+        </Button>
+        <Button variant="ghost" disabled={off} onClick={() => octaveGrid(-1, id)} title="÷2 BPM">
+          ÷2
+        </Button>
+        <Button
+          variant="outline"
+          disabled={off}
+          onClick={() => tapGrid(performance.now(), id)}
+          title="ketuk mengikuti lagu — empat kali atau lebih"
+        >
+          TAP
+        </Button>
+      </Row>
+
+      {/* — anchor: geser (#4) dan `[fine]` — */}
+      <Row>
+        <span style={LABEL}>ANCHOR</span>
+        <span
+          style={{
+            fontSize: '11px',
+            color: 'var(--cy-text)',
+            fontVariantNumeric: 'tabular-nums',
+            minWidth: '66px',
+          }}
+        >
+          {formatAnchor(anchorSec)}
+        </span>
+        <Button
+          variant="ghost"
+          disabled={off}
+          onClick={() => nudgeGrid(-1, id)}
+          title={`geser seluruh grid ${fine ? '0.1' : '1'} ms ke kiri`}
+        >
+          ◀
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={off}
+          onClick={() => nudgeGrid(1, id)}
+          title={`geser seluruh grid ${fine ? '0.1' : '1'} ms ke kanan`}
+        >
+          ▶
+        </Button>
+        <Button
+          variant="ghost"
+          active={fine}
+          onClick={() => djActions.setGridFine(!fine)}
+          title="fine — geser anchor jadi lebih halus (0.1 ms), renggang/rapat jadi lebih kasar (3 ms). Arahnya memang berlawanan: yang satu mengejar fase, yang satu mengejar drift."
+        >
+          FINE
+        </Button>
+      </Row>
+
+      {/* — dua tombol yang paling menentukan (#1 dan kunci-dua-titik) — */}
+      <Row>
+        <Button
+          variant="outline"
+          disabled={off}
+          onClick={() => setDownbeatHere(id)}
+          title="jadikan posisi sekarang ketukan pertama sebuah bar"
+        >
+          SET DI SINI
+        </Button>
+        <Button
+          variant={fitReady ? 'solid' : 'ghost'}
+          disabled={off}
+          onClick={() => fitGridHere(id)}
+          title={
+            fitReady
+              ? `selesaikan BPM supaya garis bar mendarat persis di sini (${bars.toFixed(1)} bar dari anchor)`
+              : `butuh minimal ${MIN_FIT_BARS} bar dari anchor — sekarang ${bars.toFixed(1)}`
+          }
+        >
+          PAS DI SINI · {bars.toFixed(1)}
+        </Button>
+      </Row>
+
+      {/* — zoom waveform + metronom (#10) — */}
+      <Row>
+        <span style={LABEL}>ZOOM</span>
+        {GRID_ZOOMS.map((z: GridZoom) => (
+          <Button
+            key={z}
+            variant="ghost"
+            active={zoomBars === z}
+            onClick={() => djActions.setGridZoom(z)}
+            title={`${z} bar memenuhi layar`}
+          >
+            {z}
+          </Button>
+        ))}
+        <span style={{ ...LABEL, marginLeft: '4px' }}>METRO</span>
+        {METRO_LEVELS.map((lv) => (
+          <Button
+            key={lv}
+            variant="ghost"
+            active={metroLevel === lv}
+            onClick={() => djActions.setMetroLevel(lv)}
+            title={
+              lv === 0
+                ? 'metronom mati'
+                : `metronom tingkat ${lv} — HANYA ke keluaran CUE, tidak pernah ke master`
+            }
+          >
+            {lv === 0 ? '✕' : '▁▃█'.charAt(lv - 1)}
+          </Button>
+        ))}
+      </Row>
+
+      {/* — riwayat, AUTO, kunci (#9 dan #11) — */}
+      <Row>
+        <Button
+          variant="ghost"
+          disabled={!canUndo}
+          onClick={() => undoGridEdit(id)}
+          title="batalkan suntingan grid terakhir"
+        >
+          UNDO
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={!canRedo}
+          onClick={() => redoGridEdit(id)}
+          title="ulangi suntingan yang dibatalkan"
+        >
+          REDO
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={off}
+          onClick={() => autoGrid(id)}
+          title="buang SEMUA koreksi manual — BPM, downbeat, dan koreksi oktaf — dan kembali ke hasil deteksi"
+        >
+          AUTO
+        </Button>
+        <Button
+          variant="ghost"
+          active={locked}
+          disabled={assetId === null}
+          onClick={() => toggleGridLock(id)}
+          title={
+            locked
+              ? 'terkunci: grid tidak bisa diubah dan lagu ini dilewati analisis'
+              : 'kunci grid — mencegah AUTO dan analisis ulang menyentuhnya'
+          }
+        >
+          {locked ? '🔒' : '🔓'}
+        </Button>
+      </Row>
+    </div>
+  );
+}

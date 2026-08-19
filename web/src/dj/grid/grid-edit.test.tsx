@@ -117,18 +117,60 @@ function button(re: RegExp): HTMLElement {
 }
 
 describe('membuka panel', () => {
-  it('baris Beat FX diganti panel grid, dan kembali saat ditutup', () => {
+  it('popup muncul DI DALAM deck yang disunting, bukan di deck sebelahnya', () => {
     render(<DjPage />);
     expect(document.querySelector('[data-grid-edit]')).toBeNull();
 
     openGrid();
-    expect(document.querySelector('[data-grid-edit]')).not.toBeNull();
-    // Baris 4 adalah SLOT: keduanya tidak pernah tampil bersamaan.
-    expect(screen.queryByText('BEAT FX')).toBeNull();
+    expect(document.querySelector('[data-dj-deck="A"] [data-grid-edit]')).not.toBeNull();
+    expect(document.querySelector('[data-dj-deck="B"] [data-grid-edit]')).toBeNull();
 
     openGrid();
     expect(document.querySelector('[data-grid-edit]')).toBeNull();
+  });
+
+  it('Beat FX TIDAK ikut hilang — baris 4 bukan lagi slot rebutan', () => {
+    render(<DjPage />);
     expect(screen.queryByText('BEAT FX')).not.toBeNull();
+    openGrid();
+    expect(screen.queryByText('BEAT FX')).not.toBeNull();
+  });
+
+  it('strip lagu-penuh tetap ada dan tetap bisa memindahkan playhead saat panel terbuka', () => {
+    // Ini syarat alur kerjanya, bukan detail tata letak: di dalam mode grid,
+    // menarik waveform besar menggeser GRID, jadi strip inilah satu-satunya
+    // cara berpindah posisi tanpa menutup panel lebih dulu.
+    render(<DjPage />);
+    openGrid();
+
+    const deckA = document.querySelector('[data-dj-deck="A"]');
+    const strip = deckA?.querySelector('[title*="melompat ke posisi"]');
+    expect(strip).not.toBeNull();
+
+    const before = playhead();
+    run(() => {
+      fireEvent.pointerDown(strip as Element, { clientX: 700, clientY: 5, pointerId: 1, button: 0 });
+    });
+    expect(playhead()).not.toBe(before);
+    // Dan panelnya tidak ikut tertutup.
+    expect(document.querySelector('[data-grid-edit]')).not.toBeNull();
+  });
+
+  it('Esc menutup panel', () => {
+    render(<DjPage />);
+    openGrid();
+    run(() => fireEvent.keyDown(window, { key: 'Escape' }));
+    expect(djStore.getState().gridEdit.deck).toBeNull();
+  });
+
+  it('Esc DI DALAM kotak BPM membatalkan ketikan, bukan menutup panel', () => {
+    // Dua arti untuk satu tombol; kalau keduanya jalan, satu tekan membuang
+    // ketikannya DAN panelnya.
+    render(<DjPage />);
+    openGrid();
+    const input = screen.getByLabelText('BPM grid');
+    run(() => fireEvent.keyDown(input, { key: 'Escape' }));
+    expect(djStore.getState().gridEdit.deck).toBe('A');
   });
 
   it('memperingatkan — bukan menolak — kalau decknya sedang berbunyi', () => {

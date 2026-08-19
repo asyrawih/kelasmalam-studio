@@ -26,6 +26,7 @@ import { DECK_ACCENT, type DeckId, type DeckSide } from '../model';
 import { djActions, djStore, selectDeck, selectTrackCues, useDj } from '../store';
 import { DeckLoop } from './DeckLoop';
 import { DeckPads } from './DeckPads';
+import { GridEditPopup } from '../grid/GridEditPopup';
 import { DeckReadout } from './DeckReadout';
 import { DeckTempo } from './DeckTempo';
 import { DeckTransport } from './DeckTransport';
@@ -85,8 +86,12 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
         // dari sudut mata, tidak cukup untuk bersaing dengan waveform.
         borderTop: `2px solid ${focused ? accent : 'transparent'}`,
         overflow: 'hidden',
+        // Jangkar untuk `GridEditPopup`, yang melayang di dalam deck ini.
+        position: 'relative',
       }}
     >
+      <GridEditPopup id={id} />
+
       <DeckReadout view={view} id={id} accent={accent} mirrored={mirrored} />
 
       <DeckOverview view={view} cues={cues} id={id} accent={accent} height={compact ? 26 : 34} />

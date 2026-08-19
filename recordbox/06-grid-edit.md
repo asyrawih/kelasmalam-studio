@@ -130,17 +130,27 @@ gaya; ini menyelesaikan hal yang panelnya sendiri tidak bisa selesaikan.
 
 ### Di mana panelnya duduk
 
-`DjLayout` adalah grid 100vh **lima baris yang tidak menggulir** — menambah
-baris keenam berarti mencuri tinggi dari deck, dan `useViewportBand` sudah
-kehabisan ruang di band `compact`.
+**Popup yang melayang DI DALAM deck yang sedang disunting**, menempel di bawah,
+tanpa backdrop.
 
-**Baris 4 (Beat FX) berubah jadi slot.** Saat GRID EDIT menyala untuk sebuah
-deck, baris itu menampilkan `GridEditBar`; selebihnya tetap `BeatFxBar`.
+Versi pertama menumpang baris 4 menggantikan Beat FX. Itu bekerja dan hemat
+tinggi, tapi salah tempat: kontrolnya berada sejauh setengah layar dari waveform
+dan dari angka BPM yang sedang dikoreksi, padahal satu-satunya alasan panel itu
+dibuka adalah karena ada yang salah PADA DECK ITU. Dua fitur juga jadi berebut
+satu baris tanpa perlu.
 
-Bukan kompromi tata letak — itu pernyataan yang jujur: menyetel grid adalah
-**pekerjaan persiapan**, bukan pertunjukan. Orang tidak menyetel downbeat sambil
-memutar Beat FX, dan menyediakan keduanya sekaligus hanya menghabiskan tinggi
-yang dibutuhkan pad.
+Menempel di **bawah** bukan selera tata letak melainkan syarat alur kerjanya.
+Menyetel grid butuh memindahkan playhead berkali-kali — ke kick pertama, lalu ke
+drop terakhir — dan di dalam mode grid, menarik waveform besar menggeser GRID,
+bukan posisi. Jadi satu-satunya cara berpindah posisi tanpa keluar dari mode
+adalah mengklik `DeckOverview`, strip lagu-penuh di bagian atas deck. Popup yang
+menutup seluruh deck — atau yang datang dengan backdrop gelap penangkap klik —
+menutup strip itu juga, dan alur kerjanya jadi mustahil diselesaikan tanpa
+membuka-tutup panel di antara tiap langkah.
+
+Yang tertutup karenanya hanya pad, transport, dan jog: ketiganya memang tidak
+dipakai saat menyetel grid. Dikunci tes — "strip lagu-penuh tetap bisa
+memindahkan playhead saat panel terbuka".
 
 ### Apa yang berubah di waveform
 
@@ -211,7 +221,7 @@ BARU   web/src/studio/analysis/grid-edit.test.ts
 BARU   web/src/studio/analysis/tap-tempo.ts        TAP, murni + berjustifikasi
 BARU   web/src/studio/analysis/tap-tempo.test.ts
 BARU   web/src/dj/grid/grid-history.ts             undo/redo per asset
-BARU   web/src/dj/grid/GridEditBar.tsx             panel baris 4
+BARU   web/src/dj/grid/GridEditPopup.tsx           popup di dalam deck
 BARU   web/src/dj/grid/grid-edit.test.tsx          tes UI + integrasi
 UBAH   web/src/dj/store.ts                         state `gridEdit`
 UBAH   web/src/dj/wave/DeckScrollingWave.tsx       zoom + semantik tarik
@@ -437,7 +447,7 @@ menyimpang dari rencana dan alasannya. Semuanya lulus `tsc --noEmit`,
 | `studio/analysis/tap-tempo.ts` | `tapTempo` (median + kunci oktaf), `trimTapRun` |
 | `dj/grid/grid-ops.ts` | lapisan keputusan: satu pintu untuk panel, keyboard, dan tes |
 | `dj/grid/grid-history.ts` | undo/redo per asset, 32 entri, langganan sendiri |
-| `dj/grid/GridEditBar.tsx` | panel baris 4 |
+| `dj/grid/GridEditPopup.tsx` | popup di dalam deck |
 | `dj/audio/metronome.ts` | penjadwal klik dengan jam audio |
 | + 4 berkas tes | 29 + 14 + 17 + 10 tes |
 
@@ -467,6 +477,10 @@ Plus yang tidak ada di panel rekordbox: **menarik waveform menggeser grid**, dan
    adalah angka yang salah saat seseorang merasa perlu membukanya. Ia memakai
    gaya tombol kecil `DeckReadout`, bukan `Button` 32 px, supaya baris itu tidak
    tumbuh di layar yang tidak menggulir.
+
+   **Panelnya sendiri adalah POPUP di dalam deck, bukan baris 4** (§4). Baris 4
+   tetap Beat FX seutuhnya. `Esc` menutup popup — kecuali saat kursor ada di
+   kotak BPM, tempat `Esc` sudah berarti "batalkan ketikan".
 2. **Klik metronom masuk ke `cueLevel`, bukan ke `cueSide`.** Lewat `cueSide` ia
    ikut hilang saat `[MIX]` digeser penuh ke MASTER — padahal ia bukan bagian
    dari lagu yang dimonitor, melainkan alat ukur di atasnya. Aturan "tidak pernah
