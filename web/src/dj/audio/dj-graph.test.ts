@@ -190,10 +190,28 @@ describe('penerapan parameter', () => {
     expect(gain.setTargetAtTime).toHaveBeenCalled();
   });
 
-  it('KILL band menuliskan −26 dB ke gain biquad, bukan memutus node', () => {
-    applyChannel(g.channels.A, ch({ eq: { hi: 0, mid: 0, low: -26 } }), 0);
+  it('KILL menuliskan −26 dB ke gain biquad, bukan memutus node', () => {
+    applyChannel(g.channels.A, ch({ eqKill: { hi: false, mid: false, low: true } }), 0);
     const low = (g.channels.A.eq.low as unknown as { gain: FakeParam }).gain;
-    expect(low.setTargetAtTime).toHaveBeenCalledWith(-26, 0, expect.any(Number));
+    expect(low.value).toBe(-26);
+  });
+
+  it('KILL menang atas nilai knob, TANPA mengubah nilai knob itu', () => {
+    const state = ch({ eq: { hi: 0, mid: 4, low: 0 }, eqKill: { hi: false, mid: true, low: false } });
+    applyChannel(g.channels.A, state, 0);
+    const mid = (g.channels.A.eq.mid as unknown as { gain: FakeParam }).gain;
+    expect(mid.value).toBe(-26);
+    // Nilai di STATE tetap 4: knob-nya tidak digerakkan, ia hanya berhenti
+    // berpengaruh — "while they light up, each controller is not activated".
+    expect(state.eq.mid).toBe(4);
+  });
+
+  it('menyalakan band lagi mengembalikan nilai knob ke jalur audio', () => {
+    const eq = { hi: 0, mid: 4, low: 0 };
+    applyChannel(g.channels.A, ch({ eq, eqKill: { hi: false, mid: true, low: false } }), 0);
+    applyChannel(g.channels.A, ch({ eq, eqKill: { hi: false, mid: false, low: false } }), 0);
+    const mid = (g.channels.A.eq.mid as unknown as { gain: FakeParam }).gain;
+    expect(mid.value).toBe(4);
   });
 
   it('COLOR di tengah memarkir kedua filter pada posisi transparan', () => {

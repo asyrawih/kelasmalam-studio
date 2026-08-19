@@ -91,7 +91,53 @@ describe('grid halaman', () => {
     expect(decks).toHaveLength(2);
     const grid = decks[0]?.parentElement as HTMLElement;
     expect(grid.style.gridTemplateColumns).toBe(
-      'minmax(320px,1fr) minmax(240px,320px) minmax(320px,1fr)',
+      'minmax(300px,1fr) minmax(300px,360px) minmax(300px,1fr)',
     );
+  });
+});
+
+/**
+ * Penjaga tinggi channel strip.
+ *
+ * Bug yang memicunya: fader dan tombol CUE diberi tinggi TETAP di bawah
+ * tumpukan lima knob, dan begitu tumpukannya melebihi ruang yang ada, keduanya
+ * terpotong habis oleh `overflow: hidden` di baris grid. Kontrol yang paling
+ * sering dipakai hilang tanpa satu pun gejala selain "kok nggak kelihatan" —
+ * dan tidak ada error, tidak ada scrollbar, tidak ada apa pun yang menunjukkan
+ * ada yang terpotong.
+ *
+ * Yang dijaga di sini bukan pikselnya (jsdom tidak melakukan layout), melainkan
+ * ATURAN yang membuat pikselnya benar: tinggi dibagi, bukan dijatah.
+ */
+describe('tinggi channel strip', () => {
+  const strip = (): HTMLElement => {
+    const mixer = document.querySelector('[data-dj-mixer]') as HTMLElement;
+    const el = [...mixer.querySelectorAll('div')].find((d) =>
+      (d.textContent ?? '').startsWith('CH A'),
+    );
+    if (el === undefined) throw new Error('channel strip A tidak ditemukan');
+    return el;
+  };
+
+  it('fader dan tombol CUE benar-benar ada di dalam strip', () => {
+    render(<DjPage />);
+    const s = strip();
+    expect(s.querySelector('[role="slider"][aria-label="channel fader A"]')).toBeTruthy();
+    expect([...s.querySelectorAll('button')].some((b) => b.textContent === 'CUE')).toBe(true);
+  });
+
+  it('strip boleh MENYUSUT, tidak mendorong isinya keluar', () => {
+    render(<DjPage />);
+    expect(strip().style.minHeight).toBe('0px');
+  });
+
+  it('blok fader mengambil SISA tinggi, bukan jatah tetap', () => {
+    render(<DjPage />);
+    const fader = strip().querySelector('[aria-label="channel fader A"]') as HTMLElement;
+    const block = fader.parentElement as HTMLElement;
+    expect(block.style.flex).toContain('1');
+    expect(block.style.minHeight).toBe('0px');
+    // Fader sendiri TIDAK boleh punya tinggi tetap — ia mengisi bloknya.
+    expect(fader.style.height).toBe('100%');
   });
 });

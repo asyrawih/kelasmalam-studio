@@ -96,6 +96,10 @@ Tambahan di luar daftar semula:
   [docs/12-timeline-selection.md](docs/12-timeline-selection.md)
 - Toolbar menu ikon + popup (menggantikan rail kanan & kartu Clip Detail) —
   [docs/13-menu-toolbar.md](docs/13-menu-toolbar.md)
+- App shell: routing, registry command, dan keyboard yang bisa di-remap —
+  [docs/15-app-shell.md](docs/15-app-shell.md). Ia yang membuat pintu masuk
+  berikutnya (MIDI, macro, remote) jadi satu penerjemah, bukan satu salinan
+  daftar aksi.
 - Halaman ketiga `/dj`, mixer DJ 2 deck ala rekordbox — [recordbox/](recordbox/).
   Berbunyi lewat Web Audio (`web/src/dj/audio/`), memakai ulang `AudioContext`
   dan cache PCM milik preview Studio. MASTER TEMPO, scratch, dan deteksi key

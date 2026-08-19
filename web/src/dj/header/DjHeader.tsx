@@ -14,6 +14,7 @@
  *    apa adanya alih-alih ditampilkan sebagai "belum siap".
  */
 
+import { chordFor, chordLabel } from '../../app-shell';
 import { Badge, Button } from '../../ui/cyber';
 import { QUANTIZE_DIVS, DECK_ACCENT, type QuantizeDiv } from '../model';
 import { djActions, djStore, useDj } from '../store';
@@ -24,6 +25,12 @@ export interface DjHeaderProps {
   readonly onClose?: () => void;
   readonly tooNarrow: boolean;
   readonly tooShort: boolean;
+}
+
+/** `⌘K PERINTAH`, atau hanya labelnya kalau binding-nya sudah dilepas user. */
+function shortcutHint(commandId: string, label: string): string {
+  const chord = chordFor(commandId);
+  return chord === null ? label : `${chordLabel(chord)} ${label}`;
 }
 
 export function DjHeader({ onClose, tooNarrow, tooShort }: DjHeaderProps): JSX.Element {
@@ -102,7 +109,16 @@ export function DjHeader({ onClose, tooNarrow, tooShort }: DjHeaderProps): JSX.E
         </select>
       </div>
 
+      {/*
+        Petunjuk pintasan. Shortcut yang tidak bisa ditemukan sama saja tidak
+        ada — dan satu-satunya yang perlu dihafal adalah pintu ke daftarnya.
+        Labelnya dibaca dari keymap yang BERLAKU, jadi ia ikut berubah kalau
+        user mengubah binding-nya.
+      */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ fontSize: '9px', color: 'var(--cy-text-muted)', letterSpacing: '.08em' }}>
+          {shortcutHint('shell.keymap', 'PINTASAN')} · {shortcutHint('shell.palette', 'PERINTAH')}
+        </span>
         {tooShort ? (
           <Badge tone="warning">TINGGI LAYAR &lt; 560px — SEBAGIAN KONTROL TIDAK MUAT</Badge>
         ) : null}
@@ -116,7 +132,7 @@ export function DjHeader({ onClose, tooNarrow, tooShort }: DjHeaderProps): JSX.E
             ? `AUDIO GAGAL: ${audioError}`
             : audioReady
               ? 'READY'
-              : 'SENTUH UNTUK MENYALAKAN AUDIO'}
+              : 'AUDIO BELUM BERBUNYI — SENTUH HALAMAN'}
         </Badge>
         <Button size="sm" variant="ghost" onClick={onClose}>
           ✕ TUTUP

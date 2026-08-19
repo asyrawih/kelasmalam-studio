@@ -21,6 +21,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 
+import { useCommands } from '../app-shell';
 import { registerAssetRoot } from '../studio/persist/asset-roots';
 import { loadLibraryIntoStore } from '../studio/persist/decode-asset';
 import { studioStore, useStudio } from '../studio/store';
@@ -35,6 +36,7 @@ import { DjLayout } from './layout/DjLayout';
 import { useViewport } from './layout/useViewportBand';
 import { MixerSection } from './mixer/MixerSection';
 import { SIDE_OF } from './model';
+import { djCommands } from './commands';
 import { djActions, djAssetIds, useDj } from './store';
 import { WaveRow } from './wave/WaveRow';
 
@@ -115,6 +117,17 @@ export function DjPage({ onClose }: DjPageProps): JSX.Element {
   // dan itu benar: tidak ada yang berbunyi.
   useDjAudio(rootRef);
 
+  /*
+   * Command halaman ini didaftarkan ke shell selama halaman hidup — bukan ke
+   * listener `window` sendiri. Itu yang membuat command palette, editor
+   * pintasan, dan (nanti) MIDI melihat daftar yang SAMA, dan yang membuat
+   * "tombol ini milik siapa" punya satu jawaban.
+   *
+   * Daftarnya dibangun ulang tiap render, tapi pendaftarannya sekali: `run`
+   * membaca store saat dipanggil, jadi tidak ada closure yang bisa basi.
+   */
+  useCommands(djCommands());
+
   return (
     <DjLayout
       rootRef={rootRef}
@@ -127,7 +140,7 @@ export function DjPage({ onClose }: DjPageProps): JSX.Element {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(320px,1fr) minmax(240px,320px) minmax(320px,1fr)',
+            gridTemplateColumns: 'minmax(300px,1fr) minmax(300px,360px) minmax(300px,1fr)',
             height: '100%',
             minHeight: 0,
           }}

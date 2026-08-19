@@ -12,12 +12,35 @@
  *     itu hanya berarti kalau ada yang menjaganya.
  */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DjPage } from '../DjPage';
 import { djActions, djStore } from '../store';
-import { studioActions } from '../../studio/store';
+import { studioActions, type StudioAsset } from '../../studio/store';
+import { buildEnvelope } from '../../studio/timeline/envelope';
+
+const SR = 48_000;
+const FRAMES = SR * 4;
+
+/** Asset dengan envelope SUNGGUHAN — `readEnvelope` butuh minimal satu level. */
+const fakeAsset = (id: number): StudioAsset =>
+  ({
+    id,
+    name: `LAGU ${id}`,
+    envelope: buildEnvelope({
+      numberOfChannels: 1,
+      length: FRAMES,
+      getChannelData: () => new Float32Array(FRAMES),
+    }),
+    frames: FRAMES,
+    sampleRate: SR,
+    tempo: null,
+    tempoPending: false,
+    tempoOctave: 0,
+    bpmOverride: null,
+    beatOffsetOverride: null,
+  }) as unknown as StudioAsset;
 
 const RECT = {
   x: 0,
@@ -72,7 +95,7 @@ describe('DjPage', () => {
 
   it('mengajak menyalakan audio, bukan mengaku sudah siap', () => {
     render(<DjPage />);
-    expect(screen.getByText(/SENTUH UNTUK MENYALAKAN AUDIO/)).toBeTruthy();
+    expect(screen.getByText(/AUDIO BELUM BERBUNYI/)).toBeTruthy();
   });
 
   it('meter menampilkan NO SIGNAL selama belum ada yang bisa diukur', () => {
@@ -111,16 +134,77 @@ describe('DjPage', () => {
     expect(djStore.getState().mixer.crossfader).toBeGreaterThan(0.9);
   });
 
-  it('menekan KILL pada label EQ benar-benar mematikan band itu', () => {
+  it('menekan KILL pada label EQ mematikan band, dan menekannya lagi menyalakan', () => {
     render(<DjPage />);
     const low = screen.getAllByRole('button', { name: 'LOW' })[0] as HTMLElement;
     fireEvent.click(low);
-    expect(djStore.getState().mixer.channels.A.eq.low).toBe(-26);
+    expect(djStore.getState().mixer.channels.A.eqKill.low).toBe(true);
+    fireEvent.click(low);
+    expect(djStore.getState().mixer.channels.A.eqKill.low).toBe(false);
   });
 
   it('pad hot cue mati saat deck kosong — bukan diam-diam tidak berefek', () => {
     render(<DjPage />);
     const pads = screen.getAllByRole('button').filter((b) => b.textContent === 'A');
     expect(pads.length).toBeGreaterThan(0);
+  });
+
+  it('tombol hapus di Collection butuh DUA gerakan, bukan satu', () => {
+    // Menghapus lagu tidak bisa dibatalkan — byte aslinya ikut hilang dari
+    // IndexedDB. Satu klik yang langsung menghapus adalah satu salah-klik yang
+    // membuang berkas untuk selamanya.
+    act(() => studioActions.registerAsset(fakeAsset(9)));
+    render(<DjPage />);
+
+    const row = screen.getByTitle(/hapus "LAGU 9"/);
+    expect(row.textContent).toBe('✕');
+    fireEvent.click(row);
+    expect(screen.getByTitle(/hapus "LAGU 9"/).textContent).toBe('HAPUS?');
+  });
+
+  /**
+   * Penjaga KELAS BUG, bukan satu tombol.
+   *
+   * Bug yang memicunya: pad BEAT LOOP bisa dinyalakan tapi tidak dimatikan.
+   * Kontrol yang PUNYA keadaan menyala harus bisa dikembalikan lewat kontrol
+   * yang sama — kalau tidak, satu-satunya jalan keluar ada di tempat lain, dan
+   * kontrol yang menyala tapi tidak merespons dirinya sendiri terbaca sebagai
+   * kerusakan.
+   */
+  it('setiap kontrol dua-keadaan bisa dikembalikan lewat kontrol yang sama', () => {
+    // Deck harus TERISI: SLIP dan MASTER sengaja mati saat deck kosong, dan
+    // menguji tombol yang memang dinonaktifkan tidak membuktikan apa pun.
+    act(() =>
+      djActions.loadDeck('A', { assetId: 1, frames: 48_000, name: 'X', sampleRate: 48_000 }),
+    );
+    render(<DjPage />);
+    const s = () => djStore.getState();
+
+    /*
+      Lingkupnya DISEBUT, tidak ditebak dari urutan DOM: nama "CUE" ada di DUA
+      tempat yang berbeda artinya — tombol transport di deck dan monitor
+      headphone di mixer — dan `getAllByRole(...)[0]` diam-diam memilih yang
+      salah. Tes yang menekan tombol yang salah tetap hijau selama tombol itu
+      kebetulan juga sebuah toggle.
+    */
+    const deckA = within(document.querySelector('[data-dj-deck="A"]') as HTMLElement);
+    const mixer = within(document.querySelector('[data-dj-mixer]') as HTMLElement);
+
+    const cases: ReadonlyArray<readonly [string, ReturnType<typeof within>, () => boolean]> = [
+      ['SLIP', deckA, () => s().decks.A.slip],
+      ['Q', deckA, () => s().decks.A.quantize],
+      ['MASTER', deckA, () => s().masterDeck === 'A'],
+      ['CUE', mixer, () => s().mixer.channels.A.cue],
+      ['LOW', mixer, () => s().mixer.channels.A.eqKill.low],
+    ];
+
+    for (const [name, scope, read] of cases) {
+      const btn = scope.getAllByRole('button', { name })[0] as HTMLElement;
+      const before = read();
+      fireEvent.click(btn);
+      expect(read(), `${name} tidak berubah saat ditekan`).toBe(!before);
+      fireEvent.click(btn);
+      expect(read(), `${name} tidak bisa dikembalikan lewat tombol yang sama`).toBe(before);
+    }
   });
 });

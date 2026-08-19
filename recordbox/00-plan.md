@@ -432,15 +432,17 @@ memang di sana) tapi dinonaktifkan dengan alasan yang terbaca ·
 |---|---|---|
 | PLAY / PAUSE | BANGUN | |
 | CUE (semantik CDJ: tahan = putar dari cue, lepas = balik) | BANGUN | tiga jalur di satu tabel tes |
-| Jog wheel — scrub & bend | BANGUN | `bend` pengali terpisah dari tempo fader |
+| Jog wheel — scrub | BANGUN | tarik mendatar = cari posisi |
 | Jog wheel — mode VINYL (scratch) | TIDAK | butuh AudioWorklet resampler; varispeed `playbackRate` tidak bisa mundur |
+| Pitch bend (◀◀ / ▶▶) | BANGUN | ±4% selama ditahan, menulis ke `deck.bend` — **bukan** ke tempo fader, supaya satu dorongan untuk menutup selisih milidetik tidak mengubah tempo lagu secara permanen |
+| Muat / keluarkan lagu dari deck | BANGUN | tombol ⏏ di baris info. Cue TIDAK ikut hilang — ia milik asset |
 | Tempo fader ±6 / ±10 / ±16 / WIDE | BANGUN | travel + range terpisah. **WIDE = ±100%**, bukan sekadar "lebih lebar"; di −100% lagu berhenti. Reset = klik-ganda angka % |
 | MASTER TEMPO (MT / key lock) | MATI | Utang 2 |
-| SYNC (tempo) | BANGUN | menolak dengan kalimat kalau di luar range atau tanpa grid |
+| SYNC (tempo) | BANGUN | **toggle** — menekan lagi mematikannya, dan tempo fader **tetap di tempatnya** (mematikan SYNC berarti mengambil alih tempo yang sudah selaras; mengembalikan fader ke nol akan melempar lagunya keluar dari beat). Menolak dengan kalimat kalau di luar range atau tanpa grid |
 | SYNC (fase / downbeat) | TIDAK → D8 | label berbunyi `SYNC · TEMPO`, bukan `SYNC` |
 | MASTER deck | BANGUN | hanya satu deck boleh master, ditegakkan `withDerived` |
-| Hot cue A–H + warna + label | BANGUN | milik ASSET, bukan deck |
-| Memory cue + CALL ◀ ▶ | BANGUN | slot yang sama, daftar terpisah |
+| Hot cue A–H + warna | BANGUN | milik ASSET, bukan deck. **Pad** (tetikus): kosong = pasang, terisi = lompat ke sana — sekali klik, satu perbuatan. **Keyboard** (angka): tombol ON/OFF — tekan lagi = berhenti dan kembali ke titik cue. Keduanya berbeda dengan sengaja: jari yang menekan angka tidak melihat layar, dan lompatan kedua ke tempat yang sama tidak terdengar melakukan apa pun. Tekanan kedua **tidak pernah menghapus**; hapus lewat SHIFT-klik atau klik kanan |
+| Memory cue + CALL ◀ ▶ | BANGUN | daftar terpisah dari hot cue. Tombolnya **toggle**: menekan di posisi yang sama menghapusnya, dan labelnya berubah jadi `HAPUS CUE` supaya gerakannya terbaca sebelum ditekan |
 | Loop IN / OUT / EXIT / RELOOP | BANGUN | `active` bit terpisah supaya RELOOP mungkin |
 | Auto/beat loop 1/4 … 32, ×2 & ÷2 | BANGUN | jangkar di `inAt`, bukan playhead |
 | Active loop (loop tersimpan yang menyala sendiri) | TIDAK | butuh model cue yang lebih kaya; ditunda sampai ada yang memintanya |
@@ -460,7 +462,7 @@ memang di sana) tapi dinonaktifkan dengan alasan yang terbaca ·
 | Channel fader | BANGUN | travel 0..1, gain `t²` |
 | Crossfader + kurva (smooth / sharp / cut) | BANGUN | kurva di layar wajib = kurva yang terdengar (D6) |
 | TRIM / gain | BANGUN | |
-| EQ 3 band HI/MID/LOW dengan KILL | BANGUN | komponen baru, bukan `eq4` |
+| EQ 3 band HI/MID/LOW dengan KILL | BANGUN | komponen baru, bukan `eq4`. KILL adalah **bit terpisah**, bukan menimpa nilai knob — manual harfiah: *"while they light up, each controller is not activated"*. Knob ikut dinonaktifkan saat band mati, dan menyalakannya lagi mengembalikan setelan semula |
 | Knob COLOR / FILTER per channel | BANGUN | `crates/engine/src/fx/filter.rs` memang ditulis "gaya rekordbox" |
 | Sound Color FX selain FILTER | TIDAK | rekordbox punya **tepat 9**: FILTER · SPACE · DUB ECHO · SWEEP · NOISE · CRUSH · JET · PITCH · GATE/COMP. Katalog kita baru punya FILTER; menambah sisanya adalah pekerjaan Rust, bukan UI |
 | CUE / headphone + CUE MIX + CUE LEVEL | **BANGUN** | bus CUE pre-crossfader → `MediaStreamAudioDestinationNode` → `<audio>.setSinkId`. Butuh user MEMILIH perangkat kedua; selama belum, bus-nya sengaja tidak tersambung ke mana pun (kalau tersambung ke default, CUE malah menggandakan master) dan UI mengatakannya |
@@ -486,6 +488,7 @@ memang di sana) tapi dinonaktifkan dengan alasan yang terbaca ·
 | Kolom Key | MATI | Utang 1 — isinya `—` |
 | Kolom Artist / Album / Genre / Rating | TIDAK | `StudioAsset` tidak punya tag; membaca ID3 adalah pekerjaan tersendiri |
 | Sort + search | BANGUN | BPM `null` diurut **ke akhir** |
+| Hapus lagu dari Collection | BANGUN | Tombol `✕` per baris, **dua langkah** (`✕` → `HAPUS?`) karena byte aslinya ikut hilang dari IndexedDB dan tidak bisa dibatalkan. **MENOLAK** kalau lagunya dipakai clip di Studio, dengan menyebut jumlah dan nama lane-nya — registry asset dipakai bersama, dan clip yang menunjuk asset hantu hanya diam tanpa error. Deck yang memegangnya dikosongkan lebih dulu, dan cue-nya ikut dilupakan. Command palette punya jalannya juga, **tanpa binding keyboard**: satu ketukan salah tidak boleh membuang berkas untuk selamanya |
 | Playlist / My Tag / Related Tracks | TIDAK | butuh model kepustakaan sendiri |
 | Preview player di browser | TIDAK | `startAudition` Studio ada, tapi menyambungkannya = audio |
 | Beat grid + koreksi downbeat | BANGUN | `resolveBeatGrid` + `setAssetBeatGrid` sudah ada |
@@ -670,6 +673,89 @@ per baris kode **belum** dikerjakan, dan urutannya tetap:
    **daftar ketukan sungguhan**.
 3. **Deteksi downbeat** — hampir gratis: `odf.rs` sudah menyimpan enam envelope
    per pita; batasi ke <200 Hz dan voting atas empat kandidat fase bar.
+
+## Pintasan keyboard
+
+Halaman ini **tidak memasang listener keyboard sendiri**. Ia mendaftarkan
+command-nya ke app shell (`docs/15-app-shell.md`), dan shell yang memiliki satu
+dispatcher untuk seluruh aplikasi. Itu yang membuat command palette (`⌘K`),
+editor pintasan (`?`), dan — nanti — MIDI melihat daftar aksi yang SAMA.
+
+Tata letaknya **tangan kiri = deck A, tangan kanan = deck B**, bercermin:
+
+```
+  1 2 3 4                                    7 8 9 0     hot cue A–D
+  Q W E                                        I O P     play · loop 4 · exit
+  A S D F                                  J K L ;       cue · sync · bend −/+
+  Z X                                          , .       loop ÷2 · ×2
+```
+
+Angka `1–4` / `7–0` adalah hot cue, dan di keyboard ia **tombol ON/OFF**:
+tekan lagi = berhenti dan kembali ke titik cue itu. Pad di layar tidak begitu —
+lihat baris Hot cue di matriks.
+
+Global: `Space` putar deck yang **fokus** · `` ` `` pindah fokus · `←`/`→`
+crossfader · `↑`/`↓` pilih lagu di Collection · `Enter` muat ke deck fokus ·
+`Shift+←`/`Shift+→` muat langsung ke deck A/B · `G` Beat FX.
+
+`Tab` **sengaja tidak dipakai**: ia satu-satunya cara keyboard berpindah antar
+kontrol, dan merampasnya membuat halaman berhenti bisa dipakai tanpa tetikus.
+
+Tidak ada "standar" papan ketik DJ — Serato, Traktor, dan Mixxx semuanya
+berbeda. Yang dipakai di sini adalah pembagian yang bercermin, karena tangan
+menghafal **letak** dan dua deck dengan pola yang sama hanya perlu dihafal
+sekali. Semua binding disimpan sebagai **posisi tombol**, jadi tidak bergeser
+saat layout keyboard diganti — dan semuanya bisa diubah user lewat `?`.
+
+**Deck fokus** (`DjState.focusedDeck`) ada karena `Space` di halaman dua deck
+butuh sasaran yang bisa dijelaskan. Ia berbeda dari `masterDeck`: master adalah
+acuan TEMPO (milik audio), fokus adalah sasaran PERINTAH (milik antarmuka).
+Menyentuh deck mana pun memindahkan fokus ke sana, jadi keyboard dan tetikus
+tidak pernah bercerita berbeda tentang deck mana yang sedang dipakai.
+
+---
+
+## Aturan kontrol dua-keadaan
+
+Ditulis setelah satu bug dilaporkan dan audit menemukan lima lagi sekelas.
+
+> **Kontrol yang punya keadaan MENYALA harus bisa dikembalikan lewat kontrol
+> yang sama.**
+
+Kalau tidak, satu-satunya jalan keluar ada di tempat lain — dan kontrol yang
+menyala tapi tidak merespons dirinya sendiri terbaca sebagai kerusakan, bukan
+sebagai desain. Yang ditemukan audit:
+
+| Kontrol | Dulu | Sekarang |
+|---|---|---|
+| Pad BEAT LOOP | hanya bisa dinyalakan | toggle; `exitLoop` (batas tetap tersimpan, RELOOP masih mungkin) |
+| Pad LOOP ROLL | identik dengan BEAT LOOP — dua pad mode yang melakukan hal yang sama bukan dua fitur | momentary: tahan = loop + SLIP, lepas = mendarat di posisi bayangan |
+| SYNC | sekali nyala, tidak bisa mati | toggle; tempo fader tetap di tempatnya |
+| KILL EQ | menimpa nilai knob — menyalakan lagi membuang setelan tangan | bit terpisah; knob dinonaktifkan tapi nilainya utuh |
+| Memory cue | bisa ditambah, tidak pernah dihapus | toggle di posisi yang sama; label ikut berubah |
+| Hot cue | hapus hanya lewat klik-kanan | SHIFT-klik **dan** klik-kanan |
+| Deck | bisa diisi, tidak pernah dikosongkan | tombol ⏏ |
+
+Dijaga oleh satu tes yang menyapu KELASNYA, bukan satu tombol:
+`dj-smoke.test.tsx` → *"setiap kontrol dua-keadaan bisa dikembalikan lewat
+kontrol yang sama"*. Tes itu menunjuk lingkupnya secara eksplisit
+(`[data-dj-deck]`, `[data-dj-mixer]`) karena nama seperti `CUE` ada di dua
+tempat yang berbeda artinya, dan `getAllByRole(...)[0]` diam-diam memilih yang
+salah — tes yang menekan tombol keliru tetap hijau selama tombol itu kebetulan
+juga sebuah toggle.
+
+### Audit yang sama, dari arah lain
+
+Setiap aksi di `djActions` yang **tidak punya pemanggil UI** diperiksa. Itu
+menemukan tiga fitur yang diklaim matriks tapi tidak bisa dicapai: `ejectDeck`,
+`removeMemoryCue`, dan `setCueDb` (knob CUE LEVEL memang tidak pernah dipasang).
+Juga `setBend` — matriks mengklaim "jog scrub & bend", padahal `deck.bend`
+selalu 1 karena tidak ada yang menulisinya; sekarang ada tombol pitch bend.
+
+Aksi yang tetap tanpa pemanggil UI dan alasannya: `play` (pasangan `pause`,
+dipakai lapisan audio), `setCuePoint` (jalur UI-nya lewat `cuePress`),
+`toggleKeyLock` (sengaja digerbang `KEY_LOCK_AVAILABLE = false`). Sisanya
+dihapus.
 
 ## Tes
 

@@ -97,6 +97,8 @@ export class DjAudio {
   readonly graph: DjGraph;
   readonly cue = new CueOutput();
   private readonly fxSlot = new FxInsertSlot();
+  /** Dipasang pemanggil supaya kegagalan FX terbaca di layar, bukan senyap. */
+  onFxFault: ((message: string) => void) | null = null;
   private last: Record<DeckId, DeckSnapshot> = { A: EMPTY_SNAPSHOT, B: EMPTY_SNAPSHOT };
   private readonly peakBuf: Float32Array<ArrayBuffer>;
 
@@ -108,6 +110,24 @@ export class DjAudio {
 
   get ctx(): AudioContext {
     return this.graph.ctx;
+  }
+
+  /**
+   * Apakah context BENAR-BENAR berbunyi.
+   *
+   * `suspended` adalah keadaan yang paling menyesatkan di Web Audio: seluruh
+   * graf terpasang, tiap parameter benar, tidak ada satu pun error — dan tidak
+   * ada suara. Kebijakan autoplay browser bisa mengembalikannya ke sana kapan
+   * saja (tab disembunyikan, perangkat keluaran berganti), jadi keadaannya
+   * dibaca ULANG, bukan diasumsikan dari keberhasilan pembangunan.
+   */
+  get running(): boolean {
+    return this.ctx.state === 'running';
+  }
+
+  /** Coba bangunkan lagi. Aman dipanggil berkali-kali. */
+  resume(): void {
+    void this.ctx.resume().catch(() => undefined);
   }
 
   /** Posisi SOURCE (sample) yang benar-benar terdengar, atau `null` kalau diam. */
@@ -182,7 +202,9 @@ export class DjAudio {
     // master), supaya "1/4 ketukan" berarti 1/4 ketukan LAGU ITU — bukan 1/4
     // ketukan pada 120 BPM, yang jadi satu-satunya jawaban sebelum
     // `fxchain_set_tempo` ada di ABI.
-    this.fxSlot.sync(this.graph, s.fx, fxCatalog(), framesPerBeatFor(s));
+    this.fxSlot.sync(this.graph, s.fx, fxCatalog(), framesPerBeatFor(s), (message) => {
+      this.onFxFault?.(message);
+    });
 
     applyCrossfader(this.graph, s.mixer.crossfader, s.mixer.curve, now);
     applyMaster(

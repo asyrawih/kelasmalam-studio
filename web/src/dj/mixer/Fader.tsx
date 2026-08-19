@@ -18,7 +18,14 @@ export interface FaderProps {
   /** 0..1. Untuk tegak, 1 = atas. */
   readonly value: number;
   readonly onChange: (v: number) => void;
-  readonly length: number;
+  /**
+   * Panjang tetap dalam piksel, atau dihilangkan supaya fader MENGISI induknya.
+   *
+   * Mengisi adalah bentuk yang benar untuk channel fader: tinggi yang tersedia
+   * berubah mengikuti viewport, dan angka tetap berarti isinya terpotong di
+   * layar pendek — yang terpotong justru fader-nya, karena ia paling bawah.
+   */
+  readonly length?: number;
   readonly thickness?: number;
   readonly accent?: string;
   readonly label: string;
@@ -46,12 +53,31 @@ export function Fader({
   const capRef = useRef<HTMLDivElement>(null);
   const vertical = orientation === 'vertical';
 
+  /**
+   * Posisi cap dalam PERSEN, lewat `top`/`left` — BUKAN `transform`.
+   *
+   * Ini bukan selera, dan pernah salah: persentase di dalam `translate()`
+   * dihitung terhadap **elemen itu sendiri**, bukan induknya. Untuk cap
+   * setinggi 16 px, `translateY(calc((100% - 16px) * t))` selalu bernilai
+   * `(16px − 16px) * t` = **0** — cap-nya tidak pernah bergerak sedikit pun,
+   * berapa pun nilainya, sementara angka di sebelahnya berubah normal.
+   *
+   * Persentase pada `top`/`left` elemen ber-`position: absolute` dihitung
+   * terhadap CONTAINING BLOCK, yaitu induknya. Itu yang dimaksud, dan itu yang
+   * membuat fader tetap benar saat induknya berubah ukuran — tanpa mengukur
+   * apa pun dan tanpa satu pun listener resize.
+   */
+  const offsetOf = (v: number): string => {
+    const t = vertical ? 1 - v : v;
+    return `calc((100% - ${CAP}px) * ${t})`;
+  };
+
   const place = (v: number): void => {
     const cap = capRef.current;
     if (cap === null) return;
-    const t = vertical ? 1 - v : v;
-    const px = t * (length - CAP);
-    cap.style.transform = vertical ? `translateY(${px}px)` : `translateX(${px}px)`;
+    const off = offsetOf(v);
+    if (vertical) cap.style.top = off;
+    else cap.style.left = off;
   };
 
   const fromPointer = (x: number, y: number, rect: DOMRect): number => {
@@ -72,7 +98,6 @@ export function Fader({
     onEnd: (ctx) => onChange(fromPointer(ctx.x, ctx.y, ctx.rect)),
   });
 
-  const capOffset = (vertical ? 1 - value : value) * (length - CAP);
 
   return (
     <div
@@ -89,8 +114,9 @@ export function Fader({
       title={title ?? label}
       style={{
         position: 'relative',
-        width: vertical ? `${thickness}px` : `${length}px`,
-        height: vertical ? `${length}px` : `${thickness}px`,
+        width: vertical ? `${thickness}px` : length === undefined ? '100%' : `${length}px`,
+        height: vertical ? (length === undefined ? '100%' : `${length}px`) : `${thickness}px`,
+        minHeight: vertical ? `${CAP * 2}px` : undefined,
         background: 'var(--cy-surface-2)',
         border: '1px solid var(--cy-border)',
         cursor: vertical ? 'ns-resize' : 'ew-resize',
@@ -115,8 +141,8 @@ export function Fader({
         <div
           style={{
             position: 'absolute',
-            left: vertical ? '2px' : `${CAP / 2 + detent * (length - CAP)}px`,
-            top: vertical ? `${CAP / 2 + (1 - detent) * (length - CAP)}px` : '2px',
+            left: vertical ? '2px' : `calc(${CAP / 2}px + (100% - ${CAP}px) * ${detent})`,
+            top: vertical ? `calc(${CAP / 2}px + (100% - ${CAP}px) * ${1 - detent})` : '2px',
             width: vertical ? `${thickness - 6}px` : '1px',
             height: vertical ? '1px' : `${thickness - 6}px`,
             background: 'var(--cy-border-strong)',
@@ -127,13 +153,12 @@ export function Fader({
         ref={capRef}
         style={{
           position: 'absolute',
-          left: vertical ? '3px' : 0,
-          top: vertical ? 0 : '3px',
+          left: vertical ? '3px' : offsetOf(value),
+          top: vertical ? offsetOf(value) : '3px',
           width: vertical ? `${thickness - 8}px` : `${CAP}px`,
           height: vertical ? `${CAP}px` : `${thickness - 8}px`,
           background: accent,
           boxShadow: `0 0 8px ${accent}55`,
-          transform: vertical ? `translateY(${capOffset}px)` : `translateX(${capOffset}px)`,
           pointerEvents: 'none',
         }}
       />

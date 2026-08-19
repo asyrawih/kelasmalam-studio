@@ -42,7 +42,8 @@ function toNorm(db: number): number {
 
 export interface LevelMeterProps {
   readonly source: DeckId | 'master';
-  readonly height: number;
+  /** Piksel, atau `'fill'` supaya meter mengikuti tinggi induknya. */
+  readonly height: number | 'fill';
   readonly width?: number;
   readonly label?: string;
 }
@@ -101,13 +102,20 @@ export function LevelMeter({ source, height, width = 8, label }: LevelMeterProps
           ? 'peak — naik seketika, turun 60 dB/detik, penahan puncak 800 ms'
           : 'audio belum dibangun; klik kontrol mana pun untuk menyalakannya'
       }
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '3px',
+        minHeight: 0,
+        height: height === 'fill' ? '100%' : undefined,
+      }}
     >
       <div
         style={{
           position: 'relative',
           width: `${width}px`,
-          height: `${height}px`,
+          height: height === 'fill' ? '100%' : `${height}px`,
           background: '#000',
           border: '1px solid var(--cy-border)',
           overflow: 'hidden',
@@ -159,7 +167,7 @@ export function LevelMeter({ source, height, width = 8, label }: LevelMeterProps
           letterSpacing: '.08em',
           color: live ? 'var(--cy-text-dim)' : 'var(--cy-text-muted)',
           writingMode: 'vertical-rl',
-          height: '52px',
+          flexShrink: 0,
         }}
       >
         {live ? (label ?? 'PEAK') : 'NO SIGNAL'}

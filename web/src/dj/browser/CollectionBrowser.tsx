@@ -22,6 +22,7 @@ import { formatDeckTime, type DeckId } from '../model';
 import { djActions, useDj } from '../store';
 import { filterSort, rowsOf, type CollectionRow } from './collection';
 import { importFilesToDeck } from './dj-import';
+import { inspectRemoval, removeAssetFromLibrary } from './dj-remove';
 
 const HEAD: React.CSSProperties = {
   fontSize: '9px',
@@ -45,6 +46,69 @@ const CELL: React.CSSProperties = {
   textOverflow: 'ellipsis',
 };
 
+/**
+ * Tombol hapus satu baris, dua langkah.
+ *
+ * `title` menyebutkan KONSEKUENSINYA sebelum ditekan — berapa clip Studio yang
+ * memakainya, apakah sedang di deck, apakah ada cue yang ikut hilang. Itu
+ * dihitung saat dibutuhkan, bukan dilanggankan: daftar bisa berisi ratusan
+ * baris, dan menghitung pemakaian untuk semuanya tiap render berarti menyisir
+ * seluruh timeline sebanyak jumlah lagunya.
+ */
+function RemoveCell({
+  assetId,
+  name,
+  pending,
+  onArm,
+  onCancel,
+  onConfirm,
+}: {
+  readonly assetId: number;
+  readonly name: string;
+  readonly pending: boolean;
+  readonly onArm: () => void;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}): JSX.Element {
+  const describe = (): string => {
+    const r = inspectRemoval(assetId);
+    if (r.clips > 0) return `"${name}" dipakai ${r.clips} clip di Studio — tidak bisa dihapus dari sini`;
+    const extra: string[] = [];
+    if (r.decks.length > 0) extra.push(`deck ${r.decks.join(' & ')} akan dikosongkan`);
+    if (r.hasCues) extra.push('hot cue-nya ikut hilang');
+    const tail = extra.length > 0 ? ` — ${extra.join(', ')}` : '';
+    return `hapus "${name}" dari kepustakaan${tail}. Tidak bisa dibatalkan.`;
+  };
+
+  return (
+    <button
+      type="button"
+      className="cy-btn-reset"
+      title={describe()}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (pending) onConfirm();
+        else onArm();
+      }}
+      onPointerLeave={() => {
+        if (pending) onCancel();
+      }}
+      style={{
+        fontSize: '9px',
+        padding: '1px 6px',
+        fontFamily: 'var(--cy-font-mono)',
+        color: pending ? 'var(--cy-text-on-accent)' : 'var(--cy-text-muted)',
+        background: pending ? '#ff4d4d' : 'transparent',
+        border: `1px solid ${pending ? '#ff4d4d' : 'var(--cy-border)'}`,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {pending ? 'HAPUS?' : '✕'}
+    </button>
+  );
+}
+
 export function CollectionBrowser(): JSX.Element {
   const assets = useStudio((s) => s.assets);
   const sampleRate = useStudio((s) => s.sampleRate);
@@ -54,6 +118,18 @@ export function CollectionBrowser(): JSX.Element {
   const selected = useDj((s) => s.browse.selectedAssetId);
 
   const [dragOver, setDragOver] = useState(false);
+  /**
+   * Baris yang sedang MENUNGGU KONFIRMASI hapus.
+   *
+   * Konfirmasi dua-langkah di dalam barisnya sendiri, bukan dialog: menghapus
+   * lagu **tidak bisa dibatalkan** — byte aslinya ikut hilang dari IndexedDB,
+   * dan kalau berkasnya sudah tidak ada di disk user, ia hilang untuk selamanya.
+   * Tapi dialog untuk setiap baris di daftar yang bisa berisi ratusan lagu
+   * adalah gangguan yang membuat orang berhenti membacanya, lalu mengklik OK
+   * tanpa melihat. Tombol yang berubah jadi "HAPUS?" di tempatnya menuntut
+   * gerakan kedua di posisi yang sama, dan itu cukup.
+   */
+  const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const rows = useMemo(
@@ -73,6 +149,13 @@ export function CollectionBrowser(): JSX.Element {
   const takeFiles = (files: FileList | null): void => {
     if (files === null || files.length === 0) return;
     void importFilesToDeck([...files], null, sampleRate);
+  };
+
+  const remove = (assetId: number): void => {
+    void removeAssetFromLibrary(assetId).then((r) => {
+      setPendingRemove(null);
+      djActions.setNotice(r.ok ? null : (r.reason ?? 'gagal menghapus'));
+    });
   };
 
   return (
@@ -265,6 +348,16 @@ export function CollectionBrowser(): JSX.Element {
                   </td>
                   <td style={{ ...CELL, color: 'var(--cy-text-dim)', fontVariantNumeric: 'tabular-nums' }}>
                     {formatDeckTime(row.durationSec)}
+                  </td>
+                  <td style={CELL}>
+                    <RemoveCell
+                      assetId={row.asset.id}
+                      name={row.name}
+                      pending={pendingRemove === row.asset.id}
+                      onArm={() => setPendingRemove(row.asset.id)}
+                      onCancel={() => setPendingRemove(null)}
+                      onConfirm={() => remove(row.asset.id)}
+                    />
                   </td>
                 </tr>
               ))}

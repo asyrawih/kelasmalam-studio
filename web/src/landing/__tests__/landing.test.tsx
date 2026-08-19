@@ -10,7 +10,8 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LandingPage } from '../LandingPage';
-import { Root, routeOf } from '../../Root';
+import { AppShell } from '../../app-shell';
+import { routeOf } from '../../app-shell/routes';
 
 afterEach(() => {
   cleanup();
@@ -73,10 +74,10 @@ describe('routeOf', () => {
   });
 });
 
-describe('Root', () => {
+describe('AppShell', () => {
   it('menampilkan landing di `/` dan tidak me-mount studio', () => {
     window.history.pushState(null, '', '/');
-    render(<Root />);
+    render(<AppShell />);
     expect(screen.getByRole('button', { name: 'MULAI MIXING GRATIS' })).toBeTruthy();
     // Header studio hanya ada di halaman studio.
     expect(screen.queryByRole('button', { name: /CLOSE/ })).toBeNull();
@@ -84,7 +85,7 @@ describe('Root', () => {
 
   it('membuka halaman DJ lewat CTA, TANPA me-mount studio', () => {
     window.history.pushState(null, '', '/');
-    render(<Root />);
+    render(<AppShell />);
     fireEvent.click(screen.getAllByRole('button', { name: 'MODE DJ' })[0] as HTMLElement);
     expect(window.location.pathname).toBe('/dj');
     expect(screen.getByText('KELAS MALAM DJ')).toBeTruthy();
@@ -97,7 +98,7 @@ describe('Root', () => {
 
   it('pindah ke studio saat CTA ditekan, dan kembali lewat popstate', () => {
     window.history.pushState(null, '', '/');
-    render(<Root />);
+    render(<AppShell />);
     fireEvent.click(screen.getAllByRole('button', { name: 'BUKA STUDIO' })[0] as HTMLElement);
     expect(window.location.pathname).toBe('/studio');
     expect(screen.queryByRole('button', { name: 'MULAI MIXING GRATIS' })).toBeNull();

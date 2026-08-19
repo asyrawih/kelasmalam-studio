@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { BeatGrid } from '../studio/analysis/beat-grid';
-import { EMPTY_TRACK_CUES, effectiveBpm, type TempoRange } from './model';
+import {
+  EMPTY_TRACK_CUES,
+  bandDb,
+  effectiveBpm,
+  effectiveRate,
+  tempoRatio,
+  type TempoRange,
+} from './model';
 import { djActions, djAssetIds, djStore, selectTrackCues } from './store';
 
 const SR = 48_000;
@@ -94,10 +101,10 @@ describe('seek & clamp', () => {
     expect(s().decks.A.playhead).toBe(0);
   });
 
-  it('nudge TIDAK menaikkan seekEpoch — jog halus bukan lompatan', () => {
+  it('umpan jam TIDAK menaikkan seekEpoch — kalau iya, tiap kiriman posisi akan menjadwalkan ulang audio', () => {
     load('A');
     const before = s().decks.A.seekEpoch;
-    djActions.nudge('A', 500);
+    djActions.syncFromClock('A', 500);
     expect(s().decks.A.playhead).toBe(500);
     expect(s().decks.A.seekEpoch).toBe(before);
   });
@@ -203,19 +210,124 @@ describe('hot cue milik ASSET', () => {
     expect(selectTrackCues('B')(s())).toBe(EMPTY_TRACK_CUES);
   });
 
-  it('pad kosong memasang cue di posisi kini; pad terisi melompat', () => {
+  it('pad kosong memasang cue di posisi kini; pad terisi MELOMPAT', () => {
     load('A');
     djActions.seek('A', 5 * BEAT + 500);
     djActions.triggerHotCue('A', 'D', GRID); // quantize aktif → menempel ke ketukan
     expect(selectTrackCues('A')(s()).hotCues.D?.at).toBe(5 * BEAT);
+
     djActions.seek('A', 0);
     djActions.triggerHotCue('A', 'D', GRID);
     expect(s().decks.A.playhead).toBe(5 * BEAT);
   });
 
+  it('pad TIDAK toggle — sekali klik, satu perbuatan yang bisa diulang', () => {
+    load('A');
+    djActions.setHotCue('A', 'D', 5 * BEAT);
+    djActions.play('A');
+    djActions.triggerHotCue('A', 'D', GRID);
+    djActions.triggerHotCue('A', 'D', GRID);
+    // Tetap di cue, tetap main. Pad adalah sasaran tetikus: yang dicari saat
+    // mengkliknya adalah "bawa aku ke sana".
+    expect(s().decks.A.playhead).toBe(5 * BEAT);
+    expect(s().decks.A.playing).toBe(true);
+  });
+});
+
+describe('hot cue dari KEYBOARD', () => {
+  it('adalah tombol ON/OFF, bukan lompatan berulang', () => {
+    load('A');
+    djActions.setHotCue('A', 'D', 5 * BEAT);
+    djActions.seek('A', 0);
+
+    // ON: lompat ke cue dan mulai main.
+    djActions.toggleHotCue('A', 'D', GRID);
+    expect(s().decks.A.playhead).toBe(5 * BEAT);
+    expect(s().decks.A.playing).toBe(true);
+    expect(s().decks.A.activeHotCue).toBe('D');
+
+    djActions.tick(500);
+    expect(s().decks.A.playhead).toBeGreaterThan(5 * BEAT);
+
+    // OFF: berhenti, dan KEMBALI ke titik cue.
+    djActions.toggleHotCue('A', 'D', GRID);
+    expect(s().decks.A.playing).toBe(false);
+    expect(s().decks.A.playhead).toBe(5 * BEAT);
+    expect(s().decks.A.activeHotCue).toBeNull();
+  });
+
+  it('tekanan kedua TIDAK menghapus cue-nya', () => {
+    // Hot cue dipencet berulang-ulang selama satu set; menghapusnya lewat
+    // tombol yang sama berarti satu tekan berlebih membuang titik yang
+    // dipasang dengan tangan.
+    load('A');
+    djActions.setHotCue('A', 'D', 5 * BEAT);
+    djActions.toggleHotCue('A', 'D', GRID);
+    djActions.toggleHotCue('A', 'D', GRID);
+    expect(selectTrackCues('A')(s()).hotCues.D?.at).toBe(5 * BEAT);
+  });
+
+  it('menekan slot LAIN berpindah ke sana, tetap menyala', () => {
+    load('A');
+    djActions.setHotCue('A', 'A', BEAT);
+    djActions.setHotCue('A', 'B', 9 * BEAT);
+    djActions.toggleHotCue('A', 'A', GRID);
+    djActions.toggleHotCue('A', 'B', GRID);
+    expect(s().decks.A.playhead).toBe(9 * BEAT);
+    expect(s().decks.A.playing).toBe(true);
+    expect(s().decks.A.activeHotCue).toBe('B');
+  });
+
+  it('setelah dijeda lewat tombol lain, tekanan berikutnya MENYALAKAN lagi', () => {
+    load('A');
+    djActions.setHotCue('A', 'D', 5 * BEAT);
+    djActions.toggleHotCue('A', 'D', GRID);
+    djActions.pause('A');
+    djActions.toggleHotCue('A', 'D', GRID);
+    expect(s().decks.A.playing).toBe(true);
+  });
+
+  it('melompat ke tempat lain mematikan lampu hot cue', () => {
+    load('A');
+    djActions.setHotCue('A', 'D', 5 * BEAT);
+    djActions.toggleHotCue('A', 'D', GRID);
+    expect(s().decks.A.activeHotCue).toBe('D');
+    // Pad yang tetap menyala setelah user melompat ke tempat lain akan
+    // berbohong tentang apa yang terjadi kalau ia ditekan.
+    djActions.seek('A', 20 * BEAT);
+    expect(s().decks.A.activeHotCue).toBeNull();
+  });
+
   it('deck kosong tidak bisa memasang cue di mana pun', () => {
     djActions.triggerHotCue('A', 'A', GRID);
     expect(s().cues).toEqual({});
+  });
+});
+
+describe('SYNC bisa dimatikan', () => {
+  it('menekan SYNC yang menyala mematikannya', () => {
+    load('A');
+    load('B', 2);
+    djActions.setMasterDeck('B');
+    expect(djActions.toggleSync('A', 128, 130).ok).toBe(true);
+    expect(s().decks.A.sync).toBe('follower');
+
+    expect(djActions.toggleSync('A', 128, 130).ok).toBe(true);
+    expect(s().decks.A.sync).toBe('off');
+  });
+
+  it('mematikan SYNC MENINGGALKAN tempo fader di tempatnya', () => {
+    load('A');
+    load('B', 2);
+    djActions.setMasterDeck('B');
+    djActions.toggleSync('A', 128, 132);
+    const fader = s().decks.A.tempo.fader;
+    expect(fader).not.toBe(0);
+
+    // Mengembalikan fader ke nol akan melempar lagunya keluar dari beat tepat
+    // saat DJ mengambil alih tempo — kebalikan dari yang ia maksud.
+    djActions.toggleSync('A', 128, 132);
+    expect(s().decks.A.tempo.fader).toBeCloseTo(fader, 12);
   });
 });
 
@@ -266,11 +378,29 @@ describe('sync', () => {
 });
 
 describe('EQ kill', () => {
-  it('menekan label mematikan band, menekan lagi mengembalikannya ke 0', () => {
+  it('menekan label mematikan band, menekan lagi menyalakannya', () => {
     djActions.toggleEqKill('A', 'low');
-    expect(s().mixer.channels.A.eq.low).toBe(-26);
+    expect(s().mixer.channels.A.eqKill.low).toBe(true);
     djActions.toggleEqKill('A', 'low');
-    expect(s().mixer.channels.A.eq.low).toBe(0);
+    expect(s().mixer.channels.A.eqKill.low).toBe(false);
+  });
+
+  it('KILL TIDAK membuang nilai knob — menyalakan lagi mengembalikan setelannya', () => {
+    // Ini kelas bug yang mahal: menimpa nilai knob berarti mematikan lalu
+    // menyalakan band membuang setelan yang dibuat tangan, di tengah mix, dan
+    // penyebabnya tidak kelihatan karena knob-nya memang bergerak sendiri.
+    djActions.setEqBand('A', 'mid', 4);
+    djActions.toggleEqKill('A', 'mid');
+    expect(s().mixer.channels.A.eq.mid).toBe(4);
+    expect(bandDb(s().mixer.channels.A.eq, s().mixer.channels.A.eqKill, 'mid')).toBe(-26);
+    djActions.toggleEqKill('A', 'mid');
+    expect(bandDb(s().mixer.channels.A.eq, s().mixer.channels.A.eqKill, 'mid')).toBe(4);
+  });
+
+  it('band lain tidak ikut mati', () => {
+    djActions.toggleEqKill('A', 'low');
+    expect(s().mixer.channels.A.eqKill.hi).toBe(false);
+    expect(s().mixer.channels.B.eqKill.low).toBe(false);
   });
 
   it('nilai di luar rentang dijepit ke −26…+6', () => {
@@ -300,10 +430,20 @@ describe('rentang tempo', () => {
     expect(s().decks.A.tempo.fader).toBeCloseTo(0.5, 12);
   });
 
-  it('nudge bergerak satu langkah terkecil rentangnya', () => {
-    djActions.setTempoRange('A', 6 as TempoRange);
-    djActions.nudgeTempoFader('A', 1);
-    // 0.02% dari rentang 6% = 1/300 travel.
-    expect(s().decks.A.tempo.fader).toBeCloseTo(0.02 / 6, 12);
+  it('pitch bend TERPISAH dari tempo fader — nudge tidak boleh mengubah BPM lagu', () => {
+    load('A');
+    djActions.setTempoFader('A', 0.2);
+    const fader = s().decks.A.tempo.fader;
+
+    djActions.setBend('A', 1.04);
+    // Laju efektif naik…
+    expect(effectiveRate(s().decks.A)).toBeGreaterThan(tempoRatio(s().decks.A.tempo));
+    // …tapi tempo fader TIDAK bergerak. Kalau bend menulis ke fader, satu
+    // dorongan untuk menutup selisih milidetik akan mengubah tempo lagu itu
+    // secara permanen.
+    expect(s().decks.A.tempo.fader).toBe(fader);
+
+    djActions.setBend('A', 1);
+    expect(effectiveRate(s().decks.A)).toBeCloseTo(tempoRatio(s().decks.A.tempo), 12);
   });
 });

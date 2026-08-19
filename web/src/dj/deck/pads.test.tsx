@@ -97,6 +97,43 @@ const run = (fn: () => void): void => {
   });
 };
 
+describe('memory cue', () => {
+  const memoryButton = (): HTMLElement => {
+    const deck = document.querySelector('[data-dj-deck="A"]') as HTMLElement;
+    const b = [...deck.querySelectorAll('button')].find((x) =>
+      /MEMORY CUE|HAPUS CUE/.test(x.textContent ?? ''),
+    );
+    if (b === undefined) throw new Error('tombol memory cue tidak ditemukan');
+    return b as HTMLElement;
+  };
+
+  it('menekan di posisi yang sama menghapusnya lagi', () => {
+    render(<DjPage />);
+    fireEvent.click(memoryButton());
+    expect(selectTrackCues('A')(djStore.getState()).memoryCues).toHaveLength(1);
+
+    // Tanpa toggle, satu salah tekan tinggal permanen di lagu itu selamanya —
+    // tidak ada UI lain yang bisa menghapusnya.
+    fireEvent.click(memoryButton());
+    expect(selectTrackCues('A')(djStore.getState()).memoryCues).toHaveLength(0);
+  });
+
+  it('labelnya mengatakan apa yang akan terjadi SEBELUM ditekan', () => {
+    render(<DjPage />);
+    expect(memoryButton().textContent).toBe('MEMORY CUE');
+    fireEvent.click(memoryButton());
+    expect(memoryButton().textContent).toBe('HAPUS CUE');
+  });
+
+  it('posisi berbeda menambah, bukan mengganti', () => {
+    render(<DjPage />);
+    fireEvent.click(memoryButton());
+    run(() => djActions.seek('A', SR * 30));
+    fireEvent.click(memoryButton());
+    expect(selectTrackCues('A')(djStore.getState()).memoryCues).toHaveLength(2);
+  });
+});
+
 describe('LOOP ROLL momentary', () => {
   const rollPads = (): HTMLElement[] => {
     fireEvent.click(screen.getAllByRole('button', { name: 'LOOP ROLL' })[0] as HTMLElement);
@@ -160,6 +197,21 @@ describe('pad hot cue', () => {
     run(() => djActions.seek('A', 0));
     fireEvent.click(padA);
     expect(djStore.getState().decks.A.playhead).toBe(SR * 10);
+  });
+
+  it('SHIFT-klik menghapus cue', () => {
+    djActions.setHotCue('A', 'A', SR * 5);
+    render(<DjPage />);
+    fireEvent.click(padsOfDeckA()[0] as HTMLElement, { shiftKey: true });
+    expect(selectTrackCues('A')(djStore.getState()).hotCues.A).toBeNull();
+  });
+
+  it('klik BIASA pada pad terisi melompat, tidak menghapus', () => {
+    djActions.setHotCue('A', 'A', SR * 5);
+    render(<DjPage />);
+    fireEvent.click(padsOfDeckA()[0] as HTMLElement);
+    expect(selectTrackCues('A')(djStore.getState()).hotCues.A).not.toBeNull();
+    expect(djStore.getState().decks.A.playhead).toBe(SR * 5);
   });
 
   it('klik kanan menghapus cue — dan pad kembali terlihat KOSONG', () => {

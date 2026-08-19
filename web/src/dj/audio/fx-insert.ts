@@ -102,9 +102,31 @@ export class FxInsertSlot {
    * atau on/off cukup lewat pesan, dan membangun ulang node untuk itu akan
    * memotong bunyi tiap kali knob digerakkan.
    */
-  sync(g: DjGraph, fx: FxState, catalog: Map<string, EffectDesc> | null, framesPerBeat: number | null): void {
+  sync(
+    g: DjGraph,
+    fx: FxState,
+    catalog: Map<string, EffectDesc> | null,
+    framesPerBeat: number | null,
+    onFault?: (message: string) => void,
+  ): void {
     const desc = catalog?.get(fx.kind);
-    if (desc === undefined) {
+
+    /*
+     * EFEK YANG MATI TIDAK BOLEH ADA DI JALUR SINYAL SAMA SEKALI.
+     *
+     * Versi pertamanya menyisipkan node begitu sebuah efek DIPILIH, lalu
+     * mengandalkan bypass di dalam rak untuk meloloskan audio saat OFF. Itu
+     * taruhan yang salah bentuknya: `fx.kind` ikut tersimpan antar sesi, jadi
+     * satu efek yang pernah dipilih akan terpasang lagi di setiap boot — dan
+     * kalau worklet-nya gagal memproses karena alasan apa pun (artefak WASM
+     * belum ada, `addModule` gagal, processor melempar), yang terjadi bukan
+     * "efeknya tidak terdengar" melainkan **seluruh mix diam**.
+     *
+     * Efek yang mati sekarang benar-benar dilepas. Harganya satu penyambungan
+     * ulang saat ON/OFF ditekan — dan itu harga yang benar, karena kegagalannya
+     * jadi sebatas "efek tidak jalan" alih-alih "tidak ada suara".
+     */
+    if (desc === undefined || !fx.on) {
       this.detach();
       return;
     }
@@ -117,6 +139,23 @@ export class FxInsertSlot {
     if (this.attached === null) {
       const node = createFxNode(g.ctx, [insertOf(fx, desc)]);
       if (node === null) return;
+
+      /*
+       * Node yang RUSAK dilepas dari jalur, bukan dibiarkan menahan sinyal.
+       *
+       * `daw-fx` melaporkan kegagalan instantiasi lewat pesan `fault`, dan
+       * `onprocessorerror` menyala kalau `process()` melempar. Tanpa keduanya,
+       * satu node yang mati membuat kanalnya senyap tanpa satu pun petunjuk.
+       */
+      const fail = (message: string): void => {
+        this.detach();
+        onFault?.(message);
+      };
+      node.port.onmessage = (ev: MessageEvent) => {
+        const d = ev.data as { type?: string; message?: string };
+        if (d.type === 'fault') fail(`Beat FX gagal: ${d.message ?? 'tidak diketahui'}`);
+      };
+      node.onprocessorerror = () => fail('Beat FX berhenti memproses');
       const { from, to } = seamFor(g, fx.target);
       try {
         from.disconnect(to);

@@ -308,6 +308,19 @@ export interface DeckState {
    */
   readonly cueHeld: boolean;
 
+  /**
+   * Hot cue yang sedang "menyala", atau `null`.
+   *
+   * Ada supaya pad hot cue berperilaku sebagai **tombol on/off**: menekan slot
+   * yang sedang menyala menghentikan lagu dan mengembalikannya ke titik cue
+   * itu, alih-alih melompat ke sana lagi (yang saat sedang berbunyi tidak
+   * terdengar melakukan apa pun).
+   *
+   * Sesi murni, bukan milik asset: yang disimpan pada lagu adalah POSISI
+   * cue-nya, bukan apakah ia sedang dipakai sekarang.
+   */
+  readonly activeHotCue: HotCueSlot | null;
+
   readonly loop: LoopState;
   readonly tempo: DeckTempo;
 
@@ -345,6 +358,7 @@ export function emptyDeck(id: DeckId): DeckState {
     playhead: 0,
     seekEpoch: 0,
     cueHeld: false,
+    activeHotCue: null,
     slip: false,
     loop: NO_LOOP,
     tempo: DEFAULT_TEMPO,
@@ -580,6 +594,19 @@ export interface DjState {
   /** Deck acuan tempo, atau null. Direkonsiliasi di `withDerived`. */
   readonly masterDeck: DeckId | null;
   /**
+   * Deck yang jadi SASARAN aksi tanpa sasaran eksplisit.
+   *
+   * Ada karena keyboard butuh jawaban untuk "PLAY yang mana": di halaman dua
+   * deck, Spasi tanpa deck fokus adalah tombol yang tidak bisa dijelaskan.
+   * Ia juga yang menerima `Enter` dari daftar Collection, sehingga memuat lagu
+   * bisa dilakukan tanpa menyentuh tetikus sama sekali.
+   *
+   * Berbeda dari `masterDeck`: master adalah acuan TEMPO (milik audio), fokus
+   * adalah sasaran PERINTAH (milik antarmuka). Menyatukannya berarti mengganti
+   * acuan tempo hanya karena user ingin menekan tombol di deck lain.
+   */
+  readonly focusedDeck: DeckId;
+  /**
    * true kalau lapisan audio benar-benar hidup. Di iterasi ini SELALU false,
    * dan header memajang "UI ONLY · TANPA AUDIO". Bentuknya sengaja sama dengan
    * `engineReady`/`engineError` di `studio/store.ts`.
@@ -599,6 +626,7 @@ export function createInitialDj(): DjState {
     browse: defaultBrowse(),
     quantizeDiv: DEFAULT_QUANTIZE_DIV,
     masterDeck: null,
+    focusedDeck: 'A',
     audioReady: false,
     audioError: null,
     notice: null,

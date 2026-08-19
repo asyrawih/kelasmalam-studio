@@ -126,6 +126,20 @@ export async function saveAsset(asset: StoredAsset): Promise<boolean> {
   return r !== null;
 }
 
+/**
+ * Hapus SATU asset dari penyimpanan.
+ *
+ * Terpisah dari `pruneAssets`: pemangkasan adalah kebersihan otomatis atas
+ * asset yang sudah tidak dirujuk siapa pun, sedangkan ini adalah PERINTAH USER
+ * atas satu berkas tertentu. Menyamakan keduanya berarti penghapusan yang
+ * disengaja bergantung pada perhitungan referensi yang benar — dan kalau
+ * perhitungan itu meleset, yang gagal adalah perintah yang jelas.
+ */
+export async function deleteAsset(id: number): Promise<boolean> {
+  const r = await tx<undefined>(STORE_ASSETS, 'readwrite', (s) => s.delete(id));
+  return r !== null;
+}
+
 export async function loadAllAssets(): Promise<StoredAsset[]> {
   const r = await tx<StoredAsset[]>(STORE_ASSETS, 'readonly', (s) => s.getAll());
   return Array.isArray(r) ? r : [];

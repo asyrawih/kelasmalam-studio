@@ -192,6 +192,17 @@ export function hasBuffer(assetId: number): boolean {
   return buffers.has(assetId);
 }
 
+/**
+ * Lepas PCM dari cache.
+ *
+ * Dipanggil saat asset benar-benar dihapus. Tanpa ini, satu lagu lima menit
+ * (~115 MB f32 stereo) tetap tertahan di memori sampai halaman ditutup —
+ * padahal tidak ada lagi yang bisa memutarnya.
+ */
+export function unregisterBuffer(assetId: number): void {
+  buffers.delete(assetId);
+}
+
 export function getBuffer(assetId: number): AudioBuffer | undefined {
   return buffers.get(assetId);
 }

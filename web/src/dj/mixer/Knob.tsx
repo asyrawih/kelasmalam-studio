@@ -40,6 +40,15 @@ export interface KnobProps {
   readonly labelActive?: boolean;
   readonly disabled?: boolean;
   readonly title?: string;
+  /**
+   * Label dan nilai dalam SATU baris di bawah dial.
+   *
+   * Bukan kosmetik: channel strip menumpuk lima knob, dan dua baris teks per
+   * knob memakan ~55 px yang tidak dimiliki kolom mixer. Yang terpotong kalau
+   * dibiarkan adalah fader dan tombol CUE di bawahnya — yaitu justru kontrol
+   * yang paling sering dipakai.
+   */
+  readonly dense?: boolean;
 }
 
 export function Knob({
@@ -56,6 +65,7 @@ export function Knob({
   labelActive = false,
   disabled = false,
   title,
+  dense = false,
 }: KnobProps): JSX.Element {
   const needleRef = useRef<HTMLDivElement>(null);
   const readoutRef = useRef<HTMLDivElement>(null);
@@ -100,8 +110,51 @@ export function Knob({
     opacity: disabled ? 0.4 : 1,
   };
 
+  const labelNode = (
+    <button
+      type="button"
+      className="cy-btn-reset"
+      onClick={onLabelClick}
+      disabled={onLabelClick === undefined}
+      title={onLabelClick === undefined ? undefined : `${label} — klik untuk KILL`}
+      style={{
+        fontSize: '9px',
+        letterSpacing: dense ? '.08em' : '.16em',
+        color: labelActive ? 'var(--cy-text-on-accent)' : 'var(--cy-text-dim)',
+        background: labelActive ? '#ff4d4d' : 'transparent',
+        padding: labelActive ? '1px 4px' : '1px 0',
+        cursor: onLabelClick === undefined ? 'default' : 'pointer',
+        fontFamily: 'var(--cy-font-mono)',
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  const valueNode = (
+    <div
+      ref={readoutRef}
+      style={{
+        fontSize: '10px',
+        color: accent,
+        fontVariantNumeric: 'tabular-nums',
+        minHeight: dense ? undefined : '12px',
+      }}
+    >
+      {format(value)}
+    </div>
+  );
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: dense ? '2px' : '4px',
+        flexShrink: 0,
+      }}
+    >
       <div
         {...(disabled ? {} : drag)}
         onDoubleClick={disabled ? undefined : () => onChange(center)}
@@ -140,35 +193,17 @@ export function Knob({
           }}
         />
       </div>
-      <button
-        type="button"
-        className="cy-btn-reset"
-        onClick={onLabelClick}
-        disabled={onLabelClick === undefined}
-        title={onLabelClick === undefined ? undefined : `${label} — klik untuk KILL`}
-        style={{
-          fontSize: '9px',
-          letterSpacing: '.16em',
-          color: labelActive ? 'var(--cy-text-on-accent)' : 'var(--cy-text-dim)',
-          background: labelActive ? '#ff4d4d' : 'transparent',
-          padding: labelActive ? '1px 5px' : '1px 0',
-          cursor: onLabelClick === undefined ? 'default' : 'pointer',
-          fontFamily: 'var(--cy-font-mono)',
-        }}
-      >
-        {label}
-      </button>
-      <div
-        ref={readoutRef}
-        style={{
-          fontSize: '10px',
-          color: accent,
-          fontVariantNumeric: 'tabular-nums',
-          minHeight: '12px',
-        }}
-      >
-        {format(value)}
-      </div>
+      {dense ? (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', lineHeight: 1.1 }}>
+          {labelNode}
+          {valueNode}
+        </div>
+      ) : (
+        <>
+          {labelNode}
+          {valueNode}
+        </>
+      )}
     </div>
   );
 }

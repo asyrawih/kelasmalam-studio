@@ -44,6 +44,7 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
   const cues = useDj(selectTrackCues(id));
   const masterDeck = useDj((s) => s.masterDeck);
   const quantizeDiv = useDj((s) => s.quantizeDiv);
+  const focused = useDj((s) => s.focusedDeck === id);
   // Selector di-index dengan -1 saat deck kosong: `assets` berkunci number, dan
   // -1 tidak pernah dipakai sebagai id asset.
   const asset = useStudio((s) => s.assets[deck.assetId ?? -1]);
@@ -60,6 +61,14 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
   return (
     <div
       data-dj-deck={id}
+      data-dj-focused={focused ? '' : undefined}
+      /*
+       * Menyentuh deck mana pun memindahkan FOKUS PERINTAH ke sana. Tanpa ini,
+       * Spasi dan Enter tidak punya sasaran yang bisa dijelaskan di halaman dua
+       * deck — dan memaksa user menekan Tab lebih dulu berarti keyboard dan
+       * tetikus bercerita berbeda tentang deck mana yang "sedang dipakai".
+       */
+      onPointerDownCapture={() => djActions.focusDeck(id)}
       style={{
         // Satu-satunya tempat warna deck ditetapkan untuk seluruh subpohon DOM.
         ['--dj-deck-accent' as string]: accent,
@@ -72,6 +81,9 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
         background: 'var(--cy-surface-1)',
         borderLeft: mirrored ? '1px solid var(--cy-border)' : 'none',
         borderRight: mirrored ? 'none' : '1px solid var(--cy-border)',
+        // Fokus digambar sebagai garis tipis di ATAS deck: cukup untuk dilihat
+        // dari sudut mata, tidak cukup untuk bersaing dengan waveform.
+        borderTop: `2px solid ${focused ? accent : 'transparent'}`,
         overflow: 'hidden',
       }}
     >

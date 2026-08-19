@@ -47,6 +47,8 @@ interface PadFace {
   readonly top: string;
   readonly bottom: string;
   readonly color: string | null;
+  /** Pad sedang aktif — digambar pekat, bukan sekadar bertepi warna. */
+  readonly solid?: boolean;
   readonly onPress: () => void;
   /**
    * Hanya untuk pad MOMENTARY (LOOP ROLL). Keberadaannya yang menentukan pad
@@ -260,7 +262,12 @@ export function DeckPads(props: DeckPadsProps): JSX.Element {
               opacity: disabled ? 0.35 : 1,
               // Pad kosong: garis putus-putus, tanpa isian. Ia HARUS terlihat
               // kosong — pad redup-tapi-berisi membuat user mengira cue hilang.
-              background: f.color === null ? 'var(--cy-surface-2)' : `${f.color}22`,
+              background:
+                f.color === null
+                  ? 'var(--cy-surface-2)'
+                  : f.solid === true
+                    ? f.color
+                    : `${f.color}22`,
               border:
                 f.color === null
                   ? '1px dashed var(--cy-border)'
@@ -271,7 +278,10 @@ export function DeckPads(props: DeckPadsProps): JSX.Element {
             <span
               style={{
                 fontSize: '12px',
-                color: f.color ?? 'var(--cy-text-dim)',
+                color:
+                  f.solid === true
+                    ? 'var(--cy-text-on-accent)'
+                    : (f.color ?? 'var(--cy-text-dim)'),
                 lineHeight: 1,
               }}
             >
@@ -281,7 +291,7 @@ export function DeckPads(props: DeckPadsProps): JSX.Element {
               style={{
                 fontSize: '8px',
                 letterSpacing: '.08em',
-                color: 'var(--cy-text-muted)',
+                color: f.solid === true ? 'var(--cy-text-on-accent)' : 'var(--cy-text-muted)',
                 fontVariantNumeric: 'tabular-nums',
                 minHeight: '9px',
               }}

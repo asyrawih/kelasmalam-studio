@@ -116,9 +116,15 @@ menyebar `ensureDjAudio()` ke tiap tombol dan pasti melupakan salah satunya,
 satu listener `pointerdown` **di akar halaman** menangkap interaksi pertama apa
 pun, lalu melepas dirinya sendiri.
 
-Badge header punya tiga keadaan, dan ketiganya berbeda artinya: `SENTUH UNTUK
-MENYALAKAN AUDIO`, `READY`, atau pesan galat. Tidak ada keadaan keempat yang
-berarti "mungkin".
+Badge header punya tiga keadaan: `AUDIO BELUM BERBUNYI — SENTUH HALAMAN`,
+`READY`, atau pesan galat. Tidak ada keadaan keempat yang berarti "mungkin".
+
+Dan `READY` dibaca dari `ctx.state === 'running'` **tiap frame**, bukan
+diasumsikan dari keberhasilan pembangunan. `suspended` adalah keadaan paling
+menyesatkan di Web Audio: graf terpasang, tiap parameter benar, nol error — dan
+nol suara. Browser bisa mengembalikan context ke sana kapan saja (kebijakan
+autoplay, tab disembunyikan, perangkat keluaran berganti), dan badge yang tetap
+berkata READY saat itu terjadi membuat orang mencari penyebabnya di tempat lain.
 
 Context-nya **dipinjam** dari `studio/preview/audio-preview.ts`, bukan dibuat
 sendiri — kalau tidak, setiap lagu harus di-decode dua kali untuk mendapatkan
@@ -159,10 +165,55 @@ Menyisipkan berarti memutus **satu** sambungan dan menaruh node di antaranya.
 analyser dan ke bus CUE tetap utuh — meter dan headphone harus tetap mendengar
 kanalnya.
 
-Node dibangun ulang **hanya** kalau jenis atau target berubah; level dan on/off
-lewat pesan. Dan `sync()` menjaga sidik jari nilai terakhir, karena ia dipanggil
+**Efek yang MATI tidak berada di jalur sinyal sama sekali.**
+
+Versi pertamanya menyisipkan node begitu sebuah efek DIPILIH, lalu mengandalkan
+bypass di dalam rak untuk meloloskan audio saat OFF. Itu taruhan yang salah
+bentuknya: `fx.kind` ikut tersimpan antar sesi, jadi satu efek yang pernah
+dipilih terpasang lagi di **setiap boot** — dan kalau worklet-nya gagal
+memproses karena alasan apa pun (artefak WASM belum dibangun, `addModule`
+gagal, processor melempar), yang terjadi bukan "efeknya tidak terdengar"
+melainkan **seluruh mix diam**, tanpa satu pun error di layar.
+
+Sekarang efek yang mati benar-benar dilepas, dan node yang melaporkan `fault`
+atau `onprocessorerror` ikut dilepas lalu dilaporkan ke baris status. Harganya
+satu penyambungan ulang saat ON/OFF ditekan — dan itu harga yang benar, karena
+kegagalannya jadi sebatas "efek tidak jalan" alih-alih "tidak ada suara".
+
+Node dibangun ulang **hanya** kalau jenis atau target berubah; level lewat pesan. Dan `sync()` menjaga sidik jari nilai terakhir, karena ia dipanggil
 pada setiap perubahan state — termasuk tiap piksel gerakan crossfader, yang
 tidak ada hubungannya dengan FX.
+
+---
+
+## Tinggi mixer dibagi, bukan dijatah
+
+Channel strip menumpuk lima knob di atas fader dan tombol CUE. Versi pertamanya
+memberi fader **panjang tetap**, dan begitu tumpukan knob melebihi ruang yang
+ada, fader dan CUE terpotong habis oleh `overflow: hidden` di baris grid —
+kontrol yang paling sering dipakai hilang tanpa satu pun gejala: tidak ada
+error, tidak ada scrollbar, tidak ada apa pun yang menunjukkan ada yang
+terpotong.
+
+Sekarang tumpukan knob memakai tinggi alaminya dan **blok fader mengambil
+sisanya** (`flex: 1`). Cap fader diposisikan lewat `calc()` persen pada
+`top`/`left`, jadi ia benar pada tinggi berapa pun tanpa mengukur apa pun dan
+tanpa satu pun listener resize.
+
+> **`top`/`left`, bukan `transform`** — dan ini pernah salah. Persentase di
+> dalam `translate()` dihitung terhadap **elemen itu sendiri**, bukan induknya.
+> Untuk cap setinggi 16 px, `translateY(calc((100% - 16px) * t))` selalu
+> bernilai `(16px − 16px) * t` = **0**: cap-nya membeku di ujung berapa pun
+> nilainya, sementara angka di sebelahnya berubah normal. Fadernya terlihat
+> "rusak" padahal store, audio, dan pembacaan di layar semuanya benar.
+>
+> Persentase pada `top`/`left` elemen ber-`position: absolute` dihitung terhadap
+> containing block — yaitu induknya. Itu yang dimaksud. Dikunci
+> `mixer/fader.test.tsx`. Knob memakai mode `dense` — label dan nilai sebaris —
+karena dua baris teks per knob memakan ~55 px yang tidak dimiliki kolom mixer.
+
+Dijaga `dj-layout.test.tsx`: yang diperiksa bukan pikselnya (jsdom tidak
+melakukan layout) melainkan ATURAN yang membuat pikselnya benar.
 
 ---
 

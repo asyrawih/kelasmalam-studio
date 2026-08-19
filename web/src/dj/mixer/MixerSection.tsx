@@ -41,10 +41,11 @@ export function MixerSection({ compact }: MixerSectionProps): JSX.Element {
   // Dipanggil DI DALAM render, dari dua primitif di atas — inilah bentuk yang
   // aman untuk fungsi yang mengembalikan objek.
   const gains = crossfaderGains(xf, curve);
-  const faderH = compact ? 82 : 108;
+  const knob = compact ? 30 : 36;
 
   return (
     <div
+      data-dj-mixer
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -57,21 +58,16 @@ export function MixerSection({ compact }: MixerSectionProps): JSX.Element {
       }}
     >
       <div style={{ display: 'flex', gap: '6px', flex: 1, minHeight: 0, justifyContent: 'center' }}>
-        <ChannelStrip
-          channel={chA}
-          id="A"
-          accent={DECK_ACCENT.A}
-          faderHeight={faderH}
-          compact={compact}
-        />
+        <ChannelStrip channel={chA} id="A" accent={DECK_ACCENT.A} compact={compact} />
 
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: '5px',
-            paddingTop: '18px',
+            gap: compact ? '2px' : '4px',
+            paddingTop: '16px',
+            minHeight: 0,
           }}
         >
           <Knob
@@ -80,7 +76,8 @@ export function MixerSection({ compact }: MixerSectionProps): JSX.Element {
             min={MIN_MASTER_DB}
             max={MAX_MASTER_DB}
             center={0}
-            size={compact ? 34 : 40}
+            size={knob}
+            dense
             format={(v) => formatDb(v, 0)}
             onChange={(v) => djActions.setMasterDb(v)}
           />
@@ -90,8 +87,9 @@ export function MixerSection({ compact }: MixerSectionProps): JSX.Element {
             min={0}
             max={1}
             center={0.5}
-            size={compact ? 30 : 34}
-            format={(v) => (v < 0.02 ? 'CUE' : v > 0.98 ? 'MASTER' : `${Math.round(v * 100)}%`)}
+            size={knob}
+            dense
+            format={(v) => (v < 0.02 ? 'CUE' : v > 0.98 ? 'MST' : `${Math.round(v * 100)}%`)}
             onChange={(v) => djActions.setCueMix(v)}
             title="campuran headphone: kiri CUE, kanan MASTER"
           />
@@ -107,21 +105,19 @@ export function MixerSection({ compact }: MixerSectionProps): JSX.Element {
             min={MIN_MASTER_DB}
             max={MAX_MASTER_DB}
             center={-12}
-            size={compact ? 30 : 34}
+            size={knob}
+            dense
             format={(v) => formatDb(v, 0)}
             onChange={(v) => djActions.setCueDb(v)}
           />
-          <LevelMeter source="master" height={faderH} label="MASTER" />
+          {/* Meter master mengambil sisa tinggi, sama seperti fader kanal. */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', paddingBottom: '2px' }}>
+            <LevelMeter source="master" height="fill" label="MASTER" />
+          </div>
           <CueOutputPicker />
         </div>
 
-        <ChannelStrip
-          channel={chB}
-          id="B"
-          accent={DECK_ACCENT.B}
-          faderHeight={faderH}
-          compact={compact}
-        />
+        <ChannelStrip channel={chB} id="B" accent={DECK_ACCENT.B} compact={compact} />
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>

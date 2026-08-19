@@ -1083,6 +1083,24 @@ export const studioActions = {
       selectedLaneId: laneId,
     }));
   },
+  /**
+   * Buang asset dari registry.
+   *
+   * Sengaja TIDAK memeriksa apakah ada clip yang memakainya: penjaganya hidup
+   * di pemanggil (`assetUsage`), karena hanya pemanggil yang tahu apa yang
+   * harus terjadi kalau ternyata dipakai — menolak, atau menghapus clip-nya
+   * lebih dulu. Aksi store yang diam-diam menolak akan terlihat seperti tidak
+   * melakukan apa-apa.
+   */
+  removeAsset(id: number): void {
+    set((s) => {
+      if (s.assets[id] === undefined) return {};
+      const next = { ...s.assets };
+      delete next[id];
+      return { assets: next };
+    });
+  },
+
   registerAsset(asset: StudioAsset): void {
     set((s) => ({ assets: { ...s.assets, [asset.id]: asset } }));
   },
@@ -1537,6 +1555,26 @@ export const studioActions = {
 };
 
 // ── Selector siap pakai (stabil secara referensi) ────────────────────────────
+
+/**
+ * Berapa clip yang memakai sebuah asset, dan di lane mana saja.
+ *
+ * Ada supaya penghapusan bisa MENOLAK dengan alasan alih-alih meninggalkan
+ * clip yang menunjuk asset hantu. Clip seperti itu tidak melempar — ia hanya
+ * menggambar placeholder dan diam saat diputar, dan penyebabnya terjadi di
+ * halaman lain beberapa menit sebelumnya.
+ */
+export function assetUsage(s: StudioAppState, id: number): { clips: number; lanes: string[] } {
+  const lanes: string[] = [];
+  let clips = 0;
+  for (const lane of s.lanes) {
+    const n = lane.clips.filter((c) => c.assetId === id).length;
+    if (n === 0) continue;
+    clips += n;
+    lanes.push(lane.name);
+  }
+  return { clips, lanes };
+}
 
 export const selectLanes = (s: StudioAppState): readonly StudioLane[] => s.lanes;
 export const selectDurationSec = (s: StudioAppState): number =>

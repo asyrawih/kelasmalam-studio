@@ -32,18 +32,20 @@ export interface ChannelStripProps {
   readonly channel: ChannelState;
   readonly id: DeckId;
   readonly accent: string;
-  readonly faderHeight: number;
   readonly compact: boolean;
 }
 
-export function ChannelStrip({
-  channel,
-  id,
-  accent,
-  faderHeight,
-  compact,
-}: ChannelStripProps): JSX.Element {
-  const knob = compact ? 34 : 40;
+/**
+ * Satu channel strip.
+ *
+ * TINGGINYA TIDAK DIHITUNG, ia dibagi: tumpukan knob memakai tinggi alaminya,
+ * dan blok fader mengambil SISANYA lewat `flex: 1`. Versi sebelumnya memberi
+ * fader panjang tetap, dan begitu jumlah knob melebihi ruang yang ada, yang
+ * terpotong justru fader dan tombol CUE — kontrol yang paling sering dipakai,
+ * hilang tanpa satu pun gejala selain "kok nggak kelihatan".
+ */
+export function ChannelStrip({ channel, id, accent, compact }: ChannelStripProps): JSX.Element {
+  const knob = compact ? 30 : 36;
 
   return (
     <div
@@ -51,12 +53,15 @@ export function ChannelStrip({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: compact ? '3px' : '5px',
+        gap: compact ? '2px' : '4px',
         minWidth: 0,
+        minHeight: 0,
         flex: 1,
       }}
     >
-      <div style={{ fontSize: '10px', letterSpacing: '.16em', color: accent }}>CH {id}</div>
+      <div style={{ fontSize: '10px', letterSpacing: '.16em', color: accent, flexShrink: 0 }}>
+        CH {id}
+      </div>
 
       <Knob
         label="TRIM"
@@ -66,6 +71,7 @@ export function ChannelStrip({
         center={0}
         size={knob}
         accent={accent}
+        dense
         format={(v) => `${formatDb(v, 0)}`}
         onChange={(v) => djActions.setTrim(id, v)}
       />
@@ -80,6 +86,7 @@ export function ChannelStrip({
           center={0}
           size={knob}
           accent={accent}
+          dense
           format={(v) => (channel.eqKill[band] ? 'KILL' : formatDb(v, 0))}
           onChange={(v) => djActions.setEqBand(id, band, v)}
           onLabelClick={() => djActions.toggleEqKill(id, band)}
@@ -99,6 +106,7 @@ export function ChannelStrip({
         center={0}
         size={knob}
         accent={accent}
+        dense
         format={(v) => (Math.abs(v) < 0.03 ? 'OFF' : v < 0 ? `LPF ${Math.round(-v * 100)}` : `HPF ${Math.round(v * 100)}`)}
         onChange={(v) => djActions.setFilter(id, v)}
         title="COLOR — tengah = tidak ada filter; kiri lowpass, kanan highpass (gaya rekordbox)"
@@ -118,22 +126,33 @@ export function ChannelStrip({
           background: channel.cue ? accent : 'var(--cy-surface-2)',
           border: '1px solid var(--cy-border)',
           cursor: 'pointer',
+          flexShrink: 0,
         }}
       >
         CUE
       </button>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px' }}>
+      {/* Blok fader mengambil SISA tinggi. Kalau ruangnya habis, yang menyusut
+          adalah fader — bukan hilang, dan bukan mendorong yang lain keluar. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: '4px',
+          flex: 1,
+          minHeight: 0,
+          paddingBottom: '2px',
+        }}
+      >
         <Fader
           orientation="vertical"
           value={channel.fader}
           onChange={(v) => djActions.setChannelFader(id, v)}
-          length={faderHeight}
           accent={accent}
           label={`channel fader ${id}`}
           title="channel fader — unity di puncak, nol mutlak di dasar"
         />
-        <LevelMeter source={id} height={faderHeight} />
+        <LevelMeter source={id} height="fill" />
       </div>
     </div>
   );

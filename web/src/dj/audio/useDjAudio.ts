@@ -35,7 +35,11 @@ export function useDjAudio(rootRef: RefObject<HTMLElement>): void {
     const root = rootRef.current ?? document.body;
     const onFirstGesture = (): void => {
       const audio = ensureDjAudio();
-      djActions.setAudioStatus(audio !== null, djAudioError());
+      if (audio !== null) {
+        audio.onFxFault = (message) => djActions.setNotice(message);
+        audio.resume();
+      }
+      djActions.setAudioStatus(audio !== null && audio.running, djAudioError());
       if (audio !== null) {
         root.removeEventListener('pointerdown', onFirstGesture, true);
         // Terapkan sekali langsung, supaya lagu yang sudah dimuat sebelum
@@ -67,6 +71,21 @@ export function useDjAudio(rootRef: RefObject<HTMLElement>): void {
       raf = requestAnimationFrame(frame);
       const audio = djAudio();
       if (audio === null) return;
+
+      /*
+       * Keadaan context dibaca ULANG tiap frame, bukan diasumsikan dari
+       * keberhasilan pembangunan.
+       *
+       * `suspended` adalah keadaan paling menyesatkan di Web Audio: graf
+       * terpasang, tiap parameter benar, nol error — dan nol suara. Browser
+       * bisa mengembalikan context ke sana kapan saja (kebijakan autoplay, tab
+       * disembunyikan, perangkat keluaran berganti). Badge yang tetap berkata
+       * READY saat itu terjadi adalah kebohongan yang paling mahal di halaman
+       * ini, karena ia membuat orang mencari penyebabnya di tempat lain.
+       */
+      if (djStore.getState().audioReady !== audio.running) {
+        djActions.setAudioStatus(audio.running, djAudioError());
+      }
 
       // Deteksi ujung materi berjalan tiap frame — menundanya sampai kiriman
       // posisi berikutnya berarti deck "berbunyi" sampai 60 ms setelah lagunya

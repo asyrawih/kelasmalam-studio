@@ -50,7 +50,6 @@ import {
   MIN_MASTER_DB,
   MIN_TRIM_DB,
   NO_LOOP,
-  TEMPO_STEP_PCT,
   createInitialDj,
   effectiveRate,
   emptyDeck,
@@ -299,6 +298,7 @@ export const djActions = {
 
   // — transport —
 
+  /** Pasangan `pause`. Dipakai lapisan audio dan tes; UI memakai `togglePlay`. */
   play(id: DeckId): void {
     set((s) =>
       patchDeck(s, id, (d) => (d.playing || d.assetId === null ? d : { ...d, playing: true })),
@@ -359,12 +359,19 @@ export const djActions = {
     set((s) => patchCues(s, id, (c) => ({ ...c, cuePoint: Math.max(0, Math.round(at)) })));
   },
 
-  /** Pindah posisi EKSPLISIT. Menaikkan `seekEpoch`. */
+  /**
+   * Pindah posisi EKSPLISIT. Menaikkan `seekEpoch`.
+   *
+   * Ikut mematikan lampu hot cue: begitu user melompat ke tempat lain, lagu
+   * tidak lagi "sedang berbunyi dari cue itu", dan pad yang tetap menyala akan
+   * berbohong tentang apa yang akan terjadi kalau ditekan.
+   */
   seek(id: DeckId, at: Samples): void {
     set((s) =>
       patchDeck(s, id, (d) => {
         const next = clamp(Math.round(at), 0, d.frames);
-        return next === d.playhead ? d : { ...d, playhead: next, seekEpoch: d.seekEpoch + 1 };
+        if (next === d.playhead && d.activeHotCue === null) return d;
+        return { ...d, playhead: next, activeHotCue: null, seekEpoch: d.seekEpoch + 1 };
       }),
     );
   },
@@ -381,16 +388,6 @@ export const djActions = {
     set((s) =>
       patchDeck(s, id, (d) => {
         const next = clamp(Math.round(at), 0, d.frames);
-        return next === d.playhead ? d : { ...d, playhead: next };
-      }),
-    );
-  },
-
-  /** Geser relatif TANPA menaikkan `seekEpoch` — untuk jog halus. */
-  nudge(id: DeckId, deltaSamples: number): void {
-    set((s) =>
-      patchDeck(s, id, (d) => {
-        const next = clamp(Math.round(d.playhead + deltaSamples), 0, d.frames);
         return next === d.playhead ? d : { ...d, playhead: next };
       }),
     );
@@ -470,7 +467,15 @@ export const djActions = {
     );
   },
 
-  /** Klik pad. Terisi → lompat. Kosong → pasang di posisi kini (di-quantize). */
+  /**
+   * Tekan PAD hot cue. Terisi → lompat. Kosong → pasang di posisi kini.
+   *
+   * Sengaja BUKAN toggle: pad adalah sasaran tetikus, dan yang dicari saat
+   * mengkliknya adalah "bawa aku ke sana" — sekali klik, satu perbuatan yang
+   * bisa diulang tanpa berubah arti. Perilaku nyala/mati ada di jalur keyboard
+   * (`toggleHotCue`), tempat tombol yang sama ditekan berkali-kali dengan jari
+   * yang tidak melihat layar.
+   */
   triggerHotCue(id: DeckId, slot: HotCueSlot, grid: BeatGrid | null): void {
     const s0 = state;
     const d = s0.decks[id];
@@ -484,6 +489,50 @@ export const djActions = {
     djActions.seek(id, cue.at);
   },
 
+  /**
+   * Hot cue dari KEYBOARD — tombol ON/OFF.
+   *
+   *   pad KOSONG               → pasang cue di posisi kini
+   *   terisi, mati             → ON: lompat ke cue itu dan MULAI MAIN
+   *   terisi, sedang menyala   → OFF: berhenti, dan kembali ke titik cue itu
+   *
+   * Kenapa keyboard berbeda dari pad: tombol angka ditekan berulang-ulang oleh
+   * jari yang tidak melihat layar, dan menekannya lagi saat lagu sudah berbunyi
+   * dari cue itu hampir tidak terdengar melakukan apa pun — lompatannya ke
+   * tempat yang praktis sama. Tombol yang ditekan tapi tidak terdengar berubah
+   * adalah tombol yang terasa rusak.
+   *
+   * Cue-nya **tidak pernah terhapus** oleh tekanan kedua. Hot cue dipencet
+   * berkali-kali selama satu set; menghapusnya lewat tombol yang sama berarti
+   * satu tekan berlebih membuang titik yang dipasang dengan tangan.
+   */
+  toggleHotCue(id: DeckId, slot: HotCueSlot, grid: BeatGrid | null): void {
+    const s0 = state;
+    const d = s0.decks[id];
+    if (d.assetId === null) return;
+    const cue = (s0.cues[d.assetId] ?? EMPTY_TRACK_CUES).hotCues[slot];
+
+    if (cue === null) {
+      const at = quantized(d.playhead, grid, d.sampleRate, d.quantize, s0.quantizeDiv);
+      djActions.setHotCue(id, slot, at);
+      return;
+    }
+
+    // OFF — hanya kalau slot INI yang menyala dan lagunya memang berbunyi.
+    // Kalau user sudah menjeda lewat tombol lain, tekanan berikutnya wajar
+    // diartikan sebagai "mulai lagi", bukan "berhenti lagi".
+    const off = d.activeHotCue === slot && d.playing;
+    set((s) =>
+      patchDeck(s, id, (x) => ({
+        ...x,
+        playing: !off,
+        playhead: cue.at,
+        activeHotCue: off ? null : slot,
+        seekEpoch: x.seekEpoch + 1,
+      })),
+    );
+  },
+
   clearHotCue(id: DeckId, slot: HotCueSlot): void {
     set((s) =>
       patchCues(s, id, (c) =>
@@ -492,14 +541,21 @@ export const djActions = {
     );
   },
 
-  renameHotCue(id: DeckId, slot: HotCueSlot, label: string): void {
-    set((s) =>
-      patchCues(s, id, (c) => {
-        const cue = c.hotCues[slot];
-        if (cue === null || cue.label === label) return c;
-        return { ...c, hotCues: { ...c.hotCues, [slot]: { ...cue, label } } };
-      }),
-    );
+  /**
+   * Lupakan SELURUH cue milik satu lagu.
+   *
+   * Dipanggil saat lagunya dihapus dari kepustakaan. Membiarkannya berarti
+   * `DjState.cues` tumbuh selamanya dengan entri untuk lagu yang tidak ada —
+   * dan begitu id asset dipakai ulang oleh berkas lain (id-nya berurut), cue
+   * lama muncul di lagu yang salah.
+   */
+  forgetCues(assetId: number): void {
+    set((s) => {
+      if (s.cues[assetId] === undefined) return null;
+      const next = { ...s.cues };
+      delete next[assetId];
+      return { cues: next };
+    });
   },
 
   // — memory cue —
@@ -612,27 +668,12 @@ export const djActions = {
     );
   },
 
-  clearLoop(id: DeckId): void {
-    set((s) => patchDeck(s, id, (d) => (d.loop === NO_LOOP ? d : { ...d, loop: NO_LOOP })));
-  },
-
   // — tempo & sync —
 
   setTempoFader(id: DeckId, v: number): void {
     set((s) =>
       patchDeck(s, id, (d) => {
         const next = clamp(v, -1, 1);
-        return next === d.tempo.fader ? d : { ...d, tempo: { ...d.tempo, fader: next } };
-      }),
-    );
-  },
-
-  /** Nudge satu langkah terkecil dari rentang yang sedang dipakai. */
-  nudgeTempoFader(id: DeckId, dir: -1 | 1): void {
-    set((s) =>
-      patchDeck(s, id, (d) => {
-        const stepPct = TEMPO_STEP_PCT[d.tempo.rangePct];
-        const next = clamp(d.tempo.fader + (dir * stepPct) / d.tempo.rangePct, -1, 1);
         return next === d.tempo.fader ? d : { ...d, tempo: { ...d.tempo, fader: next } };
       }),
     );
@@ -663,6 +704,15 @@ export const djActions = {
     set((s) =>
       patchDeck(s, id, (d) => ({ ...d, tempo: { ...d.tempo, keyLock: !d.tempo.keyLock } })),
     );
+  },
+
+  /** Pindahkan fokus perintah. Tidak menyentuh audio sama sekali. */
+  focusDeck(id: DeckId): void {
+    set((s) => (s.focusedDeck === id ? null : { focusedDeck: id }));
+  },
+
+  toggleFocusedDeck(): void {
+    set((s) => ({ focusedDeck: s.focusedDeck === 'A' ? 'B' : 'A' }));
   },
 
   setMasterDeck(id: DeckId | null): void {
@@ -715,10 +765,6 @@ export const djActions = {
       return { ok: true };
     }
     return djActions.applySync(id, selfBpm, masterBpm);
-  },
-
-  setSyncRole(id: DeckId, role: SyncRole): void {
-    set((s) => patchDeck(s, id, (d) => (d.sync === role ? d : { ...d, sync: role })));
   },
 
   setQuantizeDiv(div: QuantizeDiv): void {
@@ -801,12 +847,6 @@ export const djActions = {
         ...c,
         eqKill: { ...c.eqKill, [band]: !c.eqKill[band] },
       })),
-    );
-  },
-
-  resetEqBand(id: DeckId, band: EqBandDj): void {
-    set((s) =>
-      patchChannel(s, id, (c) => (c.eq[band] === 0 ? c : { ...c, eq: { ...c.eq, [band]: 0 } })),
     );
   },
 

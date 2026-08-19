@@ -27,6 +27,15 @@ import {
 } from '../model';
 import { djActions } from '../store';
 
+/**
+ * Besar pitch bend saat ditahan, sebagai pengali.
+ *
+ * 4% kira-kira sebesar dorongan jari di piringan CDJ: cukup untuk menutup
+ * selisih beberapa milidetik dalam satu-dua ketukan, terlalu kecil untuk
+ * terdengar sebagai perubahan nada.
+ */
+const BEND = 0.04;
+
 export interface DeckTempoProps {
   readonly deck: DeckState;
   readonly id: DeckId;
@@ -56,6 +65,52 @@ export function DeckTempo({
         padding: '0 6px',
       }}
     >
+      {/*
+        PITCH BEND — menahan mempercepat/memperlambat SEMENTARA, melepas
+        mengembalikannya. Ini yang dipakai untuk menggeser lagu beberapa
+        milidetik supaya ketukannya bertemu, tanpa mengubah tempo lagu itu.
+        Karena itu ia menulis ke `deck.bend`, BUKAN ke tempo fader: kalau ia
+        menulis ke fader, satu nudge akan mengubah BPM lagu secara permanen.
+      */}
+      <div style={{ display: 'flex', gap: '3px' }}>
+        {([-1, 1] as const).map((dir) => {
+          const empty = deck.assetId === null;
+          // Menyala hanya di ARAH yang sedang ditahan, bukan di keduanya.
+          const active = dir === 1 ? deck.bend > 1 : deck.bend < 1;
+          return (
+            <button
+              key={dir}
+              type="button"
+              className="cy-btn-reset"
+              disabled={empty}
+              onPointerDown={() => djActions.setBend(id, dir === 1 ? 1 + BEND : 1 - BEND)}
+              onPointerUp={() => djActions.setBend(id, 1)}
+              // Melepas di luar tombol tetap harus mengembalikan laju; kalau
+              // tidak, deck tertinggal ngebut sampai tombolnya ditekan lagi.
+              onPointerLeave={() => djActions.setBend(id, 1)}
+              title={
+                dir === 1
+                  ? 'pitch bend maju — tahan untuk mempercepat SEMENTARA, tanpa mengubah tempo lagu'
+                  : 'pitch bend mundur — tahan untuk memperlambat SEMENTARA'
+              }
+              style={{
+                flex: 1,
+                fontSize: '9px',
+                padding: '2px 0',
+                fontFamily: 'var(--cy-font-mono)',
+                color: active ? 'var(--cy-text-on-accent)' : 'var(--cy-text-dim)',
+                background: active ? accent : 'var(--cy-surface-2)',
+                border: '1px solid var(--cy-border)',
+                cursor: empty ? 'not-allowed' : 'pointer',
+                opacity: empty ? 0.4 : 1,
+              }}
+            >
+              {dir === 1 ? '▶▶' : '◀◀'}
+            </button>
+          );
+        })}
+      </div>
+
       <div
         onDoubleClick={() => djActions.resetTempo(id)}
         title="klik-ganda untuk mengembalikan tempo ke 0.0%"
