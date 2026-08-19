@@ -13,6 +13,14 @@
  *   2. badan RMS — bentuk yang sama tapi lebih terang/pekat, selalu di dalam
  *      outline. Ini yang membuat bagian sunyi terlihat sunyi meskipun
  *      transiennya menyentuh puncak.
+ *
+ * MODE PITA (`WaveStyle.bands`). Kalau style membawa tiga warna, dua lapis di
+ * atas diganti TIGA lapis — satu per pita frekuensi, digambar dari yang paling
+ * tinggi ke yang paling pendek (low → mid → high). Hasilnya bacaan yang sama
+ * dengan waveform berwarna Rekordbox: tepi biru = kick/bass, badan oranye =
+ * vokal dan badan lagu, inti putih = hi-hat dan desis. Lihat `envelope.ts` §4
+ * untuk alasan datanya dihitung saat import, dan `BAND_GAIN` di bawah untuk
+ * alasan tiap pita punya penguatan tampilannya sendiri.
  */
 
 import type { StudioAsset } from '../store';
@@ -36,7 +44,61 @@ export interface WaveStyle {
   readonly bodyAlpha: number;
   /** Garis tengah; null = tidak digambar. */
   readonly centerLine: string | null;
+  /**
+   * Kalau ada, waveform digambar per pita frekuensi alih-alih outline + RMS.
+   * `outline` tetap dipakai untuk placeholder saat asset-nya tidak ada.
+   */
+  readonly bands?: BandColors | null;
 }
+
+/** Tiga warna pita. Dipisah jadi tipe sendiri supaya tema bisa menggantinya di
+ *  satu tempat, bukan di tiap pemanggil. */
+export interface BandColors {
+  readonly low: string;
+  readonly mid: string;
+  readonly high: string;
+}
+
+/**
+ * Palet pita bawaan.
+ *
+ * Biru untuk bawah dan putih untuk atas mengikuti konvensi yang sudah dibaca
+ * ribuan DJ di Rekordbox/Serato — melawan konvensi itu berarti setiap orang
+ * yang membuka halaman ini harus belajar ulang arti warnanya. Pita tengah
+ * memakai amber `#ffb020` milik tema ini, bukan oranye Rekordbox, karena
+ * pita itulah yang mendominasi layar dan warnanya jadi warna halaman.
+ */
+export const BAND_COLORS: BandColors = {
+  low: '#2f6fe0',
+  mid: '#ffb020',
+  high: '#eef4ff',
+};
+
+/**
+ * Penguatan tampilan per pita.
+ *
+ * Bukan koreksi kosmetik: setelah crossover, energi materi musik turun tajam ke
+ * atas (pita atas sebuah track master jarang melewati 0,2 puncak walau hi-hat-
+ * nya jelas terdengar), dan filter satu kutub bertingkat sendiri hanya mencapai
+ * ~0,75 pada sinus penuh di pita atas. Digambar apa adanya, pita atas jadi
+ * garis setipis satu pixel dan warnanya berhenti memberi tahu apa pun.
+ *
+ * Batas atasnya keras dan sudah terbukti dari render uji: pada penguatan 3
+ * setiap hi-hat MENTOK ke tinggi penuh, dan karena pita atas digambar terakhir,
+ * hasilnya tembok putih yang menutupi biru dan amber sepenuhnya — warna yang
+ * lebih buruk daripada tidak berwarna. Angka di bawah menaikkan pita atas
+ * sampai terbaca tapi masih di bawah langit-langit pada materi normal.
+ */
+const BAND_GAIN = { low: 1, mid: 1.35, high: 1.7 } as const;
+
+/**
+ * Opacity per pita. Menurun ke atas, dan itu yang membuat tumpang-tindih
+ * menjadi INFORMASI, bukan penutup: pita atas yang digambar terakhir masih
+ * meloloskan amber dan biru di bawahnya, persis seperti low∩mid yang tampil
+ * cokelat di rekordbox. Dengan tiga lapis buram, satu pita yang kebetulan
+ * paling tinggi akan menghapus dua lainnya dari layar.
+ */
+const BAND_ALPHA = { low: 0.95, mid: 0.85, high: 0.78 } as const;
 
 /** Gradien vertikal khas panel Clip Detail (#ffb020 → #ffd400 → #ffb020). */
 export function clipDetailGradient(
@@ -112,6 +174,32 @@ export function drawAssetWave(
   // Tinggi minimum 1 px: tanpa ini, bagian yang benar-benar sunyi hilang sama
   // sekali dan waveform-nya terlihat "putus", bukan sunyi.
   const clampAmp = (v: number): number => Math.min(1, Math.abs(v)) * half;
+
+  if (style.bands != null) {
+    // Urutan low → mid → high itu WAJIB, bukan selera: tiap lapis menimpa yang
+    // sebelumnya, jadi yang digambar belakangan harus yang biasanya paling
+    // pendek. Dibalik, pita bawah menutupi keduanya dan gambarnya jadi biru
+    // polos — data lengkap, warna nihil.
+    const layers = [
+      { values: cs.low, color: style.bands.low, gain: BAND_GAIN.low, alpha: BAND_ALPHA.low },
+      { values: cs.mid, color: style.bands.mid, gain: BAND_GAIN.mid, alpha: BAND_ALPHA.mid },
+      { values: cs.high, color: style.bands.high, gain: BAND_GAIN.high, alpha: BAND_ALPHA.high },
+    ] as const;
+    for (const layer of layers) {
+      paint(
+        (i) => {
+          const a = Math.max(0.5, clampAmp((layer.values[i] ?? 0) * layer.gain));
+          return { top: cy - a, bottom: cy + a };
+        },
+        layer.color,
+        // `bodyAlpha` tetap dihormati sebagai peredup KESELURUHAN — strip
+        // overview memakainya untuk duduk lebih tenang di belakang penanda cue.
+        layer.alpha * style.bodyAlpha,
+      );
+    }
+    return;
+  }
+
   paint(
     (i) => ({
       top: cy - Math.max(0.5, clampAmp(cs.max[i] ?? 0)),

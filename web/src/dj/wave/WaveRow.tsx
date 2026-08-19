@@ -2,10 +2,12 @@
  * Baris waveform besar: satu jendela bergeser per deck, ditumpuk.
  *
  * Di rekordbox baris ini menumpuk kedua lagu di satu bidang. Di sini keduanya
- * dipisah jadi dua jalur bertumpuk, dan itu keputusan sadar: waveform kita
- * belum berwarna per pita frekuensi (`envelope.ts` menyimpan min/max/rms mono),
- * jadi dua bentuk amber di bidang yang sama tidak bisa dibedakan mana milik
- * siapa. Yang bisa dibedakan justru posisinya — jadi posisinya yang dipakai.
+ * dipisah jadi dua jalur bertumpuk, dan itu tetap keputusan sadar meski
+ * waveform-nya kini berwarna per pita (`envelope.ts` menyimpan puncak
+ * low/mid/high per bucket): warna dipakai untuk membedakan KICK DARI HI-HAT,
+ * bukan deck A dari deck B. Kalau ia dipaksa merangkap dua tugas, keduanya
+ * hilang — dan yang membedakan deck di sini adalah posisinya, yang tidak
+ * memakai anggaran warna sama sekali.
  */
 
 import { DECK_ACCENT, type DeckId } from '../model';

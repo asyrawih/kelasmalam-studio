@@ -34,7 +34,7 @@ import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-
 import type { StudioAsset } from '../store';
 import { drawBeatGrid, drawPlayhead } from './beat-draw';
 import { drawFadeCurves, type FadeRegions } from './fade-draw';
-import { clipDetailGradient, drawClipWave } from './waveform';
+import { clipDetailGradient, drawClipWave, type BandColors } from './waveform';
 
 export interface ScrollingWaveProps {
   readonly asset: StudioAsset | undefined;
@@ -94,6 +94,13 @@ export interface ScrollingWaveProps {
    * `latest.current`, yang hanya segar saat React me-render.
    */
   readonly positionSourceSec?: () => number | null;
+  /**
+   * Kalau diisi, waveform digambar per pita frekuensi dengan tiga warna ini,
+   * bukan gradien amber Studio. Halaman DJ memakainya; timeline tidak, karena
+   * di sana satu clip setinggi 88 px berbagi ruang dengan 31 clip lain dan
+   * yang dicari adalah BATAS clip, bukan isi spektrumnya.
+   */
+  readonly bands?: BandColors | null;
   /** Warna sorotan region. Default cyan Studio; halaman DJ memakai amber deck. */
   readonly regionTint?: string;
   readonly regionStroke?: string;
@@ -150,11 +157,14 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
         ctx.translate(x0, 0);
         const gradient = clipDetailGradient(ctx, h);
         drawClipWave(ctx, p.asset, visFrom, visTo - visFrom, x1 - x0, h, size.dpr, {
+          // Placeholder (asset hilang) tetap memakai gradien: ia menggambar
+          // arsir, bukan pita, jadi warna pita tidak punya arti di sana.
           outline: gradient,
           body: gradient,
           outlineAlpha: 0.55,
           bodyAlpha: 0.9,
           centerLine: '#ffd40024',
+          bands: p.bands ?? null,
         });
         ctx.restore();
       }

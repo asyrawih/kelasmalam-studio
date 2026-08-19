@@ -110,10 +110,24 @@ terakhir sehingga menutupi yang di bawahnya.
 Setelannya **global tunggal** (`[View]` → `[Color]` → `[Waveform color]`) dan
 berlaku untuk waveform besar maupun penuh — bukan per-deck.
 
-Kita **tidak** membangun ini di iterasi pertama: `envelope.ts` menyimpan min/max/rms
-mono, tanpa energi per pita. Menambahkannya berarti tiga lintasan filter saat
-import dan tiga larik peak per asset. Tema halaman ini amber, dan waveform
-dua-warna amber sudah dipilih user.
+**Sudah dibangun** (skema 3Band saja, tanpa saklar RGB). `envelope.ts` kini
+menyimpan `low`/`mid`/`high` = |puncak| per bucket di samping min/max/rms, dan
+`waveform.ts` menggambarnya low → mid → high sehingga putih tetap yang terakhir
+menutupi — urutan yang sama dengan rekordbox, dan alasannya sama: yang paling
+pendek harus digambar paling akhir atau ia tidak pernah terlihat.
+
+Yang berbeda dari catatan riset di atas, dan itu disengaja:
+
+- **Amber tema ini yang jadi pita tengah**, bukan oranye rekordbox. Pita tengah
+  mendominasi layar, jadi warnanya adalah warna halaman.
+- **Tidak ada `[Waveform color]` global.** Satu skema, satu tempat
+  (`BAND_COLORS` di `waveform.ts`). Saklar dua skema hanya berguna kalau ada
+  user yang sudah terbiasa dengan RGB; di sini belum ada satu pun.
+
+Ongkosnya, terukur (bukan taksiran): pyramid untuk 3 menit stereo @48k naik dari
+~49 ms ke **76 ms** dan dari 1,85 MB ke **3,70 MB** (0,428 B per frame). Filternya
+enam kutub per sample, berjalan di pass yang SUDAH melewati PCM — tidak ada
+lintasan baru, meski catatan di atas menduga akan ada tiga.
 
 ---
 

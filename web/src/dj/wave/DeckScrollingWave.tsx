@@ -18,7 +18,7 @@
 
 import { useMemo } from 'react';
 
-import { ScrollingWave } from '../../studio/timeline';
+import { BAND_COLORS, ScrollingWave } from '../../studio/timeline';
 import { deckClockSec } from '../audio/deck-clock';
 import type { StudioAsset } from '../../studio/store';
 import { loopRegion, type DeckView } from '../deck-view';
@@ -50,6 +50,7 @@ export function DeckScrollingWave({ view, accent }: DeckScrollingWaveProps): JSX
       clipSourceStart={0}
       clipSourceLen={Math.max(1, deck.frames)}
       windowLen={windowLen}
+      bands={BAND_COLORS}
       playhead={deck.playhead}
       playing={deck.playing}
       auditioning={false}

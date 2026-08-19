@@ -149,6 +149,27 @@ describe('readEnvelope', () => {
     expect(out.rms[0]!).toBeGreaterThan(out.rms[63]! * 10);
   });
 
+  it('kolom membawa ketiga pita, dan pita mengikuti isi sinyalnya', () => {
+    // `data` di atas adalah sinus 0,05 rad/sample = ~382 Hz pada 48 kHz —
+    // pita TENGAH. Kolom yang keras harus oranye, kolom yang pelan harus ikut
+    // pelan di ketiga pita (bukan cuma di outline).
+    const out = allocColumns(64);
+    readEnvelope(env, 0, n, 64, out);
+    expect(out.mid[0]!).toBeGreaterThan(out.low[0]! * 2);
+    expect(out.mid[0]!).toBeGreaterThan(out.high[0]! * 2);
+    expect(out.mid[63]!).toBeLessThan(out.mid[0]! * 0.1);
+  });
+
+  it('agregasi pita antar lebar pixel juga eksak', () => {
+    const wide = allocColumns(64);
+    const narrow = allocColumns(32);
+    readEnvelope(env, 0, n, 64, wide);
+    readEnvelope(env, 0, n, 32, narrow);
+    for (let i = 0; i < 32; i += 1) {
+      expect(narrow.mid[i]!).toBeCloseTo(Math.max(wide.mid[2 * i]!, wide.mid[2 * i + 1]!), 5);
+    }
+  });
+
   it('striding oleh speedRatio: rentang source sama, lebar pixel terbagi ratio', () => {
     // Lane speedRatio 2 → clip.len = sourceLen / 2, jadi lebar layarnya separuh
     // untuk rentang source YANG SAMA. Tidak ada pyramid baru yang dibangun.
@@ -201,15 +222,87 @@ describe('asset dari import vs pemulihan', () => {
       expect(Array.from(a.min)).toEqual(Array.from(b.min));
       expect(Array.from(a.max)).toEqual(Array.from(b.max));
       expect(Array.from(a.rms)).toEqual(Array.from(b.rms));
+      expect(Array.from(a.low)).toEqual(Array.from(b.low));
+      expect(Array.from(a.mid)).toEqual(Array.from(b.mid));
+      expect(Array.from(a.high)).toEqual(Array.from(b.high));
     }
   });
 
-  it('jejak memori tetap ~0,21 byte per frame per channel', () => {
+  it('pita memisahkan sinus rendah, tengah, dan tinggi', () => {
+    // Satu sinus murni per pita, amplitudo sama. Yang diuji bukan angkanya —
+    // filter satu kutub bertingkat memang tidak datar — melainkan bahwa pita
+    // yang BENAR yang menang, karena itulah satu-satunya hal yang dibaca warna.
+    const tone = (hz: number): Float32Array => {
+      const n = 48000;
+      const d = new Float32Array(n);
+      for (let i = 0; i < n; i += 1) d[i] = Math.sin((2 * Math.PI * hz * i) / 48000);
+      return d;
+    };
+    // Puncak diambil lintas SEPARUH BELAKANG sinyal, bukan dari satu bucket.
+    // Dua sebab, keduanya bisa membalik hasil: bucket 64 sample hanya mencakup
+    // 8% dari satu putaran 60 Hz (jadi puncak satu bucket adalah titik acak di
+    // sinus, bukan amplitudonya), dan bucket-bucket awal masih berisi transien
+    // nyala filter yang bocor ke semua pita.
+    const at = (hz: number): { low: number; mid: number; high: number } => {
+      const l0 = buildEnvelope(pcm([tone(hz)])).levels[0]!;
+      const peak = (a: Float32Array): number => {
+        let m = 0;
+        for (let i = Math.floor(a.length / 2); i < a.length; i += 1) if (a[i]! > m) m = a[i]!;
+        return m;
+      };
+      return { low: peak(l0.low), mid: peak(l0.mid), high: peak(l0.high) };
+    };
+
+    const bass = at(60);
+    expect(bass.low).toBeGreaterThan(bass.mid * 3);
+    expect(bass.low).toBeGreaterThan(bass.high * 3);
+
+    const vocal = at(700);
+    expect(vocal.mid).toBeGreaterThan(vocal.low * 3);
+    expect(vocal.mid).toBeGreaterThan(vocal.high * 3);
+
+    const hat = at(9000);
+    expect(hat.high).toBeGreaterThan(hat.mid * 3);
+    expect(hat.high).toBeGreaterThan(hat.low * 3);
+  });
+
+  it('sunyi menghasilkan nol di ketiga pita, bukan NaN', () => {
+    const l0 = buildEnvelope(pcm([new Float32Array(64 * 4)])).levels[0]!;
+    for (const band of [l0.low, l0.mid, l0.high]) {
+      expect(Array.from(band)).toEqual([0, 0, 0, 0]);
+    }
+  });
+
+  it('puncak pita di level atas persis max dari anak-anaknya', () => {
+    const n = 4096 * 4;
+    const d = new Float32Array(n);
+    for (let i = 0; i < n; i += 1) {
+      d[i] = Math.sin((2 * Math.PI * 60 * i) / 48000) * (0.2 + 0.8 * (i / n));
+    }
+    const env = buildEnvelope(pcm([d]));
+    const [l0, l1] = [env.levels[0]!, env.levels[1]!];
+    const ratio = l1.bucket / l0.bucket;
+    for (let i = 0; i < l1.low.length; i += 1) {
+      let want = 0;
+      for (let k = 0; k < ratio; k += 1) {
+        const j = i * ratio + k;
+        if (j < l0.low.length && l0.low[j]! > want) want = l0.low[j]!;
+      }
+      // Eksak, bukan mendekati: agregasi max tidak boleh mendegradasi warna
+      // saat user menjauhkan zoom.
+      expect(l1.low[i]).toBe(want);
+    }
+  });
+
+  it('jejak memori tetap ~0,43 byte per frame per channel', () => {
     const frames = 48000 * 10;
     const env = buildEnvelope(pcm([new Float32Array(frames)]));
     const bytes = envelopeBytes(env);
-    // 12 B per bucket 64 sample = 0,1875 B/frame, + ~14% untuk level 1 & 2.
-    expect(bytes / frames).toBeGreaterThan(0.19);
-    expect(bytes / frames).toBeLessThan(0.23);
+    // 24 B per bucket 64 sample (min/max/rms + tiga pita) = 0,375 B/frame,
+    // + ~14% untuk level 1 & 2. Dua kali lipat versi monokrom — dan itu tetap
+    // ~160 × lebih kecil dari PCM-nya sendiri, yang membuat harganya tidak
+    // pernah jadi bahan pertimbangan.
+    expect(bytes / frames).toBeGreaterThan(0.38);
+    expect(bytes / frames).toBeLessThan(0.46);
   });
 });
