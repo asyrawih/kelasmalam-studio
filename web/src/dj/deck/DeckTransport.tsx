@@ -8,6 +8,8 @@
  *
  * `onPointerLeave` ikut melepas: kalau tidak, menggeser kursor keluar tombol
  * sambil menahan akan meninggalkan deck dalam keadaan "cue ditahan" selamanya.
+ *
+ * PLAY tidak ikut menyala selama cue ditahan — lihat `showPlaying` di bawah.
  */
 
 import type { DeckId, DeckState } from '../model';
@@ -21,6 +23,15 @@ export interface DeckTransportProps {
 
 export function DeckTransport({ deck, id, accent }: DeckTransportProps): JSX.Element {
   const empty = deck.assetId === null;
+
+  /*
+   * Selama CUE ditahan deck MEMANG berbunyi — tapi ia berhenti lagi begitu
+   * jari diangkat. Menyalakan PLAY seperti pemutaran biasa membuat satu klik
+   * CUE terlihat seperti dua tombol yang tertekan bersamaan: CUE menyala, PLAY
+   * berkedip jadi PAUSE, lalu keduanya balik. Yang ditampilkan tombol PLAY
+   * adalah keadaan yang akan BERTAHAN, bukan getaran sesaat selama preview.
+   */
+  const showPlaying = deck.playing && !deck.cueHeld;
 
   const base: React.CSSProperties = {
     flex: 1,
@@ -47,7 +58,7 @@ export function DeckTransport({ deck, id, accent }: DeckTransportProps): JSX.Ele
         onPointerDown={() => djActions.cuePress(id)}
         onPointerUp={() => djActions.cueRelease(id)}
         onPointerLeave={() => djActions.cueRelease(id)}
-        title="CUE — tekan saat diam untuk memasang titik, tahan untuk mendengarnya"
+        title="CUE — saat main: balik ke titik cue dan berhenti. Saat diam: pasang titik di sini; TAHAN untuk mendengarnya sebentar"
         style={{
           ...base,
           background: deck.cueHeld ? accent : 'var(--cy-surface-2)',
@@ -64,11 +75,11 @@ export function DeckTransport({ deck, id, accent }: DeckTransportProps): JSX.Ele
         title="putar / jeda"
         style={{
           ...base,
-          background: deck.playing ? accent : 'var(--cy-surface-2)',
-          color: deck.playing ? 'var(--cy-text-on-accent)' : accent,
+          background: showPlaying ? accent : 'var(--cy-surface-2)',
+          color: showPlaying ? 'var(--cy-text-on-accent)' : accent,
         }}
       >
-        {deck.playing ? '‖ PAUSE' : '▶ PLAY'}
+        {showPlaying ? '‖ PAUSE' : '▶ PLAY'}
       </button>
     </div>
   );
