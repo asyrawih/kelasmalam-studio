@@ -51,6 +51,20 @@ export interface ExportWorkerStart {
   /** Offset blok kontrol; dipakai membaca flag batal tanpa postMessage. */
   controlPtr: number;
   payload: ExportPayload;
+  /**
+   * PCM per asset (kunci = `assetId` padat, isi = satu array per channel).
+   *
+   * Dikirim terpisah karena `ExportPayload` sekarang hanya membawa keterangan
+   * asset — PCM-nya di jalur UI diambil langsung dari cache preview dan tidak
+   * pernah berwujud salinan di heap JS. Worker tidak punya akses ke cache itu,
+   * jadi di sini ia memang harus diseberangkan.
+   *
+   * CATATAN: `postMessage` menyalinnya (kecuali di-transfer), jadi jalur worker
+   * masih menahan satu salinan penuh. Itu belum diperbaiki karena jalur ini
+   * belum dipakai UI, dan perbaikannya bertaut dengan pemindahan `runCompile`
+   * keluar dari main thread.
+   */
+  assetPcm: Record<number, Float32Array[]>;
   sampleRate: number;
   format: 'wav' | 'mp3';
   bitDepth: 16 | 24 | 32;
@@ -137,6 +151,13 @@ async function run(m: ExportWorkerStart): Promise<void> {
 
   const result = await runExport({
     payload: m.payload,
+    pcm: (info) => {
+      const channels = m.assetPcm[info.assetId];
+      if (channels === undefined) {
+        throw new Error(`PCM asset ${info.assetId} tidak ikut dikirim ke worker export.`);
+      }
+      return channels;
+    },
     sampleRate: m.sampleRate,
     engine: createWasmExportEngine(wasm),
     encoder,

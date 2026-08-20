@@ -115,7 +115,7 @@ describe('insert chain FX', () => {
     studioActions.addFx(MASTER, 'comp');
     studioActions.setFxEnabled(MASTER, 0, false);
 
-    const payload = buildExportPayload(studioStore.getState(), noBuffer);
+    const { payload } = buildExportPayload(studioStore.getState(), noBuffer);
     const json = JSON.parse(payload.json) as {
       lanes: { chain: { kind: string; enabled: boolean; params: Record<string, number> }[] }[];
       masterChain: { kind: string; enabled: boolean }[];
@@ -167,7 +167,7 @@ describe('insert chain FX', () => {
     studioActions.addFx(clipTarget(c.id), 'filter');
     studioActions.setFxParam(clipTarget(c.id), 0, 'knob', -0.7);
 
-    const json = JSON.parse(buildExportPayload(studioStore.getState(), withBuffer).json) as {
+    const json = JSON.parse(buildExportPayload(studioStore.getState(), withBuffer).payload.json) as {
       lanes: { clips: { id: string; chain: { kind: string; params: Record<string, number> }[] }[] }[];
     };
     const emitted = json.lanes.flatMap((l) => l.clips).find((x) => x.id === c.id);

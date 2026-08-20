@@ -11,7 +11,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildExportPayload, flattenBuffer } from './payload';
+import { buildExportPayload } from './payload';
 import {
   ExportCancelled,
   runExport,
@@ -20,7 +20,7 @@ import {
   type RenderHandle,
 } from './run-export';
 import { BlobSink } from './sinks';
-import type { ExportPayload } from './payload';
+import type { ExportAssetSource, ExportPayload } from './payload';
 import type { StudioState } from '../model';
 
 /**
@@ -29,10 +29,10 @@ import type { StudioState } from '../model';
  * memasang `BlobSink` dan menyajikan hasilnya sebagai byte.
  */
 async function runToBytes(
-  opts: Omit<Parameters<typeof runExport>[0], 'sink'>,
+  opts: Omit<Parameters<typeof runExport>[0], 'sink' | 'pcm'> & { pcm?: ExportAssetSource },
 ): Promise<{ warnings: readonly string[]; frames: number; bytes: Uint8Array; blob: Blob }> {
   const sink = new BlobSink();
-  const r = await runExport({ ...opts, sink });
+  const r = await runExport({ pcm: fakePcm(), ...opts, sink });
   return { ...r, bytes: sink.bytes(), blob: sink.blob(opts.encoder.mime) };
 }
 
@@ -72,10 +72,12 @@ function fakeEngine(o: FakeEngineOpts = {}) {
     },
     outLPtr: () => 1000 + generation * 10_000,
     outRPtr: () => 2000 + generation * 10_000,
-    registerAsset: (id, data, channels, frames) => {
-      calls.push(`registerAsset(${id})`);
+    beginAsset: (id, channels, frames) => {
+      calls.push(`beginAsset(${id})`);
       registered.push({ id, frames, channels });
-      expect(data.length).toBeGreaterThan(0);
+      // Alamat palsu yang unik per asset; `view()` di bawah menerjemahkannya
+      // jadi buffer tersendiri supaya isinya bisa diperiksa.
+      return 100_000 + id * 10_000;
     },
     free: () => {
       calls.push('free');
@@ -134,11 +136,21 @@ function fakeEncoder(): ExportEncoder & { seen: Float32Array[][] } {
 const payload = (endSample = 384): ExportPayload => ({
   json: JSON.stringify({ sampleRate: 48_000, speed: 1, lanes: [] }),
   assets: [
-    { assetId: 0, data: new Float32Array(64), channels: 1, frames: 64, sampleRate: 48_000 },
-    { assetId: 3, data: new Float32Array(128), channels: 2, frames: 64, sampleRate: 48_000 },
+    { assetId: 0, channels: 1, frames: 64, sampleRate: 48_000 },
+    { assetId: 3, channels: 2, frames: 64, sampleRate: 48_000 },
   ],
   endSample,
 });
+
+/** Sumber PCM palsu yang mencatat asset mana saja yang benar-benar diminta. */
+function fakePcm(): ExportAssetSource & { asked: number[] } {
+  const asked: number[] = [];
+  const fn = (info: { assetId: number; channels: number; frames: number }) => {
+    asked.push(info.assetId);
+    return Array.from({ length: info.channels }, () => new Float32Array(info.frames).fill(0.5));
+  };
+  return Object.assign(fn, { asked });
+}
 
 const noYield = (): Promise<void> => Promise.resolve();
 
@@ -157,7 +169,7 @@ describe('runExport', () => {
 
     // Tanpa urutan ini engine merender senyap sempurna, tanpa error apa pun.
     const firstRender = f.calls.findIndex((c) => c.startsWith('render('));
-    const lastRegister = f.calls.map((c) => c.startsWith('registerAsset')).lastIndexOf(true);
+    const lastRegister = f.calls.map((c) => c.startsWith('beginAsset')).lastIndexOf(true);
     expect(lastRegister).toBeGreaterThanOrEqual(0);
     expect(lastRegister).toBeLessThan(firstRender);
     expect(f.registered.map((r) => r.id)).toEqual([0, 3]);
@@ -263,7 +275,7 @@ describe('runExport', () => {
       payload: {
         ...payload(),
         assets: [
-          { assetId: 0, data: new Float32Array(8), channels: 1, frames: 8, sampleRate: 44_100 },
+          { assetId: 0, channels: 1, frames: 8, sampleRate: 44_100 },
         ],
       },
       sampleRate: 48_000,
@@ -354,7 +366,7 @@ describe('buildExportPayload', () => {
   const lookup = (id: number): AudioBuffer | undefined => (id === 7 ? buffer(1024) : undefined);
 
   it('membuang clip tanpa PCM dan mengumpulkan asset sekali per id', () => {
-    const p = buildExportPayload(state(), lookup);
+    const { payload: p } = buildExportPayload(state(), lookup);
     const json = JSON.parse(p.json) as {
       lanes: { clips: { id: string; fadeCurve: string }[]; speedRatio: number }[];
     };
@@ -368,7 +380,8 @@ describe('buildExportPayload', () => {
     // di aplikasi sungguhan berbasis timestamp ~1.7e15) tidak muat di `u32`
     // milik engine dan akan ditolak saat snapshot dideserialisasi.
     expect(p.assets[0]).toMatchObject({ assetId: 0, channels: 2, frames: 1024 });
-    expect(p.assets[0]!.data.length).toBe(2048);
+    // Deskriptor saja: PCM-nya TIDAK ikut, dan itulah pokok perubahannya.
+    expect(p.assets[0]).not.toHaveProperty('data');
   });
 
   it('menomori ulang id asset besar ke rentang u32 yang rapat', () => {
@@ -381,7 +394,9 @@ describe('buildExportPayload', () => {
         },
       ],
     });
-    const p = buildExportPayload(s, (id: number) => (id === big ? buffer(1024) : undefined));
+    const { payload: p } = buildExportPayload(s, (id: number) =>
+      id === big ? buffer(1024) : undefined,
+    );
     const json = JSON.parse(p.json) as { lanes: { clips: { assetId: number }[] }[] };
 
     const ids = p.assets.map((a) => a.assetId);
@@ -395,14 +410,14 @@ describe('buildExportPayload', () => {
   });
 
   it('panjang output mengerut mengikuti RENDER speed', () => {
-    expect(buildExportPayload(state(), lookup).endSample).toBe(52_800);
-    expect(buildExportPayload(state({ renderSpeed: 2 }), lookup).endSample).toBe(26_400);
+    expect(buildExportPayload(state(), lookup).payload.endSample).toBe(52_800);
+    expect(buildExportPayload(state({ renderSpeed: 2 }), lookup).payload.endSample).toBe(26_400);
   });
 
   it('kecepatan TRANSPORT tidak mempengaruhi file yang dihasilkan', () => {
     // Dua angka yang sengaja dipisah: mendengarkan cepat untuk mencari titik
     // edit tidak boleh diam-diam mengubah kecepatan file yang di-export.
-    const fast = buildExportPayload(state({ speed: 2 }), lookup);
+    const { payload: fast } = buildExportPayload(state({ speed: 2 }), lookup);
     expect(fast.endSample).toBe(52_800);
     expect(JSON.parse(fast.json).speed).toBe(1);
   });
@@ -437,7 +452,7 @@ describe('buildExportPayload', () => {
         },
       ],
     });
-    const json = JSON.parse(buildExportPayload(s, lookup).json) as {
+    const json = JSON.parse(buildExportPayload(s, lookup).payload.json) as {
       lanes: { clips: { start: number; len: number; sourceStart: number }[] }[];
     };
     const clips = json.lanes[0]!.clips;
@@ -453,19 +468,7 @@ describe('buildExportPayload', () => {
     const muted = state({
       lanes: [{ ...state().lanes[0]!, mute: true }],
     });
-    expect(buildExportPayload(muted, lookup).endSample).toBe(0);
-  });
-});
-
-describe('flattenBuffer', () => {
-  it('menyusun channel BERURUTAN (planar), bukan interleaved', () => {
-    const flat = flattenBuffer(buffer(4, 2));
-    expect(flat.length).toBe(8);
-    // Channel 0 seluruhnya dulu, baru channel 1 — kontrak `registerAsset`.
-    expect(flat[0]).toBeCloseTo(0);
-    expect(flat[3]).toBeCloseTo(0.75);
-    expect(flat[4]).toBeCloseTo(1);
-    expect(flat[7]).toBeCloseTo(1.75);
+    expect(buildExportPayload(muted, lookup).payload.endSample).toBe(0);
   });
 });
 
@@ -499,18 +502,111 @@ describe('penjaga export senyap', () => {
   });
 });
 
+/**
+ * PCM diminta MALAS — satu asset per satu asset, dan hanya sesudah semua
+ * penjaga lolos.
+ *
+ * Dulu `buildExportPayload` meratakan SEMUA asset di muka dan menahannya di
+ * heap JS sampai export selesai: untuk project 4 lane × 27 menit itu 2,4 GiB,
+ * di samping 2,4 GiB yang sama di linear memory dan 2,4 GiB lagi di cache
+ * preview. Tiga salinan dari audio yang sama.
+ */
+describe('pengambilan PCM', () => {
+  it('meminta tiap asset tepat sekali, berpasangan dengan pendaftarannya', async () => {
+    const f = fakeEngine();
+    const pcm = fakePcm();
+
+    await runToBytes({
+      payload: payload(),
+      sampleRate: 48_000,
+      engine: f.engine,
+      encoder: fakeEncoder(),
+      pcm,
+      yieldToEventLoop: noYield,
+    });
+
+    expect(pcm.asked).toEqual([0, 3]);
+    expect(f.calls.filter((c) => c.startsWith('beginAsset'))).toEqual([
+      'beginAsset(0)',
+      'beginAsset(3)',
+    ]);
+  });
+
+  it('menyalin tiap channel ke alamat yang diberikan engine', async () => {
+    const f = fakeEngine();
+    const written: Array<{ ptr: number; len: number }> = [];
+    // `view()` di fake engine mengembalikan array baru tiap panggilan, jadi
+    // yang bisa diperiksa adalah PERMINTAANNYA: satu view seukuran seluruh
+    // asset, di alamat yang baru saja dikembalikan `beginAsset`.
+    const base = f.engine.view;
+    f.engine.view = (ptr, len) => {
+      written.push({ ptr, len });
+      return base(ptr, len);
+    };
+
+    await runToBytes({
+      payload: payload(),
+      sampleRate: 48_000,
+      engine: f.engine,
+      encoder: fakeEncoder(),
+      pcm: fakePcm(),
+      yieldToEventLoop: noYield,
+    });
+
+    // Dua asset: 1×64 dan 2×64 sample, di alamat dari `beginAsset`.
+    expect(written.slice(0, 2)).toEqual([
+      { ptr: 100_000, len: 64 },
+      { ptr: 130_000, len: 128 },
+    ]);
+  });
+
+  /**
+   * Dan ini janji yang selama ini tertulis di komentar penjaga tapi tidak
+   * ditepati: ia berjalan SESUDAH perataan selesai, jadi "gagal sebelum apa pun
+   * dialokasi" tidak pernah benar. Sekarang benar.
+   */
+  it('tidak menyentuh PCM sama sekali kalau penjaga menolak', async () => {
+    const f = fakeEngine();
+    // Asset di `payload()` butuh 768 byte; sisa 8 byte jelas tidak cukup.
+    f.engine.memoryHeadroomBytes = () => 8;
+    const pcm = fakePcm();
+
+    await expect(
+      runToBytes({
+        payload: payload(),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: fakeEncoder(),
+        pcm,
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toThrow(/terlalu besar/i);
+
+    expect(pcm.asked).toEqual([]);
+  });
+
+  it('menolak sumber yang memberi channel lebih sedikit dari yang dijanjikan', async () => {
+    const f = fakeEngine();
+    await expect(
+      runToBytes({
+        payload: payload(),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: fakeEncoder(),
+        // Asset kedua butuh 2 channel; sumber ini selalu memberi 1.
+        pcm: (info) => [new Float32Array(info.frames)],
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toThrow(/butuh 2/);
+  });
+});
+
 describe('penjaga muat-memori', () => {
   /** Payload dengan satu asset sebesar `frames` × `channels` sample. */
   const bigPayload = (frames: number, channels = 2): ExportPayload => ({
     json: JSON.stringify({ sampleRate: 48_000, speed: 1, lanes: [] }),
     assets: [
-      {
-        assetId: 0,
-        data: new Float32Array(frames * channels),
-        channels,
-        frames,
-        sampleRate: 48_000,
-      },
+      { assetId: 0, channels, frames, sampleRate: 48_000 },
     ],
     endSample: frames,
   });
@@ -531,11 +627,11 @@ describe('penjaga muat-memori', () => {
     ).rejects.toThrow(/terlalu besar/i);
 
     // Yang penting bukan cuma "melempar": tanpa ini kegagalannya terjadi di
-    // tengah registerAsset sebagai trap wasm, dengan OfflineRender yang sudah
+    // tengah beginAsset sebagai trap wasm, dengan OfflineRender yang sudah
     // berdiri dan tidak pernah di-free.
     expect(f.calls).not.toContain('free');
     expect(f.calls.some((c) => c.startsWith('createRender'))).toBe(false);
-    expect(f.calls.some((c) => c.startsWith('registerAsset'))).toBe(false);
+    expect(f.calls.some((c) => c.startsWith('beginAsset'))).toBe(false);
   });
 
   it('pesannya menyebut angka yang bisa ditindaklanjuti, bukan cuma "gagal"', async () => {
@@ -606,7 +702,7 @@ describe('error asli tidak tertimpa free()', () => {
       },
       outLPtr: () => 0,
       outRPtr: () => 0,
-      registerAsset: () => {},
+      beginAsset: () => 0,
       free: () => {
         throw new Error('attempted to take ownership of Rust value while it was borrowed');
       },
@@ -702,6 +798,7 @@ describe('runExport → sink', () => {
       engine: f.engine,
       encoder: fakeEncoder(),
       sink: r.sink,
+      pcm: fakePcm(),
       yieldToEventLoop: noYield,
     });
 
@@ -729,6 +826,7 @@ describe('runExport → sink', () => {
         engine: f.engine,
         encoder: fakeEncoder(),
         sink: r.sink,
+        pcm: fakePcm(),
         onProgress: () => {
           batches++;
         },
@@ -759,6 +857,7 @@ describe('runExport → sink', () => {
         engine: f.engine,
         encoder: enc,
         sink: r.sink,
+        pcm: fakePcm(),
         yieldToEventLoop: noYield,
       }),
     ).rejects.toThrow('encoder meledak');
@@ -786,6 +885,7 @@ describe('runExport → sink', () => {
         engine: f.engine,
         encoder: enc,
         sink: r.sink,
+        pcm: fakePcm(),
         yieldToEventLoop: noYield,
       }),
     ).rejects.toThrow(/terlalu panjang untuk format ini/);
@@ -807,6 +907,7 @@ describe('runExport → sink', () => {
         engine: f.engine,
         encoder: enc,
         sink: r.sink,
+        pcm: fakePcm(),
         yieldToEventLoop: noYield,
       }),
     ).resolves.toBeTruthy();

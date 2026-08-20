@@ -17,20 +17,47 @@
 import type { StudioState } from '../model';
 import { expandLoopClip } from '../timeline/clip-loop';
 
-export interface ExportAssetPcm {
+/**
+ * Keterangan satu asset — TANPA PCM-nya.
+ *
+ * Dulu bentuk ini membawa `data: Float32Array` yang sudah rata, dan
+ * `buildExportPayload` membuatnya untuk SEMUA asset sekaligus di muka. Untuk
+ * project 4 lane × 27 menit itu 2,4 GiB di heap JS, ditahan sampai export
+ * selesai, di samping 2,4 GiB yang sama di linear memory dan 2,4 GiB lagi di
+ * `AudioBuffer` cache preview — tiga salinan dari audio yang sama.
+ *
+ * Sekarang PCM-nya diambil satu per satu lewat [`ExportAssetSource`], tepat
+ * sebelum didaftarkan. Efek keduanya: penjaga memori bisa menolak project yang
+ * terlalu besar SEBELUM satu byte PCM pun berwujud — janji yang selama ini
+ * tertulis di komentarnya tapi tidak ditepati, karena ia berjalan sesudah
+ * perataan selesai.
+ */
+export interface ExportAssetInfo {
   readonly assetId: number;
-  /** Semua channel BERURUTAN: channel `c` mulai di `c * frames`. */
-  readonly data: Float32Array;
   readonly channels: number;
   readonly frames: number;
   readonly sampleRate: number;
 }
 
+/**
+ * Sumber PCM satu asset: satu `Float32Array` per channel.
+ *
+ * Dipanggil SEKALI per asset, sesaat sebelum PCM-nya disalin ke linear memory.
+ * Yang dikembalikan boleh berupa view ke penyimpanan milik orang lain
+ * (`AudioBuffer.getChannelData` memang begitu) — pemanggil hanya membacanya,
+ * dan membacanya selesai sebelum panggilan berikutnya.
+ *
+ * Sengaja BUKAN bagian dari [`ExportPayload`]: payload harus tetap bisa
+ * menyeberang `postMessage` ke worker export, dan fungsi tidak bisa
+ * di-structured-clone.
+ */
+export type ExportAssetSource = (info: ExportAssetInfo) => readonly Float32Array[];
+
 export interface ExportPayload {
   /** JSON untuk `snapshotFromStudioJson`. */
   readonly json: string;
-  /** PCM yang harus didaftarkan sebelum render. */
-  readonly assets: readonly ExportAssetPcm[];
+  /** Asset yang harus didaftarkan sebelum render — keterangannya saja. */
+  readonly assets: readonly ExportAssetInfo[];
   /** Panjang output (sample, ruang OUTPUT sesudah transport speed). */
   readonly endSample: number;
 }
@@ -39,31 +66,27 @@ export interface ExportPayload {
 export type BufferLookup = (assetId: number) => AudioBuffer | undefined;
 
 /**
- * Ratakan `AudioBuffer` jadi satu Float32Array planar.
- *
- * `getChannelData` mengembalikan view ke buffer internal; disalin karena data
- * ini menyeberang ke linear memory WASM dan tidak boleh berubah di tengah jalan.
- */
-export function flattenBuffer(buf: AudioBuffer): Float32Array {
-  const channels = Math.max(1, buf.numberOfChannels);
-  const frames = buf.length;
-  const out = new Float32Array(channels * frames);
-  for (let c = 0; c < channels; c++) out.set(buf.getChannelData(c), c * frames);
-  return out;
-}
-
-/**
  * Susun payload export dari state store.
  *
  * `endSample` dihitung di sini dan bukan di Rust karena UI sudah menampilkan
  * angka yang sama di kartu Compile — dua perhitungan berarti dua jawaban.
  */
-export function buildExportPayload(state: StudioState, getBuffer: BufferLookup): ExportPayload {
+export interface BuiltExportPayload {
+  readonly payload: ExportPayload;
+  /** PCM-nya, diambil belakangan satu per satu. */
+  readonly pcm: ExportAssetSource;
+}
+
+export function buildExportPayload(
+  state: StudioState,
+  getBuffer: BufferLookup,
+): BuiltExportPayload {
   // Kecepatan RENDER, bukan kecepatan transport: mengubah kecepatan saat
   // mendengarkan tidak boleh diam-diam mengubah kecepatan file yang dihasilkan.
   // Keduanya sengaja jadi dua angka terpisah di store.
   const speed = state.renderSpeed > 0 ? state.renderSpeed : 1;
-  const assets = new Map<number, ExportAssetPcm>();
+  /** Kunci = id UI; `assetId` di dalamnya id padat untuk engine. */
+  const assets = new Map<number, ExportAssetInfo>();
 
   /**
    * PENOMORAN ULANG ASSET: id UI → 0,1,2,… untuk engine.
@@ -102,9 +125,9 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
       const buf = getBuffer(clip.assetId);
       if (buf === undefined) return false;
       if (!assets.has(clip.assetId)) {
+        // Hanya keterangannya. PCM-nya tidak disentuh sampai `pcm()` dipanggil.
         assets.set(clip.assetId, {
           assetId: toDense(clip.assetId),
-          data: flattenBuffer(buf),
           channels: Math.max(1, buf.numberOfChannels),
           frames: buf.length,
           sampleRate: buf.sampleRate,
@@ -170,7 +193,28 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
     for (const c of lane.clips) endTimeline = Math.max(endTimeline, c.start + c.len);
   }
 
-  return {
+  // Balik arah pemetaannya: pemanggil `pcm()` hanya memegang id padat, dan
+  // `getBuffer` hanya mengenal id UI.
+  const uiIdByDense = new Map<number, number>();
+  for (const [uiId, info] of assets) uiIdByDense.set(info.assetId, uiId);
+
+  const pcm: ExportAssetSource = (info) => {
+    const uiId = uiIdByDense.get(info.assetId);
+    const buf = uiId === undefined ? undefined : getBuffer(uiId);
+    if (buf === undefined) {
+      // Bisa terjadi kalau cache preview dibuang di tengah export. Diam-diam
+      // melewatinya berarti file hasilnya senyap di bagian itu tanpa penjelasan.
+      throw new Error(
+        `PCM asset ${info.assetId} hilang dari cache preview saat export berjalan.`,
+      );
+    }
+    const channels = Math.max(1, buf.numberOfChannels);
+    // `getChannelData` mengembalikan view, bukan salinan — dan itu memang yang
+    // diinginkan: satu-satunya salinan terjadi saat menulis ke linear memory.
+    return Array.from({ length: channels }, (_, c) => buf.getChannelData(c));
+  };
+
+  const payload: ExportPayload = {
     json: JSON.stringify({
       sampleRate: state.sampleRate,
       speed,
@@ -187,6 +231,8 @@ export function buildExportPayload(state: StudioState, getBuffer: BufferLookup):
     assets: [...assets.values()],
     endSample: Math.round(endTimeline / speed),
   };
+
+  return { payload, pcm };
 }
 
 /**

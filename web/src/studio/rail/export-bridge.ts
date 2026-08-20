@@ -240,7 +240,9 @@ export async function runCompile(p: CompileParams): Promise<void> {
   wasmCache = wasm;
 
   const state = host.state();
-  const payload = buildExportPayload(state, host.getBuffer);
+  // PCM-nya TIDAK ikut di sini — `pcm` mengambilnya satu per satu saat
+  // pendaftaran, dari cache preview yang sama dengan yang didengar user.
+  const { payload, pcm } = buildExportPayload(state, host.getBuffer);
   if (payload.endSample <= 0 || payload.assets.length === 0) {
     throw new Error('Tidak ada clip dengan audio untuk di-render.');
   }
@@ -290,6 +292,7 @@ export async function runCompile(p: CompileParams): Promise<void> {
       engine: createWasmExportEngine(wasm),
       encoder,
       sink,
+      pcm,
       onProgress: p.onProgress,
       onWarnings: p.onWarnings,
       isCancelled: p.isCancelled,
