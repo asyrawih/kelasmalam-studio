@@ -214,10 +214,42 @@ SESSION_TTL_DAYS = "30"
 Yang rahasia **tidak pernah** ditulis di berkas:
 
 ```bash
+cd backend
 npx wrangler secret put GOOGLE_CLIENT_SECRET --config wrangler.library.toml
 npx wrangler secret put R2_ACCESS_KEY_ID     --config wrangler.library.toml
 npx wrangler secret put R2_SECRET_ACCESS_KEY --config wrangler.library.toml
 ```
+
+Tiap perintah meminta nilainya lewat prompt — tempel, Enter. Nilainya tidak
+muncul di layar, tidak masuk riwayat shell, dan tidak bisa dibaca kembali dari
+mana pun; yang bisa dilakukan nanti hanyalah menimpanya.
+
+Menempel dari pipe juga bisa, tapi ingat ia MASUK riwayat shell:
+
+```bash
+printf %s "$RAHASIA" | npx wrangler secret put GOOGLE_CLIENT_SECRET --config wrangler.library.toml
+```
+
+Periksa ketiganya terdaftar (namanya saja yang terlihat, bukan nilainya):
+
+```bash
+npx wrangler secret list --config wrangler.library.toml
+```
+
+> Kalau Worker-nya belum pernah di-deploy, wrangler akan menawarkan membuatnya
+> lebih dulu. Lebih rapi: `npm run deploy:library` sekali, baru pasang secret.
+
+**Untuk `wrangler dev` lokal, `secret put` tidak berlaku** — yang dibaca adalah
+berkas `backend/.dev.vars`:
+
+```bash
+cd backend
+cp .dev.vars.example .dev.vars     # lalu isi ketiga nilainya
+```
+
+`.dev.vars` diabaikan git. Untuk login lokal, daftarkan redirect URI KEDUA di
+Google Console (`http://localhost:8788/auth/callback`) — Google mencocokkannya
+persis, dan alamat produksi tidak berlaku untuk localhost.
 
 ### 3.6 Deploy + domain
 

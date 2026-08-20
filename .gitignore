@@ -35,6 +35,13 @@ Thumbs.db
 .vercel
 .env*
 
+# Secret untuk `wrangler dev` (backend/.dev.vars). Namanya TIDAK cocok dengan
+# pola .env* di atas, dan isinya persis hal yang paling tidak boleh ter-commit:
+# client secret Google dan kunci S3 R2. Lihat backend/.dev.vars.example.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
 # --- worktree Claude Code (folder kerja sementara, BUKAN isi repo) ---
 # Pernah ter-`git add -A` sebagai gitlink di ff0cebc dan muncul selamanya
 # sebagai "modified"; isinya sudah punya branch sendiri, tidak perlu dilacak.

@@ -1,0 +1,13 @@
+# Salin jadi `.dev.vars` (TANPA .example) untuk `npm run dev:library`.
+#
+# `.dev.vars` adalah tempat wrangler membaca secret saat berjalan lokal —
+# `wrangler secret put` hanya berlaku untuk Worker yang sudah di-deploy.
+# Berkasnya diabaikan git; yang ini boleh ikut karena tidak berisi nilai.
+#
+# Untuk login lokal, daftarkan JUGA redirect URI kedua di Google Console:
+#   http://localhost:8788/auth/callback
+# dan jalankan dengan API_ORIGIN yang menunjuk ke sana.
+
+GOOGLE_CLIENT_SECRET=""
+R2_ACCESS_KEY_ID=""
+R2_SECRET_ACCESS_KEY=""
