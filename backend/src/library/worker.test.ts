@@ -493,6 +493,33 @@ describe('projects', () => {
     expect(body.message).toContain('Set malam');
   });
 
+  it('hapus tidak memakai LIKE/GLOB D1 untuk mencari project pemakai', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    await call('/projects', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'Set malam', json: projectWith(HASH_A) }),
+    });
+
+    const original = env.DB;
+    env = {
+      ...env,
+      DB: {
+        prepare(sql) {
+          if (/\b(?:LIKE|GLOB)\b/i.test(sql)) {
+            throw new Error('LIKE or GLOB pattern too complex');
+          }
+          return original.prepare(sql);
+        },
+      },
+    };
+
+    const res = await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'MASIH_DIPAKAI' });
+  });
+
   it('project user lain tidak bisa dibaca, disimpan, atau dihapus', async () => {
     const ana = await login({ sub: 'sub-1', email: 'a@test', name: 'Ana' });
     const { id } = await (await call('/projects', {
