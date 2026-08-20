@@ -6,7 +6,7 @@
  * tanpa saling menyeret.
  */
 
-import { importBytesToLane, type DropResult } from './audio-import';
+import { importBytesToLane, type DropResult, type LaneImportOptions } from './audio-import';
 import { fetchAudioUrl } from './url-import';
 
 export async function importUrlToLane(
@@ -14,6 +14,7 @@ export async function importUrlToLane(
   laneId: string,
   startSamples: number,
   projectSampleRate: number,
+  opts: LaneImportOptions = {},
 ): Promise<DropResult> {
   const got = await fetchAudioUrl(text);
   if (!got.ok || got.bytes === undefined) {
@@ -25,5 +26,6 @@ export async function importUrlToLane(
     laneId,
     startSamples,
     projectSampleRate,
+    opts,
   );
 }

@@ -253,7 +253,7 @@ export function TimelinePanel(): JSX.Element {
     <div ref={cardRef} data-tl-card>
       <Card
         title="Timeline"
-        subtitle="drag = pilih area · spasi+drag = geser · scroll = zoom · dobel-klik clip = detail"
+        subtitle="klik lane kosong = pilih berkas · drag = pilih area · spasi+drag = geser · scroll = zoom · dobel-klik clip = detail"
         notched
         glow
       >
