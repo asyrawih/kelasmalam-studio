@@ -21,4 +21,12 @@ interface ImportMetaEnv {
    * `roblox/RobloxRoute.tsx`.
    */
   readonly VITE_ROBLOX_API?: string;
+  /**
+   * Basis URL Worker kepustakaan (`backend/`, `wrangler.library.toml`).
+   *
+   * Tanpa ini dok kepustakaan tetap tampil, tapi mengatakan bahwa ia belum
+   * dipasang — bukan menghilang. Build tanpa backend adalah keadaan yang sah:
+   * seluruh aplikasi berjalan penuh tanpa akun (docs/16 §6).
+   */
+  readonly VITE_LIBRARY_API?: string;
 }
