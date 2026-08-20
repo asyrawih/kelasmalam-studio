@@ -21,7 +21,105 @@ import { WASM_URLS } from './wasm-urls';
 import { SAB_SIZE } from './sab-layout';
 
 /** Harus sama dengan `daw_wasm::ABI_VERSION`. */
-export const EXPECTED_ABI_VERSION = 1;
+export const EXPECTED_ABI_VERSION = 2;
+
+/**
+ * Nama yang WAJIB ada di modul glue.
+ *
+ * # Kenapa daftar ini ada, padahal sudah ada cek ABI
+ *
+ * Cek ABI hanya menangkap apa yang cakupannya disebut sendiri: tanda tangan di
+ * `raw` dan layout SAB. Permukaan `bindgen` — fungsi dan kelas yang dipanggil
+ * kode ini — tidak pernah masuk hitungan, jadi menambah export baru tidak
+ * pernah menaikkan `ABI_VERSION` dan artefak lama tetap dianggap sah.
+ *
+ * Akibatnya nyata dan sudah terjadi dua kali: artefak yang dibangun sebelum
+ * sebuah fungsi ditambahkan tetap lolos cek ABI, lalu meledak jauh belakangan
+ * dengan `wasm.exports.assetBytesLive is not a function` — di tengah export,
+ * dengan kalimat yang tidak menyebut artefak sama sekali. Artefak WASM tidak
+ * dilacak git (`.gitignore` memuat `/web/src/wasm/`), jadi `git pull` tidak
+ * pernah membawanya dan tidak ada satu pun sinyal bahwa ia perlu dibangun ulang.
+ *
+ * Daftar ini diperiksa SEBELUM apa pun dipakai, dan kegagalannya menyebut nama
+ * yang hilang berikut perintah yang harus dijalankan.
+ */
+export const REQUIRED_EXPORTS = [
+  'initSync',
+  'initNonRealtime',
+  'abiVersion',
+  'allocControlBlock',
+  'controlBlockSize',
+  'buildHasAtomics',
+  'buildHasSimd',
+  'assetBytesLive',
+  'assetBytesPeak',
+  'importFromPcm',
+  'snapshotFromStudioJson',
+  'fxCatalogJson',
+  'paramMapJson',
+  'OfflineRender',
+  'WavEncoderHandle',
+  'WavBits',
+  'FlacEncoderHandle',
+  'FlacBitsJs',
+] as const;
+
+/**
+ * Method yang wajib ada di prototype kelas yang diekspor.
+ *
+ * Memeriksa nama tingkat atas saja TIDAK cukup: `beginAsset` adalah method di
+ * `OfflineRender`, jadi artefak yang masih memakai `registerAsset` lama akan
+ * lolos daftar di atas dengan mulus dan baru gagal saat asset pertama
+ * didaftarkan — persis bentuk kegagalan yang dicoba dicegah di sini.
+ */
+export const REQUIRED_METHODS: Readonly<Record<string, readonly string[]>> = {
+  OfflineRender: [
+    'beginAsset',
+    'render',
+    'totalFrames',
+    'renderedFrames',
+    'outLPtr',
+    'outRPtr',
+    'outCapacity',
+    'free',
+  ],
+  WavEncoderHandle: ['header', 'maxFrames', 'encode', 'flush', 'patchHeader', 'free'],
+  FlacEncoderHandle: ['header', 'encode', 'flush', 'patchHeader', 'free'],
+};
+
+/**
+ * Pastikan artefak menyediakan seluruh permukaan yang dipakai kode ini.
+ *
+ * Dilakukan sebelum instantiate: kegagalannya harus muncul sebagai satu kalimat
+ * yang bisa ditindaklanjuti, bukan sebagai `undefined is not a function` di
+ * kedalaman jalur export beberapa menit kemudian.
+ */
+export function assertArtifactSurface(glue: unknown): void {
+  const mod = (glue ?? {}) as Record<string, unknown>;
+  const missing: string[] = [];
+
+  for (const name of REQUIRED_EXPORTS) {
+    if (mod[name] === undefined) missing.push(name);
+  }
+  for (const [className, methods] of Object.entries(REQUIRED_METHODS)) {
+    const ctor = mod[className];
+    // Kelas yang hilang sudah dilaporkan di atas; jangan melaporkannya dua kali
+    // sebagai belasan method yang hilang.
+    if (typeof ctor !== 'function') continue;
+    const proto = (ctor as { prototype?: Record<string, unknown> }).prototype;
+    if (proto === undefined) continue;
+    for (const m of methods) {
+      if (proto[m] === undefined) missing.push(`${className}.${m}`);
+    }
+  }
+
+  if (missing.length === 0) return;
+  throw new Error(
+    `Artefak WASM lebih lama daripada kodenya: ${missing.length} nama yang dibutuhkan ` +
+      `tidak ada di glue (${missing.join(', ')}). Artefak di \`web/src/wasm/\` tidak ` +
+      'dilacak git, jadi `git pull` tidak membawanya. Jalankan `pnpm build:wasm`.',
+  );
+}
 
 /** 16 MiB awal: engine + scratch. Growth hanya terjadi saat import asset. */
 const MEMORY_INITIAL_PAGES = 256;
@@ -422,6 +520,10 @@ async function doLoad(): Promise<LoadedWasm> {
   // ditangani UI (tombol di-disable + tooltip), bukan error merah di console.
   const bytes = await fetchWasmBytes(wasmUrl);
   const glue = (await import(/* @vite-ignore */ glueUrl)) as WasmBindgenExports;
+  // SEBELUM instantiate, dan sebelum satu pun fungsi dipanggil: artefak yang
+  // lebih lama daripada kodenya harus gagal di sini, dengan nama yang hilang
+  // dan perintah yang harus dijalankan.
+  assertArtifactSurface(glue);
 
   const module = await WebAssembly.compile(bytes);
 
