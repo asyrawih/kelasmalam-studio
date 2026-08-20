@@ -42,6 +42,10 @@ export interface LibraryBrowserProps {
   readonly onSave: () => void | Promise<void>;
   readonly onOpen: (id: string, name: string, version: number) => void | Promise<void>;
   readonly onDeleteProject: (id: string, name: string) => void | Promise<void>;
+  readonly onRename: (id: string, name: string) => void | Promise<void>;
+  /** Nama yang dipakai saat menyimpan project BARU. */
+  readonly onSaveName: (name: string) => void;
+  readonly saveName: string;
   readonly busy: boolean;
 }
 
@@ -73,6 +77,9 @@ export function LibraryBrowser({
   onSave,
   onOpen,
   onDeleteProject,
+  onRename,
+  onSaveName,
+  saveName,
   busy,
 }: LibraryBrowserProps): JSX.Element {
   const pilih = useCallback(
@@ -143,6 +150,23 @@ export function LibraryBrowser({
         ) : null}
 
         <div style={{ display: 'grid', gap: '6px', marginTop: '2px' }}>
+          {state.openProject === null ? (
+            /*
+             * Nama project baru diketik SEBELUM menyimpan, bukan dikarang dari
+             * `projectName` di state. Yang di sana adalah nama demo bawaan, dan
+             * project pertama siapa pun akan bernama sama — lalu yang kedua
+             * juga, dan daftarnya jadi tiga baris berjudul identik.
+             */
+            <input
+              className="cy-focusable"
+              value={saveName}
+              placeholder="nama project baru"
+              aria-label="nama project baru"
+              disabled={busy}
+              onChange={(e) => onSaveName(e.target.value)}
+              style={FIELD}
+            />
+          ) : null}
           <Button size="sm" disabled={busy} onClick={() => void onSave()}>
             {state.openProject === null ? 'SIMPAN JADI PROJECT' : 'SIMPAN PROJECT'}
           </Button>
@@ -157,11 +181,17 @@ export function LibraryBrowser({
       {/* ── Panel kanan: lagu ────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gap: '6px', minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <div style={LABEL}>
-            {selected === null
-              ? 'LAGU'
-              : (state.projects.find((p) => p.id === selected)?.name ?? 'PROJECT')}
-          </div>
+          {selected === null ? (
+            <div style={LABEL}>LAGU</div>
+          ) : (
+            <RenameField
+              key={selected}
+              id={selected}
+              name={state.projects.find((p) => p.id === selected)?.name ?? ''}
+              busy={busy}
+              onRename={onRename}
+            />
+          )}
           {selected === null ? null : (
             <ProjectActions
               id={selected}
@@ -220,6 +250,16 @@ const LABEL: React.CSSProperties = {
   color: 'var(--cy-text-muted)',
 };
 
+const FIELD: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--cy-surface-2)',
+  color: 'var(--cy-text)',
+  border: '1px solid var(--cy-border)',
+  fontFamily: 'var(--cy-font-mono)',
+  fontSize: '10px',
+  padding: '5px 7px',
+};
+
 const CELL: React.CSSProperties = {
   fontSize: '10px',
   color: 'var(--cy-text-dim)',
@@ -270,6 +310,56 @@ function SideItem({
       </span>
       <span style={{ fontSize: '9px', color: 'var(--cy-text-muted)' }}>{meta}</span>
     </button>
+  );
+}
+
+/**
+ * Nama project yang bisa disunting di tempat.
+ *
+ * Tombol GANTI NAMA baru muncul kalau namanya BENAR-BENAR berubah — tombol yang
+ * selalu ada mengundang penekanan yang tidak melakukan apa-apa, dan tiap
+ * penekanan itu tetap dua permintaan ke server.
+ *
+ * `key={selected}` di pemanggil membuat komponen ini lahir ulang saat project
+ * lain dipilih; tanpa itu, nama yang sedang diketik terbawa ke project
+ * berikutnya dan yang tersimpan bisa jadi nama project yang salah.
+ */
+function RenameField({
+  id,
+  name,
+  busy,
+  onRename,
+}: {
+  readonly id: string;
+  readonly name: string;
+  readonly busy: boolean;
+  readonly onRename: (id: string, name: string) => void | Promise<void>;
+}): JSX.Element {
+  const [draft, setDraft] = useState(name);
+  const berubah = draft.trim() !== '' && draft.trim() !== name;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+      <input
+        className="cy-focusable"
+        value={draft}
+        aria-label="nama project"
+        disabled={busy}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && berubah) void onRename(id, draft.trim());
+          // Escape mengembalikan yang tersimpan — jalan keluar dari ketikan
+          // yang sudah telanjur, tanpa harus menghapusnya huruf per huruf.
+          if (e.key === 'Escape') setDraft(name);
+        }}
+        style={{ ...FIELD, width: '200px', fontSize: '11px' }}
+      />
+      {berubah ? (
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void onRename(id, draft.trim())}>
+          GANTI NAMA
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
