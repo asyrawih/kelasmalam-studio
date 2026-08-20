@@ -28,6 +28,7 @@
 import { importBytesToAsset } from '../studio/timeline/audio-import';
 import { studioStore } from '../studio/store';
 import type { LibraryApi } from './api';
+import { applyMarks } from './marks';
 import { libraryActions, libraryStore } from './store';
 import type { LibraryTrack } from './model';
 
@@ -56,6 +57,10 @@ export async function loadTrack(api: LibraryApi, track: LibraryTrack): Promise<L
     }
 
     libraryActions.markLoaded(track.hash, got.assetId);
+    // Cue dan koreksi grid dipasang SESUDAH asetnya terdaftar: di situlah
+    // `assetId`-nya baru ada, dan `setAssetBeatGrid` menolak asset yang belum
+    // dikenal store.
+    applyMarks(got.assetId, track.marks);
     return { ok: true, assetId: got.assetId, cached: false };
   } catch (err: unknown) {
     libraryActions.clearProgress(track.hash);
