@@ -236,8 +236,21 @@ jobs:
       # `npx tsc --noEmit` terpisah tepat di atas baris ini, jadi seluruh
       # typecheck jalan DUA KALI tiap run — satu-satunya bedanya, yang kedua
       # dijalankan lewat npm.
+      # Alamat backend ditanam Vite SAAT BUILD, dan build-nya terjadi DI SINI —
+      # bukan di Vercel. Mengisinya di dashboard Vercel tidak berpengaruh apa
+      # pun: yang dikirim ke sana adalah hasil build yang sudah jadi
+      # (`vercel deploy --prebuilt`), dan variabel yang datang belakangan tidak
+      # bisa masuk ke berkas yang sudah ditulis.
+      #
+      # Repository *variables* (bukan secrets): keduanya URL publik yang muncul
+      # di setiap permintaan browser. Yang belum diisi jadi string kosong, dan
+      # aplikasi menanganinya dengan jujur — halaman /roblox berkata UI ONLY,
+      # dok kepustakaan berkata BELUM DIPASANG.
       - name: Typecheck + build
         working-directory: web
+        env:
+          VITE_ROBLOX_API: ${{ vars.VITE_ROBLOX_API }}
+          VITE_LIBRARY_API: ${{ vars.VITE_LIBRARY_API }}
         run: npm run build
 
       # Hasil build dipakai apa adanya oleh job deploy. Membangunnya ulang di
