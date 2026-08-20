@@ -3,12 +3,13 @@
  *
  * Bug yang dijaga: lagu yang diimpor di halaman `/dj` tidak duduk di lane mana
  * pun, sehingga definisi lama "terpakai" (`lanes.flatMap(...)`) tidak
- * melihatnya, dan autosave Studio berikutnya menghapus byte-nya dari IndexedDB.
- * User baru menyadarinya setelah refresh, di halaman yang bahkan tidak sedang
- * terbuka saat penghapusan terjadi.
+ * melihatnya — dan apa pun yang memangkas atas dasar itu membuang lagu yang
+ * sedang duduk di deck. Pemangkas otomatisnya sudah tidak ada, tapi jalur
+ * simpan eksplisit menanyakan himpunan yang persis sama, dan jawaban yang
+ * kurang di sana berarti lagu yang tidak ikut ter-upload.
  *
- * Sengaja MURNI — tanpa IndexedDB dan tanpa timer. Yang diuji adalah
- * himpunannya, bukan penulisan ke DB.
+ * Sengaja MURNI — tanpa penyimpanan dan tanpa timer. Yang diuji adalah
+ * himpunannya.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';

@@ -1,28 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 
 /**
- * Regresi: `decodeAudioData` men-detach ArrayBuffer yang diberikan padanya.
- * Kalau buffer yang sama lalu disimpan ke IndexedDB, yang tersimpan berukuran
- * 0 — project "tersimpan" tapi audionya hilang, dan itu baru ketahuan setelah
- * refresh. Tes ini mensimulasikan detach dan memastikan byte yang disimpan
- * masih utuh.
+ * Regresi: `decodeAudioData` men-*detach* ArrayBuffer yang diberikan padanya.
+ *
+ * Dulu gejalanya adalah byte berukuran 0 yang tersimpan ke IndexedDB — project
+ * "tersimpan" dengan audio KOSONG, dan baru ketahuan setelah refresh.
+ * Penyimpanan itu sudah dibuang, tapi invariannya TIDAK ikut hilang: buffer
+ * yang diserahkan ke `importBytesToLane` adalah MILIK PEMANGGIL, dan pemanggil
+ * berikutnya — jalur simpan/upload kepustakaan — akan membutuhkannya utuh.
+ * Kalau `.slice(0)` di `importBytesToAsset` hilang lagi, yang diterima jalur
+ * itu adalah berkas kosong tanpa satu pun tanda bahwa ada yang salah.
  */
-const saved: { id: number; name: string; bytes: ArrayBuffer }[] = [];
-
-vi.mock('../persist/db', () => ({
-  saveAsset: (a: { id: number; name: string; bytes: ArrayBuffer }) => {
-    saved.push(a);
-    return Promise.resolve(true);
-  },
-}));
-
 vi.mock('../preview/audio-preview', () => ({
   ensureContext: () => ({
     sampleRate: 48_000,
     // Meniru perilaku browser: buffer yang masuk dianggap habis terpakai.
     decodeAudioData: (buf: ArrayBuffer) => {
-      // jsdom tidak bisa benar-benar men-detach; tandai dengan menolak
-      // pemakaian ulang lewat pencatatan identitas.
+      // jsdom tidak bisa benar-benar men-detach; tandai dengan mencatat
+      // identitas buffer yang dipakai decode.
       decodedFrom.push(buf);
       const data = new Float32Array(48_000);
       return Promise.resolve({
@@ -38,8 +33,8 @@ vi.mock('../preview/audio-preview', () => ({
 
 const decodedFrom: ArrayBuffer[] = [];
 
-describe('import tidak boleh menyimpan buffer yang sudah dipakai decode', () => {
-  it('byte yang disimpan BUKAN objek yang sama dengan yang di-decode', async () => {
+describe('import tidak boleh men-decode langsung dari buffer pemanggil', () => {
+  it('yang di-decode adalah SALINAN, bukan ArrayBuffer yang diserahkan', async () => {
     const { importBytesToLane } = await import('./audio-import');
     const { studioActions, studioStore } = await import('../store');
     studioActions.__resetForTest('empty');
@@ -53,9 +48,9 @@ describe('import tidak boleh menyimpan buffer yang sudah dipakai decode', () => 
     const r = await importBytesToLane(bytes.buffer, 'x.wav', laneId, 0, 48_000);
     expect(r.ok).toBe(true);
 
-    expect(saved).toHaveLength(1);
-    expect(saved[0]!.bytes.byteLength).toBe(64);
-    // Inilah intinya: decode memakai SALINAN, bukan buffer yang disimpan.
-    expect(decodedFrom[0]).not.toBe(saved[0]!.bytes);
+    expect(decodedFrom).toHaveLength(1);
+    // Inilah intinya: decode memakai salinan, jadi milik pemanggil masih utuh.
+    expect(decodedFrom[0]).not.toBe(bytes.buffer);
+    expect(bytes.buffer.byteLength).toBe(64);
   });
 });

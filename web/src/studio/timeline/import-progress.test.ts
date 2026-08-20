@@ -13,8 +13,6 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../persist/db', () => ({ saveAsset: () => Promise.resolve(true) }));
-
 vi.mock('../preview/audio-preview', () => ({
   ensureContext: () => ({
     sampleRate: 48_000,

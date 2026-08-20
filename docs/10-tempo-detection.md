@@ -90,7 +90,7 @@ yang sama (155.32 / 155.10 dan 134.99 / 135.10 / 135.05 / 135.07).
   disimpan per asset.
 - **Belum ada beatgrid.** `beat_offset_sec` sudah dihitung dan dikembalikan,
   tapi belum ada yang menggambarnya. Itu bahan untuk snap-to-beat.
-- **Tempo tidak ikut disimpan ke IndexedDB.** Yang disimpan hanya byte file
-  asli, jadi tempo dianalisis ulang saat refresh. Menyimpan hasil turunan
-  berarti satu bentuk data lagi yang bisa basi terhadap perbaikan algoritma,
-  dan biayanya cuma ratusan milidetik di worker.
+- **Tempo tidak ikut disimpan.** Yang disimpan (nanti, lewat kepustakaan
+  eksplisit) hanya byte file asli, jadi tempo dianalisis ulang tiap kali lagunya
+  dimuat. Menyimpan hasil turunan berarti satu bentuk data lagi yang bisa basi
+  terhadap perbaikan algoritma, dan biayanya cuma ratusan milidetik di worker.

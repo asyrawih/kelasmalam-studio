@@ -150,9 +150,9 @@ describe('DjPage', () => {
   });
 
   it('tombol hapus di Collection butuh DUA gerakan, bukan satu', () => {
-    // Menghapus lagu tidak bisa dibatalkan — byte aslinya ikut hilang dari
-    // IndexedDB. Satu klik yang langsung menghapus adalah satu salah-klik yang
-    // membuang berkas untuk selamanya.
+    // Menghapus lagu tidak bisa dibatalkan — lagunya lenyap dari sesi ini
+    // beserta cue-nya. Satu klik yang langsung menghapus adalah satu salah-klik
+    // yang membuang pekerjaan tanpa langkah kedua.
     act(() => studioActions.registerAsset(fakeAsset(9)));
     render(<DjPage />);
 

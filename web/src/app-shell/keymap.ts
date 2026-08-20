@@ -12,12 +12,13 @@
  * ketahuan saat dua binding kebetulan diadu — dan sampai saat itu salah satunya
  * diam-diam kalah.
  *
- * ## Kenapa localStorage, bukan IndexedDB
+ * ## Kenapa localStorage
  *
- * Sisa aplikasi memakai IndexedDB, dan itu benar untuk audio dan project. Tapi
- * keymap dibaca **sebelum render pertama** supaya daftar shortcut tidak
- * berkedip dari bawaan ke milik user. IndexedDB asinkron; localStorage sinkron
- * dan cukup untuk beberapa ratus byte preferensi.
+ * Keymap dibaca **sebelum render pertama** supaya daftar shortcut tidak
+ * berkedip dari bawaan ke milik user, dan localStorage sinkron. Ini juga
+ * satu-satunya yang tersisa di penyimpanan browser: audio dan project TIDAK
+ * lagi disimpan lokal (lihat `studio/persist/persistence.ts`) — beberapa ratus
+ * byte preferensi tidak butuh backend, puluhan MB audio butuh.
  */
 
 import { getCommand, listCommands } from './command';

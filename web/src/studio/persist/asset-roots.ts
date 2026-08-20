@@ -10,10 +10,11 @@
  * Sejak halaman `/dj` ada, itu tidak lagi benar: deck DJ memegang lagu **tanpa
  * satu pun clip**. Tanpa daftar ini, pemangkas mana pun yang memakai jawaban
  * naif itu akan menghapus data user tanpa satu pun pesan — import lagu di
- * `/dj` → byte-nya dipangkas dari IndexedDB → refresh → deck kosong tanpa
- * penjelasan. (Pemangkas otomatisnya sendiri sudah dibuang bersama autosave;
- * daftar ini tetap ada karena jalur simpan eksplisit yang menggantikannya
- * menanyakan hal yang persis sama.)
+ * `/dj` → byte-nya tidak dianggap terpakai → hilang tanpa penjelasan.
+ * (Pemangkas otomatisnya sendiri sudah dibuang bersama autosave, dan
+ * penyimpanan lokalnya menyusul; daftar ini tetap ada karena jalur simpan
+ * eksplisit yang menggantikannya menanyakan hal yang persis sama — "lagu mana
+ * yang harus ikut ter-upload".)
  *
  * ## Kenapa pendaftarannya di lingkup MODUL, bukan di `useEffect`
  *

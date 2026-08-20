@@ -1,22 +1,24 @@
 /**
  * Bentuk project yang bisa disimpan, dan cara memulihkannya kembali.
  *
- * TIDAK ADA SIMPAN OTOMATIS DI SINI, dan itu keputusan. Versi sebelumnya
- * berlangganan ke store dan menulis ke IndexedDB 600 ms setelah perubahan apa
- * pun — tiap geser clip, tiap tarik fade. Setiap penulisan itu memanggil
- * `pruneAssets`, yang membaca ULANG byte terenkode SELURUH asset lewat
- * `getAll()` hanya untuk mengetahui kunci mana yang masih dipakai. Dengan satu
- * lagu 27 menit di kepustakaan, itu puluhan MB yang di-deserialize lalu dibuang
- * setiap kali tangan user bergerak — dan itulah lag yang terasa terus-menerus
- * di studio, bukan hanya saat import.
+ * TIDAK ADA SIMPAN OTOMATIS DI SINI, DAN TIDAK ADA PENYIMPANAN LOKAL SAMA
+ * SEKALI. Versi sebelumnya berlangganan ke store dan menulis ke IndexedDB
+ * 600 ms setelah perubahan apa pun — tiap geser clip, tiap tarik fade. Setiap
+ * penulisan itu membaca ULANG byte terenkode SELURUH asset hanya untuk
+ * mengetahui kunci mana yang masih dipakai. Dengan satu lagu 27 menit di
+ * kepustakaan, itu puluhan MB yang di-deserialize lalu dibuang setiap kali
+ * tangan user bergerak — dan itulah lag yang terasa terus-menerus di studio.
+ * Pemicunya sudah dibuang lebih dulu; sekarang lapisan IndexedDB-nya ikut.
  *
- * Penggantinya bukan autosave yang lebih murah, melainkan penyimpanan yang
- * EKSPLISIT: user menyimpan project ke kepustakaannya sendiri (rencananya
- * di-upload ke object storage lewat backend). Fungsi di bawah — `serialize`,
- * `deserialize`, `normalizeLanes`, `restoreProject`, `assetsInUse` — adalah
- * bahan untuk jalur itu dan sengaja dipertahankan utuh; yang dibuang hanya
- * pemicunya. Konsekuensi yang harus disebut terang-terangan: sampai jalur simpan
- * itu ada, project TIDAK bertahan melewati refresh.
+ * Penggantinya penyimpanan yang EKSPLISIT: user menyimpan project ke
+ * kepustakaannya sendiri, yang di-upload ke object storage lewat backend.
+ * Fungsi di bawah — `serialize`, `deserialize`, `normalizeLanes`,
+ * `restoreProject`, `assetsInUse` — adalah bahan untuk jalur itu dan sengaja
+ * dipertahankan; yang dibuang adalah SUMBERNYA, bukan bentuk datanya.
+ * `restoreProject` karena itu menerima JSON dan byte dari pemanggil alih-alih
+ * membacanya sendiri: dari mana byte itu datang bukan urusan modul ini.
+ * Konsekuensi yang harus disebut terang-terangan: sampai jalur simpan itu ada,
+ * project TIDAK bertahan melewati refresh.
  *
  * Bentuk yang disimpan sengaja hanya berisi hal yang MERUPAKAN PROJECT.
  * State transien (sedang play, sedang drag, clipboard, progress export, status
@@ -36,7 +38,6 @@ import { normalizeClipLoop } from '../timeline/clip-loop';
 import { normalizeClipFade } from '../timeline/fade';
 import { normalizeClipStem } from '../timeline/stem';
 import { collectAssetRoots } from './asset-roots';
-import { loadAllAssets, loadProjectJson } from './db';
 
 /** Naikkan kalau bentuk data berubah dan yang lama tidak bisa dibaca lagi. */
 const SCHEMA_VERSION = 1;
@@ -197,26 +198,37 @@ export interface RestoreResult {
   readonly missingAssets: number;
 }
 
+/** Satu asset sebagaimana ia disimpan: byte file ASLI, bukan PCM. */
+export interface StoredAssetBytes {
+  readonly id: number;
+  readonly name: string;
+  readonly bytes: ArrayBuffer;
+}
+
 /**
  * Pulihkan project + decode ulang audionya.
  *
- * `decodeAsset` disuntikkan (bukan diimpor langsung) supaya modul ini bisa
+ * `json` dan `assets` datang DARI PEMANGGIL, bukan dibaca sendiri. Modul ini
+ * tidak boleh punya pendapat tentang tempat penyimpanan: yang dulu IndexedDB
+ * akan menjadi backend, dan satu-satunya hal yang tetap benar di kedua dunia
+ * adalah bentuk datanya.
+ *
+ * `decodeAsset` juga disuntikkan (bukan diimpor langsung) supaya modul ini bisa
  * dites tanpa Web Audio.
  */
 export async function restoreProject(
+  json: string,
+  assets: readonly StoredAssetBytes[],
   decodeAsset: (id: number, name: string, bytes: ArrayBuffer) => Promise<boolean>,
 ): Promise<RestoreResult> {
-  const json = await loadProjectJson();
-  if (json === null) return { restored: false, missingAssets: 0 };
   const data = deserialize(json);
   if (data === null) return { restored: false, missingAssets: 0 };
 
   // Audio dipulihkan LEBIH DULU, baru state. Kalau urutannya dibalik, UI
   // sempat menggambar clip yang asetnya belum ada dan waveform-nya berkedip
   // dari mock ke bentuk asli.
-  const stored = await loadAllAssets();
   let missing = 0;
-  for (const a of stored) {
+  for (const a of assets) {
     const ok = await decodeAsset(a.id, a.name, a.bytes);
     if (!ok) missing += 1;
   }
@@ -263,11 +275,11 @@ export async function restoreProject(
 /**
  * Himpunan asset yang MASIH DIPAKAI: clip di lane ∪ semua akar terdaftar.
  *
- * Fungsi terpisah dan diekspor supaya bisa dites tanpa IndexedDB. Yang bisa
- * salah diam-diam di sini adalah HIMPUNANNYA, bukan penulisan ke DB — dan
- * bug-nya berbentuk data user yang hilang, yaitu kelas bug yang paling mahal
- * untuk ditemukan dari layar. Sekarang ia menjawab "apa yang perlu ikut
- * disimpan/di-upload", bukan lagi "apa yang boleh dipangkas".
+ * Fungsi terpisah dan diekspor supaya bisa dites tanpa penyimpanan apa pun.
+ * Yang bisa salah diam-diam di sini adalah HIMPUNANNYA — dan bug-nya berbentuk
+ * data user yang hilang, yaitu kelas bug yang paling mahal untuk ditemukan dari
+ * layar. Ia menjawab "apa yang perlu ikut disimpan/di-upload", bukan lagi "apa
+ * yang boleh dipangkas".
  *
  * Akar didaftarkan lewat `asset-roots.ts`; halaman `/dj` memakainya untuk
  * lagu yang duduk di deck tanpa satu pun clip.

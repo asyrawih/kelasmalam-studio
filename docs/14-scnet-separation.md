@@ -300,8 +300,9 @@ Urutan mundurnya, dari yang paling menjaga arsitektur:
 
 Repo ini justru termasuk yang **paling siap** menerima SCNet, karena hal paling
 sulitnya — cross-origin isolation, SharedArrayBuffer, worker pool, job offline
-yang menghasilkan asset, penyimpanan IndexedDB — semuanya sudah ada dan sudah
-dipakai. Yang tersisa adalah 44,5 MB unduhan, satu worker, satu FFT, dan
+yang menghasilkan asset — semuanya sudah ada dan sudah dipakai. (Penyimpanan
+lokalnya tidak: IndexedDB sudah dibuang, dan hasil pemisahan ikut aturan yang
+sama dengan asset lain — hidup di sesi ini sampai kepustakaan eksplisit ada.) Yang tersisa adalah 44,5 MB unduhan, satu worker, satu FFT, dan
 disiplin agar ia tidak pernah menyentuh audio thread.
 
 Kelayakannya tinggi. Yang perlu dijaga adalah ekspektasi: ini fitur "tekan lalu

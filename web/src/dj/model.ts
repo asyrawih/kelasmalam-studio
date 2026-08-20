@@ -692,9 +692,9 @@ export interface DjState {
    * harus bisa menyalakannya, dan karena `DeckScrollingWave` perlu tahu apakah
    * tarikan pointer berarti "cari posisi" atau "geser grid".
    *
-   * SENGAJA tidak ikut di-persist (lihat `persist/dj-session.ts`): ini keadaan
-   * pekerjaan, bukan keputusan atas materi. Yang layak bertahan adalah grid
-   * hasil suntingannya, dan itu sudah disimpan `assetGrids` milik Studio.
+   * SENGAJA bukan sesuatu yang layak disimpan: ini keadaan pekerjaan, bukan
+   * keputusan atas materi. Yang layak bertahan adalah grid hasil suntingannya,
+   * dan itu ikut `assetGrids` milik Studio.
    */
   readonly gridEdit: GridEditState;
   readonly quantizeDiv: QuantizeDiv;

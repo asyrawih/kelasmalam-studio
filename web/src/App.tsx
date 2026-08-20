@@ -58,9 +58,9 @@ export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element 
     return () => registerExportHost(null);
   }, []);
   // Studio TIDAK memulihkan project sendiri saat boot, dan tidak menyimpannya
-  // otomatis. Alasannya di kepala `persist/persistence.ts`: autosave lama
-  // membaca ulang seluruh asset dari IndexedDB tiap perubahan state. Pemuatan
-  // project akan datang lewat kepustakaan yang eksplisit.
+  // otomatis — penyimpanan lokalnya sudah dibuang seluruhnya. Alasannya di
+  // kepala `persist/persistence.ts`. Simpan dan muat akan datang lewat
+  // kepustakaan yang eksplisit.
   // Shortcut transport: Space, Backspace/Enter/Home, End, ←/→.
   useTransportShortcuts();
   // Coba bangun engine sekali. Kegagalannya adalah informasi, bukan crash.
