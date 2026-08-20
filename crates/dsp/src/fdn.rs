@@ -250,6 +250,13 @@ impl Fdn8 {
         self.mod_phase = self.mod_phase.wrapping_add(self.mod_inc);
 
         let mut v = [0.0f32; FDN_LINES];
+        // `i` mengindeks EMPAT larik sekaligus: `v`, `self.lines`, `self.damp`,
+        // dan `self.g`. Bentuk `v.iter_mut().enumerate()` yang disarankan clippy
+        // hanya menghilangkan satu dari empat indeks itu — tiga sisanya tetap
+        // `[i]`, jadi yang didapat cuma satu binding tambahan tanpa satu pun
+        // pemeriksaan batas yang hilang. Menghilangkan semuanya butuh rantai
+        // `zip` berlapis di jalur yang dieksekusi per sample.
+        #[allow(clippy::needless_range_loop)]
         for i in 0..FDN_LINES {
             let modu = if i & 1 == 0 { m } else { -m };
             let d = self.lines[i].nominal * self.size + modu;
@@ -272,6 +279,9 @@ impl Fdn8 {
         } else {
             -ANTI_DENORM
         };
+        // Sama seperti loop di atas: `i` mengindeks `v`, `self.lines`, dan `mem`
+        // sekaligus, jadi `enumerate()` tidak menghilangkan indeksnya.
+        #[allow(clippy::needless_range_loop)]
         for i in 0..FDN_LINES {
             let inject = if i & 1 == 0 { in_l } else { in_r };
             let base = self.lines[i].off as usize;

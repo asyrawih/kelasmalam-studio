@@ -10,6 +10,30 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_op_in_unsafe_fn)]
+// `!(x > y)` DISENGAJA di seluruh crate ini, dan bukan gaya penulisan yang
+// perlu dirapikan jadi `x <= y`.
+//
+// Kedua bentuk itu setara HANYA untuk bilangan yang terurut. Untuk NaN keduanya
+// berlawanan:
+//
+//     !(NaN > 0.0)  →  true    NaN ikut tertolak
+//      NaN <= 0.0   →  false   NaN LOLOS
+//
+// Setiap penjaga parameter di sini memakai bentuk pertama supaya satu ekspresi
+// menangkap "tidak positif" DAN "bukan bilangan" sekaligus. Ini bukan
+// kehati-hatian berlebihan: sample rate atau cutoff NaN yang lolos akan
+// mengendap di state IIR, dan sekali `y1` jadi NaN seluruh keluaran filter
+// senyap selamanya sampai di-reset — kegagalan yang gejalanya muncul jauh dari
+// penyebabnya.
+//
+// Perhatikan juga penjaga-penjaga itu tidak punya jaring pengaman kedua: di
+// `lfo::set_rate` dan `onepole::set_cutoff`, `is_finite()` di baris yang sama
+// hanya memeriksa `hz`, TIDAK memeriksa `sample_rate`. Bentuk negasi inilah
+// satu-satunya yang menahan `sample_rate` NaN.
+//
+// Karena itu lint-nya dimatikan di level crate, bukan ditambal per lokasi:
+// yang berlaku di sini adalah konvensi, bukan pengecualian.
+#![allow(clippy::neg_cmp_op_on_partial_ord)]
 
 pub mod biquad;
 pub mod comp;

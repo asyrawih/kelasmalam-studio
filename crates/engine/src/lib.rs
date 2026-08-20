@@ -9,6 +9,15 @@
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_op_in_unsafe_fn)]
+// `!(x > y)` DISENGAJA, sama seperti di `daw-dsp` — lihat catatan panjang di
+// `crates/dsp/src/lib.rs`. Ringkasnya: `!(NaN > 0.0)` bernilai true sehingga NaN
+// ikut tertolak, sedangkan `NaN <= 0.0` bernilai false sehingga NaN lolos.
+//
+// Di crate ini konsekuensinya paling terlihat di `fx::desc::ParamDesc::clamp`,
+// yang memang mengandalkan sifat itu untuk memulangkan NaN ke nilai default —
+// komentar di fungsi tersebut menyebutkannya secara eksplisit. Menuruti saran
+// clippy di sana berarti NaN dari UI menyebar ke state efek.
+#![allow(clippy::neg_cmp_op_on_partial_ord)]
 
 extern crate alloc;
 
@@ -474,6 +483,14 @@ impl Engine {
     /// Menyerahkan konfigurasi baru ke engine. Swap terjadi di awal blok
     /// berikutnya. Mengembalikan `Err(config)` kalau daftar pensiun penuh —
     /// pemanggil (non-RT) harus memanggil `take_retired()` dulu.
+    //
+    // Clippy menyarankan mem-`Box` varian `Err` karena ukurannya besar. Justru
+    // BESARNYA itu maksudnya: `Err(config)` MEMULANGKAN konfigurasi utuh ke
+    // pemanggil non-RT, supaya tidak ada satu pun `RenderConfig` yang di-drop
+    // di sisi ini. Membungkusnya dengan `Box` menambahkan alokasi — tepat
+    // satu-satunya hal yang tidak boleh terjadi di dekat jalur render (docs/01
+    // §1c) — untuk memperbaiki keluhan tentang ukuran salinan di stack.
+    #[allow(clippy::result_large_err)]
     pub fn install_config(&mut self, config: RenderConfig) -> Result<(), RenderConfig> {
         if config.plan.validate(MAX_BUFFERS).is_err() {
             return Err(config);
@@ -490,6 +507,9 @@ impl Engine {
         Ok(())
     }
 
+    // Alasan sama dengan `install_config`: `Err` memulangkan konfigurasi,
+    // bukan melaporkan kesalahan.
+    #[allow(clippy::result_large_err)]
     fn retire(&mut self, config: RenderConfig) -> Result<(), RenderConfig> {
         for slot in self.retired.iter_mut() {
             if slot.is_none() {
