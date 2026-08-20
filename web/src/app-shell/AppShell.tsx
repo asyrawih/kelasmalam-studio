@@ -21,12 +21,16 @@
  * dan autosave sesinya sendiri. Keduanya tidak boleh jalan di halaman lain.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { App } from '../App';
 import { DjPage } from '../dj';
 import { LandingPage } from '../landing';
+import { createLibraryApi } from '../library/api';
+import { libraryActions, useLibrary } from '../library/store';
+import type { LibraryUser } from '../library/model';
 import { RobloxRoute } from '../roblox';
+import { Button } from '../ui/cyber';
 import { CommandPalette } from './CommandPalette';
 import { KeymapEditor } from './KeymapEditor';
 import { useCommands } from './useCommands';
@@ -35,13 +39,72 @@ import { DJ_PATH, HOME_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } fro
 
 export interface AppShellProps {
   readonly createEngine?: () => Promise<unknown>;
+  /** Ditimpa di tes; produksi memakai `VITE_LIBRARY_API`. */
+  readonly authApi?: AuthApi;
 }
 
-export function AppShell({ createEngine }: AppShellProps): JSX.Element {
+export interface AuthApi {
+  me(): Promise<LibraryUser | null>;
+  loginUrl(nextPath: string): string;
+}
+
+const PROTECTED_ROUTES: ReadonlySet<Route> = new Set(['studio', 'dj', 'roblox']);
+
+export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellProps): JSX.Element {
   const [route, setRoute] = useState<Route>(() => routeOf(window.location.pathname));
   const [palette, setPalette] = useState(false);
   const [keymap, setKeymap] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const authStatus = useLibrary((s) => s.status);
+  const apiBase = (import.meta.env.VITE_LIBRARY_API ?? '').trim();
+  const authApi = useMemo<AuthApi | null>(
+    () => injectedAuthApi ?? (apiBase === '' ? null : createLibraryApi(apiBase)),
+    [apiBase, injectedAuthApi],
+  );
+  // Tes shell lama memang menguji audio/routing secara terisolasi. Saat API
+  // disuntikkan, guard tetap aktif agar perilakunya bisa dites tanpa jaringan.
+  const authRequired = import.meta.env.MODE !== 'test' || injectedAuthApi !== undefined;
+
+  useEffect(() => {
+    if (!authRequired) return undefined;
+    if (authApi === null) {
+      setAuthenticated(false);
+      libraryActions.setStatus('tidak-dikonfigurasi');
+      return undefined;
+    }
+
+    let alive = true;
+    libraryActions.setStatus('memeriksa');
+    void authApi
+      .me()
+      .then((user) => {
+        if (!alive) return;
+        if (user === null) {
+          setAuthenticated(false);
+          libraryActions.setStatus('anonim');
+        } else {
+          setAuthenticated(true);
+          libraryActions.setStatus('masuk', user);
+        }
+      })
+      .catch((err: unknown) => {
+        if (alive) {
+          setAuthenticated(false);
+          libraryActions.fail(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [authApi, authRequired]);
+
+  // Logout dari dock kepustakaan juga harus langsung menutup halaman aktif.
+  // Status `memeriksa` sengaja tidak membatalkan akses: dock melakukan cek
+  // ulang saat Studio mount, sesudah shell sendiri sudah memverifikasi sesi.
+  useEffect(() => {
+    if (authStatus === 'anonim') setAuthenticated(false);
+  }, [authStatus]);
 
   useEffect(() => {
     const onPopState = (): void => setRoute(routeOf(window.location.pathname));
@@ -137,9 +200,14 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, [palette, keymap]);
 
+  const protectedRoute = PROTECTED_ROUTES.has(route);
+  const blocked = authRequired && protectedRoute && !authenticated;
+
   return (
     <>
-      {route === 'studio' ? (
+      {blocked ? (
+        <AuthGuard status={authStatus} api={authApi} />
+      ) : route === 'studio' ? (
         <App
           createEngine={createEngine}
           onClose={() => navigate(HOME_PATH)}
@@ -167,5 +235,73 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
         onCaptureChange={setCapturing}
       />
     </>
+  );
+}
+
+function AuthGuard({ status, api }: { readonly status: string; readonly api: AuthApi | null }): JSX.Element {
+  const checking = status === 'memeriksa';
+  const failed = status === 'gagal';
+  const missing = status === 'tidak-dikonfigurasi' || api === null;
+
+  return (
+    <main
+      data-testid="auth-guard"
+      style={{
+        minHeight: '100%',
+        display: 'grid',
+        placeItems: 'center',
+        padding: '24px',
+        background: 'var(--cy-bg)',
+      }}
+    >
+      <section
+        aria-busy={checking}
+        style={{
+          width: 'min(460px, 100%)',
+          padding: '32px',
+          border: '1px solid var(--cy-border-strong)',
+          background: 'var(--cy-surface-1)',
+          boxShadow: '0 18px 60px #0008',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ color: 'var(--cy-accent)', fontSize: '11px', letterSpacing: '.24em' }}>
+          DAWONWEB // AKSES TERBATAS
+        </div>
+        <h1 style={{ margin: '18px 0 10px', fontSize: '24px', letterSpacing: '.06em' }}>
+          {checking ? 'MEMERIKSA SESI…' : failed ? 'SESI TIDAK BISA DIPERIKSA' : 'LOGIN DIPERLUKAN'}
+        </h1>
+        <p style={{ margin: '0 auto 24px', color: 'var(--cy-text-muted)', lineHeight: 1.7 }}>
+          {missing
+            ? 'Google OAuth belum dikonfigurasi untuk build ini.'
+            : failed
+              ? 'Server autentikasi sedang tidak dapat dijangkau. Coba muat ulang halaman.'
+              : checking
+                ? 'Tunggu sebentar, sesi Google kamu sedang diverifikasi.'
+                : 'Masuk dengan akun Google untuk membuka Studio, DJ, dan Roblox.'}
+        </p>
+        {!checking && !failed && !missing ? (
+          <Button
+            onClick={() => {
+              window.location.href = api.loginUrl(window.location.pathname);
+            }}
+          >
+            MASUK DENGAN GOOGLE
+          </Button>
+        ) : null}
+        <div style={{ marginTop: '18px' }}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              window.history.pushState(null, '', HOME_PATH);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+          >
+            KEMBALI KE BERANDA
+          </Button>
+        </div>
+      </section>
+    </main>
   );
 }

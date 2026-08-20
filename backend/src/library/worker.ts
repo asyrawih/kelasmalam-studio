@@ -476,6 +476,37 @@ async function route(
     return fail(405, 'METODE', 'pakai GET atau POST');
   }
 
+  const projectTrack = path.match(
+    /^\/projects\/([A-Za-z0-9-]+)\/tracks\/([0-9a-f]{64})$/,
+  );
+  if (projectTrack !== null) {
+    const projectId = projectTrack[1] ?? '';
+    const hash = projectTrack[2] ?? '';
+    const row = await store.getProject(user.id, projectId);
+    if (row === null) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
+
+    await indexOldProjects(store, user.id);
+    if (method === 'POST') {
+      if (!(await store.hasClaim(user.id, hash))) {
+        return fail(404, 'TIDAK_ADA', 'lagu ini tidak ada di kepustakaanmu');
+      }
+      await store.addProjectTrack(user.id, projectId, hash);
+      return json({ ok: true });
+    }
+    if (method === 'DELETE') {
+      if (hashesIn(row.json).includes(hash)) {
+        return fail(
+          409,
+          'MASIH_DIPAKAI',
+          'lagu ini masih dipakai clip timeline project — hapus clip-nya dulu',
+        );
+      }
+      await store.removeProjectTrack(user.id, projectId, hash);
+      return json({ ok: true });
+    }
+    return fail(405, 'METODE', 'pakai POST atau DELETE');
+  }
+
   const project = path.match(/^\/projects\/([A-Za-z0-9-]+)$/);
   if (project !== null) {
     const id = project[1] ?? '';
@@ -483,8 +514,10 @@ async function route(
     if (method === 'GET') {
       const row = await store.getProject(user.id, id);
       if (row === null) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
+      await indexOldProjects(store, user.id);
+      const tracks = await store.listProjectTracks(user.id, id);
       return json(
-        { id: row.id, name: row.name, json: safeParse(row.json), version: row.version },
+        { id: row.id, name: row.name, json: safeParse(row.json), version: row.version, tracks },
         200,
         { etag: `"${row.version}"` },
       );

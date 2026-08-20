@@ -251,6 +251,33 @@ export class Store {
     }
   }
 
+  /** Tambahkan lagu ke folder project tanpa mengubah isi timeline project. */
+  async addProjectTrack(userId: string, projectId: string, hash: string): Promise<void> {
+    await this.db
+      .prepare(
+        'INSERT OR IGNORE INTO project_track (project_id, user_id, hash) VALUES (?, ?, ?)',
+      )
+      .bind(projectId, userId, hash)
+      .run();
+  }
+
+  /** Lepaskan lagu dari folder project, bukan dari kepustakaan user. */
+  async removeProjectTrack(userId: string, projectId: string, hash: string): Promise<boolean> {
+    const res = await this.db
+      .prepare('DELETE FROM project_track WHERE project_id = ? AND user_id = ? AND hash = ?')
+      .bind(projectId, userId, hash)
+      .run();
+    return res.meta.changes > 0;
+  }
+
+  async listProjectTracks(userId: string, projectId: string): Promise<readonly string[]> {
+    const { results } = await this.db
+      .prepare('SELECT hash FROM project_track WHERE project_id = ? AND user_id = ? ORDER BY rowid')
+      .bind(projectId, userId)
+      .all<{ hash: string }>();
+    return results.map((row) => row.hash);
+  }
+
   /** Project milik user ini yang belum punya baris `project_track`. */
   async unindexedProjects(userId: string): Promise<readonly { id: string; json: string }[]> {
     const { results } = await this.db
@@ -291,7 +318,10 @@ export class Store {
       .run();
 
     if (res.meta.changes > 0) {
-      await this.replaceProjectTracks(id, userId, hashes);
+      // Project adalah folder lagu. Menyimpan timeline memastikan lagu yang
+      // dipakai masuk folder, tetapi tidak membuang lagu anggota yang belum
+      // dipasang sebagai clip.
+      for (const hash of hashes) await this.addProjectTrack(userId, id, hash);
       return { ok: true, version: next };
     }
 

@@ -42,6 +42,8 @@ export function fakeLibraryApi(over: Partial<LibraryApi> = {}): LibraryApi {
     updateProject: async (_id, _name, _json, expectedVersion): Promise<number> =>
       expectedVersion + 1,
     deleteProject: async (): Promise<void> => {},
+    addProjectTrack: async (): Promise<void> => {},
+    removeProjectTrack: async (): Promise<void> => {},
     deleteTrack: async (): Promise<void> => {},
     putMarks: async (): Promise<void> => {},
     logout: async (): Promise<void> => {},

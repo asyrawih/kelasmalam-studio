@@ -84,6 +84,30 @@ describe('dua panel', () => {
     expect(lagu()[0]?.textContent).toContain('Intro');
   });
 
+  it('daftar folder memakai membership server, bukan hanya clip timeline', async () => {
+    await bukaDok(api({
+      project: async () => ({
+        id: 'p1', name: 'Set Malam', json: { lanes: [] }, version: 3, tracks: [H2],
+      }),
+    }));
+    fireEvent.click(sisi(/Set Malam/));
+
+    await waitFor(() => expect(lagu()).toHaveLength(1));
+    expect(lagu()[0]?.textContent).toContain('Kelas Malam');
+  });
+
+  it('HAPUS di dalam project hanya mengeluarkan lagu dari folder', async () => {
+    const removeProjectTrack = vi.fn(async () => {});
+    const deleteTrack = vi.fn(async () => {});
+    await bukaDok(api({ removeProjectTrack, deleteTrack }));
+    fireEvent.click(sisi(/Set Malam/));
+    await waitFor(() => expect(lagu()).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /hapus Intro/i }));
+    await waitFor(() => expect(removeProjectTrack).toHaveBeenCalledWith('p1', H1));
+    expect(deleteTrack).not.toHaveBeenCalled();
+  });
+
   it('memilih project TIDAK membukanya di timeline', async () => {
     const project = vi.fn(async () => ({
       id: 'p1',

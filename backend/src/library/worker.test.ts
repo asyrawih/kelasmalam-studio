@@ -493,6 +493,51 @@ describe('projects', () => {
     expect(body.message).toContain('Set malam');
   });
 
+  it('project adalah folder: lagu bisa ditambah dan dilepas tanpa mengubah JSON timeline', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    const made = await call('/projects', {
+      method: 'POST', cookie,
+      body: JSON.stringify({ name: 'BKB', json: { lanes: [] } }),
+    });
+    const { id } = await made.json() as { id: string };
+
+    expect((await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie })).status).toBe(200);
+    const folder = await (await call(`/projects/${id}`, { cookie })).json();
+    expect(folder.tracks).toEqual([HASH_A]);
+    expect(folder.json).toEqual({ lanes: [] });
+
+    expect((await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+    expect((await (await call(`/projects/${id}`, { cookie })).json()).tracks).toEqual([]);
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+  });
+
+  it('folder tidak bisa diberi lagu milik user lain atau project user lain', async () => {
+    const ana = await login({ sub: 'sub-folder-a', email: 'a@test', name: 'Ana' });
+    const budi = await login({ sub: 'sub-folder-b', email: 'b@test', name: 'Budi' });
+    await seedTrack(ana, HASH_A);
+    const { id } = await (await call('/projects', {
+      method: 'POST', cookie: budi,
+      body: JSON.stringify({ name: 'BKB', json: { lanes: [] } }),
+    })).json() as { id: string };
+
+    expect((await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie: budi })).status).toBe(404);
+    expect((await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie: ana })).status).toBe(404);
+  });
+
+  it('anggota folder yang masih dipakai clip tidak bisa dilepas', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    const { id } = await (await call('/projects', {
+      method: 'POST', cookie,
+      body: JSON.stringify({ name: 'BKB', json: projectWith(HASH_A) }),
+    })).json() as { id: string };
+
+    const res = await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie });
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toMatch(/hapus clip/i);
+  });
+
   it('hapus tidak memakai LIKE/GLOB D1 untuk mencari project pemakai', async () => {
     const cookie = await login();
     await seedTrack(cookie, HASH_A);
@@ -680,7 +725,7 @@ describe('lagu yang masih dipakai project', () => {
     expect((await call(`/tracks/${HASH_B}`, { method: 'DELETE', cookie })).status).toBe(200);
   });
 
-  it('project yang isinya diganti melepas lagu yang tidak lagi dipakainya', async () => {
+  it('mengganti timeline tidak membuang anggota folder project', async () => {
     const cookie = await login();
     await seedTrack(cookie, HASH_A);
     await seedTrack(cookie, HASH_B);
@@ -699,10 +744,12 @@ describe('lagu yang masih dipakai project', () => {
       body: JSON.stringify({ name: 'A', json: { lanes: [{ clips: [{ contentHash: HASH_B }] }] } }),
     });
 
-    // HASH_A sudah lepas; kalau daftarnya tidak ikut diganti, ia akan
-    // "masih dipakai" selamanya dan tidak pernah bisa dihapus.
-    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+    // Project adalah folder: menghapus clip bukan berarti mengeluarkan lagunya
+    // dari folder. Keduanya baru lepas lewat endpoint membership yang sadar.
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(409);
     expect((await call(`/tracks/${HASH_B}`, { method: 'DELETE', cookie })).status).toBe(409);
+    await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie });
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
   });
 
   it('project yang dihapus melepas semua lagunya', async () => {

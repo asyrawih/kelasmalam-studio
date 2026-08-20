@@ -59,6 +59,8 @@ export interface ProjectBody {
   /** Isi `serialize()`, sudah terurai. Server tidak menafsirkannya. */
   readonly json: unknown;
   readonly version: number;
+  /** Lagu anggota folder project, terpisah dari clip timeline. */
+  readonly tracks?: readonly string[];
 }
 
 /** Kalah versi: ada yang menyimpan project ini di tempat lain (docs/16 §8c). */
@@ -95,6 +97,8 @@ export interface LibraryApi {
   /** Melempar `VersionConflict` kalau versinya sudah berubah di tempat lain. */
   updateProject(id: string, name: string, json: unknown, expectedVersion: number): Promise<number>;
   deleteProject(id: string): Promise<void>;
+  addProjectTrack(projectId: string, hash: string): Promise<void>;
+  removeProjectTrack(projectId: string, hash: string): Promise<void>;
   /** Melempar dengan pesan yang menyebut project pemakainya kalau ditolak. */
   deleteTrack(hash: string): Promise<void>;
   /** Cue DJ + koreksi grid satu lagu. Selalu keadaan LENGKAP, bukan tambalan. */
@@ -304,6 +308,22 @@ export function createLibraryApi(baseUrl: string, fetchImpl: typeof fetch = fetc
 
     async deleteProject(id): Promise<void> {
       const res = await call(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) throw await readError(res);
+    },
+
+    async addProjectTrack(projectId, hash): Promise<void> {
+      const res = await call(
+        `/projects/${encodeURIComponent(projectId)}/tracks/${encodeURIComponent(hash)}`,
+        { method: 'POST' },
+      );
+      if (!res.ok) throw await readError(res);
+    },
+
+    async removeProjectTrack(projectId, hash): Promise<void> {
+      const res = await call(
+        `/projects/${encodeURIComponent(projectId)}/tracks/${encodeURIComponent(hash)}`,
+        { method: 'DELETE' },
+      );
       if (!res.ok) throw await readError(res);
     },
 

@@ -142,13 +142,22 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
 
     const queue = createUploadQueue(api);
     const detach = registerImportSink((imported) => {
+      // Pilihan ditangkap saat file dijatuhkan. User boleh pindah folder saat
+      // unggahan masih berjalan tanpa membuat lagunya mendarat di folder lain.
+      const targetProject = libraryStore.getState().selectedProject;
       queue.push(imported);
       void queue.idle().then(async () => {
         try {
+          if (targetProject !== null) {
+            await api.addProjectTrack(targetProject, imported.contentHash);
+            const cached = libraryStore.getState().projectTracks[targetProject];
+            if (cached !== undefined && cached !== 'memuat' && !cached.includes(imported.contentHash)) {
+              libraryActions.setProjectTracks(targetProject, [...cached, imported.contentHash]);
+            }
+          }
           libraryActions.setTracks(await api.tracks());
-        } catch {
-          // Daftar yang gagal disegarkan bukan alasan menandai kepustakaan
-          // rusak: unggahannya sendiri sudah selesai dan tercatat di server.
+        } catch (err: unknown) {
+          libraryActions.setNotice(err instanceof Error ? err.message : String(err));
         }
       });
     });
@@ -284,13 +293,22 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
    * berarti membuang satu-satunya petunjuk yang bisa dikerjakan user.
    */
   const onRemove = useCallback(
-    async (track: LibraryTrack): Promise<void> => {
+    async (track: LibraryTrack, projectId: string | null): Promise<void> => {
       if (api === null) return;
       libraryActions.setNotice(null);
       try {
-        await api.deleteTrack(track.hash);
-        libraryActions.setTracks(await api.tracks());
-        libraryActions.setNotice(`${track.name} dihapus dari kepustakaan`);
+        if (projectId !== null) {
+          await api.removeProjectTrack(projectId, track.hash);
+          const cached = libraryStore.getState().projectTracks[projectId];
+          if (cached !== undefined && cached !== 'memuat') {
+            libraryActions.setProjectTracks(projectId, cached.filter((hash) => hash !== track.hash));
+          }
+          libraryActions.setNotice(`${track.name} dikeluarkan dari project`);
+        } else {
+          await api.deleteTrack(track.hash);
+          libraryActions.setTracks(await api.tracks());
+          libraryActions.setNotice(`${track.name} dihapus dari kepustakaan`);
+        }
       } catch (err: unknown) {
         libraryActions.setNotice(err instanceof Error ? err.message : String(err));
       }

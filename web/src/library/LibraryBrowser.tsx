@@ -38,7 +38,7 @@ export interface LibraryBrowserProps {
   readonly api: LibraryApi;
   readonly assets: Readonly<Record<number, unknown>>;
   readonly onPick: (track: LibraryTrack) => void | Promise<void>;
-  readonly onRemove: (track: LibraryTrack) => void | Promise<void>;
+  readonly onRemove: (track: LibraryTrack, projectId: string | null) => void | Promise<void>;
   readonly onSave: () => void | Promise<void>;
   readonly onOpen: (id: string, name: string, version: number) => void | Promise<void>;
   readonly onDeleteProject: (id: string, name: string) => void | Promise<void>;
@@ -90,7 +90,7 @@ export function LibraryBrowser({
       libraryActions.setProjectTracks(id, 'memuat');
       try {
         const body = await api.project(id);
-        libraryActions.setProjectTracks(id, hashesIn(body.json));
+        libraryActions.setProjectTracks(id, body.tracks ?? hashesIn(body.json));
       } catch {
         // Project yang gagal dibaca tampil kosong, bukan menggantung selamanya.
         libraryActions.setProjectTracks(id, []);
@@ -231,7 +231,7 @@ export function LibraryBrowser({
                   state={state}
                   assets={assets}
                   onPick={onPick}
-                  onRemove={onRemove}
+                  onRemove={(track) => onRemove(track, selected)}
                 />
               ),
             )}
