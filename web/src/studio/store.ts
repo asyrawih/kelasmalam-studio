@@ -264,7 +264,14 @@ export interface StudioAppState extends StudioState {
    * (voice harus dijadwalkan ulang dari posisi baru).
    */
   readonly seekEpoch: number;
-  /** true selama playhead sedang di-drag. Audio dibisukan sampai dilepas. */
+  /**
+   * true selama playhead sedang di-drag.
+   *
+   * MIX-nya dibisukan sampai dilepas — ia dijadwalkan di muka dan berjalan maju
+   * sendiri, sedangkan tangan bisa diam atau mundur. Yang menggantikannya
+   * adalah butir scrub di `preview/audio-preview.ts`, dan butir itu berbunyi
+   * BAIK saat transport play MAUPUN saat berhenti.
+   */
   readonly scrubbing: boolean;
   /**
    * true selama CLIP sedang di-drag. Playback tidak dijadwalkan ulang selama
