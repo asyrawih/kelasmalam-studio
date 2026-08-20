@@ -10,11 +10,19 @@ name = "dawonweb-roblox"
 main = "src/roblox/worker.ts"
 compatibility_date = "2026-08-20"
 
+# Domain ditulis DI SINI, bukan dipasang lewat dashboard: yang di dashboard
+# hilang dari pandangan orang berikutnya yang men-deploy dari mesin lain.
+#
+# Worker ini TIDAK punya syarat same-site seperti kepustakaan (ia tidak memakai
+# cookie sama sekali) — domain sendiri di sini murni soal alamat yang enak
+# dibaca dan bisa dipindah tanpa mengubah URL.
+routes = [{ pattern = "robloz.kelasmalam.app", custom_domain = true }]
+
 [vars]
 # Origin yang boleh memanggil. Dipisah koma, TANPA spasi, tanpa slash di ujung.
 # `*` diterima untuk dev lokal saja — lihat catatan di src/http/cors.ts soal
 # kenapa ini bukan batas keamanan.
-ALLOWED_ORIGINS = "http://localhost:5173"
+ALLOWED_ORIGINS = "https://studio.kelasmalam.app,http://localhost:5173"
 
 # Basis Open Cloud. Bisa ditimpa untuk mengarahkan ke mock saat uji coba.
 ROBLOX_API_BASE = "https://apis.roblox.com"
