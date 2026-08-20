@@ -62,7 +62,10 @@ export const MEMORY_FALLBACK_PAGES = 32768;
  * fallback keduanya berbeda. Menebaknya 4 GiB padahal cuma dapat 2 GiB akan
  * meloloskan export yang pasti kehabisan memori di tengah jalan.
  */
-export function createMemory(variant: WasmVariant): {
+export function createMemory(
+  variant: WasmVariant,
+  declaredMaximumPages?: number | null,
+): {
   memory: WebAssembly.Memory;
   maximumBytes: number;
 } {
@@ -70,7 +73,18 @@ export function createMemory(variant: WasmVariant): {
   // degraded memory-nya biasa: worklet tetap jalan, hanya tidak berbagi
   // linear memory dengan main thread.
   const shared = variant === 'mt';
-  for (const pages of [MEMORY_MAXIMUM_PAGES, MEMORY_FALLBACK_PAGES]) {
+  // Jangan pernah MEMINTA lebih dari yang dideklarasikan modul. Import memory
+  // cocok kalau `maximum` yang disediakan tidak melebihi milik modul — jadi
+  // meminta 4 GiB untuk artefak yang di-link 2 GiB bukan "ambil yang terbesar
+  // lalu turun kalau gagal", melainkan instantiate yang PASTI gagal, dengan
+  // "imported Memory with incompatible maximum size" dan tanpa sepatah kata
+  // pun tentang artefak yang perlu dibangun ulang.
+  const candidates = dedupe(
+    [MEMORY_MAXIMUM_PAGES, MEMORY_FALLBACK_PAGES]
+      .map((p) => Math.min(p, declaredMaximumPages ?? MEMORY_MAXIMUM_PAGES))
+      .filter((p) => p > 0),
+  );
+  for (const pages of candidates) {
     try {
       const descriptor = { initial: MEMORY_INITIAL_PAGES, maximum: pages };
       const memory = new WebAssembly.Memory(shared ? { ...descriptor, shared } : descriptor);
@@ -80,7 +94,7 @@ export function createMemory(variant: WasmVariant): {
       // penolakannya terjadi di sini — bukan nanti saat `grow`. Turun satu
       // tingkat dan coba lagi; kalau yang 2 GiB pun ditolak, itu bukan lagi
       // soal ukuran dan errornya harus naik apa adanya.
-      if (pages === MEMORY_FALLBACK_PAGES) throw e;
+      if (pages === candidates[candidates.length - 1]) throw e;
       // eslint-disable-next-line no-console
       console.warn(
         `[wasm] linear memory ${pages / 16} GiB ditolak mesin, turun ke ` +
@@ -92,6 +106,100 @@ export function createMemory(variant: WasmVariant): {
   }
   // Tidak terjangkau: loop di atas selalu mengembalikan nilai atau melempar.
   throw new Error('linear memory tidak bisa dibuat');
+}
+
+const dedupe = (xs: number[]): number[] => xs.filter((x, i) => xs.indexOf(x) === i);
+
+/**
+ * Baca `maximum` dari import memory di dalam binary wasm.
+ *
+ * KENAPA MEMBACA BINARY-NYA SENDIRI. `WebAssembly.Module.imports()` menyebutkan
+ * ada import bernama "memory" berjenis "memory", tapi TIDAK menyebutkan
+ * limitnya — dan justru limit itulah satu-satunya angka yang menentukan
+ * instantiate berhasil atau tidak. Tidak ada API lain yang mengeluarkannya,
+ * jadi section import-nya diurai di sini. Byte-nya sudah ada di tangan
+ * (`fetchWasmBytes`), jadi tidak ada request tambahan.
+ *
+ * `null` = tidak bisa ditentukan (bukan wasm, tidak ada import memory, atau
+ * memory tanpa `maximum`). Pemanggil memperlakukannya sebagai "jangan
+ * membatasi", bukan "nol" — tebakan yang salah di sini akan menurunkan plafon
+ * untuk semua orang.
+ */
+export function declaredMemoryMaximumPages(bytes: ArrayBuffer | Uint8Array): number | null {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  // \0asm + versi.
+  if (b.length < 8 || b[0] !== 0x00 || b[1] !== 0x61 || b[2] !== 0x73 || b[3] !== 0x6d) return null;
+
+  let at = 8;
+  const u32 = (): number => {
+    let result = 0;
+    let shift = 0;
+    for (;;) {
+      const byte = b[at++];
+      if (byte === undefined) throw new RangeError('wasm terpotong');
+      result |= (byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return result >>> 0;
+      shift += 7;
+      if (shift > 35) throw new RangeError('LEB128 terlalu panjang');
+    }
+  };
+  /** Limits: flag, min, lalu max kalau bit 0 menyala. */
+  const limitsMax = (): number | null => {
+    const flags = u32();
+    u32(); // minimum — tidak dipakai
+    return (flags & 0x01) !== 0 ? u32() : null;
+  };
+
+  try {
+    while (at < b.length) {
+      const id = b[at++];
+      const size = u32();
+      const end = at + size;
+      if (id !== 2) {
+        // Bukan section import. Section id 0 (custom) dan lainnya dilewati
+        // utuh — tidak perlu diurai untuk menjawab pertanyaan ini.
+        at = end;
+        continue;
+      }
+      const count = u32();
+      for (let i = 0; i < count; i++) {
+        // JANGAN `at += u32()`: JavaScript membaca nilai `at` SEBELUM
+        // memanggil `u32()`, sedangkan `u32()` sendiri memajukan `at`. Hasilnya
+        // penunjuk mundur beberapa byte dan seluruh section terurai jadi
+        // sampah — tanpa melempar, cuma mengembalikan `null` seolah binary-nya
+        // memang tidak punya import memory.
+        const modLen = u32();
+        at += modLen;
+        const fieldLen = u32();
+        at += fieldLen;
+        const kind = b[at++];
+        switch (kind) {
+          case 0x00: // func
+            u32();
+            break;
+          case 0x01: // table
+            at++; // reftype
+            limitsMax();
+            break;
+          case 0x02: // memory — yang dicari
+            return limitsMax();
+          case 0x03: // global
+            at += 2; // valtype + mutability
+            break;
+          default:
+            return null; // jenis import yang tidak dikenal: berhenti menebak
+        }
+      }
+      // Section import selesai tanpa memory: varian st mengekspor memory-nya
+      // sendiri, dan di sana tidak ada yang perlu dicocokkan.
+      return null;
+    }
+  } catch {
+    // Binary yang tidak bisa diurai bukan alasan menggagalkan boot: `null`
+    // mengembalikan perilaku ke sebelum ada fungsi ini.
+    return null;
+  }
+  return null;
 }
 
 /** Surface bindgen yang dipakai main thread & worker. */
@@ -261,6 +369,37 @@ export function loadWasm(): Promise<LoadedWasm> {
   return loading;
 }
 
+/**
+ * `initSync`, tapi kegagalan yang berasal dari ketidakcocokan memory diberi
+ * kalimat yang menyebut penyebabnya.
+ *
+ * Jaring terakhir. `declaredMemoryMaximumPages` sudah mencegah kasus yang kita
+ * tahu, tapi ia bisa mengembalikan `null` (binary tidak terurai), dan yang
+ * sampai ke user kalau begitu adalah "imported Memory with incompatible
+ * maximum size" — kalimat yang benar secara teknis dan tidak berguna sama
+ * sekali bagi orang yang cuma perlu membangun ulang artefaknya.
+ */
+function initSyncOrExplain(
+  glue: WasmBindgenExports,
+  module: WebAssembly.Module,
+  memory: WebAssembly.Memory,
+): { memory?: WebAssembly.Memory } | undefined {
+  try {
+    return glue.initSync({ module, memory }) as { memory?: WebAssembly.Memory } | undefined;
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/incompatible|imported Memory|memory import/i.test(msg)) {
+      throw new Error(
+        `Artefak WASM tidak cocok dengan engine: ${msg}. Hampir selalu ini berarti ` +
+          'artefak di `web/src/wasm/` lebih lama daripada kodenya — artefak itu ' +
+          'tidak dilacak git, jadi `git pull` tidak membawanya. Jalankan ' +
+          '`pnpm build:wasm`.',
+      );
+    }
+    throw e;
+  }
+}
+
 async function doLoad(): Promise<LoadedWasm> {
   const caps = await detectCaps();
   const variant = caps.variant;
@@ -287,7 +426,26 @@ async function doLoad(): Promise<LoadedWasm> {
 
   const module = await WebAssembly.compile(bytes);
 
-  const { memory, maximumBytes: memoryMaximumBytes } = createMemory(variant);
+  // Plafon yang benar-benar dideklarasikan artefak ini — bukan yang kita
+  // harapkan. Artefak WASM tidak dilacak git (`.gitignore` memuat
+  // `/web/src/wasm/`), jadi `git pull` tidak pernah membawanya: sesudah plafon
+  // naik ke 4 GiB, siapa pun yang belum menjalankan `pnpm build:wasm` masih
+  // memegang artefak 2 GiB.
+  const declaredPages = declaredMemoryMaximumPages(bytes);
+  if (declaredPages !== null && declaredPages < MEMORY_MAXIMUM_PAGES) {
+    // Bukan error: memintanya sesuai deklarasi membuat semuanya tetap jalan,
+    // hanya dengan plafon yang lebih rendah. Tapi ini HARUS terdengar, karena
+    // gejalanya nanti adalah export yang ditolak "kehabisan memori" di project
+    // yang sebenarnya muat.
+    console.warn(
+      `[wasm] artefak ini di-link dengan plafon ${declaredPages / 16} GiB, ` +
+        `sedangkan engine sekarang ${MEMORY_MAXIMUM_PAGES / 16} GiB — artefaknya ` +
+        'lebih lama daripada kodenya. Jalankan `pnpm build:wasm` untuk mendapat ' +
+        'plafon penuh.',
+    );
+  }
+
+  const { memory, maximumBytes: memoryMaximumBytes } = createMemory(variant, declaredPages);
 
   // `initSync` mengembalikan `instance.exports`. Itu penting: HANYA varian mt
   // yang meng-IMPORT memory, jadi hanya di sana `memory` di atas benar-benar
@@ -295,7 +453,7 @@ async function doLoad(): Promise<LoadedWasm> {
   // ini diam-diam — memakai objek `memory` buatan JS untuk membaca hasil render
   // berarti membaca memori yang tidak pernah disentuh engine: semua nol, tanpa
   // satu pun error. Gejalanya adalah file export yang senyap sempurna.
-  const inst = glue.initSync({ module, memory }) as { memory?: WebAssembly.Memory } | undefined;
+  const inst = initSyncOrExplain(glue, module, memory);
   const actualMemory = inst?.memory ?? memory;
   glue.initNonRealtime();
 
