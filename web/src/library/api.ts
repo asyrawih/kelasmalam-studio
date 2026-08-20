@@ -97,6 +97,8 @@ export interface LibraryApi {
   deleteProject(id: string): Promise<void>;
   /** Melempar dengan pesan yang menyebut project pemakainya kalau ditolak. */
   deleteTrack(hash: string): Promise<void>;
+  /** Cue DJ + koreksi grid satu lagu. Selalu keadaan LENGKAP, bukan tambalan. */
+  putMarks(hash: string, marks: unknown): Promise<void>;
   logout(): Promise<void>;
   /** URL yang harus dibuka sebagai NAVIGASI, bukan di-fetch. */
   loginUrl(nextPath: string): string;
@@ -309,6 +311,15 @@ export function createLibraryApi(baseUrl: string, fetchImpl: typeof fetch = fetc
       const res = await call(`/tracks/${hash}`, { method: 'DELETE' });
       // 409 MASIH_DIPAKAI sudah membawa nama project pemakainya di `message`;
       // `readError` meneruskannya apa adanya, dan itu yang perlu dibaca user.
+      if (!res.ok) throw await readError(res);
+    },
+
+    async putMarks(hash, marks): Promise<void> {
+      const res = await call(`/tracks/${hash}/marks`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(marks),
+      });
       if (!res.ok) throw await readError(res);
     },
 

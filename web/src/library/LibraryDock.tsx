@@ -31,7 +31,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useCommands } from '../app-shell';
 import { Badge, Button, ProgressBar } from '../ui/cyber';
-import { useStudio } from '../studio/store';
+import { studioStore, useStudio } from '../studio/store';
+import { djStore } from '../dj/store';
 import { registerImportSink } from '../studio/timeline/import-sink';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
@@ -44,7 +45,8 @@ import {
   type LibraryTrack,
   type UploadState,
 } from './model';
-import { libraryActions, useLibrary } from './store';
+import { libraryActions, libraryStore, useLibrary } from './store';
+import { createMarksSync } from './marks';
 import { createUploadQueue } from './upload';
 
 export interface LibraryDockProps {
@@ -156,6 +158,63 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       });
     });
     return detach;
+  }, [api, state.status]);
+
+  /*
+   * Cue DJ + koreksi grid ikut tersimpan (L5).
+   *
+   * Dipasang sebagai PENGAMAT store, bukan panggilan di tiap aksi cue: aksi
+   * yang menyentuh cue ada belasan (hot cue, memory cue, CUE, grid, kunci,
+   * anchor), dan menempelkan satu baris ke masing-masing berarti dua belas
+   * tempat yang harus diingat — dan satu di antaranya suatu saat terlupa.
+   *
+   * Yang diamati cukup dua irisan: peta cue milik DJ dan registry asset milik
+   * Studio. Perubahan lain (posisi fader, playhead) tidak menyentuh keduanya.
+   */
+  useEffect(() => {
+    if (api === null || state.status !== 'masuk') return undefined;
+
+    const sync = createMarksSync(api);
+    const known = (): ReadonlyMap<number, string> => {
+      const out = new Map<number, string>();
+      for (const [hash, assetId] of Object.entries(libraryStore.getState().loaded)) {
+        out.set(assetId, hash);
+      }
+      return out;
+    };
+
+    let prevCues = djStore.getState().cues;
+    let prevAssets = studioStore.getState().assets;
+
+    const onChange = (): void => {
+      const map = known();
+      const cues = djStore.getState().cues;
+      const assets = studioStore.getState().assets;
+
+      if (cues !== prevCues) {
+        for (const [id, hash] of map) {
+          if (cues[id] !== prevCues[id]) sync.touch(id, hash);
+        }
+        prevCues = cues;
+      }
+      if (assets !== prevAssets) {
+        for (const [id, hash] of map) {
+          if (assets[id] !== prevAssets[id]) sync.touch(id, hash);
+        }
+        prevAssets = assets;
+      }
+    };
+
+    const offDj = djStore.subscribe(onChange);
+    const offStudio = studioStore.subscribe(onChange);
+    return () => {
+      offDj();
+      offStudio();
+      // Yang tertunda dikirim saat halaman ditinggalkan — cue yang dipasang
+      // dua detik sebelum pindah halaman tidak boleh hilang karena timernya
+      // belum sempat berbunyi.
+      void sync.flush();
+    };
   }, [api, state.status]);
 
   useCommands(

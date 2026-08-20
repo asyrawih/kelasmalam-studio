@@ -43,6 +43,7 @@ export function fakeLibraryApi(over: Partial<LibraryApi> = {}): LibraryApi {
       expectedVersion + 1,
     deleteProject: async (): Promise<void> => {},
     deleteTrack: async (): Promise<void> => {},
+    putMarks: async (): Promise<void> => {},
     logout: async (): Promise<void> => {},
     loginUrl: (next: string): string => `https://api.test/auth/google?next=${next}`,
     ...over,
