@@ -513,6 +513,43 @@ describe('projects', () => {
   });
 });
 
+describe('galat internal', () => {
+  it('D1 yang melempar jadi 500 BER-JSON, bukan halaman 1101 tanpa kata', async () => {
+    /*
+     * Kejadian nyata yang membuat tes ini ada: tabel belum dimigrasi, dan
+     * SETIAP permintaan ber-sesi menjawab `error code: 1101` — halaman
+     * Cloudflare tanpa sebab dan tanpa header CORS. Dari sisi app, itu tidak
+     * bisa dibedakan dari Worker yang tidak ter-deploy.
+     */
+    const meledak = {
+      prepare: () => {
+        throw new Error('no such table: user');
+      },
+    };
+    env = { ...env, DB: meledak as unknown as Env['DB'] };
+
+    const res = await call('/me', { cookie: '__Host-lib_session=apa-saja' });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      code: 'GALAT_INTERNAL',
+      message: 'no such table: user',
+    });
+  });
+
+  it('balasan galat tetap membawa header CORS — kalau tidak, app melihat "server mati"', async () => {
+    const meledak = {
+      prepare: () => {
+        throw new Error('meledak');
+      },
+    };
+    env = { ...env, DB: meledak as unknown as Env['DB'] };
+
+    const res = await call('/me', { cookie: '__Host-lib_session=apa-saja' });
+    expect(res.headers.get('access-control-allow-origin')).toBe(APP);
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+  });
+});
+
 describe('rute tak dikenal', () => {
   it('404 menyebut path-nya', async () => {
     const cookie = await login();

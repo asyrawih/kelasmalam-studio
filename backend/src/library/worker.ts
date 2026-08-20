@@ -94,7 +94,7 @@ export async function handleRequest(request: Request, env: Env, deps: Deps = {})
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, '') || '/';
 
-  const res = await route(request, env, deps, url, path);
+  const res = await safeRoute(request, env, deps, url, path);
   /*
    * `credentials: true` di SETIAP balasan, bukan hanya di preflight: tanpa
    * `Access-Control-Allow-Credentials` pada respons sungguhan, browser
@@ -102,6 +102,38 @@ export async function handleRequest(request: Request, env: Env, deps: Deps = {})
    * tanpa sebab, bukan pesan CORS.
    */
   return withCors(res, cors.allowOrigin, { credentials: true });
+}
+
+/**
+ * Jalankan router, dan JANGAN biarkan lemparan lolos ke luar.
+ *
+ * Tanpa ini, galat internal apa pun keluar sebagai halaman Cloudflare
+ * `error code: 1101` — tanpa satu kata pun tentang sebabnya, dan tanpa header
+ * CORS, sehingga di sisi app ia terbaca sebagai "server mati" alih-alih
+ * "querymu salah". Kejadian nyata: tabel D1 yang belum dimigrasi membuat
+ * SETIAP permintaan ber-sesi menjawab 1101, dan yang terlihat dari luar sama
+ * persis dengan Worker yang tidak ter-deploy.
+ *
+ * Pesannya IKUT dikirim, stack-nya tidak. Pesan galat D1 ("no such table:
+ * user") adalah petunjuk yang menghemat berjam-jam; stack trace hanya
+ * membocorkan bentuk kode tanpa menambah apa pun yang bisa dikerjakan.
+ */
+async function safeRoute(
+  request: Request,
+  env: Env,
+  deps: Deps,
+  url: URL,
+  path: string,
+): Promise<Response> {
+  try {
+    return await route(request, env, deps, url, path);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    // `console.error` supaya ia muncul di `wrangler tail`; balasannya sendiri
+    // sudah membawa pesan yang sama untuk yang tidak punya akses log.
+    console.error(`[${request.method} ${path}]`, message);
+    return fail(500, 'GALAT_INTERNAL', message);
+  }
 }
 
 async function route(
