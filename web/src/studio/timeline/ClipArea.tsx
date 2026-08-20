@@ -26,6 +26,7 @@ import { isAudible, laneHeightPx, type StudioClip, type StudioLane } from '../mo
 import { studioActions, studioStore, useStudio, type ClipOrigin, type StudioAsset } from '../store';
 import { isSpaceHeld, markSpacePan, subscribeSpace } from '../shortcuts/space-pan';
 import { runFileImport, runUrlImport } from './lane-import';
+import { LIBRARY_TRACK_MIME, notifyLibraryDrop } from './library-drop';
 import { LaneImportOverlay } from './LaneImportOverlay';
 import { activeLoopLen } from './clip-loop';
 import { drawClipWave, drawLoopedClipWave } from './waveform';
@@ -915,22 +916,40 @@ export function ClipArea({
     studioActions.setClipDragging(false);
   };
 
+  /** Posisi jatuh di timeline, dalam sample. */
+  const dropStart = (e: ReactDragEvent<HTMLDivElement>): number => {
+    const el = scrollerRef.current;
+    if (el === null || el.scrollWidth <= 0) return 0;
+    const rect = el.getBoundingClientRect();
+    return ((el.scrollLeft + (e.clientX - rect.left)) / el.scrollWidth) * duration;
+  };
+
   const handleDrop = (e: ReactDragEvent<HTMLDivElement>, laneId: string): void => {
     e.preventDefault();
     e.stopPropagation();
     setDropLane(null);
+
+    /*
+     * Lagu dari kepustakaan diperiksa PALING DULU.
+     *
+     * Kalau tidak, hash-nya jatuh ke cabang `text/plain` di bawah dan dicoba
+     * diunduh sebagai URL — gagal dengan pesan yang tidak masuk akal, jauh dari
+     * sebabnya. Timeline sendiri tidak tahu apa arti hash itu; yang tahu
+     * kepustakaan (lihat `library-drop.ts`).
+     */
+    const libraryHash = e.dataTransfer?.getData(LIBRARY_TRACK_MIME) ?? '';
+    if (libraryHash !== '') {
+      notifyLibraryDrop({ contentHash: libraryHash, laneId, startSamples: dropStart(e) });
+      return;
+    }
+
     const files = Array.from(e.dataTransfer?.files ?? []);
     // Link bisa datang sebagai `text/uri-list` (drag dari address bar / tab)
     // atau `text/plain` (drag teks berisi URL). Cek dua-duanya.
     const droppedText =
       e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
     if (files.length === 0 && droppedText.trim() === '') return;
-    const el = scrollerRef.current;
-    let start = 0;
-    if (el !== null && el.scrollWidth > 0) {
-      const rect = el.getBoundingClientRect();
-      start = ((el.scrollLeft + (e.clientX - rect.left)) / el.scrollWidth) * duration;
-    }
+    const start = dropStart(e);
     startFileImports(files, laneId, start);
 
     if (files.length === 0 && droppedText.trim() !== '') {

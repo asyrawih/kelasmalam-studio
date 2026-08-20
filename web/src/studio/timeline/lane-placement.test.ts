@@ -31,7 +31,12 @@ const SR = 48_000;
 /**
  * WAV minimal — cukup untuk lolos `sniff`.
  *
- * Isinya BERBEDA tiap panggilan. Sejak import men-dedup berdasarkan SHA-256
+ * Isinya BERBEDA tiap panggilan, dan seed-nya TIDAK direset antar tes: dedup
+ * melihat isi store, dan asset dari tes sebelumnya bisa membuat berkas "baru"
+ * dikenali sebagai lagu lama — yang gejalanya decode tidak pernah dipanggil dan
+ * tes menggantung sampai timeout.
+ *
+ * Sejak import men-dedup berdasarkan SHA-256
  * (docs/16 §2), dua "berkas" dengan byte identik memang satu lagu: yang kedua
  * memakai asset yang sama dan tidak pernah men-decode. Tes ini menguji
  * penempatan clip dari beberapa berkas BERBEDA, jadi byte-nya harus berbeda —
@@ -86,7 +91,6 @@ let laneA = '';
 
 beforeEach(() => {
   pending.length = 0;
-  wavSeed = 0;
   studioActions.__resetForTest('empty');
   laneA = studioStore.getState().lanes[0]!.id;
 });
@@ -101,7 +105,14 @@ describe('penempatan clip hasil import', () => {
     ];
     // Ketiganya sudah masuk tahap decode sebelum satu pun selesai — inilah
     // bukti bahwa jalurnya paralel, bukan antrean.
-    await new Promise<void>((r) => setTimeout(r, 0));
+    //
+    // Ditunggu sampai benar-benar bertiga, bukan satu putaran macrotask:
+    // hashing menambah langkah asinkron sebelum decode, dan berapa putaran yang
+    // dibutuhkannya bergantung pada beban mesin — satu tebakan tetap membuat
+    // tes ini gagal sesekali di suite penuh, tanpa ada yang berubah di kode.
+    for (let tries = 0; pending.length < 3 && tries < 100; tries += 1) {
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
     expect(pending).toHaveLength(3);
 
     await finish(0, 4 * SR);
