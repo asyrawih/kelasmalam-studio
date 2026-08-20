@@ -420,19 +420,14 @@ async function route(
     if (method !== 'DELETE') return fail(405, 'METODE', 'pakai DELETE');
     const hash = track[1] ?? '';
 
-    /*
-     * Menolak menghapus lagu yang masih dipakai project, DENGAN MENYEBUT
-     * project mana. Ini kriteria "done" L7, dan alasannya: project yang
-     * merujuk asset hilang tidak gagal saat dihapus melainkan saat DIBUKA,
-     * berminggu-minggu kemudian, tanpa petunjuk apa yang hilang.
-     */
-    await indexOldProjects(store, user.id);
+    // Penghapusan global ditolak selama lagu masih menjadi anggota folder.
+    // User harus tahu folder mana yang perlu dibersihkan lebih dulu.
     const used = await store.projectsReferencing(user.id, hash);
     if (used.length > 0) {
       return json(
         {
           code: 'MASIH_DIPAKAI',
-          message: `lagu ini masih dipakai ${used.length} project: ${used.map((p) => p.name).join(', ')}`,
+          message: `lagu ini masih ada di ${used.length} folder project: ${used.map((p) => p.name).join(', ')} — keluarkan dari folder itu dulu`,
           projects: used,
         },
         409,
@@ -465,12 +460,7 @@ async function route(
       const missing = await missingClaims(store, user.id, parsed.json);
       if (missing.length > 0) return missingResponse(missing);
 
-      const made = await store.createProject(
-        user.id,
-        parsed.name,
-        parsed.json,
-        hashesIn(parsed.json),
-      );
+      const made = await store.createProject(user.id, parsed.name, parsed.json);
       return json({ id: made.id, version: made.version }, 201);
     }
     return fail(405, 'METODE', 'pakai GET atau POST');
@@ -485,7 +475,6 @@ async function route(
     const row = await store.getProject(user.id, projectId);
     if (row === null) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
 
-    await indexOldProjects(store, user.id);
     if (method === 'POST') {
       if (!(await store.hasClaim(user.id, hash))) {
         return fail(404, 'TIDAK_ADA', 'lagu ini tidak ada di kepustakaanmu');
@@ -494,13 +483,6 @@ async function route(
       return json({ ok: true });
     }
     if (method === 'DELETE') {
-      if (hashesIn(row.json).includes(hash)) {
-        return fail(
-          409,
-          'MASIH_DIPAKAI',
-          'lagu ini masih dipakai clip timeline project — hapus clip-nya dulu',
-        );
-      }
       await store.removeProjectTrack(user.id, projectId, hash);
       return json({ ok: true });
     }
@@ -514,7 +496,6 @@ async function route(
     if (method === 'GET') {
       const row = await store.getProject(user.id, id);
       if (row === null) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
-      await indexOldProjects(store, user.id);
       const tracks = await store.listProjectTracks(user.id, id);
       return json(
         { id: row.id, name: row.name, json: safeParse(row.json), version: row.version, tracks },
@@ -550,7 +531,6 @@ async function route(
         parsed.name,
         parsed.json,
         expected,
-        hashesIn(parsed.json),
       );
       if (saved.ok) return json({ ok: true, version: saved.version }, 200, { etag: `"${saved.version}"` });
       if (saved.current === null) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
@@ -689,24 +669,6 @@ export function hashesIn(projectJson: string): readonly string[] {
   };
   walk(safeParse(projectJson));
   return [...out];
-}
-
-/**
- * Isi `project_track` untuk project yang ditulis SEBELUM tabel itu ada.
- *
- * Sekali per project, ditandai `tracks_indexed`. Dijalankan tepat sebelum
- * pertanyaan "lagu ini masih dipakai?" — di situlah jawabannya harus lengkap,
- * dan di situ pula biayanya paling jarang ditagih.
- *
- * Yang dihindari: menjawab "tidak dipakai siapa pun" untuk lagu yang sebenarnya
- * dipakai project lama, lalu menghapusnya — dan project itu gagal dibuka
- * berminggu-minggu kemudian.
- */
-async function indexOldProjects(store: Store, userId: string): Promise<void> {
-  for (const row of await store.unindexedProjects(userId)) {
-    await store.replaceProjectTracks(row.id, userId, hashesIn(row.json));
-    await store.markIndexed(row.id);
-  }
 }
 
 async function missingClaims(

@@ -480,11 +480,12 @@ describe('projects', () => {
   it('hapus lagu yang dipakai project DITOLAK, dengan menyebut project-nya', async () => {
     const cookie = await login();
     await seedTrack(cookie, HASH_A);
-    await call('/projects', {
+    const { id } = await (await call('/projects', {
       method: 'POST',
       cookie,
       body: JSON.stringify({ name: 'Set malam', json: projectWith(HASH_A) }),
-    });
+    })).json() as { id: string };
+    await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie });
 
     const res = await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie });
     expect(res.status).toBe(409);
@@ -512,6 +513,26 @@ describe('projects', () => {
     expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
   });
 
+  it('membership lagu terisolasi per folder', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    await seedTrack(cookie, HASH_B);
+    const buat = async (name: string): Promise<string> => {
+      const res = await call('/projects', {
+        method: 'POST', cookie, body: JSON.stringify({ name, json: { lanes: [] } }),
+      });
+      return ((await res.json()) as { id: string }).id;
+    };
+    const a = await buat('A');
+    const b = await buat('B');
+    await call(`/projects/${a}/tracks/${HASH_A}`, { method: 'POST', cookie });
+    await call(`/projects/${b}/tracks/${HASH_B}`, { method: 'POST', cookie });
+
+    expect((await (await call(`/projects/${a}`, { cookie })).json()).tracks).toEqual([HASH_A]);
+    expect((await (await call(`/projects/${b}`, { cookie })).json()).tracks).toEqual([HASH_B]);
+    expect((await (await call('/tracks', { cookie })).json()).tracks).toHaveLength(2);
+  });
+
   it('folder tidak bisa diberi lagu milik user lain atau project user lain', async () => {
     const ana = await login({ sub: 'sub-folder-a', email: 'a@test', name: 'Ana' });
     const budi = await login({ sub: 'sub-folder-b', email: 'b@test', name: 'Budi' });
@@ -525,7 +546,7 @@ describe('projects', () => {
     expect((await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie: ana })).status).toBe(404);
   });
 
-  it('anggota folder yang masih dipakai clip tidak bisa dilepas', async () => {
+  it('anggota folder bisa dilepas tanpa dipengaruhi JSON timeline', async () => {
     const cookie = await login();
     await seedTrack(cookie, HASH_A);
     const { id } = await (await call('/projects', {
@@ -533,19 +554,21 @@ describe('projects', () => {
       body: JSON.stringify({ name: 'BKB', json: projectWith(HASH_A) }),
     })).json() as { id: string };
 
+    await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie });
     const res = await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie });
-    expect(res.status).toBe(409);
-    expect((await res.json()).message).toMatch(/hapus clip/i);
+    expect(res.status).toBe(200);
+    expect((await (await call(`/projects/${id}`, { cookie })).json()).tracks).toEqual([]);
   });
 
   it('hapus tidak memakai LIKE/GLOB D1 untuk mencari project pemakai', async () => {
     const cookie = await login();
     await seedTrack(cookie, HASH_A);
-    await call('/projects', {
+    const { id } = await (await call('/projects', {
       method: 'POST',
       cookie,
       body: JSON.stringify({ name: 'Set malam', json: projectWith(HASH_A) }),
-    });
+    })).json() as { id: string };
+    await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie });
 
     const original = env.DB;
     env = {
@@ -701,11 +724,12 @@ describe('lagu yang masih dipakai project', () => {
       lanes: [{ clips: [{ contentHash: HASH_A }] }],
       sampah: 'x'.repeat(2 * 1024 * 1024),
     };
-    await call('/projects', {
+    const { id } = await (await call('/projects', {
       method: 'POST',
       cookie,
       body: JSON.stringify({ name: 'Besar', json: besar }),
-    });
+    })).json() as { id: string };
+    await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie });
 
     const res = await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie });
     expect(res.status).toBe(409);
@@ -735,6 +759,7 @@ describe('lagu yang masih dipakai project', () => {
       cookie,
       body: JSON.stringify({ name: 'A', json: { lanes: [{ clips: [{ contentHash: HASH_A }] }] } }),
     })).json();
+    await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie });
 
     // Disimpan ulang tanpa HASH_A.
     await call(`/projects/${id}`, {
@@ -747,7 +772,7 @@ describe('lagu yang masih dipakai project', () => {
     // Project adalah folder: menghapus clip bukan berarti mengeluarkan lagunya
     // dari folder. Keduanya baru lepas lewat endpoint membership yang sadar.
     expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(409);
-    expect((await call(`/tracks/${HASH_B}`, { method: 'DELETE', cookie })).status).toBe(409);
+    expect((await call(`/tracks/${HASH_B}`, { method: 'DELETE', cookie })).status).toBe(200);
     await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie });
     expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
   });
@@ -760,12 +785,13 @@ describe('lagu yang masih dipakai project', () => {
       cookie,
       body: JSON.stringify({ name: 'A', json: { lanes: [{ clips: [{ contentHash: HASH_A }] }] } }),
     })).json();
+    await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie });
 
     await call(`/projects/${id}`, { method: 'DELETE', cookie });
     expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
   });
 
-  it('project LAMA (ditulis sebelum tabel indeks ada) tetap dihitung', async () => {
+  it('JSON project lama tidak otomatis mencemari membership folder', async () => {
     const cookie = await login();
     await seedTrack(cookie, HASH_A);
     const { id } = await (await call('/projects', {
@@ -774,15 +800,13 @@ describe('lagu yang masih dipakai project', () => {
       body: JSON.stringify({ name: 'Lama', json: { lanes: [{ clips: [{ contentHash: HASH_A }] }] } }),
     })).json();
 
-    // Dibuat menyerupai keadaan sebelum migrasi: barisnya dibuang, penandanya
-    // dinolkan. Kalau pengisian susulannya tidak jalan, lagu yang MASIH dipakai
-    // akan terhapus — dan project itu gagal dibuka berminggu-minggu kemudian.
+    // Membership folder hanya berasal dari aksi folder yang eksplisit, bukan
+    // hasil menyisir JSON timeline lama.
     db.exec(`DELETE FROM project_track WHERE project_id = '${id}'`);
     db.exec(`UPDATE project SET tracks_indexed = 0 WHERE id = '${id}'`);
 
     const res = await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie });
-    expect(res.status).toBe(409);
-    expect((await res.json()).message).toContain('Lama');
+    expect(res.status).toBe(200);
   });
 });
 

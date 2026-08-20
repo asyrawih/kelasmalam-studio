@@ -220,7 +220,6 @@ export class Store {
     userId: string,
     name: string,
     json: string,
-    hashes: readonly string[],
   ): Promise<{ id: string; version: number }> {
     const id = crypto.randomUUID();
     await this.db
@@ -230,7 +229,6 @@ export class Store {
       )
       .bind(id, userId, name, json, this.now())
       .run();
-    await this.replaceProjectTracks(id, userId, hashes);
     return { id, version: 1 };
   }
 
@@ -306,7 +304,6 @@ export class Store {
     name: string,
     json: string,
     expectedVersion: number,
-    hashes: readonly string[],
   ): Promise<{ ok: true; version: number } | { ok: false; current: number | null }> {
     const next = expectedVersion + 1;
     const res = await this.db
@@ -317,13 +314,7 @@ export class Store {
       .bind(name, json, this.now(), next, id, userId, expectedVersion)
       .run();
 
-    if (res.meta.changes > 0) {
-      // Project adalah folder lagu. Menyimpan timeline memastikan lagu yang
-      // dipakai masuk folder, tetapi tidak membuang lagu anggota yang belum
-      // dipasang sebagai clip.
-      for (const hash of hashes) await this.addProjectTrack(userId, id, hash);
-      return { ok: true, version: next };
-    }
+    if (res.meta.changes > 0) return { ok: true, version: next };
 
     const row = await this.db
       .prepare('SELECT version FROM project WHERE id = ? AND user_id = ?')

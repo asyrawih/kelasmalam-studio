@@ -40,6 +40,21 @@ describe('LandingPage', () => {
     expect(open).toHaveBeenCalledTimes(3);
   });
 
+  it('menyembunyikan tombol aplikasi di header sebelum login', () => {
+    render(
+      <LandingPage
+        onOpenStudio={() => {}}
+        onOpenDj={() => {}}
+        onOpenRoblox={() => {}}
+        showAppLinks={false}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'MODE DJ' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'ROBLOX' })).toBeNull();
+    // CTA bawah tetap menjelaskan produk; yang hilang hanya tombol akses pada header.
+    expect(screen.getAllByRole('button', { name: 'BUKA STUDIO' })).toHaveLength(1);
+  });
+
   it('FAQ membuka dan menutup jawabannya', () => {
     render(<LandingPage onOpenStudio={() => {}} />);
     const first = screen.getByRole('button', { name: /Audio saya diupload ke server/ });

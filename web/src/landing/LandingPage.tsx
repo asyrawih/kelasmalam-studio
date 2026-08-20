@@ -41,6 +41,8 @@ export interface LandingPageProps {
   readonly onOpenDj?: () => void;
   /** Dipanggil oleh CTA yang membuka unggah asset Roblox (`/roblox`). */
   readonly onOpenRoblox?: () => void;
+  /** Tombol menuju aplikasi hanya tampil setelah sesi login terverifikasi. */
+  readonly showAppLinks?: boolean;
 }
 
 /** Label bernomor di atas tiap judul section ("01 / FITUR"). */
@@ -94,6 +96,7 @@ export function LandingPage({
   onOpenStudio,
   onOpenDj,
   onOpenRoblox,
+  showAppLinks = true,
 }: LandingPageProps): JSX.Element {
   // Paket yang sedang disorot. Belum ada checkout — memilih hanya mengubah
   // sorotan kartunya, sama seperti di design.
@@ -160,7 +163,7 @@ export function LandingPage({
             <a href="#harga" style={NAV_LINK}>
               HARGA
             </a>
-            {onOpenDj !== undefined && (
+            {showAppLinks && onOpenDj !== undefined && (
               <Button
                 size="sm"
                 variant="outline"
@@ -170,7 +173,7 @@ export function LandingPage({
                 MODE DJ
               </Button>
             )}
-            {onOpenRoblox !== undefined && (
+            {showAppLinks && onOpenRoblox !== undefined && (
               <Button
                 size="sm"
                 variant="outline"
@@ -180,9 +183,11 @@ export function LandingPage({
                 ROBLOX
               </Button>
             )}
-            <Button size="sm" style={{ height: '34px' }} onClick={onOpenStudio}>
-              BUKA STUDIO
-            </Button>
+            {showAppLinks ? (
+              <Button size="sm" style={{ height: '34px' }} onClick={onOpenStudio}>
+                BUKA STUDIO
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>

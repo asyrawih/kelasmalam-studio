@@ -225,6 +225,7 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onOpenStudio={() => navigate(STUDIO_PATH)}
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
+          showAppLinks={!authRequired || authenticated}
         />
       )}
 
