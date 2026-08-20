@@ -177,6 +177,69 @@ describe('project', () => {
   });
 });
 
+describe('nama project', () => {
+  it('project baru diberi nama SEBELUM disimpan', async () => {
+    await bukaDok(api({ projects: async () => [] }));
+    const kolom = screen.getByLabelText('nama project baru');
+
+    fireEvent.change(kolom, { target: { value: 'Set Sabtu' } });
+    expect((kolom as HTMLInputElement).value).toBe('Set Sabtu');
+  });
+
+  it('nama project yang dipilih bisa disunting di tempat', async () => {
+    await bukaDok();
+    fireEvent.click(sisi(/Set Malam/));
+
+    const kolom = await screen.findByLabelText('nama project');
+    expect((kolom as HTMLInputElement).value).toBe('Set Malam');
+  });
+
+  it('tombol GANTI NAMA baru muncul kalau namanya BERUBAH', async () => {
+    await bukaDok();
+    fireEvent.click(sisi(/Set Malam/));
+    const kolom = await screen.findByLabelText('nama project');
+
+    // Tombol yang selalu ada mengundang penekanan yang tidak melakukan apa-apa,
+    // dan tiap penekanan tetap dua permintaan ke server.
+    expect(screen.queryByRole('button', { name: 'GANTI NAMA' })).toBeNull();
+
+    fireEvent.change(kolom, { target: { value: 'Set Minggu' } });
+    expect(screen.getByRole('button', { name: 'GANTI NAMA' })).toBeDefined();
+  });
+
+  it('mengganti nama TIDAK menyentuh isi project', async () => {
+    const updateProject = vi.fn(
+      async (_id: string, _name: string, _json: unknown, _v: number) => 4,
+    );
+    await bukaDok(
+      api({ updateProject: updateProject as unknown as LibraryApi['updateProject'] }),
+    );
+    fireEvent.click(sisi(/Set Malam/));
+    const kolom = await screen.findByLabelText('nama project');
+
+    fireEvent.change(kolom, { target: { value: 'Set Minggu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'GANTI NAMA' }));
+
+    await waitFor(() => expect(updateProject).toHaveBeenCalledTimes(1));
+    const [, nama, json, versi] = updateProject.mock.calls[0]!;
+    expect(nama).toBe('Set Minggu');
+    // json yang dikirim adalah yang BARU SAJA dibaca dari server — bukan
+    // timeline yang sedang dikerjakan.
+    expect(json).toEqual({ lanes: [{ clips: [{ contentHash: H1 }] }] });
+    expect(versi).toBe(3);
+  });
+
+  it('Escape mengembalikan nama yang tersimpan', async () => {
+    await bukaDok();
+    fireEvent.click(sisi(/Set Malam/));
+    const kolom = await screen.findByLabelText('nama project');
+
+    fireEvent.change(kolom, { target: { value: 'salah ketik' } });
+    fireEvent.keyDown(kolom, { key: 'Escape' });
+    expect((kolom as HTMLInputElement).value).toBe('Set Malam');
+  });
+});
+
 describe('seret ke lane', () => {
   it('baris lagu bisa diseret, dan yang dibawa HASH-nya', async () => {
     await bukaDok();

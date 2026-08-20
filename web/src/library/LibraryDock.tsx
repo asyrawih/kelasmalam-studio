@@ -38,7 +38,13 @@ import { registerLibraryDropHandler } from '../studio/timeline/library-drop';
 import { placeAssetOnLane } from '../studio/timeline/audio-import';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
-import { currentProjectName, openProject, saveProject, unsavedAssets } from './projects';
+import {
+  currentProjectName,
+  openProject,
+  renameProject,
+  saveProject,
+  unsavedAssets,
+} from './projects';
 import { summarize, type LibraryTrack, type UploadState } from './model';
 import { libraryActions, libraryStore, useLibrary } from './store';
 import { createMarksSync } from './marks';
@@ -71,6 +77,14 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   const state = useLibrary();
   const assets = useStudio((s) => s.assets);
   const [busy, setBusy] = useState(false);
+  /*
+   * Nama untuk project BARU, hidup selama dok terbuka.
+   *
+   * Di komponen, bukan di store: ia cuma berarti sampai tombol simpan ditekan,
+   * dan menyimpan ketikan setengah jadi ke store berarti setiap huruf
+   * membangunkan seluruh pelanggan kepustakaan.
+   */
+  const [saveName, setSaveName] = useState('');
 
   /*
    * Boot: siapa yang login, lalu daftarnya.
@@ -304,11 +318,15 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     }
 
     const open = libraryStore.getState().openProject;
+    // Nama dari kolom di sidebar; kalau dikosongkan, jatuh ke nama project di
+    // state supaya menyimpan tidak pernah gagal hanya karena judulnya kosong.
+    const nama = open?.name ?? (saveName.trim() === '' ? currentProjectName() : saveName.trim());
+
     setBusy(true);
     libraryActions.setNotice(null);
     const out = await saveProject(api, {
       id: open?.id ?? null,
-      name: open?.name ?? currentProjectName(),
+      name: nama,
       version: open?.version ?? 0,
     });
     setBusy(false);
@@ -321,11 +339,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       );
       return;
     }
-    libraryActions.setOpenProject({
-      id: out.id,
-      name: open?.name ?? currentProjectName(),
-      version: out.version,
-    });
+    libraryActions.setOpenProject({ id: out.id, name: nama, version: out.version });
     // Isi foldernya berubah; yang di-cache sudah tidak berlaku.
     libraryActions.forgetProjectTracks(out.id);
     libraryActions.setNotice(`tersimpan (versi ${out.version})`);
@@ -357,6 +371,37 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
           ? `${name} dibuka`
           : `${name} dibuka — ${out.missingAssets} lagu tidak bisa dimuat, clip-nya bisu`,
       );
+    },
+    [api],
+  );
+
+  const onRename = useCallback(
+    async (id: string, name: string): Promise<void> => {
+      if (api === null) return;
+      setBusy(true);
+      libraryActions.setNotice(null);
+      const out = await renameProject(api, id, name);
+      setBusy(false);
+
+      if (!out.ok) {
+        libraryActions.setNotice(
+          out.conflict
+            ? `${out.message} — muat ulang daftar sebelum mengganti namanya.`
+            : out.message,
+        );
+        return;
+      }
+      // Versinya ikut naik: PUT yang mengganti nama tetap PUT, dan tab ini
+      // harus memegang versi terbaru kalau tidak simpan berikutnya kalah.
+      const open = libraryStore.getState().openProject;
+      if (open?.id === id) libraryActions.setOpenProject({ id, name, version: out.version });
+      try {
+        libraryActions.setProjects(await api.projects());
+      } catch {
+        // Daftar yang gagal disegarkan bukan alasan meragukan penggantian nama
+        // yang sudah dijawab server dengan versi baru.
+      }
+      libraryActions.setNotice(`nama diganti jadi ${name}`);
     },
     [api],
   );
@@ -448,6 +493,9 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
               onSave={onSave}
               onOpen={onOpen}
               onDeleteProject={onDeleteProject}
+              onRename={onRename}
+              onSaveName={setSaveName}
+              saveName={saveName}
               busy={busy}
             />
           )}
