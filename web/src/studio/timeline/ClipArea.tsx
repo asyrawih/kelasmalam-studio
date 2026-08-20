@@ -552,6 +552,7 @@ export function ClipArea({
 
   const gesture = useRef<Gesture | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const view = useTrackView(scrollerRef, trackRef);
   /**
    * Satu `<input type="file">` tersembunyi untuk SELURUH area clip, bukan satu
    * per lane: elemen input tidak bisa dibuka secara terprogram tanpa gestur
