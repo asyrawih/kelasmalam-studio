@@ -16,6 +16,7 @@
  */
 
 import { useState, type CSSProperties } from 'react';
+import { VersionTag } from '../app-shell/VersionTag';
 import { Badge, Button, Card } from '../ui/cyber';
 import { HeroShot } from './HeroShot';
 import {
@@ -139,6 +140,7 @@ export function LandingPage({ onOpenStudio, onOpenDj }: LandingPageProps): JSX.E
           <span style={{ fontSize: '11px', letterSpacing: '.18em', color: 'var(--cy-accent)' }}>
             // TIMELINE MIX
           </span>
+          <VersionTag height={20} />
           <div className="km-nav">
             <a href="#fitur" style={NAV_LINK}>
               FITUR

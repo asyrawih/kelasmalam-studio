@@ -15,6 +15,7 @@
  */
 
 import { chordFor, chordLabel } from '../../app-shell';
+import { VersionTag } from '../../app-shell/VersionTag';
 import { Badge, Button } from '../../ui/cyber';
 import { QUANTIZE_DIVS, DECK_ACCENT, type QuantizeDiv } from '../model';
 import { djActions, djStore, useDj } from '../store';
@@ -76,6 +77,7 @@ export function DjHeader({ onClose, tooNarrow, tooShort }: DjHeaderProps): JSX.E
         <span style={{ fontSize: '10px', letterSpacing: '.16em', color: 'var(--cy-accent)' }}>
           // PERFORMANCE
         </span>
+        <VersionTag height={20} />
       </div>
 
       <div style={{ height: '18px', width: '1px', background: 'var(--cy-border)' }} />
