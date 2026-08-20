@@ -2,8 +2,16 @@
  * Header bar — baris paling atas design: judul + subjudul, pemisah, ringkasan
  * project yang memotong dirinya sendiri kalau sempit, lalu badge status dan
  * tombol CLOSE di kanan.
+ *
+ * Penanda versi build menempel pada judul, bukan pada kelompok kanan: kelompok
+ * kanan yang menyusut lebih dulu saat layar sempit, dan justru di situlah
+ * pertanyaan "produksi lagi jalan versi apa" paling sering muncul.
  */
 
+// Diimpor dari modulnya langsung, bukan dari barrel `../../app-shell`: barrel
+// itu ikut memuat `AppShell` → `App`/`DjPage`, dan header tidak perlu menyeret
+// seluruh aplikasi hanya untuk menampilkan nomor versi.
+import { VersionTag } from '../../app-shell/VersionTag';
 import { Badge, Button } from '../../ui/cyber';
 import { useStudio } from '../store';
 
@@ -44,6 +52,7 @@ export function StudioHeader({ onClose, onOpenDj }: StudioHeaderProps): JSX.Elem
         <span style={{ fontSize: '11px', letterSpacing: '.16em', color: 'var(--cy-accent)' }}>
           // TIMELINE MIX
         </span>
+        <VersionTag />
       </div>
       <div style={{ height: '22px', width: '1px', background: 'var(--cy-border)' }} />
       <div
