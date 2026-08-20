@@ -19,8 +19,16 @@ rustflags = [
   # alih-alih mendefinisikannya sendiri.
   "-C", "link-arg=--import-memory",
   "-C", "link-arg=--shared-memory",
-  # Shared memory wajib punya batas maksimum. 2 GiB = 32768 page * 64 KiB.
-  "-C", "link-arg=--max-memory=2147483648",
+  # Shared memory wajib punya batas maksimum. 4 GiB = 65536 page * 64 KiB, dan
+  # itu batas MUTLAK wasm32: linear memory dialamati pointer 32 bit, jadi
+  # wasm-ld menolak apa pun di atas 4294967296 ("maximum memory too large").
+  # Naik ke 8/16 GiB hanya mungkin lewat memory64 — target lain, belum stabil.
+  #
+  # Angka ini adalah PLAFON YANG DIDEKLARASIKAN, bukan yang dipesan. JS boleh
+  # menyediakan memory dengan `maximum` LEBIH KECIL dari ini dan modulnya tetap
+  # sah; `wasm-loader.ts` memanfaatkan itu untuk mencoba 4 GiB lalu jatuh ke
+  # 2 GiB di mesin yang menolaknya.
+  "-C", "link-arg=--max-memory=4294967296",
   # Ruang stack per-thread (worklet + worker), 1 MiB.
   "-C", "link-arg=-zstack-size=1048576",
 ]

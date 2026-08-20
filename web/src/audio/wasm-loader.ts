@@ -25,25 +25,74 @@ export const EXPECTED_ABI_VERSION = 1;
 
 /** 16 MiB awal: engine + scratch. Growth hanya terjadi saat import asset. */
 const MEMORY_INITIAL_PAGES = 256;
-/**
- * 2 GiB batas atas (32768 × 64 KiB). Tidak dialokasi di awal.
- *
- * HARUS sama dengan `--max-memory=2147483648` di `.cargo/config.toml` dan
- * `scripts/build-wasm.sh`: shared memory wajib punya maximum, dan kalau JS
- * meminta angka yang berbeda dari yang di-link, instantiate ditolak.
- *
- * Diekspor karena plafon ini PUNYA konsekuensi yang harus dijelaskan ke user,
- * bukan cuma parameter build: seluruh PCM project ada di linear memory selama
- * export, jadi ini yang menentukan berapa lama project masih bisa di-bounce.
- * Lihat `memoryHeadroomBytes` di `studio/export/wasm-engine.ts`.
- */
-export const MEMORY_MAXIMUM_PAGES = 32768;
 
 /** Ukuran satu page wasm. */
 export const WASM_PAGE_BYTES = 65536;
 
-/** Plafon linear memory dalam byte — bentuk yang dipakai penjaga export. */
-export const MEMORY_MAXIMUM_BYTES = MEMORY_MAXIMUM_PAGES * WASM_PAGE_BYTES;
+/**
+ * 4 GiB (65536 page) — plafon yang DIMINTA lebih dulu.
+ *
+ * Ini juga batas mutlak wasm32: linear memory dialamati pointer 32 bit, jadi
+ * `--max-memory` di atas 4294967296 ditolak wasm-ld mentah-mentah. Tidak ada
+ * konfigurasi yang membuat 8 atau 16 GiB mungkin; itu butuh memory64, target
+ * yang berbeda dan belum stabil.
+ */
+export const MEMORY_MAXIMUM_PAGES = 65536;
+
+/**
+ * 2 GiB — dipakai kalau mesin menolak membuat shared memory 4 GiB.
+ *
+ * KENAPA HARUS ADA FALLBACK-NYA. Varian mt meng-IMPORT memory-nya, jadi objek
+ * `WebAssembly.Memory` dibuat JS SEBELUM instantiate. Kalau pembuatannya
+ * melempar, yang gagal bukan cuma export — seluruh engine tidak pernah hidup,
+ * dan aplikasinya tidak boot sama sekali. Menaikkan plafon tanpa jaring
+ * berarti menukar bug export yang bisa dihindari dengan halaman kosong.
+ *
+ * Yang membuat ini sah: import memory cocok selama `maximum` yang disediakan
+ * TIDAK MELEBIHI yang dideklarasikan modul. Modulnya di-link di 4 GiB, jadi
+ * memory 2 GiB tetap diterima instance yang sama. Tidak perlu artefak kedua.
+ */
+export const MEMORY_FALLBACK_PAGES = 32768;
+
+/**
+ * Buat linear memory sebesar yang disanggupi mesin.
+ *
+ * Plafonnya dikembalikan bersama objeknya, bukan diasumsikan dari konstanta:
+ * yang dipakai penjaga export harus plafon YANG SUNGGUHAN didapat, dan setelah
+ * fallback keduanya berbeda. Menebaknya 4 GiB padahal cuma dapat 2 GiB akan
+ * meloloskan export yang pasti kehabisan memori di tengah jalan.
+ */
+export function createMemory(variant: WasmVariant): {
+  memory: WebAssembly.Memory;
+  maximumBytes: number;
+} {
+  // `shared: true` hanya legal (dan hanya berguna) di varian mt. Di jalur
+  // degraded memory-nya biasa: worklet tetap jalan, hanya tidak berbagi
+  // linear memory dengan main thread.
+  const shared = variant === 'mt';
+  for (const pages of [MEMORY_MAXIMUM_PAGES, MEMORY_FALLBACK_PAGES]) {
+    try {
+      const descriptor = { initial: MEMORY_INITIAL_PAGES, maximum: pages };
+      const memory = new WebAssembly.Memory(shared ? { ...descriptor, shared } : descriptor);
+      return { memory, maximumBytes: pages * WASM_PAGE_BYTES };
+    } catch (e: unknown) {
+      // Shared memory memesan ruang ALAMAT sebesar `maximum` di muka, jadi
+      // penolakannya terjadi di sini — bukan nanti saat `grow`. Turun satu
+      // tingkat dan coba lagi; kalau yang 2 GiB pun ditolak, itu bukan lagi
+      // soal ukuran dan errornya harus naik apa adanya.
+      if (pages === MEMORY_FALLBACK_PAGES) throw e;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[wasm] linear memory ${pages / 16} GiB ditolak mesin, turun ke ` +
+          `${MEMORY_FALLBACK_PAGES / 16} GiB. Project panjang akan lebih cepat ` +
+          'menyentuh plafon saat export.',
+        e,
+      );
+    }
+  }
+  // Tidak terjangkau: loop di atas selalu mengembalikan nilai atau melempar.
+  throw new Error('linear memory tidak bisa dibuat');
+}
 
 /** Surface bindgen yang dipakai main thread & worker. */
 export interface WasmBindgenExports {
@@ -174,6 +223,13 @@ export interface FlacEncoderHandleT {
 export interface LoadedWasm {
   readonly module: WebAssembly.Module;
   readonly memory: WebAssembly.Memory;
+  /**
+   * Plafon linear memory yang BENAR-BENAR didapat (byte), sesudah fallback.
+   * Dibawa di sini dan bukan dibaca ulang dari `memory`: `Memory.prototype.type()`
+   * belum ada di semua mesin, dan menebaknya dari konstanta akan salah persis di
+   * mesin yang tadi menolak 4 GiB.
+   */
+  readonly memoryMaximumBytes: number;
   readonly variant: WasmVariant;
   readonly caps: Caps;
   /** Instance main thread (surface bindgen). */
@@ -231,14 +287,7 @@ async function doLoad(): Promise<LoadedWasm> {
 
   const module = await WebAssembly.compile(bytes);
 
-  // `shared: true` hanya legal (dan hanya berguna) di varian mt. Di jalur
-  // degraded memory-nya biasa: worklet tetap jalan, hanya tidak berbagi
-  // linear memory dengan main thread.
-  const memory = new WebAssembly.Memory(
-    variant === 'mt'
-      ? { initial: MEMORY_INITIAL_PAGES, maximum: MEMORY_MAXIMUM_PAGES, shared: true }
-      : { initial: MEMORY_INITIAL_PAGES, maximum: MEMORY_MAXIMUM_PAGES },
-  );
+  const { memory, maximumBytes: memoryMaximumBytes } = createMemory(variant);
 
   // `initSync` mengembalikan `instance.exports`. Itu penting: HANYA varian mt
   // yang meng-IMPORT memory, jadi hanya di sana `memory` di atas benar-benar
@@ -287,7 +336,23 @@ async function doLoad(): Promise<LoadedWasm> {
     );
   }
 
-  return { module, memory: actualMemory, variant, caps, exports: glue, controlPtr, raw, newThreadStack };
+  return {
+    module,
+    memory: actualMemory,
+    // Untuk `mt` ini plafon yang sungguhan dinegosiasikan. Untuk `st` modulnya
+    // memakai memory-nya SENDIRI dan mengabaikan yang dibuat JS, jadi angka ini
+    // jadi proksi: mesin yang menolak descriptor 4 GiB di atas juga tidak akan
+    // menumbuhkan memory internalnya sejauh itu. Proksi yang meleset pun tetap
+    // lebih baik dari tidak ada batas sama sekali — tanpa angka, satu-satunya
+    // bentuk kegagalan yang tersisa adalah trap tanpa pesan.
+    memoryMaximumBytes,
+    variant,
+    caps,
+    exports: glue,
+    controlPtr,
+    raw,
+    newThreadStack,
+  };
 }
 
 /** Ditandai supaya UI bisa membedakan "belum dibangun" dari error sungguhan. */
