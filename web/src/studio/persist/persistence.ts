@@ -1,5 +1,22 @@
 /**
- * Simpan otomatis + pulihkan project saat boot.
+ * Bentuk project yang bisa disimpan, dan cara memulihkannya kembali.
+ *
+ * TIDAK ADA SIMPAN OTOMATIS DI SINI, dan itu keputusan. Versi sebelumnya
+ * berlangganan ke store dan menulis ke IndexedDB 600 ms setelah perubahan apa
+ * pun — tiap geser clip, tiap tarik fade. Setiap penulisan itu memanggil
+ * `pruneAssets`, yang membaca ULANG byte terenkode SELURUH asset lewat
+ * `getAll()` hanya untuk mengetahui kunci mana yang masih dipakai. Dengan satu
+ * lagu 27 menit di kepustakaan, itu puluhan MB yang di-deserialize lalu dibuang
+ * setiap kali tangan user bergerak — dan itulah lag yang terasa terus-menerus
+ * di studio, bukan hanya saat import.
+ *
+ * Penggantinya bukan autosave yang lebih murah, melainkan penyimpanan yang
+ * EKSPLISIT: user menyimpan project ke kepustakaannya sendiri (rencananya
+ * di-upload ke object storage lewat backend). Fungsi di bawah — `serialize`,
+ * `deserialize`, `normalizeLanes`, `restoreProject`, `assetsInUse` — adalah
+ * bahan untuk jalur itu dan sengaja dipertahankan utuh; yang dibuang hanya
+ * pemicunya. Konsekuensi yang harus disebut terang-terangan: sampai jalur simpan
+ * itu ada, project TIDAK bertahan melewati refresh.
  *
  * Bentuk yang disimpan sengaja hanya berisi hal yang MERUPAKAN PROJECT.
  * State transien (sedang play, sedang drag, clipboard, progress export, status
@@ -13,14 +30,13 @@ import {
   DEFAULT_PANEL_ORDER,
   DEFAULT_RAIL_ORDER,
   studioActions,
-  studioStore,
   type StudioAppState,
 } from '../store';
 import { normalizeClipLoop } from '../timeline/clip-loop';
 import { normalizeClipFade } from '../timeline/fade';
 import { normalizeClipStem } from '../timeline/stem';
 import { collectAssetRoots } from './asset-roots';
-import { loadAllAssets, loadProjectJson, pruneAssets, saveProjectJson } from './db';
+import { loadAllAssets, loadProjectJson } from './db';
 
 /** Naikkan kalau bentuk data berubah dan yang lama tidak bisa dibaca lagi. */
 const SCHEMA_VERSION = 1;
@@ -247,10 +263,11 @@ export async function restoreProject(
 /**
  * Himpunan asset yang MASIH DIPAKAI: clip di lane ∪ semua akar terdaftar.
  *
- * Fungsi terpisah dan diekspor supaya bisa dites tanpa IndexedDB dan tanpa
- * timer. Yang bisa salah diam-diam di sini adalah HIMPUNANNYA, bukan penulisan
- * ke DB — dan bug-nya berbentuk data user yang hilang setelah refresh, yaitu
- * kelas bug yang paling mahal untuk ditemukan dari layar.
+ * Fungsi terpisah dan diekspor supaya bisa dites tanpa IndexedDB. Yang bisa
+ * salah diam-diam di sini adalah HIMPUNANNYA, bukan penulisan ke DB — dan
+ * bug-nya berbentuk data user yang hilang, yaitu kelas bug yang paling mahal
+ * untuk ditemukan dari layar. Sekarang ia menjawab "apa yang perlu ikut
+ * disimpan/di-upload", bukan lagi "apa yang boleh dipangkas".
  *
  * Akar didaftarkan lewat `asset-roots.ts`; halaman `/dj` memakainya untuk
  * lagu yang duduk di deck tanpa satu pun clip.
@@ -261,44 +278,4 @@ export function assetsInUse(s: StudioAppState): Set<number> {
     for (const clip of lane.clips) used.add(clip.assetId);
   }
   return used;
-}
-
-/**
- * Mulai menyimpan otomatis. Mengembalikan fungsi untuk berhenti.
- *
- * Di-debounce, DAN dilewati selama drag/scrub: satu drag clip menghasilkan
- * puluhan perubahan state per detik, dan menulis ke IndexedDB di tengah itu
- * hanya membuang I/O untuk keadaan setengah jadi yang langsung usang.
- */
-export function startAutosave(delayMs = 600): () => void {
-  let timer: number | undefined;
-  let lastJson = '';
-
-  const flush = (): void => {
-    const s = studioStore.getState();
-    if (s.draggingClip || s.scrubbing) return;
-    const json = serialize(s);
-    if (json === lastJson) return;
-    lastJson = json;
-    void saveProjectJson(json);
-    // Asset yang tidak dipakai siapa pun lagi tidak perlu ikut memenuhi kuota.
-    void pruneAssets(assetsInUse(s));
-  };
-
-  const schedule = (): void => {
-    if (timer !== undefined) window.clearTimeout(timer);
-    timer = window.setTimeout(flush, delayMs);
-  };
-
-  const unsub = studioStore.subscribe(schedule);
-  // Tulis sekali saat halaman ditutup, supaya perubahan terakhir tidak hilang
-  // di dalam jendela debounce.
-  const onHide = (): void => flush();
-  window.addEventListener('pagehide', onHide);
-
-  return () => {
-    if (timer !== undefined) window.clearTimeout(timer);
-    unsub();
-    window.removeEventListener('pagehide', onHide);
-  };
 }

@@ -567,6 +567,32 @@ Dua lapis, keduanya sepele dan keduanya wajib:
 sama dengan `Clip::contains`, supaya clip yang tepat menyentuh tepi tidak
 berkedip masuk-keluar.
 
+3. **Di DALAM satu clip.** Dua lapis di atas tidak cukup, dan ini baru
+   ketahuan dari lagu 27 menit. Satu clip bisa jauh lebih lebar dari layar:
+   track selebar `durationSec × pxPerSecond`, dengan zoom dibatasi 400 px/detik,
+   berarti 1620 detik → **648.000 px**. Canvas waveform clip dulu mengambil
+   seluruh lebar itu (`width: 100%`), dan `fitCanvas` masih mengalikannya dengan
+   dpr → 1.296.000 px, sementara batas dimensi canvas Chrome/Firefox ~65.535 px.
+   Untuk file 27 menit, batas itu sudah terlewat pada zoom **~20 px/detik** —
+   dan di atas titik itu waveform tidak melambat, ia hilang.
+
+   Sekarang canvas dipasang hanya selebar irisan yang terlihat
+   (`web/src/studio/timeline/wave-window.ts`), pada `left: win.x`. `width` yang
+   dikirim ke penggambar TETAP lebar penuh clip, sehingga pemetaan
+   sample→pixel tidak berubah saat user menggulir — kalau ikut menyempit,
+   waveform akan meregang. Tepi jendela dibulatkan ke kelipatan 256 px supaya
+   guliran kecil tidak mengubah ukuran canvas (mengubah `canvas.width` membuang
+   isinya, jadi hasilnya berkedip). Canvas terlebar yang mungkin terbentuk jadi
+   ≈ lebar viewport + 512 px, berapa pun durasi project.
+
+   Satu efek samping yang perlu disebut: menghitung rentang jendela lewat
+   perkalian yang berbeda urutan bisa membuat batas pixel tiba satu ulp di bawah
+   batas bucket, dan `floor` lalu memundurkannya satu bucket penuh — 64 sample
+   milik kolom sebelumnya ikut terhitung, terukur sampai 2 px beda tinggi.
+   `readEnvelope` karena itu memakai toleransi `EPS` saat memetakan pixel ke
+   index bucket. Versi Rust (`peaks.rs::read_range_into`) tidak punya masalah
+   ini karena aritmetikanya integer.
+
 ---
 
 ## 6d. Editing interactions
