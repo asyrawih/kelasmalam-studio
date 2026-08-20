@@ -61,6 +61,7 @@ function testAsset(): StudioAsset {
   return {
     id: 1,
     name: 'uji',
+    contentHash: '',
     envelope: buildEnvelope({
       numberOfChannels: 1,
       length: N,

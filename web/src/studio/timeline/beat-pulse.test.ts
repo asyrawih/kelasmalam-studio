@@ -18,6 +18,7 @@ function asset(over: Partial<StudioAsset> = {}): StudioAsset {
   return {
     id: ASSET_ID,
     name: 'a',
+    contentHash: '',
     envelope: { levels: [], frames: 0 } as unknown as StudioAsset['envelope'],
     frames: 120 * SR,
     sampleRate: SR,

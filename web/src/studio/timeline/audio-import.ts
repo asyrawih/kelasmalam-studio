@@ -18,6 +18,8 @@ import { DEFAULT_FADE_CURVE, type StudioClip } from '../model';
 import { studioActions, studioStore, type ImportStage, type StudioAsset } from '../store';
 import { ensureContext, registerBuffer } from '../preview/audio-preview';
 import { canGunzip, gunzip, sniff } from './sniff';
+import { sha256Hex } from './content-hash';
+import { notifyImported } from './import-sink';
 import { buildEnvelope } from './envelope';
 import { requestAssetTempo } from '../analysis/tempo-client';
 
@@ -30,10 +32,17 @@ import { requestAssetTempo } from '../analysis/tempo-client';
  * karena lagunya dimuat lewat jalur lain — bug yang mustahil dilacak dari
  * layar.
  */
-export function assetFromBuffer(id: number, name: string, buffer: AudioBuffer): StudioAsset {
+export function assetFromBuffer(
+  id: number,
+  name: string,
+  buffer: AudioBuffer,
+  /** `''` = tidak punya berkas asal (hasil bake). Lihat `StudioAsset.contentHash`. */
+  contentHash = '',
+): StudioAsset {
   return {
     id,
     name,
+    contentHash,
     envelope: buildEnvelope(buffer),
     frames: buffer.length,
     sampleRate: buffer.sampleRate,
@@ -203,6 +212,40 @@ export async function importBytesToAsset(
       return { ok: false, reason: `${name}: terkompresi gzip berlapis, bukan audio.` };
     }
 
+    /*
+     * Hash DULU, decode belakangan.
+     *
+     * Inti dedup docs/16 §6: berkas yang sama, diimpor dua kali, adalah SATU
+     * asset. Menghitung SHA-256 atas 25 MB butuh puluhan milidetik; men-decode
+     * ulang lagu 27 menit butuh detik DAN puluhan MB PCM kedua yang isinya
+     * identik dengan yang sudah ada di memori.
+     *
+     * Yang di-hash adalah byte SESUDAH gunzip — itu audio yang sebenarnya, dan
+     * itu pula yang diunggah. Dua salinan lagu yang sama, satu ter-gzip dan
+     * satu tidak, karena itu dikenali sebagai satu asset.
+     *
+     * BATAS YANG DIKETAHUI: dedup melihat store, dan store baru terisi setelah
+     * decode selesai. Menjatuhkan berkas yang SAMA tiga kali dalam satu gerakan
+     * karena itu tetap menghasilkan tiga decode — ketiganya sudah lewat titik
+     * ini sebelum yang pertama mendaftar. Yang menahan biaya sebenarnya ada di
+     * server: `/tracks/init` menjawab `exists` dan tidak ada byte yang naik.
+     * Meng-coalesce yang sedang berjalan bisa dilakukan (peta hash → janji),
+     * tapi belum ada yang mengeluhkannya, dan gerakan itu jarang disengaja.
+     */
+    const contentHash = await sha256Hex(bytes.slice(0));
+    const already = Object.values(studioStore.getState().assets).find(
+      (a) => a.contentHash !== '' && a.contentHash === contentHash,
+    );
+    if (already !== undefined) {
+      return {
+        ok: true,
+        assetId: already.id,
+        name: already.name,
+        frames: already.frames,
+        sampleRate: already.sampleRate,
+      };
+    }
+
     // Sejak titik ini kemajuan tidak bisa diukur lagi: `decodeAudioData` tidak
     // melaporkan apa pun sampai ia selesai. Yang bisa diberikan ke user adalah
     // NAMA tahapnya — dan itu yang membedakan "sedang decode" dari "macet".
@@ -240,16 +283,29 @@ export async function importBytesToAsset(
     // Panjang di project-space: decodeAudioData sudah me-resample ke
     // sampleRate context, jadi frame-nya langsung sepadan dengan project.
     const frames = buffer.length;
-    studioActions.registerAsset(assetFromBuffer(assetId, name, buffer));
+    studioActions.registerAsset(assetFromBuffer(assetId, name, buffer, contentHash));
     // Setelah registerAsset, bukan sebelum: worker menjawab secara asinkron dan
     // `setAssetTempo` mengabaikan id yang belum ada di store.
     requestAssetTempo(assetId, buffer);
     // Simpan PCM-nya supaya preview playback bisa membunyikannya.
     registerBuffer(assetId, buffer);
-    // Byte aslinya TIDAK disimpan ke mana pun: penyimpanan lokal sudah dibuang,
-    // dan penggantinya (kepustakaan eksplisit lewat backend) menyimpan atas
-    // PERINTAH user, bukan sebagai efek samping import. Sampai jalur itu ada,
-    // lagu yang diimpor hanya hidup selama sesi ini.
+    /*
+     * Byte aslinya tidak disimpan di sini, tapi DIUMUMKAN.
+     *
+     * Yang mendengarkan (dok kepustakaan) memutuskan sendiri apakah ia
+     * mengunggahnya — dan ia hanya melakukannya kalau user sudah login. Tanpa
+     * pendengar, tidak ada yang terjadi dan lagunya hidup selama sesi ini saja,
+     * persis seperti sebelum kepustakaan ada.
+     */
+    notifyImported({
+      contentHash,
+      assetId,
+      name,
+      bytes,
+      format: probe.format,
+      frames,
+      sampleRate: buffer.sampleRate,
+    });
 
     return { ok: true, assetId, name, frames, sampleRate: buffer.sampleRate };
   } catch (err: unknown) {

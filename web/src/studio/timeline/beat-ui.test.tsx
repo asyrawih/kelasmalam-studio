@@ -41,6 +41,7 @@ function asset(over: Partial<StudioAsset> = {}): StudioAsset {
   return {
     id: ASSET_ID,
     name: 'lagu',
+    contentHash: '',
     envelope: ENVELOPE,
     frames: 16 * SR,
     sampleRate: SR,

@@ -14,7 +14,14 @@
 
 import { useSyncExternalStore } from 'react';
 
-import { createInitialLibrary, type LibraryState, type LibraryStatus, type LibraryTrack, type LibraryUser } from './model';
+import {
+  createInitialLibrary,
+  type LibraryState,
+  type LibraryStatus,
+  type LibraryTrack,
+  type LibraryUser,
+  type UploadState,
+} from './model';
 
 let state: LibraryState = createInitialLibrary();
 
@@ -104,6 +111,66 @@ export const libraryActions = {
       const loading = { ...s.loading };
       delete loading[hash];
       return { loading };
+    });
+  },
+
+  // ── Unggah ────────────────────────────────────────────────────────────────
+
+  beginUpload(hash: string, name: string): void {
+    set((s) => ({
+      uploads: { ...s.uploads, [hash]: { name, phase: 'memeriksa', percent: 0, error: null } },
+    }));
+  },
+
+  setUploadPhase(hash: string, phase: UploadState['phase']): void {
+    set((s) => {
+      const cur = s.uploads[hash];
+      if (cur === undefined || cur.phase === phase) return null;
+      return { uploads: { ...s.uploads, [hash]: { ...cur, phase } } };
+    });
+  },
+
+  setUploadProgress(hash: string, percent: number): void {
+    set((s) => {
+      const cur = s.uploads[hash];
+      const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+      if (cur === undefined || cur.percent === clamped) return null;
+      return { uploads: { ...s.uploads, [hash]: { ...cur, percent: clamped } } };
+    });
+  },
+
+  /**
+   * Selesai — barisnya HILANG dari daftar unggahan.
+   *
+   * Yang berhasil tidak perlu diumumkan: lagunya akan muncul di daftar
+   * kepustakaan, dan itu bukti yang lebih baik daripada baris "selesai" yang
+   * menumpuk sampai halaman dimuat ulang.
+   */
+  endUpload(hash: string): void {
+    set((s) => {
+      if (!(hash in s.uploads)) return null;
+      const uploads = { ...s.uploads };
+      delete uploads[hash];
+      return { uploads };
+    });
+  },
+
+  /** Gagal — barisnya TETAP ADA, dengan sebabnya. */
+  failUpload(hash: string, error: string): void {
+    set((s) => {
+      const cur = s.uploads[hash];
+      const name = cur?.name ?? hash.slice(0, 8);
+      return { uploads: { ...s.uploads, [hash]: { name, phase: 'gagal', percent: 0, error } } };
+    });
+  },
+
+  /** Buang baris gagal dari layar. Tidak mencoba ulang apa pun. */
+  dismissUpload(hash: string): void {
+    set((s) => {
+      if (!(hash in s.uploads)) return null;
+      const uploads = { ...s.uploads };
+      delete uploads[hash];
+      return { uploads };
     });
   },
 

@@ -31,6 +31,21 @@ export class LibraryError extends Error {
   }
 }
 
+export interface InitResult {
+  /** `true` = byte-nya sudah ada di R2; tidak ada yang perlu naik. */
+  readonly exists: boolean;
+  readonly uploadUrl: string | null;
+}
+
+export interface TrackMeta {
+  readonly hash: string;
+  readonly name: string;
+  readonly bytes: number;
+  readonly mime: string;
+  readonly frames: number;
+  readonly sampleRate: number;
+}
+
 export interface LibraryApi {
   readonly base: string;
   /** `null` = belum login (401). Melempar untuk kegagalan lain. */
@@ -38,6 +53,17 @@ export interface LibraryApi {
   tracks(): Promise<readonly LibraryTrack[]>;
   /** Byte lagu, dengan laporan kemajuan 0..100. */
   blob(hash: string, onProgress?: (percent: number) => void): Promise<ArrayBuffer>;
+  /** Tanya perlu-tidaknya mengunggah. Inti dedup docs/16 §6. */
+  initTrack(meta: TrackMeta): Promise<InitResult>;
+  /** PUT langsung ke R2 lewat URL bertanda tangan, dengan progres. */
+  putUpload(
+    uploadUrl: string,
+    bytes: ArrayBuffer,
+    mime: string,
+    onProgress?: (percent: number) => void,
+  ): Promise<void>;
+  /** Catat klaim sesudah byte-nya ada. */
+  commitTrack(meta: TrackMeta): Promise<void>;
   logout(): Promise<void>;
   /** URL yang harus dibuka sebagai NAVIGASI, bukan di-fetch. */
   loginUrl(nextPath: string): string;
@@ -118,6 +144,78 @@ export function createLibraryApi(baseUrl: string, fetchImpl: typeof fetch = fetc
         at += chunk.byteLength;
       }
       return out.buffer;
+    },
+
+    async initTrack(meta): Promise<InitResult> {
+      const res = await call('/tracks/init', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          hash: meta.hash,
+          name: meta.name,
+          bytes: meta.bytes,
+          mime: meta.mime,
+        }),
+      });
+      if (!res.ok) throw await readError(res);
+      const body = (await res.json()) as { exists?: unknown; uploadUrl?: unknown };
+      return {
+        exists: body.exists === true,
+        uploadUrl: typeof body.uploadUrl === 'string' ? body.uploadUrl : null,
+      };
+    },
+
+    putUpload(uploadUrl, bytes, mime, onProgress): Promise<void> {
+      /*
+       * XHR, bukan fetch — alasan yang sama dengan unggah Roblox: `fetch` tidak
+       * melaporkan kemajuan pengiriman BADAN permintaan, dan ini justru
+       * permintaan terbesar yang pernah dikirim aplikasi ini (puluhan MB).
+       *
+       * Juga: TANPA `credentials`. URL-nya sudah membawa tanda tangannya
+       * sendiri dan tujuannya R2, bukan Worker kami — mengirim cookie sesi ke
+       * sana tidak berguna dan hanya memperluas tempat ia bisa bocor.
+       */
+      return new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl);
+        xhr.setRequestHeader('content-type', mime);
+
+        xhr.upload.onprogress = (e: ProgressEvent): void => {
+          if (!e.lengthComputable || e.total === 0) return;
+          onProgress?.(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onerror = (): void =>
+          reject(new LibraryError('JARINGAN', 'tidak bisa mengunggah ke penyimpanan'));
+        xhr.ontimeout = (): void =>
+          reject(new LibraryError('WAKTU_HABIS', 'penyimpanan tidak menjawab'));
+        xhr.onload = (): void => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+            return;
+          }
+          /*
+           * Kegagalan di sini datang dari R2, bukan dari Worker kami, jadi
+           * badannya XML S3 — bukan `{code,message}`. Status 403 hampir selalu
+           * berarti URL-nya kedaluwarsa (15 menit) atau jam mesin melenceng;
+           * itu disebut, karena badan XML-nya tidak akan menyebutnya.
+           */
+          const sebab =
+            xhr.status === 403
+              ? 'izin unggah ditolak — URL-nya mungkin sudah kedaluwarsa, coba lagi'
+              : `penyimpanan menolak unggahan (HTTP ${xhr.status})`;
+          reject(new LibraryError(`HTTP_${xhr.status}`, sebab));
+        };
+        xhr.send(bytes);
+      });
+    },
+
+    async commitTrack(meta): Promise<void> {
+      const res = await call('/tracks/commit', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(meta),
+      });
+      if (!res.ok) throw await readError(res);
     },
 
     async logout(): Promise<void> {
