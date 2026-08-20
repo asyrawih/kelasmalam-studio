@@ -34,6 +34,8 @@ import { Badge, Button, ProgressBar } from '../ui/cyber';
 import { studioStore, useStudio } from '../studio/store';
 import { djStore } from '../dj/store';
 import { registerImportSink } from '../studio/timeline/import-sink';
+import { registerLibraryDropHandler } from '../studio/timeline/library-drop';
+import { placeAssetOnLane } from '../studio/timeline/audio-import';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
 import { currentProjectName, openProject, saveProject, unsavedAssets } from './projects';
@@ -41,7 +43,7 @@ import { summarize, type LibraryTrack, type UploadState } from './model';
 import { libraryActions, libraryStore, useLibrary } from './store';
 import { createMarksSync } from './marks';
 import { createUploadQueue } from './upload';
-import { LibraryTree } from './LibraryTree';
+import { LibraryBrowser } from './LibraryBrowser';
 
 export interface LibraryDockProps {
   /** Ditimpa di tes. Default dari `import.meta.env.VITE_LIBRARY_API`. */
@@ -195,6 +197,42 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       void sync.flush();
     };
   }, [api, state.status]);
+
+  /*
+   * Lagu yang diseret ke lane.
+   *
+   * Timeline hanya mengumumkan hash + lane + posisinya; yang tahu cara
+   * mengambil lagunya adalah sisi ini. Kalau asetnya sudah ada di sesi, tidak
+   * ada satu byte pun yang diunduh — `loadTrack` menjawab dari peta `loaded`.
+   */
+  useEffect(() => {
+    if (api === null) return undefined;
+
+    return registerLibraryDropHandler(({ contentHash, laneId, startSamples }) => {
+      const track = libraryStore.getState().tracks.find((t) => t.hash === contentHash);
+      if (track === undefined) {
+        libraryActions.setNotice('lagu itu sudah tidak ada di kepustakaan');
+        return;
+      }
+
+      void (async () => {
+        const out = await loadTrack(api, track);
+        if (!out.ok) {
+          libraryActions.setNotice(`${track.name}: ${out.message}`);
+          return;
+        }
+        const asset = studioStore.getState().assets[out.assetId];
+        placeAssetOnLane(
+          out.assetId,
+          track.name,
+          asset?.frames ?? track.frames,
+          laneId,
+          startSamples,
+        );
+        libraryActions.setNotice(null);
+      })();
+    });
+  }, [api]);
 
   useCommands(
     [
@@ -401,7 +439,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
           ) : state.listing ? (
             <Empty>Mengambil daftar…</Empty>
           ) : (
-            <LibraryTree
+            <LibraryBrowser
               state={state}
               api={api}
               assets={assets}

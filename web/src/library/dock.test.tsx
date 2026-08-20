@@ -49,7 +49,7 @@ describe('lipat / buka', () => {
     render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
     expect(strip().getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('tree', { name: 'kepustakaan' })).toBeNull();
+    expect(screen.queryByRole('table', { name: 'lagu' })).toBeNull();
   });
 
   it('strip yang terlipat tetap menyebut isinya', async () => {
@@ -63,11 +63,11 @@ describe('lipat / buka', () => {
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
 
     fireEvent.click(strip());
-    expect(await screen.findByRole('tree', { name: 'kepustakaan' })).toBeDefined();
+    expect(await screen.findByRole('table', { name: 'lagu' })).toBeDefined();
     expect(strip().getAttribute('aria-expanded')).toBe('true');
 
     fireEvent.click(strip());
-    expect(screen.queryByRole('tree', { name: 'kepustakaan' })).toBeNull();
+    expect(screen.queryByRole('table', { name: 'lagu' })).toBeNull();
   });
 
   it('SELURUH strip adalah tombolnya, bukan segitiga kecil di pojok', async () => {
@@ -139,7 +139,7 @@ describe('daftar lagu', () => {
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     fireEvent.click(strip());
 
-    const row = screen.getAllByRole('treeitem').find((r) => r.textContent?.includes('♪'))!;
+    const row = screen.getAllByRole('row')[0]!;
     expect(within(row).getByText('Kelas Malam')).toBeDefined();
     // Durasi dan ukuran berbagi satu sel di pohon: "3:07 · 3.0 MB".
     expect(row.textContent).toContain('3:07');
@@ -151,7 +151,7 @@ describe('daftar lagu', () => {
     render(<LibraryDock api={fakeLibraryApi({ tracks: async () => [track({ frames: 0 })] })} />);
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     fireEvent.click(strip());
-    const row = screen.getAllByRole('treeitem').find((r) => r.textContent?.includes('♪'))!;
+    const row = screen.getAllByRole('row')[0]!;
     expect(row.textContent).toContain('—');
   });
 
