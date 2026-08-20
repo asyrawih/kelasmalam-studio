@@ -8,8 +8,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { handleRequest, type Env } from './index';
-import { MAX_BYTES, MAX_NAME_LEN } from './roblox/limits';
+import { handleRequest, type Env } from './worker';
+import { MAX_BYTES, MAX_NAME_LEN } from './limits';
 
 const ENV: Env = {
   ALLOWED_ORIGINS: 'https://app.test',

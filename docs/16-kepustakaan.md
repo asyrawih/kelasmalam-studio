@@ -6,6 +6,13 @@ user, di-upload atas **perintahnya**, dipakai bersama oleh `/studio` dan `/dj`.
 Dokumen ini adalah keputusan + fase kerja, bukan tutorial. Yang tidak diputuskan
 di sini dinyatakan terbuka di §8, bukan disembunyikan.
 
+> **Status per 2026-08-20.** Sisi SERVER dari L2–L7 sudah ada: `backend/`,
+> Worker `dawonweb-library`, seluruh permukaan §4, skema §3, dan ketiga jebakan
+> §5 sudah ditangani. Sisi WEB belum: L0 dan L1 (contentHash di `StudioAsset`,
+> dedup saat import, `serialize` menulis hash) belum dikerjakan, dan sampai
+> keduanya ada, belum ada yang memanggil API ini. Catatan pelaksanaan ada di
+> `backend/README.md`.
+
 ---
 
 ## 0. Dari mana kita mulai
@@ -51,6 +58,14 @@ paling mudah membengkak diam-diam.
 
 **Yang diterima:** frontend dan API beda origin. Konsekuensinya nyata dan ada di
 §5 — bukan detail konfigurasi.
+
+> **Koreksi saat pelaksanaan.** "Tanpa kunci S3" ternyata tidak bisa berdiri
+> bersama §5c: menandatangani presigned PUT MEMBUTUHKAN kunci S3. Yang menang
+> §5c, karena batasnya keras (badan permintaan Worker 100 MB; WAV 27 menit
+> ~285 MB). Kalimat di atas dilunakkan jadi: **satu pasang kunci, dipakai hanya
+> untuk menandatangani upload; seluruh pembacaan tetap lewat binding.** Ini
+> ketegangan yang ada di rencana sejak awal, bukan yang muncul belakangan —
+> dicatat di sini supaya tidak ditemukan ulang.
 
 ### b) Google OAuth
 
@@ -307,6 +322,12 @@ dibuktikan begitu berarti belum cukup sempit.
 | **L5** | `/tracks/:hash/marks` | Set hot cue → refresh → cue-nya ada. Grid hasil suntingan juga |
 | **L6** | Simpan/buka project; menolak simpan kalau ada asset yang belum ter-commit | Simpan → refresh → Buka → timeline identik, termasuk fade dan chain FX |
 | **L7** | Hapus lagu (refcount, §8d), hapus project, kuota per user | Hapus lagu yang dipakai project → **ditolak** dengan menyebut project mana |
+
+**Sisi server L2–L7 sudah ada** (`backend/src/library`), lengkap dengan tesnya:
+D1 diuji di atas SQLite sungguhan, jadi "user A tidak melihat kepustakaan user
+B" dan "yang kalah versi diberi tahu" adalah hal yang dibuktikan, bukan
+diasumsikan. Yang tersisa untuk menutup tiap fase adalah bagian yang terlihat
+user — dan itu semua ada di sisi web.
 
 L0 dan L1 tidak butuh backend sama sekali. Keduanya bisa dikerjakan, di-review,
 dan di-merge sebelum satu baris Worker pun ditulis — dan keduanya berdiri

@@ -7,7 +7,7 @@
 # satu Worker berarti satu deploy yang salah menjatuhkan dua-duanya.
 
 name = "dawonweb-roblox"
-main = "src/index.ts"
+main = "src/roblox/worker.ts"
 compatibility_date = "2026-08-20"
 
 [vars]

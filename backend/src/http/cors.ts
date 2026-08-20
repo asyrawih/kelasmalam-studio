@@ -22,8 +22,26 @@ export interface CorsDecision {
   readonly rejected: boolean;
 }
 
-/** Header yang boleh dikirim pemanggil. `x-roblox-api-key` yang membawa kunci. */
-export const ALLOWED_HEADERS = 'content-type,x-roblox-api-key';
+/**
+ * Header yang boleh dikirim pemanggil.
+ *
+ * Satu daftar untuk kedua Worker: `x-roblox-api-key` hanya berarti bagi yang
+ * satu, `if-match` hanya bagi yang lain, dan memisahkannya jadi dua konstanta
+ * berarti dua tempat yang bisa tertinggal. Header yang diizinkan tapi tidak
+ * pernah dikirim tidak merugikan siapa pun.
+ */
+export const ALLOWED_HEADERS = 'content-type,x-roblox-api-key,if-match';
+
+export interface CorsExtras {
+  /**
+   * Balasan boleh dibaca oleh permintaan ber-cookie.
+   *
+   * WAJIB untuk Worker kepustakaan: tanpa `Access-Control-Allow-Credentials` di
+   * respons SUNGGUHAN (bukan cuma di preflight), browser membuang balasannya —
+   * dan yang terlihat di sisi app adalah galat jaringan tanpa sebab.
+   */
+  readonly credentials?: boolean;
+}
 
 export function parseOrigins(raw: string | undefined): readonly string[] {
   return (raw ?? '')
@@ -51,24 +69,32 @@ export function decideCors(origin: string | null, allowed: readonly string[]): C
  * termasuk) bisa menyajikan balasan ber-`Allow-Origin` milik satu origin kepada
  * origin lain — dan itu justru melubangi hal yang sedang dijaga.
  */
-export function withCors(res: Response, allowOrigin: string | null): Response {
+export function withCors(
+  res: Response,
+  allowOrigin: string | null,
+  extras: CorsExtras = {},
+): Response {
   const out = new Response(res.body, res);
   out.headers.set('vary', 'origin');
   if (allowOrigin !== null) {
     out.headers.set('access-control-allow-origin', allowOrigin);
-    out.headers.set('access-control-expose-headers', 'content-type');
+    out.headers.set('access-control-expose-headers', 'content-type,etag');
+    if (extras.credentials === true) out.headers.set('access-control-allow-credentials', 'true');
   }
   return out;
 }
 
 /** Balasan preflight. */
-export function preflight(allowOrigin: string | null): Response {
+export function preflight(allowOrigin: string | null, extras: CorsExtras = {}): Response {
   const headers = new Headers({
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'access-control-allow-headers': ALLOWED_HEADERS,
     'access-control-max-age': '86400',
     vary: 'origin',
   });
-  if (allowOrigin !== null) headers.set('access-control-allow-origin', allowOrigin);
+  if (allowOrigin !== null) {
+    headers.set('access-control-allow-origin', allowOrigin);
+    if (extras.credentials === true) headers.set('access-control-allow-credentials', 'true');
+  }
   return new Response(null, { status: 204, headers });
 }

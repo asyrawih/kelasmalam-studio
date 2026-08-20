@@ -272,9 +272,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # Node 24, BUKAN 22 seperti job web: tes kepustakaan menjalankan SQL-nya
+      # di atas `node:sqlite` sungguhan, dan modul itu masih di balik flag di
+      # 22.x. Menurunkannya berarti seluruh lapisan SQL tidak teruji.
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
@@ -286,9 +289,11 @@ jobs:
         working-directory: backend
         run: npx vitest run
 
+      # Dua tsconfig: kode Worker dinilai TANPA tipe Node (supaya `Buffer` dan
+      # `process` tidak diam-diam lolos ke produksi), harness tes dengan.
       - name: Typecheck
         working-directory: backend
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
   # ---------------------------------------------------------------- deploy
   # Deploy adalah KELANJUTAN dari CI, bukan pipeline kedua yang berlomba
