@@ -15,7 +15,7 @@
  */
 
 import { DEFAULT_FADE_CURVE, type StudioClip } from '../model';
-import { studioActions, type StudioAsset } from '../store';
+import { studioActions, studioStore, type ImportStage, type StudioAsset } from '../store';
 import { ensureContext, registerBuffer } from '../preview/audio-preview';
 import { saveAsset } from '../persist/db';
 import { canGunzip, gunzip, sniff } from './sniff';
@@ -46,6 +46,74 @@ export function assetFromBuffer(id: number, name: string, buffer: AudioBuffer): 
   };
 }
 
+/**
+ * Kabar kemajuan satu import.
+ *
+ * Callback, bukan penulisan langsung ke store: jalur decode ini dipakai
+ * halaman `/dj` juga, dan halaman itu punya store sendiri. Yang tahu ke mana
+ * kemajuan harus dipajang adalah pemanggilnya, bukan decoder.
+ */
+export interface ImportProgress {
+  readonly stage: ImportStage;
+  /** 0..1 kalau bisa diukur; null untuk tahap yang tidak punya ukuran. */
+  readonly ratio: number | null;
+}
+export type ImportProgressFn = (p: ImportProgress) => void;
+
+/** Kenaikan minimum sebelum satu kabar baru dikirim (2%). */
+const READ_TICK = 0.02;
+
+/**
+ * Baca `file` sambil melaporkan kemajuan.
+ *
+ * Memakai `file.stream()` — SATU-SATUNYA cara mengetahui sudah berapa byte
+ * yang terbaca; `file.arrayBuffer()` bersifat semua-atau-tidak dan tidak punya
+ * titik laporan sama sekali. Kalau stream tidak tersedia (jsdom, browser lama)
+ * atau tidak ada yang mendengarkan, jalurnya kembali ke `arrayBuffer()`.
+ *
+ * Tujuan alokasinya SATU larik seukuran file, bukan tumpukan chunk yang
+ * digabung di akhir: menggabung berarti memegang dua salinan penuh sekaligus,
+ * dan file WAV berukuran ratusan MB membuat itu terasa persis di titik yang
+ * paling tidak diinginkan — saat beberapa import berjalan bersamaan.
+ */
+async function readFileBytes(file: File, onProgress?: ImportProgressFn): Promise<ArrayBuffer> {
+  const total = file.size;
+  if (onProgress === undefined || typeof file.stream !== 'function' || total <= 0) {
+    return file.arrayBuffer();
+  }
+  const reader = file.stream().getReader();
+  const out = new Uint8Array(total);
+  let read = 0;
+  let reported = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      const value = chunk.value;
+      if (value === undefined) continue;
+      // `file.size` seharusnya persis; kalau ternyata tidak, potong daripada
+      // melempar RangeError di tengah import.
+      if (read + value.byteLength > total) {
+        out.set(value.subarray(0, total - read), read);
+        read = total;
+        break;
+      }
+      out.set(value, read);
+      read += value.byteLength;
+      const ratio = read / total;
+      if (ratio - reported >= READ_TICK) {
+        reported = ratio;
+        onProgress({ stage: 'reading', ratio });
+      }
+    }
+  } finally {
+    // Membatalkan reader yang sudah habis tidak berbahaya; yang berbahaya
+    // adalah stream yang tetap terkunci kalau loop di atas melempar.
+    void reader.cancel().catch(() => undefined);
+  }
+  return read === total ? out.buffer : out.buffer.slice(0, read);
+}
+
 export interface DropResult {
   readonly ok: boolean;
   readonly reason?: string;
@@ -61,14 +129,15 @@ export async function importFileToLane(
   laneId: string,
   startSamples: number,
   projectSampleRate: number,
+  opts: LaneImportOptions = {},
 ): Promise<DropResult> {
   let bytes: ArrayBuffer;
   try {
-    bytes = await file.arrayBuffer();
+    bytes = await readFileBytes(file, opts.onProgress);
   } catch (err: unknown) {
     return { ok: false, reason: err instanceof Error ? err.message : 'gagal membaca file' };
   }
-  return importBytesToLane(bytes, file.name, laneId, startSamples, projectSampleRate);
+  return importBytesToLane(bytes, file.name, laneId, startSamples, projectSampleRate, opts);
 }
 
 /**
@@ -99,6 +168,7 @@ export async function importBytesToAsset(
   input: ArrayBuffer,
   name: string,
   projectSampleRate: number,
+  onProgress?: ImportProgressFn,
 ): Promise<ImportAssetResult> {
   // Context dipinjam dari modul preview: dia yang memilikinya, supaya
   // `AudioBuffer` hasil decode bisa dipakai ulang untuk playback tanpa decode
@@ -133,6 +203,11 @@ export async function importBytesToAsset(
       return { ok: false, reason: `${name}: terkompresi gzip berlapis, bukan audio.` };
     }
 
+    // Sejak titik ini kemajuan tidak bisa diukur lagi: `decodeAudioData` tidak
+    // melaporkan apa pun sampai ia selesai. Yang bisa diberikan ke user adalah
+    // NAMA tahapnya — dan itu yang membedakan "sedang decode" dari "macet".
+    onProgress?.({ stage: 'decoding', ratio: null });
+
     let buffer: AudioBuffer;
     try {
       // `.slice(0)` WAJIB: `decodeAudioData` men-*detach* ArrayBuffer yang
@@ -147,6 +222,17 @@ export async function importBytesToAsset(
         ok: false,
         reason: `${name}: browser ini tidak bisa men-decode ${probe.format}. Coba Chrome/Firefox, atau konversi ke WAV.`,
       };
+    }
+
+    onProgress?.({ stage: 'analyzing', ratio: null });
+    if (onProgress !== undefined) {
+      // Satu tugas makro dilepas SEBELUM `buildEnvelope`, yang sinkron dan
+      // memakan ~76 ms untuk lagu 3 menit. Tanpa jeda ini, React tidak sempat
+      // menggambar tahap "ANALISIS" — bar-nya melompat dari "DECODE" langsung
+      // ke hilang, dan pada tiga import sekaligus layar membeku tanpa satu pun
+      // penjelasan di layar. `await Promise.resolve()` tidak cukup: microtask
+      // berjalan di tugas yang sama, sebelum paint.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
 
     const assetId = studioActions.newAssetId();
@@ -174,14 +260,44 @@ export async function importBytesToAsset(
 export async function importFileToAsset(
   file: File,
   projectSampleRate: number,
+  onProgress?: ImportProgressFn,
 ): Promise<ImportAssetResult> {
   let bytes: ArrayBuffer;
   try {
-    bytes = await file.arrayBuffer();
+    bytes = await readFileBytes(file, onProgress);
   } catch (err: unknown) {
     return { ok: false, reason: err instanceof Error ? err.message : 'gagal membaca file' };
   }
-  return importBytesToAsset(bytes, file.name, projectSampleRate);
+  return importBytesToAsset(bytes, file.name, projectSampleRate, onProgress);
+}
+
+/** Ujung materi terjauh di sebuah lane, dalam sample. 0 kalau lane kosong. */
+export function laneContentEnd(laneId: string): number {
+  const lane = studioStore.getState().lanes.find((l) => l.id === laneId);
+  if (lane === undefined) return 0;
+  let end = 0;
+  for (const c of lane.clips) end = Math.max(end, c.start + c.len);
+  return end;
+}
+
+export interface LaneImportOptions {
+  readonly onProgress?: ImportProgressFn;
+  /**
+   * Taruh clip di belakang materi yang sudah ada di lane, bukan persis di
+   * `startSamples`.
+   *
+   * Untuk SATU perbuatan yang membawa beberapa file (pilih 3 lagu dari file
+   * manager, drop 3 file sekaligus). Tanpa ini ketiganya mendarat di titik yang
+   * sama dan saling menumpuk — di layar hanya terlihat satu clip, dua sisanya
+   * seperti hilang.
+   *
+   * Perhitungannya WAJIB terjadi di sini, tepat sebelum clip dibuat, bukan saat
+   * import dimulai: ketiga import berjalan bersamaan, jadi saat dimulai lane-nya
+   * masih kosong untuk ketiga-tiganya dan ketiganya akan menghitung posisi yang
+   * sama persis. Yang membedakan mereka hanya keadaan lane pada saat masing-masing
+   * SELESAI.
+   */
+  readonly avoidOverlap?: boolean;
 }
 
 /**
@@ -195,15 +311,19 @@ export async function importBytesToLane(
   laneId: string,
   startSamples: number,
   projectSampleRate: number,
+  opts: LaneImportOptions = {},
 ): Promise<DropResult> {
-  const got = await importBytesToAsset(input, name, projectSampleRate);
+  const got = await importBytesToAsset(input, name, projectSampleRate, opts.onProgress);
   if (!got.ok) return { ok: false, reason: got.reason };
 
+  const start = opts.avoidOverlap
+    ? Math.max(startSamples, laneContentEnd(laneId))
+    : startSamples;
   const clip: StudioClip = {
     id: studioActions.newClipId(),
     assetId: got.assetId,
     chain: [],
-    start: Math.max(0, Math.round(startSamples)),
+    start: Math.max(0, Math.round(start)),
     len: got.frames,
     sourceStart: 0,
     sourceLen: got.frames,

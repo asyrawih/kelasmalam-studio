@@ -36,7 +36,6 @@ import {
   type TransportState,
 } from './sab-layout';
 import type { ThreadStack } from './thread-stack';
-import { BlobSink, FileSystemSink, type ExportSink } from '../studio/export/sinks';
 import { loadWasm, type LoadedWasm } from './wasm-loader';
 
 export const PROCESSOR_NAME = 'daw-engine';
@@ -69,36 +68,6 @@ export interface MeterFrame {
   rmsL: number;
   rmsR: number;
   gainReductionDb: number;
-}
-
-export interface ExportRequest {
-  /** Snapshot project (postcard) — dihasilkan lapisan state dari Rust. */
-  snapshot: Uint8Array;
-  startSample: number;
-  endSample: number;
-  format: 'wav' | 'mp3' | 'ogg';
-  /** WAV: kedalaman bit. Diabaikan untuk mp3/ogg. */
-  bitDepth?: 16 | 24 | 32;
-  /** MP3: kbps (default 192). OGG: quality -0.1..1.0 (default 0.5). */
-  quality?: number;
-  fileName: string;
-  /** Handle dari `showSaveFilePicker()` — WAJIB diminta di handler klik. */
-  fileHandle?: FileSystemFileHandle;
-}
-
-export interface ExportProgress {
-  stage: 'render' | 'encode' | 'done' | 'cancelled' | 'error';
-  rendered: number;
-  total: number;
-  etaMs: number;
-  message?: string;
-}
-
-export interface ExportSession {
-  /** Batalkan (Atomics flag; dibaca 1× per batch, jadi telat ≤ ~270 ms). */
-  cancel(): void;
-  /** Resolve dengan Blob (jalur Blob) atau `null` (jalur File System Access). */
-  readonly done: Promise<Blob | null>;
 }
 
 export interface EngineClientOptions {
@@ -408,144 +377,6 @@ export class EngineClient {
   }
 
   static readonly MASTER_METER_INDEX = METER_MASTER_INDEX;
-
-  // ── Export ────────────────────────────────────────────────────────────────
-
-  /**
-   * Mulai export. Worker meng-instantiate engine KEDUA dari snapshot; engine
-   * realtime tidak terganggu (docs/03 §3a).
-   */
-  startExport(req: ExportRequest, onProgress?: (p: ExportProgress) => void): ExportSession {
-    if (this.shared) Atomics.store(this.i32(), I32.exportCancel, 0);
-
-    const worker = new Worker(new URL('./export-worker.ts', import.meta.url), {
-      type: 'module',
-      name: 'daw-export',
-    });
-
-    let resolveDone!: (b: Blob | null) => void;
-    let rejectDone!: (e: unknown) => void;
-    const done = new Promise<Blob | null>((res, rej) => {
-      resolveDone = res;
-      rejectDone = rej;
-    });
-
-    let mime = 'audio/wav';
-
-    // Sink yang SAMA dengan yang dipakai di dalam worker dan di jalur UI —
-    // bukan penanganan chunk versi ketiga. Versi sebelumnya di sini punya
-    // logikanya sendiri, dan di situ pula bug-nya: header final ditaruh di
-    // `parts[0]` bahkan ketika tujuannya berkas di disk, jadi di jalur disk ia
-    // tidak pernah sampai ke mana pun.
-    const blobSink = req.fileHandle ? null : new BlobSink();
-    const openSink: Promise<ExportSink> = req.fileHandle
-      ? FileSystemSink.create(req.fileHandle)
-      : Promise.resolve(blobSink as ExportSink);
-    // Kegagalan membuka berkas muncul lagi di `enqueue` (dan dari sana sampai
-    // ke `done`). Handler kosong ini hanya menandainya sudah tertangani supaya
-    // ia tidak ikut dilaporkan sebagai unhandled rejection.
-    void openSink.catch(() => undefined);
-
-    /**
-     * Tulisan ke sink DIURUTKAN lewat satu rantai promise.
-     *
-     * `onmessage` di bawah `async`, jadi pesan berikutnya bisa mulai diproses
-     * saat yang sebelumnya masih menunggu `write()`. Untuk aliran byte, dua
-     * penulisan yang saling menyalip bukan sekadar keanehan — ia menukar isi
-     * file, dan hasilnya berkas yang panjangnya benar tapi datanya teracak.
-     */
-    let writes: Promise<unknown> = Promise.resolve();
-    const enqueue = (fn: (sink: ExportSink) => Promise<void> | void): Promise<void> => {
-      writes = writes.then(async () => {
-        const sink = await openSink;
-        await fn(sink);
-      });
-      return writes as Promise<void>;
-    };
-
-    worker.onmessage = async (ev: MessageEvent) => {
-      const m = ev.data as
-        | { type: 'progress'; rendered: number; total: number; stage: 'render' | 'encode'; etaMs: number }
-        | { type: 'chunk'; buffer: ArrayBuffer }
-        | { type: 'header'; buffer: ArrayBuffer }
-        | { type: 'patch-header'; buffer: ArrayBuffer }
-        | { type: 'done'; mime: string }
-        | { type: 'cancelled' }
-        | { type: 'error'; message: string };
-
-      switch (m.type) {
-        case 'progress':
-          onProgress?.({ stage: m.stage, rendered: m.rendered, total: m.total, etaMs: m.etaMs });
-          break;
-        case 'header':
-          // Placeholder: panjangnya belum diketahui, ditimpa di akhir oleh
-          // `patch-header`.
-          await enqueue((sink) => sink.header(new Uint8Array(m.buffer)));
-          break;
-        case 'patch-header':
-          await enqueue((sink) => sink.patchHeader(new Uint8Array(m.buffer)));
-          break;
-        case 'chunk':
-          await enqueue((sink) => sink.chunk(new Uint8Array(m.buffer)));
-          break;
-        case 'done': {
-          mime = m.mime;
-          await enqueue((sink) => sink.close());
-          onProgress?.({ stage: 'done', rendered: 1, total: 1, etaMs: 0 });
-          resolveDone(blobSink ? blobSink.blob(mime) : null);
-          worker.terminate();
-          break;
-        }
-        case 'cancelled':
-          // Buang yang sudah ditulis. Berkas separuh jadi di disk yang tidak
-          // pernah diberi header final adalah hasil paling membingungkan dari
-          // sebuah pembatalan.
-          await enqueue((sink) => sink.abort('cancelled'));
-          onProgress?.({ stage: 'cancelled', rendered: 0, total: 0, etaMs: 0 });
-          resolveDone(null);
-          worker.terminate();
-          break;
-        case 'error':
-          await enqueue((sink) => sink.abort(m.message));
-          onProgress?.({ stage: 'error', rendered: 0, total: 0, etaMs: 0, message: m.message });
-          rejectDone(new Error(m.message));
-          worker.terminate();
-          break;
-      }
-    };
-
-    const snapshotCopy = req.snapshot.slice();
-    worker.postMessage(
-      {
-        type: 'start',
-        module: this.wasm.module,
-        memory: this.shared ? this.wasm.memory : null,
-        memoryMaximumBytes: this.wasm.memoryMaximumBytes,
-        controlPtr: this.wasm.controlPtr,
-        // Worker ini berbagi linear memory dengan main thread DAN worklet di
-        // jalur mt, jadi ia butuh stack-nya sendiri (audio/thread-stack.ts).
-        stack: this.shared ? this.wasm.newThreadStack() : null,
-        variant: this.wasm.variant,
-        snapshot: snapshotCopy,
-        sampleRate: this.ctx.sampleRate,
-        startSample: req.startSample,
-        endSample: req.endSample,
-        format: req.format,
-        bitDepth: req.bitDepth ?? 24,
-        quality: req.quality,
-        streaming: !!req.fileHandle,
-      },
-      [snapshotCopy.buffer],
-    );
-
-    return {
-      cancel: () => {
-        if (this.shared) Atomics.store(this.i32(), I32.exportCancel, 1);
-        worker.postMessage({ type: 'cancel' });
-      },
-      done,
-    };
-  }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 

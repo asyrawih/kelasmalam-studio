@@ -71,7 +71,7 @@ waveform jadi garis lurus.
 spesifikasi terbaru — tapi view lama tetap hanya melihat panjang lama. Jangan
 mengandalkan perbedaan ini.)
 
-Dua mitigasi, **dipakai bersama**:
+Tiga mitigasi, **dipakai bersama**:
 
 **1. Pre-reserve saat instantiasi.** Ini yang utama untuk audio thread:
 
@@ -109,6 +109,36 @@ if (this.outView.length === 0 || this.memBuffer !== memory.buffer) {
 ```
 Cek `this.memBuffer !== memory.buffer` adalah satu perbandingan referensi per
 blok — tidak terukur biayanya, dan menangkap semua kasus.
+
+**3. Ia tidak pernah menyusut — jadi yang tumbuh besar harus punya tempat untuk
+mati.** `memory.grow` ada; `memory.shrink` tidak. Membebaskan buffer di sisi
+Rust hanya mengembalikannya ke alokator di dalam wasm; halaman yang sudah
+ditumbuhkan tetap dipegang instance itu selama instance-nya hidup.
+
+Gejalanya bukan crash melainkan angka yang tidak mau turun: sesudah satu export
+besar selesai, tab menahan ratusan MiB sampai di-reload, dan snapshot memori
+menunjukkan `SharedArrayBuffer`/`ArrayBuffer` sebesar puncak export walaupun
+tidak ada lagi yang memakainya.
+
+Dua akibat praktis:
+
+- **Jangan menghitung sisa memori sebagai `plafon − byteLength`.** Sesudah satu
+  export, `byteLength` masih sebesar puncaknya walaupun ruangnya siap dipakai
+  ulang, dan rumus itu akan menolak export berikutnya selamanya. Angka yang
+  benar datang dari Rust (`assetBytesLive`/`assetBytesPeak`) — lihat
+  `memoryHeadroomBytes` di `studio/export/wasm-engine.ts`.
+- **Pekerjaan yang menumbuhkan memory secara besar dan sesekali dijalankan di
+  worker dengan memory SENDIRI (varian `st`), lalu di-`terminate()`.** Itu
+  satu-satunya cara mengembalikan halamannya ke sistem operasi. Export memakai
+  jalur ini (docs/03 §Di mana export dijalankan). Memakai varian `mt` di sana
+  tidak menolong: memory-nya milik bersama dengan main thread dan worklet, jadi
+  yang tumbuh tetap tinggal sesudah worker-nya mati.
+
+Aturan re-acquire di atas berlaku juga **lintas `await`**, bukan cuma lintas
+panggilan wasm: setiap `await` memberi giliran ke kode lain yang bisa
+menumbuhkan memory. `fillAsset` di `run-export.ts` mengambil ulang view-nya
+setiap potong PCM karena sumbernya boleh async — tanpa itu, sisa potongannya
+diam-diam ditulis ke buffer yang sudah tidak dibaca siapa pun.
 
 Aturan tambahan: **jangan pernah mengirim pointer WASM lewat postMessage tanpa
 generasi memori.** Kalau worker memberi tahu main thread "asset ada di ptr X",

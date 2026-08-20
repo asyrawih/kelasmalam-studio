@@ -57,7 +57,7 @@ describe('App', () => {
     });
     expect(screen.getByText('KELAS MALAM STUDIO')).toBeTruthy();
     expect(screen.getByText(/TIMELINE MIX/)).toBeTruthy();
-    expect(screen.getAllByText('DROP AUDIO DI SINI').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('KLIK ATAU DROP AUDIO DI SINI').length).toBeGreaterThan(0);
   });
 
   it('render dengan createEngine yang gagal', () => {

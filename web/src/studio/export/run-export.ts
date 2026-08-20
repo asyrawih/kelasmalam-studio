@@ -14,7 +14,12 @@
  * `memory.grow`, progress, dan pembatalan — tanpa WASM sama sekali.
  */
 
-import type { ExportAssetInfo, ExportAssetSource, ExportPayload } from './payload';
+import {
+  PCM_CHUNK_FRAMES,
+  type ExportAssetInfo,
+  type ExportAssetSource,
+  type ExportPayload,
+} from './payload';
 import type { ExportSink } from './sinks';
 
 /** 100 blok × 128 frame ≈ 267 ms audio @48k (docs/03 §3a). */
@@ -100,8 +105,8 @@ export interface RunExportOptions {
    */
   readonly sink: ExportSink;
   /**
-   * Sumber PCM, dipanggil satu asset per satu asset SESUDAH penjaga memori
-   * lolos. Terpisah dari `payload` karena payload harus tetap bisa menyeberang
+   * Sumber PCM, ditarik sepotong demi sepotong SESUDAH penjaga memori lolos.
+   * Terpisah dari `payload` karena payload harus tetap bisa menyeberang
    * `postMessage`, dan fungsi tidak bisa di-structured-clone.
    */
   readonly pcm: ExportAssetSource;
@@ -207,7 +212,7 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
     //
     // Satu per satu, dan PCM-nya baru diminta di sini: tidak pernah ada lebih
     // dari satu asset yang dipegang di luar linear memory.
-    for (const info of payload.assets) fillAsset(engine, render, info, pcm(info));
+    for (const info of payload.assets) await fillAsset(engine, render, info, pcm);
 
     const header = encoder.header?.();
     if (header && header.length > 0) await sink.header(header);
@@ -314,35 +319,47 @@ function assertFitsEncoderLimit(
 }
 
 /**
- * Salin PCM satu asset LANGSUNG ke linear memory.
+ * Salin PCM satu asset ke linear memory, SEPOTONG demi sepotong.
  *
  * Satu-satunya salinan di jalur ini. Sebelumnya ada dua: `flattenBuffer` di JS,
  * lalu glue wasm-bindgen menyalin lagi ke linear memory — dan yang pertama
  * dibuat untuk semua asset sekaligus lalu ditahan sampai export selesai.
+ *
+ * Berpotongan, bukan sekali per channel, supaya sumber yang harus MENYALIN
+ * (lintas `postMessage`, atau `copyFromChannel`) tidak perlu membuat satu asset
+ * penuh berwujud di heap JS — lihat [`ExportAssetSource`].
  */
-function fillAsset(
+async function fillAsset(
   engine: ExportEngine,
   render: RenderHandle,
   info: ExportAssetInfo,
-  channels: readonly Float32Array[],
-): void {
-  if (channels.length < info.channels) {
-    throw new Error(
-      `Asset ${info.assetId}: sumber memberi ${channels.length} channel, ` +
-        `butuh ${info.channels}.`,
-    );
-  }
+  pcm: ExportAssetSource,
+): Promise<void> {
   // Alamat DULU: alokasinya bisa memicu memory.grow, dan view apa pun yang
   // diambil sebelum itu akan berukuran nol tanpa melempar (docs/05).
   const ptr = render.beginAsset(info.assetId, info.channels, info.frames, info.sampleRate);
-  // Tidak ada alokasi lagi sampai loop selesai, jadi satu view cukup.
-  const dst = engine.view(ptr, info.channels * info.frames);
+  const len = info.channels * info.frames;
   for (let c = 0; c < info.channels; c++) {
-    const src = channels[c] as Float32Array;
-    // `subarray`, bukan `slice`: memotong view tanpa menyalin. Sumber yang
-    // lebih panjang dari `frames` dipotong; yang lebih pendek menyisakan nol
-    // di ekornya, dan itu senyap — bukan sampah.
-    dst.set(src.length > info.frames ? src.subarray(0, info.frames) : src, c * info.frames);
+    let at = 0;
+    while (at < info.frames) {
+      const src = await pcm({
+        asset: info,
+        channel: c,
+        offset: at,
+        maxFrames: Math.min(PCM_CHUNK_FRAMES, info.frames - at),
+      });
+      // Sumber yang kehabisan lebih dulu menyisakan nol di ekornya, dan itu
+      // senyap — bukan sampah. Berhenti, jangan berputar selamanya.
+      if (src.length === 0) break;
+      // View diambil ULANG tiap potong. `pcm` boleh async, dan setiap `await`
+      // memberi giliran ke kode lain yang bisa menumbuhkan linear memory —
+      // yang membuat view lama berukuran nol TANPA melempar apa pun (docs/05).
+      // Menyimpannya di luar loop berarti sisa potongannya diam-diam hilang.
+      const dst = engine.view(ptr, len);
+      const n = Math.min(src.length, info.frames - at);
+      dst.set(n === src.length ? src : src.subarray(0, n), c * info.frames + at);
+      at += n;
+    }
   }
 }
 

@@ -181,6 +181,39 @@ export interface ClipboardEntry {
   readonly startOffset: Samples;
 }
 
+/**
+ * Tahap yang sedang dikerjakan satu import. Urutannya = urutan kejadiannya.
+ *
+ * Tiga, bukan satu bar "loading", karena ketiganya punya perilaku waktu yang
+ * berbeda dan user perlu tahu bedanya: `reading` bisa diukur persis (ukuran
+ * file diketahui), `decoding` dikerjakan browser di luar kendali kita dan
+ * TIDAK bisa diukur, `analyzing` (peak pyramid) singkat tapi sinkron. Satu bar
+ * tanpa nama tahap akan terlihat menggantung di 60% selama decode berjalan,
+ * dan itu terbaca sebagai macet.
+ */
+export type ImportStage = 'reading' | 'decoding' | 'analyzing';
+
+/**
+ * Satu import yang sedang berjalan.
+ *
+ * DAFTAR, bukan satu slot: user boleh menjatuhkan tiga lagu ke tiga lane
+ * sekaligus, dan tiap lane harus memperlihatkan miliknya sendiri. Satu slot
+ * global akan membuat file kedua menimpa tampilan file pertama, padahal
+ * keduanya benar-benar sedang berjalan bersamaan.
+ *
+ * `laneId` null berarti import tanpa lane (mis. dari halaman lain); UI lane
+ * hanya menampilkan yang laneId-nya cocok.
+ */
+export interface ImportJob {
+  readonly id: string;
+  readonly laneId: string | null;
+  /** Nama file/URL apa adanya, untuk dipajang. */
+  readonly name: string;
+  readonly stage: ImportStage;
+  /** 0..1 kalau bisa diukur; null = tak tentu (bar indeterminate). */
+  readonly ratio: number | null;
+}
+
 /** Posisi awal sebuah clip saat drag dimulai. Dipakai `moveClips`. */
 export interface ClipOrigin {
   readonly id: string;
@@ -211,6 +244,15 @@ export interface ClipLoopRange extends ClipLoop {
 export interface StudioAppState extends StudioState {
   /** assetId → asset. Clip tanpa entri di sini digambar dari `seed` (mock). */
   readonly assets: Readonly<Record<number, StudioAsset>>;
+  /**
+   * Import yang SEDANG berjalan, urut sesuai waktu mulai.
+   *
+   * State sesi murni: tidak ikut disimpan (lihat `persist/persistence.ts`,
+   * yang memilih field satu per satu) dan dikosongkan oleh `hydrate` — sebuah
+   * bar progres yang hidup kembali setelah refresh tidak akan pernah selesai,
+   * karena file yang dibacanya sudah tidak ada lagi.
+   */
+  readonly importJobs: readonly ImportJob[];
   /** true kalau EngineClient berhasil dibuat. Selama false, audio tidak bunyi. */
   readonly engineReady: boolean;
   /** Alasan engine tidak tersedia — ditampilkan apa adanya, tidak disembunyikan. */
@@ -360,6 +402,7 @@ export const TAIL_ROOM_SEC = 30;
 let state: StudioAppState = withDerived({
   ...createInitialStudio(),
   assets: {},
+  importJobs: [],
   engineReady: false,
   seekEpoch: 0,
   scrubbing: false,
@@ -1323,6 +1366,7 @@ export const studioActions = {
       scrubbing: false,
       draggingClip: false,
       exportProgress: null,
+      importJobs: [],
       seekEpoch: 0,
     }));
   },
@@ -1524,6 +1568,44 @@ export const studioActions = {
     return idCounter;
   },
 
+  /**
+   * Id job import. Cukup unik dalam satu sesi — job tidak pernah disimpan
+   * maupun dikirim ke engine, jadi ia tidak punya syarat rentang seperti
+   * `newAssetId`.
+   */
+  newImportId(): string {
+    return nextId('import-');
+  },
+  /** Daftarkan satu import yang baru mulai. Tahap awalnya selalu `reading`. */
+  beginImport(job: { id: string; laneId: string | null; name: string }): void {
+    set((s) => ({
+      importJobs: [...s.importJobs, { ...job, stage: 'reading' as const, ratio: 0 }],
+    }));
+  },
+  /**
+   * Perbarui tahap/rasio satu job. Job yang sudah selesai diabaikan diam-diam:
+   * callback progres bisa datang terlambat (mis. pembacaan chunk terakhir
+   * beriringan dengan `endImport`), dan menghidupkannya kembali akan membuat
+   * bar muncul lagi setelah clip-nya sudah ada di layar.
+   */
+  setImportStage(id: string, stage: ImportStage, ratio: number | null): void {
+    set((s) => {
+      const cur = s.importJobs.find((j) => j.id === id);
+      if (cur === undefined) return {};
+      if (cur.stage === stage && cur.ratio === ratio) return {};
+      return {
+        importJobs: s.importJobs.map((j) => (j.id === id ? { ...j, stage, ratio } : j)),
+      };
+    });
+  },
+  /** Job selesai (berhasil ATAU gagal). Dipanggil dari `finally`. */
+  endImport(id: string): void {
+    set((s) => {
+      if (!s.importJobs.some((j) => j.id === id)) return {};
+      return { importJobs: s.importJobs.filter((j) => j.id !== id) };
+    });
+  },
+
   // — transport —
   togglePlay(): void {
     set((s) => ({ playing: !s.playing }));
@@ -1665,6 +1747,7 @@ export const studioActions = {
     state = withDerived({
       ...(seed === 'empty' ? createInitialStudio() : createDemoStudio()),
       assets: {},
+      importJobs: [],
       engineReady: false,
       engineError: null,
       seekEpoch: 0,
