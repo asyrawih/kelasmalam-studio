@@ -35,6 +35,7 @@ import { buildExportPayload } from './payload';
 import { runExport, type ExportEncoder, type ExportEngine } from './run-export';
 import { BlobSink } from './sinks';
 import { createWasmExportEngine } from './wasm-engine';
+import { EXPECTED_ABI_VERSION } from '../../audio/wasm-loader';
 import type { LoadedWasm } from '../../audio/wasm-loader';
 import type {
   EqBandKind,
@@ -434,7 +435,9 @@ function twoLaneProject() {
 
 describe('export lewat engine WASM sungguhan', () => {
   it('artefak st bisa di-compile dan ABI-nya cocok', () => {
-    expect(glue.abiVersion()).toBe(1);
+    // Bukan angka telanjang: kalau ABI dinaikkan, yang harus dipenuhi adalah
+    // artefaknya dibangun ulang — bukan tes ini disesuaikan.
+    expect(glue.abiVersion()).toBe(EXPECTED_ABI_VERSION);
     expect(memory.buffer.byteLength).toBeGreaterThan(0);
   });
 

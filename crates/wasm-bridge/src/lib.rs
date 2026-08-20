@@ -28,9 +28,18 @@ pub mod raw;
 pub mod studio;
 
 /// Versi ABI antara JS dan WASM. Dinaikkan setiap kali tanda tangan fungsi di
-/// [`raw`] atau layout SAB berubah. JS memverifikasinya saat load
-/// (`wasm-loader.ts`) supaya artefak basi di cache tidak dipakai diam-diam.
-pub const ABI_VERSION: u32 = 1;
+/// [`raw`] atau [`bindgen`] berubah, atau layout SAB berubah. JS
+/// memverifikasinya saat load (`wasm-loader.ts`) supaya artefak basi di cache
+/// tidak dipakai diam-diam.
+///
+/// [`bindgen`] BARU masuk cakupan di versi 2. Sebelumnya cakupannya hanya
+/// [`raw`] + SAB, jadi menambah export bindgen tidak pernah menaikkan angka ini
+/// — dan artefak yang belum punya export itu tetap lolos cek, lalu gagal jauh
+/// belakangan sebagai `... is not a function`. Itu terjadi dua kali
+/// (`assetBytesLive`, lalu `beginAsset`). `REQUIRED_EXPORTS` di
+/// `wasm-loader.ts` menutup lubangnya tanpa bergantung pada seseorang ingat
+/// menaikkan angka ini; angka ini tetap ada sebagai jaring pertama.
+pub const ABI_VERSION: u32 = 2;
 
 /// Panic hook — **hanya** untuk surface non-RT.
 ///
