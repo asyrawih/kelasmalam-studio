@@ -12,7 +12,7 @@
     "build": "pnpm run build:wasm && pnpm -C web build",
     "build:wasm": "./scripts/build-wasm.sh",
     "preview": "pnpm -C web preview",
-    "test": "pnpm run test:rust && pnpm -C web test",
+    "test": "pnpm run test:rust && pnpm -C web test && pnpm -C backend test",
     "test:rust": "cargo test --workspace",
     "lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check",
     "size-check": "./scripts/size-check.sh",

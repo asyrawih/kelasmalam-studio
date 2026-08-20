@@ -254,6 +254,42 @@ jobs:
           path: web/dist/
           retention-days: 1
 
+  # --------------------------------------------------------------- backend
+  # Worker unggah Roblox. Berdiri sendiri: tidak butuh artefak WASM dan tidak
+  # butuh `web`, jadi ia berjalan berbarengan dengan job lain alih-alih
+  # mengantre di belakangnya.
+  #
+  # Yang paling penting dijalankan di sini adalah `src/roblox/limits.test.ts`:
+  # ia meng-import model UI dan menuntut batas server sama persis. Tanpa job
+  # ini, penjaga itu cuma jalan di mesin orang yang kebetulan menjalankannya.
+  #
+  # `wrangler` sengaja TIDAK ada di devDependencies — ia menarik workerd dan
+  # sharp (puluhan MB) untuk sesuatu yang hanya dipakai saat dev/deploy, bukan
+  # saat tes. Script `dev`/`deploy` memanggilnya lewat npx dengan versi terpin.
+  backend:
+    name: backend (test, typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Test
+        working-directory: backend
+        run: npx vitest run
+
+      - name: Typecheck
+        working-directory: backend
+        run: npx tsc --noEmit
+
   # ---------------------------------------------------------------- deploy
   # Deploy adalah KELANJUTAN dari CI, bukan pipeline kedua yang berlomba
   # dengannya.
@@ -270,7 +306,7 @@ jobs:
   # lebih longgar (`--exclude daw-native-host`, tanpa clippy, tanpa null test).
   # `needs:` di bawah membuat keadaan itu tidak mungkin terulang.
   deploy:
-    needs: [native, wasm, web]
+    needs: [native, wasm, web, backend]
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.deploy)

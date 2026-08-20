@@ -1,0 +1,23 @@
+# Worker unggah asset Roblox.
+#
+# Tidak ada binding R2/D1/KV di sini, dan itu disengaja: Worker ini TIDAK
+# menyimpan apa pun — bukan berkasnya, bukan API key-nya, bukan riwayatnya. Ia
+# meneruskan satu unggahan ke Open Cloud lalu lupa. Kepustakaan (R2 + D1) adalah
+# layanan yang berbeda dengan umur data yang berbeda; menggabungkan keduanya di
+# satu Worker berarti satu deploy yang salah menjatuhkan dua-duanya.
+
+name = "dawonweb-roblox"
+main = "src/index.ts"
+compatibility_date = "2026-08-20"
+
+[vars]
+# Origin yang boleh memanggil. Dipisah koma, TANPA spasi, tanpa slash di ujung.
+# `*` diterima untuk dev lokal saja — lihat catatan di src/http/cors.ts soal
+# kenapa ini bukan batas keamanan.
+ALLOWED_ORIGINS = "http://localhost:5173"
+
+# Basis Open Cloud. Bisa ditimpa untuk mengarahkan ke mock saat uji coba.
+ROBLOX_API_BASE = "https://apis.roblox.com"
+
+# Tidak ada `[secrets]` di sini: API key datang dari user lewat header tiap
+# permintaan dan tidak pernah menetap di Worker. Alasannya di README §Kunci.

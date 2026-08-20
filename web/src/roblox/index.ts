@@ -8,6 +8,9 @@
  */
 
 export { RobloxPage, type RobloxPageProps } from './RobloxPage';
+export { RobloxRoute, type RobloxRouteProps } from './RobloxRoute';
+export { createRunner, type Runner } from './backend/runner';
+export { createHttpTransport, UploadError, type Transport } from './backend/transport';
 export { robloxActions, robloxStore, useRoblox, fileOf } from './store';
 export {
   MAX_BYTES,
