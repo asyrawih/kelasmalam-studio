@@ -16,9 +16,11 @@
 
 use wasm_bindgen::prelude::*;
 
+use core::sync::atomic::{AtomicUsize, Ordering};
 use daw_engine::Engine;
 use daw_export::flac::{FlacBits, FlacSpec, FlacStreamWriter};
 use daw_export::wav::{DitherSettings, WavFormat, WavSpec, WavStreamWriter};
+
 use daw_export::OfflineRenderer;
 use daw_timeline::TimelineSample;
 
@@ -158,6 +160,39 @@ pub fn snapshot_from_studio_json(json: &str) -> Result<StudioSnapshot, JsValue> 
 /// (biquad `s1/s2`, envelope compressor, delay line, cursor voice) berevolusi
 /// per blok. Dua thread yang memproses dari state yang sama tidak menghasilkan
 /// "sedikit beda" — hasilnya rusak dan non-deterministik (docs/03 §3a).
+/// Byte PCM asset yang SAAT INI hidup di linear memory.
+///
+/// Ada karena penjaga export di sisi JS tidak punya cara lain mengetahuinya.
+/// Ia dulu menghitung sisa memori sebagai `plafon − ukuran buffer sekarang`,
+/// dan rumus itu menganggap semua yang pernah TUMBUH masih terpakai. Linear
+/// memory wasm tidak pernah menyusut, jadi sesudah satu export besar selesai —
+/// PCM-nya sudah dibebaskan dan ruangnya siap dipakai ulang — penjaga itu tetap
+/// melihat memory 2,4 GiB dan menolak export berikutnya SELAMANYA sampai tab
+/// di-reload. Persis: export pertama berhasil, yang kedua ditolak.
+static LIVE_ASSET_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+/// Puncak [`LIVE_ASSET_BYTES`] yang pernah tercapai.
+///
+/// Selisih `ukuran buffer − puncak` adalah memory yang tumbuh BUKAN karena
+/// asset (runtime, arena FX, snapshot) — satu-satunya bagian yang benar-benar
+/// tidak bisa dipakai ulang. Tanpa angka ini, memisahkan "tumbuh karena asset,
+/// sekarang bebas" dari "tumbuh karena hal lain, tetap terpakai" tidak mungkin
+/// dilakukan dari sisi JS.
+static PEAK_ASSET_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+/// Byte PCM asset yang saat ini terdaftar. `f64` supaya angka di atas 4 GiB
+/// tetap utuh di sisi JS.
+#[wasm_bindgen(js_name = assetBytesLive)]
+pub fn asset_bytes_live() -> f64 {
+    LIVE_ASSET_BYTES.load(Ordering::Relaxed) as f64
+}
+
+/// Puncak byte PCM asset yang pernah hidup bersamaan.
+#[wasm_bindgen(js_name = assetBytesPeak)]
+pub fn asset_bytes_peak() -> f64 {
+    PEAK_ASSET_BYTES.load(Ordering::Relaxed) as f64
+}
+
 #[wasm_bindgen]
 pub struct OfflineRender {
     inner: OfflineRenderer,
@@ -281,6 +316,7 @@ impl OfflineRender {
         let mut data = data;
         data.truncate(need);
         let owned: Box<[f32]> = data.into_boxed_slice();
+        let bytes = owned.len() * core::mem::size_of::<f32>();
         let asset = daw_engine::voice::Asset {
             data: owned.as_ptr(),
             frames: n,
@@ -288,6 +324,8 @@ impl OfflineRender {
             sample_rate,
         };
         self.assets.push(owned);
+        let live = LIVE_ASSET_BYTES.fetch_add(bytes, Ordering::Relaxed) + bytes;
+        PEAK_ASSET_BYTES.fetch_max(live, Ordering::Relaxed);
         // SAFETY: `owned` baru saja dipindahkan ke `self.assets` dan tidak
         // pernah dimutasi, dibuang, atau direalokasi selama renderer hidup —
         // `Box<[f32]>` tidak pernah memindahkan buffer-nya. Slot juga tidak
@@ -334,6 +372,29 @@ impl OfflineRender {
     #[wasm_bindgen(js_name = outCapacity)]
     pub fn out_capacity(&self) -> u32 {
         self.block as u32
+    }
+}
+
+/// Kurangi hitungan begitu PCM-nya benar-benar dilepas.
+///
+/// Ditulis sebagai `Drop`, bukan sebagai langkah di `free()`, supaya jalur
+/// mana pun yang menjatuhkan renderer ikut terhitung — termasuk yang gagal di
+/// tengah konstruksi. Hitungan yang meleset ke ATAS di sini akan menolak export
+/// yang sebenarnya muat, persis bug yang diperbaiki oleh keberadaan penghitung
+/// ini; menaruhnya di satu-satunya jalur yang pasti dilewati adalah cara
+/// membuat kelas kesalahan itu tidak mungkin terulang.
+impl Drop for OfflineRender {
+    fn drop(&mut self) {
+        let bytes: usize = self
+            .assets
+            .iter()
+            .map(|a| a.len() * core::mem::size_of::<f32>())
+            .sum();
+        // `saturating_sub`: hitungan yang entah bagaimana sudah nol tidak boleh
+        // membungkus jadi 4 GiB dan mengunci export selamanya.
+        let _ = LIVE_ASSET_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+            Some(v.saturating_sub(bytes))
+        });
     }
 }
 
