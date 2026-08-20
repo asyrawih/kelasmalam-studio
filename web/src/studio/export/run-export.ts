@@ -14,7 +14,7 @@
  * `memory.grow`, progress, dan pembatalan — tanpa WASM sama sekali.
  */
 
-import type { ExportAssetPcm, ExportPayload } from './payload';
+import type { ExportAssetInfo, ExportAssetSource, ExportPayload } from './payload';
 import type { ExportSink } from './sinks';
 
 /** 100 blok × 128 frame ≈ 267 ms audio @48k (docs/03 §3a). */
@@ -34,13 +34,11 @@ export interface RenderHandle {
   render(blocks: number): number;
   outLPtr(): number;
   outRPtr(): number;
-  registerAsset(
-    id: number,
-    data: Float32Array,
-    channels: number,
-    frames: number,
-    sampleRate: number,
-  ): void;
+  /**
+   * Sediakan tempat untuk PCM satu asset; kembalikan alamatnya di linear
+   * memory. Pemanggil WAJIB mengisinya segera — lihat `fillAsset`.
+   */
+  beginAsset(id: number, channels: number, frames: number, sampleRate: number): number;
   free(): void;
 }
 
@@ -101,6 +99,12 @@ export interface RunExportOptions {
    * export panjang gagal sebelum lapisan ini ada (lihat `sinks.ts`).
    */
   readonly sink: ExportSink;
+  /**
+   * Sumber PCM, dipanggil satu asset per satu asset SESUDAH penjaga memori
+   * lolos. Terpisah dari `payload` karena payload harus tetap bisa menyeberang
+   * `postMessage`, dan fungsi tidak bisa di-structured-clone.
+   */
+  readonly pcm: ExportAssetSource;
   /** 0..1. Dipanggil sesudah tiap batch. */
   readonly onProgress?: (fraction01: number) => void;
   /** Selisih preview vs file, dilaporkan SEBELUM render mulai. */
@@ -145,7 +149,7 @@ export function defaultYield(): Promise<void> {
 }
 
 export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
-  const { payload, engine, encoder, sampleRate, sink } = opts;
+  const { payload, engine, encoder, sampleRate, sink, pcm } = opts;
   const yieldFn = opts.yieldToEventLoop ?? defaultYield;
 
   const snap = engine.snapshot(payload.json);
@@ -166,7 +170,7 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
 
   // Sebelum apa pun dialokasi: kalau PCM-nya tidak akan muat, gagal SEKARANG
   // dengan kalimat yang bisa ditindaklanjuti — bukan nanti sebagai trap wasm di
-  // tengah `registerAsset`, dengan `OfflineRender` yang sudah terlanjur berdiri.
+  // tengah `beginAsset`, dengan `OfflineRender` yang sudah terlanjur berdiri.
   assertPcmFitsInMemory(payload.assets, engine);
   // Dan sebelum render berjam-jam dimulai: apakah formatnya SANGGUP menyatakan
   // panjang sepanjang itu. Menemukannya di byte terakhir berarti membuang
@@ -200,7 +204,10 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
     // Asset didaftarkan SEBELUM batch pertama. Tanpa langkah ini setiap clip
     // menunjuk slot kosong dan engine merender senyap sempurna — tanpa error,
     // tanpa peringatan, hanya file kosong.
-    for (const a of payload.assets) registerAsset(render, a);
+    //
+    // Satu per satu, dan PCM-nya baru diminta di sini: tidak pernah ada lebih
+    // dari satu asset yang dipegang di luar linear memory.
+    for (const info of payload.assets) fillAsset(engine, render, info, pcm(info));
 
     const header = encoder.header?.();
     if (header && header.length > 0) await sink.header(header);
@@ -306,8 +313,37 @@ function assertFitsEncoderLimit(
   );
 }
 
-function registerAsset(render: RenderHandle, a: ExportAssetPcm): void {
-  render.registerAsset(a.assetId, a.data, a.channels, a.frames, a.sampleRate);
+/**
+ * Salin PCM satu asset LANGSUNG ke linear memory.
+ *
+ * Satu-satunya salinan di jalur ini. Sebelumnya ada dua: `flattenBuffer` di JS,
+ * lalu glue wasm-bindgen menyalin lagi ke linear memory — dan yang pertama
+ * dibuat untuk semua asset sekaligus lalu ditahan sampai export selesai.
+ */
+function fillAsset(
+  engine: ExportEngine,
+  render: RenderHandle,
+  info: ExportAssetInfo,
+  channels: readonly Float32Array[],
+): void {
+  if (channels.length < info.channels) {
+    throw new Error(
+      `Asset ${info.assetId}: sumber memberi ${channels.length} channel, ` +
+        `butuh ${info.channels}.`,
+    );
+  }
+  // Alamat DULU: alokasinya bisa memicu memory.grow, dan view apa pun yang
+  // diambil sebelum itu akan berukuran nol tanpa melempar (docs/05).
+  const ptr = render.beginAsset(info.assetId, info.channels, info.frames, info.sampleRate);
+  // Tidak ada alokasi lagi sampai loop selesai, jadi satu view cukup.
+  const dst = engine.view(ptr, info.channels * info.frames);
+  for (let c = 0; c < info.channels; c++) {
+    const src = channels[c] as Float32Array;
+    // `subarray`, bukan `slice`: memotong view tanpa menyalin. Sumber yang
+    // lebih panjang dari `frames` dipotong; yang lebih pendek menyisakan nol
+    // di ekornya, dan itu senyap — bukan sampah.
+    dst.set(src.length > info.frames ? src.subarray(0, info.frames) : src, c * info.frames);
+  }
 }
 
 const MIB = 1024 * 1024;
@@ -315,7 +351,7 @@ const MIB = 1024 * 1024;
 /**
  * Tolak DULU export yang PCM-nya tidak muat di linear memory.
  *
- * Tanpa ini kegagalannya bukan exception melainkan trap: `registerAsset`
+ * Tanpa ini kegagalannya bukan exception melainkan trap: `beginAsset`
  * meminta blok sebesar seluruh PCM satu lane, `memory.grow` menolak, dan
  * `handle_alloc_error` di wasm memanggil `abort()` — bukan lewat mesin panic,
  * jadi `console_error_panic_hook` pun tidak kebagian. Yang sampai ke user
@@ -327,23 +363,23 @@ const MIB = 1024 * 1024;
  * SELURUH engine, bukan per asset.
  */
 function assertPcmFitsInMemory(
-  assets: readonly ExportAssetPcm[],
+  assets: readonly ExportAssetInfo[],
   engine: ExportEngine,
 ): void {
   const headroom = engine.memoryHeadroomBytes?.();
   if (headroom === undefined) return;
 
-  // Satu salinan per asset: `registerAsset` mengambil alih buffer yang dibuat
-  // glue wasm-bindgen alih-alih menyalinnya lagi (lihat `bindgen.rs`).
-  const need = assets.reduce((sum, a) => sum + a.data.length * 4, 0);
+  // Satu salinan per asset: `beginAsset` mengalokasi di linear memory dan JS
+  // menyalin channel-nya langsung ke sana (lihat `fillAsset`).
+  const need = assets.reduce((sum, a) => sum + a.channels * a.frames * 4, 0);
   if (need <= headroom) return;
 
   const mib = (bytes: number): string => Math.ceil(bytes / MIB).toLocaleString('id-ID');
   const longest = assets.reduce(
     (best, a) => (a.frames > best.frames ? a : best),
-    assets[0] as ExportAssetPcm,
+    assets[0] as ExportAssetInfo,
   );
-  const minutes = (a: ExportAssetPcm): string =>
+  const minutes = (a: ExportAssetInfo): string =>
     (a.frames / Math.max(1, a.sampleRate) / 60).toFixed(1);
 
   throw new Error(

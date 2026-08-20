@@ -270,19 +270,14 @@ export interface OfflineRenderHandle {
   outRPtr(): number;
   outCapacity(): number;
   /**
-   * Daftarkan PCM satu asset SEBELUM `render()` pertama. Snapshot hanya
-   * menyebut asset lewat id; tanpa ini setiap clip menunjuk slot kosong dan
-   * hasil render senyap sempurna — tanpa error.
+   * Sediakan tempat untuk PCM satu asset; kembalikan alamatnya (byte offset)
+   * di linear memory. Pemanggil menyalin channel-nya ke sana sendiri —
+   * lihat `fillAsset` di `studio/export/run-export.ts`.
    *
-   * `data` planar: channel `c` mulai di `c * frames`. Disalin di sisi Rust.
+   * Alokasinya bisa memicu `memory.grow`, jadi view apa pun yang dipegang
+   * sebelum panggilan ini sudah tidak sah sesudahnya.
    */
-  registerAsset(
-    id: number,
-    data: Float32Array,
-    channels: number,
-    frames: number,
-    sampleRate: number,
-  ): void;
+  beginAsset(id: number, channels: number, frames: number, sampleRate: number): number;
   free(): void;
 }
 

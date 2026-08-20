@@ -295,13 +295,15 @@ async function blobBytes(b: Blob): Promise<Uint8Array> {
  * gesture tidak keburu hilang. Helper ini meniru urutan yang sama.
  */
 async function runOne(
-  payload: ReturnType<typeof buildExportPayload>,
+  built: ReturnType<typeof buildExportPayload>,
   encoder: ExportEncoder,
   extra: { onProgress?: (f: number) => void; isCancelled?: () => boolean } = {},
 ) {
   await encoder.init({ sampleRate: SR, channels: CHANNELS });
   const sink = new BlobSink();
-  const r = await runExport({ payload, sampleRate: SR, engine: engine(), encoder, sink, ...extra });
+  // `built` sudah berisi `payload` DAN `pcm` dengan nama yang sama seperti yang
+  // diminta `runExport` — PCM-nya baru diambil saat pendaftaran, bukan di sini.
+  const r = await runExport({ ...built, sampleRate: SR, engine: engine(), encoder, sink, ...extra });
   return { ...r, blob: sink.blob(encoder.mime) };
 }
 
@@ -471,14 +473,21 @@ describe('export lewat engine WASM sungguhan', () => {
    */
   it('menolak export yang melewati batas RIFF sebelum satu blok pun dirender', async () => {
     const { st, getBuffer } = twoLaneProject();
-    const payload = buildExportPayload(st, getBuffer);
+    const built = buildExportPayload(st, getBuffer);
     const enc = wavEncoder(24);
     await enc.init({ sampleRate: SR, channels: CHANNELS });
-    const tooLong = { ...payload, endSample: limitOf(enc) + 1 };
+    const tooLong = { ...built.payload, endSample: limitOf(enc) + 1 };
 
     const sink = new BlobSink();
     await expect(
-      runExport({ payload: tooLong, sampleRate: SR, engine: engine(), encoder: enc, sink }),
+      runExport({
+        payload: tooLong,
+        pcm: built.pcm,
+        sampleRate: SR,
+        engine: engine(),
+        encoder: enc,
+        sink,
+      }),
     ).rejects.toThrow(/terlalu panjang untuk format ini/);
     // Tidak ada byte yang ditulis: kegagalannya terjadi sebelum render dibuat.
     expect(sink.bytes().length).toBe(0);
@@ -486,12 +495,12 @@ describe('export lewat engine WASM sungguhan', () => {
 
   it('menghasilkan WAV 16-bit yang TIDAK senyap, panjang & header-nya benar', async () => {
     const { st, getBuffer } = twoLaneProject();
-    const payload = buildExportPayload(st, getBuffer);
-    expect(payload.assets.length).toBe(2);
-    expect(payload.endSample).toBe(FRAMES * 2);
+    const built = buildExportPayload(st, getBuffer);
+    expect(built.payload.assets.length).toBe(2);
+    expect(built.payload.endSample).toBe(FRAMES * 2);
 
     const progress: number[] = [];
-    const result = await runOne(payload, wavEncoder(16), {
+    const result = await runOne(built, wavEncoder(16), {
       onProgress: (f) => progress.push(f),
     });
 
@@ -538,10 +547,10 @@ describe('export lewat engine WASM sungguhan', () => {
         ],
       }),
     ]);
-    const payload = buildExportPayload(st, (id) => (id === 1 ? fakeBuffer(TONE_A) : undefined));
+    const built = buildExportPayload(st, (id) => (id === 1 ? fakeBuffer(TONE_A) : undefined));
 
     // f32: tidak ada kuantisasi maupun dither yang perlu ditoleransi.
-    const result = await runOne(payload, wavEncoder(32));
+    const result = await runOne(built, wavEncoder(32));
     const wav = parseWav(await blobBytes(result.blob));
     expect(wav.format).toBe(3);
     expect(wav.frames).toBe(half);
@@ -571,8 +580,8 @@ describe('export lewat engine WASM sungguhan', () => {
       const st = state([
         lane({ id: 'x', eq, clips: [clip({ id: 'c', assetId: 1, start: 0, len: FRAMES })] }),
       ]);
-      const payload = buildExportPayload(st, () => fakeBuffer(TONE_A));
-      const r = await runOne(payload, wavEncoder(32));
+      const built = buildExportPayload(st, () => fakeBuffer(TONE_A));
+      const r = await runOne(built, wavEncoder(32));
       return parseWav(await blobBytes(r.blob)).left;
     };
 
@@ -593,8 +602,8 @@ describe('export lewat engine WASM sungguhan', () => {
         clips: [clip({ id: 'c', assetId: 1, start: 0, len: Math.round(FRAMES / 1.5) })],
       }),
     ]);
-    const payload = buildExportPayload(st, () => fakeBuffer(TONE_A));
-    const r = await runOne(payload, wavEncoder(32));
+    const built = buildExportPayload(st, () => fakeBuffer(TONE_A));
+    const r = await runOne(built, wavEncoder(32));
     const wav = parseWav(await blobBytes(r.blob));
     expect(wav.frames).toBe(Math.round(FRAMES / 1.5));
     // Dipercepat berarti tetap berbunyi sampai ujung — bukan senyap di ekor.
@@ -603,10 +612,10 @@ describe('export lewat engine WASM sungguhan', () => {
 
   it('pembatalan menghentikan render dan tidak menghasilkan file', async () => {
     const { st, getBuffer } = twoLaneProject();
-    const payload = buildExportPayload(st, getBuffer);
+    const built = buildExportPayload(st, getBuffer);
     let batches = 0;
     await expect(
-      runOne(payload, wavEncoder(16), {
+      runOne(built, wavEncoder(16), {
         onProgress: () => {
           batches++;
         },
@@ -622,10 +631,10 @@ describe('export lewat engine WASM sungguhan', () => {
    */
   it('FLAC lossless lebih kecil dari WAV untuk sumber yang sama', async () => {
     const { st, getBuffer } = twoLaneProject();
-    const payload = buildExportPayload(st, getBuffer);
+    const built = buildExportPayload(st, getBuffer);
 
-    const wav = await runOne(payload, wavEncoder(24));
-    const flac = await runOne(payload, flacEncoder(24));
+    const wav = await runOne(built, wavEncoder(24));
+    const flac = await runOne(built, flacEncoder(24));
 
     const wavBytes = await blobBytes(wav.blob);
     const flacBytes = await blobBytes(flac.blob);
@@ -661,7 +670,7 @@ describe('export lewat engine WASM sungguhan', () => {
    */
   it('keempat format menghasilkan file berisi dari render yang sama', async () => {
     const { st, getBuffer } = twoLaneProject();
-    const payload = buildExportPayload(st, getBuffer);
+    const built = buildExportPayload(st, getBuffer);
 
     const { Mp3LameJsEncoder } = await import('../../encoders/mp3-lamejs');
     const { OggVorbisEncoder } = await import('../../encoders/ogg-vorbis');
@@ -677,7 +686,7 @@ describe('export lewat engine WASM sungguhan', () => {
     for (const [name, enc] of cases) {
       await enc.init({ sampleRate: SR, channels: CHANNELS, quality: name.startsWith('mp3') ? 192 : 0.5 });
       const sink = new BlobSink();
-      const r = await runExport({ payload, sampleRate: SR, engine: engine(), encoder: enc, sink });
+      const r = await runExport({ ...built, sampleRate: SR, engine: engine(), encoder: enc, sink });
       const bytes = sink.bytes();
       expect(r.frames).toBe(FRAMES * 2);
       // Ambang 1 KB, bukan 0: file "berhasil" yang hanya berisi header adalah
@@ -690,11 +699,11 @@ describe('export lewat engine WASM sungguhan', () => {
   });
 });
 
-describe('biaya memori registerAsset', () => {
+describe('biaya memori pendaftaran asset', () => {
   /**
    * PCM harus disalin ke linear memory TEPAT SEKALI.
    *
-   * Ini bukan tes optimasi. Sebelumnya `registerAsset` menerima `&[f32]`, yang
+   * Ini bukan tes optimasi. Dulu `registerAsset` menerima `&[f32]`, yang
    * artinya glue wasm-bindgen `malloc` satu buffer sebesar PCM dan menyalin dari
    * JS ke situ, lalu Rust menyalin SEKALI LAGI (`to_vec`) supaya datanya hidup
    * selama renderer — dua salinan penuh berdiri bersamaan.
@@ -726,18 +735,15 @@ describe('biaya memori registerAsset', () => {
     snap.free();
 
     const render = new glue.OfflineRender(bytes, SR, 0, frames, 100) as unknown as {
-      registerAsset: (
-        id: number,
-        data: Float32Array,
-        ch: number,
-        frames: number,
-        sr: number,
-      ) => void;
+      beginAsset: (id: number, ch: number, frames: number, sr: number) => number;
       free: () => void;
     };
     try {
       const before = memory.buffer.byteLength;
-      render.registerAsset(0, new Float32Array(frames * CHANNELS), CHANNELS, frames, SR);
+      const ptr = render.beginAsset(0, CHANNELS, frames, SR);
+      // View diambil SESUDAH alamatnya didapat; pengisiannya tidak mengalokasi
+      // apa pun, jadi pertumbuhan yang diukur murni milik asset.
+      new Float32Array(memory.buffer, ptr, frames * CHANNELS).fill(0.25);
       const grown = memory.buffer.byteLength - before;
 
       // Ambang 1.5×, bukan 1.0×: alokator membulatkan ke page dan renderer punya
@@ -745,7 +751,7 @@ describe('biaya memori registerAsset', () => {
       expect(grown).toBeLessThan(pcmBytes * 1.5);
       // eslint-disable-next-line no-console
       console.log(
-        `[export] registerAsset ${(pcmBytes / 1048576).toFixed(0)} MiB PCM → ` +
+        `[export] beginAsset ${(pcmBytes / 1048576).toFixed(0)} MiB PCM → ` +
           `memory +${(grown / 1048576).toFixed(0)} MiB (${(grown / pcmBytes).toFixed(2)}×)`,
       );
     } finally {
@@ -782,7 +788,7 @@ describe('penjaga memori export lintas export', () => {
 
   /** Renderer dengan satu clip sepanjang `frames`, siap didaftari asset. */
   function renderFor(frames: number): {
-    registerAsset: (id: number, d: Float32Array, ch: number, f: number, sr: number) => void;
+    beginAsset: (id: number, ch: number, frames: number, sr: number) => number;
     free: () => void;
   } {
     const snap = glue.snapshotFromStudioJson(
@@ -803,7 +809,7 @@ describe('penjaga memori export lintas export', () => {
 
     const before = eng.memoryHeadroomBytes!();
     const render = renderFor(frames);
-    render.registerAsset(0, new Float32Array(frames * CHANNELS), CHANNELS, frames, SR);
+    render.beginAsset(0, CHANNELS, frames, SR);
 
     // Turun kira-kira sebesar PCM-nya. Dengan rumus lama angka ini TIDAK
     // bergerak sama sekali saat ruangnya dipakai ulang, dan itulah yang
@@ -833,7 +839,7 @@ describe('penjaga memori export lintas export', () => {
     for (let i = 0; i < 2; i++) {
       seen.push(eng.memoryHeadroomBytes!());
       const render = renderFor(frames);
-      render.registerAsset(0, new Float32Array(frames * CHANNELS), CHANNELS, frames, SR);
+      render.beginAsset(0, CHANNELS, frames, SR);
       render.free();
     }
 

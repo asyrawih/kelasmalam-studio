@@ -246,50 +246,46 @@ impl OfflineRender {
         })
     }
 
-    /// Daftarkan PCM satu asset SEBELUM render dimulai.
+    /// Sediakan tempat untuk PCM satu asset, kembalikan alamatnya.
     ///
-    /// Kenapa ini ada: `OfflineRender::new` hanya menerima snapshot, dan
-    /// snapshot cuma menyebut asset lewat id — tanpa langkah ini setiap clip
-    /// menunjuk slot kosong dan engine merender senyap sempurna, tanpa error.
+    /// # Kenapa alamat, bukan `Vec<f32>` yang dikirim JS
     ///
-    /// `data` = semua channel BERURUTAN (planar): channel `c` mulai di
-    /// `c * frames`, sama seperti `importFromPcm`. Datanya DISALIN ke dalam
-    /// renderer; view JS boleh dibuang setelah pemanggilan ini.
+    /// Menerima `Vec<f32>` berarti glue wasm-bindgen mengalokasi buffer di
+    /// linear memory lalu menyalin ke sana dari sebuah `Float32Array` di heap
+    /// JS — dan `Float32Array` itu sendiri sudah salinan, dibuat dengan
+    /// meratakan `AudioBuffer` cache preview. Dua salinan, dan yang di JS
+    /// ditahan untuk SEMUA asset sekaligus: 2,4 GiB untuk project 4 lane ×
+    /// 27 menit, di samping 2,4 GiB yang sama di sini.
     ///
-    /// # Kenapa `Vec<f32>`, bukan `&[f32]`
+    /// Dengan alamat, JS menyalin channel-nya LANGSUNG dari `AudioBuffer` ke
+    /// sini. Satu salinan, dan tidak ada apa pun yang ditahan di heap JS.
     ///
-    /// Keduanya terlihat sama dari TypeScript (`Float32Array`), tapi biaya
-    /// memorinya beda dua kali lipat. Untuk `&[f32]`, glue wasm-bindgen
-    /// `malloc` satu buffer sebesar PCM-nya, menyalin dari JS ke situ, lalu
-    /// meminjamkannya — dan Rust harus menyalin SEKALI LAGI supaya datanya
-    /// hidup selama renderer. Dua salinan penuh berdiri bersamaan.
+    /// Buffer-nya sudah ter-zero dan slot-nya SUDAH terdaftar di `AssetTable`
+    /// saat fungsi ini kembali. Itu aman karena render belum berjalan: tidak
+    /// ada jendela di mana engine bisa membaca buffer yang belum terisi. Yang
+    /// TIDAK aman adalah lupa mengisinya — hasilnya asset senyap tanpa error,
+    /// jadi pemanggil harus mengisi segera sesudah ini di blok yang sama.
     ///
-    /// Itu bukan detail: satu lane 28 menit stereo @48k = 610 MiB, dan plafon
-    /// linear memory dinegosiasikan 4 GiB dengan fallback 2 GiB — di mesin yang
-    /// jatuh ke 2 GiB, salinan ganda membuat project 3 lane butuh
-    /// 610×3 + 610 = 2440 MiB dan `memory.grow` gagal di lane ketiga. Kegagalannya tidak berupa `Err`:
-    /// `handle_alloc_error` memanggil `abort()` langsung, jadi yang sampai ke
-    /// browser adalah `RuntimeError: unreachable executed` — dan seringnya
-    /// bahkan itu pun tertimpa oleh error `free()` di `finally` pemanggil.
+    /// # Peringatan untuk pemanggil
     ///
-    /// `Vec<f32>` mengambil ALIH buffer yang sudah dibuat glue itu. Salinannya
-    /// jadi satu, dan project yang sama butuh 1830 MiB — muat bahkan di plafon
-    /// terendah.
-    #[wasm_bindgen(js_name = registerAsset)]
-    pub fn register_asset(
+    /// Alokasi di sini bisa memicu `memory.grow`, dan itu membuat SEMUA view
+    /// `Float32Array` yang dipegang JS sebelumnya berukuran nol tanpa melempar
+    /// apa pun (docs/05). Ambil view SESUDAH alamat ini didapat, jangan
+    /// sebelumnya.
+    #[wasm_bindgen(js_name = beginAsset)]
+    pub fn begin_asset(
         &mut self,
         id: u32,
-        data: Vec<f32>,
         channels: u32,
         frames: u32,
         sample_rate: u32,
-    ) -> Result<(), JsValue> {
+    ) -> Result<u32, JsValue> {
         let ch = channels.clamp(1, u8::MAX as u32) as usize;
         let n = frames as usize;
         // `checked_mul`: `channels * frames` dari JS bisa meluap usize di
-        // wasm32 (32 bit), dan hasil yang meluap akan lolos cek panjang di
-        // bawah lalu dipakai sebagai batas baca.
-        let need = match ch.checked_mul(n) {
+        // wasm32 (32 bit), dan hasil yang meluap akan dipakai sebagai batas
+        // baca oleh jalur render.
+        let len = match ch.checked_mul(n) {
             Some(v) => v,
             None => {
                 return Err(JsValue::from_str(&format!(
@@ -297,28 +293,17 @@ impl OfflineRender {
                 )))
             }
         };
-        if data.len() < need {
-            return Err(JsValue::from_str(&format!(
-                "asset {id}: panjang data {} < channels*frames {need}",
-                data.len(),
-            )));
-        }
         if id > u16::MAX as u32 {
             return Err(JsValue::from_str(&format!(
                 "asset id {id} di luar jangkauan"
             )));
         }
 
-        // `truncate` + `into_boxed_slice` TIDAK menyalin: glue mengalokasi
-        // tepat `data.len()` elemen, jadi di jalur normal kapasitas == panjang
-        // dan keduanya no-op. Kalau JS mengirim lebih panjang dari yang dipakai,
-        // shrink-nya pun dikerjakan di tempat oleh alokator.
-        let mut data = data;
-        data.truncate(need);
-        let owned: Box<[f32]> = data.into_boxed_slice();
-        let bytes = owned.len() * core::mem::size_of::<f32>();
+        let owned: Box<[f32]> = vec![0.0_f32; len].into_boxed_slice();
+        let bytes = len * core::mem::size_of::<f32>();
+        let ptr = owned.as_ptr();
         let asset = daw_engine::voice::Asset {
-            data: owned.as_ptr(),
+            data: ptr,
             frames: n,
             channels: ch as u8,
             sample_rate,
@@ -327,13 +312,15 @@ impl OfflineRender {
         let live = LIVE_ASSET_BYTES.fetch_add(bytes, Ordering::Relaxed) + bytes;
         PEAK_ASSET_BYTES.fetch_max(live, Ordering::Relaxed);
         // SAFETY: `owned` baru saja dipindahkan ke `self.assets` dan tidak
-        // pernah dimutasi, dibuang, atau direalokasi selama renderer hidup —
-        // `Box<[f32]>` tidak pernah memindahkan buffer-nya. Slot juga tidak
-        // pernah di-unregister, jadi pointer valid untuk seluruh masa render.
+        // pernah dimutasi dari Rust, dibuang, atau direalokasi selama renderer
+        // hidup — `Box<[f32]>` tidak pernah memindahkan buffer-nya, dan
+        // menambah elemen ke `Vec` luar hanya memindahkan `Box`-nya, bukan
+        // buffer yang ditunjuk. Slot juga tidak pernah di-unregister, jadi
+        // pointer valid untuk seluruh masa render.
         unsafe {
             self.inner.engine_mut().register_asset(id as u16, asset);
         }
-        Ok(())
+        Ok(ptr as u32)
     }
 
     /// Total frame yang akan dirender.

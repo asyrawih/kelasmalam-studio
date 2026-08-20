@@ -145,7 +145,7 @@ describe('paritas preview ↔ export', () => {
       startAt: 0,
       getBuffer: () => buffer(),
     });
-    const exported = payloadFeatures(buildExportPayload(state, () => buffer()).json);
+    const exported = payloadFeatures(buildExportPayload(state, () => buffer()).payload.json);
 
     const missing = [...graph.features].filter((f) => !exported.has(f));
     expect(

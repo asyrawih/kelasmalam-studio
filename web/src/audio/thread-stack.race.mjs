@@ -77,9 +77,11 @@ try {
     const snap = h.bytes(); h.warnings(); h.clipCount(); h.free();
     const render = new g.OfflineRender(snap, SR, 0, CLIP_FRAMES, 100);
     const enc = new g.WavEncoderHandle(SR, 2, g.WavBits.Pcm16, 0x5eed1234);
-    const pcm = new Float32Array(2 * CLIP_FRAMES);
+    // Alamat DULU, view SESUDAHNYA: alokasinya bisa memicu memory.grow dan
+    // view lama akan berukuran nol tanpa melempar.
+    const ptr = render.beginAsset(0, 2, CLIP_FRAMES, SR);
+    const pcm = new Float32Array(MEM.buffer, ptr, 2 * CLIP_FRAMES);
     for (let n = 0; n < CLIP_FRAMES; n += 97) { pcm[n] = 0.4; pcm[CLIP_FRAMES + n] = 0.4; }
-    render.registerAsset(0, pcm, 2, CLIP_FRAMES, SR);
     enc.header();
     for (;;) {
       const n = render.render(100);
