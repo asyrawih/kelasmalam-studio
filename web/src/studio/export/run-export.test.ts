@@ -11,7 +11,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildExportPayload } from './payload';
+import { buildExportPayload, pcmFromChannels } from './payload';
 import {
   ExportCancelled,
   runExport,
@@ -145,10 +145,10 @@ const payload = (endSample = 384): ExportPayload => ({
 /** Sumber PCM palsu yang mencatat asset mana saja yang benar-benar diminta. */
 function fakePcm(): ExportAssetSource & { asked: number[] } {
   const asked: number[] = [];
-  const fn = (info: { assetId: number; channels: number; frames: number }) => {
+  const fn = pcmFromChannels((info) => {
     asked.push(info.assetId);
     return Array.from({ length: info.channels }, () => new Float32Array(info.frames).fill(0.5));
-  };
+  });
   return Object.assign(fn, { asked });
 }
 
@@ -594,7 +594,7 @@ describe('pengambilan PCM', () => {
         engine: f.engine,
         encoder: fakeEncoder(),
         // Asset kedua butuh 2 channel; sumber ini selalu memberi 1.
-        pcm: (info) => [new Float32Array(info.frames)],
+        pcm: pcmFromChannels((info) => [new Float32Array(info.frames)]),
         yieldToEventLoop: noYield,
       }),
     ).rejects.toThrow(/butuh 2/);
@@ -912,5 +912,135 @@ describe('runExport → sink', () => {
       }),
     ).resolves.toBeTruthy();
     expect(r.log).toContain('close');
+  });
+});
+
+describe('pengisian PCM berpotongan', () => {
+  /**
+   * Engine dengan linear memory palsu yang BISA tumbuh.
+   *
+   * Bedanya dengan `fakeEngine`: di sini `view()` mengembalikan view SUNGGUHAN
+   * ke satu penyimpanan, jadi apa yang ditulis benar-benar bisa diperiksa. Dan
+   * `grow()` menirukan `memory.grow` dengan setia — penyimpanan lama ditukar
+   * dengan yang baru, sehingga view yang sudah terlanjur dipegang menulis ke
+   * tempat yang tidak dibaca siapa pun. Tanpa itu, bug "view di-cache lintas
+   * await" akan lolos: isinya tetap benar, hanya di penyimpanan yang salah.
+   */
+  function growableEngine(capacity = 64) {
+    let store = new Float32Array(capacity);
+    const engine: ExportEngine = {
+      snapshot: () => ({ bytes: new Uint8Array([1]), warnings: [], clipCount: 1 }),
+      createRender: () => ({
+        totalFrames: () => 0,
+        renderedFrames: () => 0,
+        render: () => 0,
+        outLPtr: () => 0,
+        outRPtr: () => 0,
+        beginAsset: () => 0,
+        free: () => undefined,
+      }),
+      view: (ptr, len) => store.subarray(ptr, ptr + len),
+    };
+    return {
+      engine,
+      grow(): void {
+        const next = new Float32Array(store.length * 2);
+        next.set(store);
+        store = next;
+      },
+      read: (n: number): number[] => [...store.subarray(0, n)],
+    };
+  }
+
+  const oneAsset = (frames: number, channels = 1): ExportPayload => ({
+    json: JSON.stringify({ sampleRate: 48_000, speed: 1, lanes: [] }),
+    assets: [{ assetId: 0, channels, frames, sampleRate: 48_000 }],
+    endSample: 0,
+  });
+
+  it('menyalin potongan-potongan pendek jadi satu asset yang utuh', async () => {
+    const g = growableEngine();
+    const src = Float32Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    await runExport({
+      payload: oneAsset(8),
+      sampleRate: 48_000,
+      engine: g.engine,
+      encoder: fakeEncoder(),
+      sink: new BlobSink(),
+      // Sengaja lebih pendek dari yang diminta: sumber BOLEH menjawab
+      // sepotong-sepotong, dan loop harus meneruskan dari offset yang benar.
+      pcm: (req) => src.subarray(req.offset, Math.min(src.length, req.offset + 3)),
+      yieldToEventLoop: noYield,
+    });
+
+    expect(g.read(8)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('tetap utuh walau linear memory tumbuh DI TENGAH pengisian asset', async () => {
+    const g = growableEngine();
+    const src = Float32Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+    let grown = false;
+
+    await runExport({
+      payload: oneAsset(8),
+      sampleRate: 48_000,
+      engine: g.engine,
+      encoder: fakeEncoder(),
+      sink: new BlobSink(),
+      pcm: async (req) => {
+        // Sumber async yang menumbuhkan memory sesudah potongan pertama —
+        // persis yang bisa terjadi saat menunggu potongan datang dari main
+        // thread sementara sesuatu yang lain mengalokasi di wasm.
+        await Promise.resolve();
+        if (req.offset > 0 && !grown) {
+          grown = true;
+          g.grow();
+        }
+        return src.subarray(req.offset, Math.min(src.length, req.offset + 4));
+      },
+      yieldToEventLoop: noYield,
+    });
+
+    expect(grown).toBe(true);
+    expect(g.read(8)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('sumber yang kehabisan lebih awal menyisakan senyap, bukan berputar selamanya', async () => {
+    const g = growableEngine();
+    const src = Float32Array.from([1, 2, 3]);
+
+    await runExport({
+      payload: oneAsset(8),
+      sampleRate: 48_000,
+      engine: g.engine,
+      encoder: fakeEncoder(),
+      sink: new BlobSink(),
+      pcm: (req) => src.subarray(req.offset, Math.min(src.length, req.offset + 8)),
+      yieldToEventLoop: noYield,
+    });
+
+    expect(g.read(8)).toEqual([1, 2, 3, 0, 0, 0, 0, 0]);
+  });
+
+  it('channel kedua ditaruh sesudah channel pertama, bukan menimpanya', async () => {
+    const g = growableEngine();
+    const l = Float32Array.from([1, 2, 3, 4]);
+    const r = Float32Array.from([5, 6, 7, 8]);
+
+    await runExport({
+      payload: oneAsset(4, 2),
+      sampleRate: 48_000,
+      engine: g.engine,
+      encoder: fakeEncoder(),
+      sink: new BlobSink(),
+      pcm: (req) => {
+        const ch = req.channel === 0 ? l : r;
+        return ch.subarray(req.offset, Math.min(ch.length, req.offset + 2));
+      },
+      yieldToEventLoop: noYield,
+    });
+
+    expect(g.read(8)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 });

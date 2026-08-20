@@ -201,6 +201,65 @@ Pada pembatalan atau kegagalan, sink di-`abort()`: `FileSystemSink` membuang
 swap file-nya sehingga tidak ada berkas separuh jadi yang tertinggal di disk
 terlihat seperti export yang berhasil.
 
+### Di mana export dijalankan, dan kenapa itu soal memori
+
+Export studio berjalan di **worker**, dengan artefak **`st`** yang memory-nya
+sendiri (`studio/export/worker-host.ts` + `audio/export-worker.ts`). Main thread
+memegang dua hal yang tidak diseberangkan: tujuan berkasnya (`ExportSink`) dan
+PCM-nya.
+
+Alasan yang biasa disebut — "supaya UI tidak membeku" — bukan alasan utamanya.
+Yang menentukan: **linear memory wasm tidak pernah menyusut.** Render menaruh
+seluruh PCM project di linear memory, dan `OfflineRender::drop` memang
+membebaskannya — tapi hanya ke alokator DI DALAM wasm. Halaman yang sudah
+ditumbuhkan tetap milik instance itu sampai instance-nya sendiri hilang.
+
+Konsekuensinya kalau export berjalan di instance main thread: satu export
+project 400 MiB membuat tab menahan 400 MiB itu sampai halaman di-reload,
+walaupun export-nya sudah lama selesai. Tidak ada API untuk mengembalikannya —
+`memory.shrink` tidak ada.
+
+Worker punya satu langkah yang tidak dimiliki main thread: `terminate()`.
+Instance-nya hilang, memory-nya hilang, dan yang kembali ke sistem operasi bukan
+cuma PCM-nya melainkan seluruh runtime export. Karena itu `terminate()` dipanggil
+di `finally` — sukses, gagal, maupun batal.
+
+Syaratnya varian `st`, bukan `mt`. Varian `mt` meng-IMPORT memory bersama milik
+main thread dan worklet; export di atasnya akan menumbuhkan memory yang SAMA
+dengan yang dipakai playback, dan `terminate()` tidak membebaskan apa pun.
+Render offline satu thread (lihat `OfflineRenderer`), jadi tidak ada yang hilang.
+
+**Jalur cadangan.** Kalau `Worker` tidak ada, atau worker gagal **sebelum satu
+byte pun ditulis** ke sink (modul worker tidak bisa dimuat, encoder lazy-nya
+tidak hidup di worker), export diulang di main thread. Ia berfungsi penuh —
+hanya saja memorinya tidak bisa dikembalikan. Batas "sebelum byte pertama" itu
+yang membuat pengulangannya aman: sesudah sebagian file ditulis, mengulang
+berarti berkas berisi dua export yang disambung.
+
+### PCM ditarik sepotong demi sepotong
+
+`ExportAssetSource` menjawab satu potong (`PCM_CHUNK_FRAMES`, 1 MiB) per
+permintaan, bukan seluruh channel satu asset. Dua sumber memakainya:
+
+- **`audioBufferPcmSource`** (main thread) membaca dari cache preview lewat
+  `copyFromChannel`, **bukan** `getChannelData`. Di Gecko, panggilan pertama
+  `getChannelData` membangkitkan salinan JS penuh per channel yang menempel pada
+  `AudioBuffer` selama ia hidup — untuk export itu berarti satu salinan permanen
+  dari seluruh audio project, muncul saat export berjalan dan tidak pernah
+  kembali sesudahnya. `copyFromChannel` membaca dari penyimpanan yang sama tanpa
+  membangkitkannya, dengan satu buffer antara sebesar satu potongan yang dipakai
+  ulang.
+- **worker** meminta potongan itu lewat `postMessage` dan menyalinnya ke linear
+  memory. `postMessage` MENYALIN, jadi mengirim seluruh PCM di muka berarti satu
+  salinan penuh project di heap JS worker.
+
+Potongan yang dikembalikan hanya sah **sampai permintaan berikutnya** (buffer
+antaranya dipakai ulang). `fillAsset` dan `worker-host` sama-sama menyalinnya
+segera; `pcm-source.test.ts` yang menjaga kontrak itu tetap berlaku.
+
+Efek sampingnya di `fillAsset`: pengisian asset sekarang `await`, jadi view ke
+linear memory diambil ULANG tiap potong — lihat docs/05 §WASM memory growth.
+
 ### Batas 4 GiB WAV
 
 WAV klasik menyimpan ukuran RIFF **dan** ukuran data di field 32-bit, jadi

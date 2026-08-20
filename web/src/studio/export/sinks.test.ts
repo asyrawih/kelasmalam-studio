@@ -193,3 +193,25 @@ describe('toTransferable', () => {
     expect([...new Uint8Array(out)]).toEqual([2, 3]);
   });
 });
+
+describe('BlobSink.takeBlob', () => {
+  it('menyerahkan Blob yang sama isinya, lalu melepas potongannya', () => {
+    const sink = new BlobSink();
+    sink.header(Uint8Array.from([1, 2]));
+    sink.chunk(Uint8Array.from([3, 4]));
+
+    const blob = sink.takeBlob('audio/wav');
+    expect(blob.size).toBe(4);
+    expect(blob.type).toBe('audio/wav');
+    // Potongannya dilepas: file yang sama tidak ditahan dua kali sesudah
+    // Blob-nya jadi.
+    expect([...sink.bytes()]).toEqual([]);
+  });
+
+  it('sesudah abort ia menolak, sama seperti blob()', () => {
+    const sink = new BlobSink();
+    sink.chunk(Uint8Array.from([1]));
+    sink.abort();
+    expect(() => sink.takeBlob('audio/wav')).toThrow(/dibatalkan/);
+  });
+});

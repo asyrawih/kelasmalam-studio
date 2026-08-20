@@ -10,10 +10,10 @@
  * visual baru.
  *
  * Ini satu-satunya panel yang TIDAK berbicara ke audio thread sama sekali —
- * ia berbicara ke export worker (docs/03). Karena worker butuh snapshot
- * project ter-serialisasi dari Rust (`EngineClient.startExport({ snapshot })`)
- * dan serializer itu belum ada, tombol EXPORT dinonaktifkan dengan alasan yang
- * terbaca di tooltip — bukan diam-diam tidak melakukan apa-apa.
+ * ia berbicara ke export worker (docs/03). Jalur export yang sudah jadi hidup
+ * di `studio/rail/export-bridge.ts` (model studio → payload → worker export);
+ * panel ini belum tersambung ke sana, jadi tombol EXPORT dinonaktifkan dengan
+ * alasan yang terbaca di tooltip — bukan diam-diam tidak melakukan apa-apa.
  */
 
 import { Badge, Button, Card, ProgressBar } from '../cyber';
