@@ -216,16 +216,52 @@ export class Store {
       .first<{ id: string; name: string; json: string; version: number }>();
   }
 
-  async createProject(userId: string, name: string, json: string): Promise<{ id: string; version: number }> {
+  async createProject(
+    userId: string,
+    name: string,
+    json: string,
+    hashes: readonly string[],
+  ): Promise<{ id: string; version: number }> {
     const id = crypto.randomUUID();
     await this.db
       .prepare(
-        `INSERT INTO project (id, user_id, name, json, updated_at, version)
-         VALUES (?, ?, ?, ?, ?, 1)`,
+        `INSERT INTO project (id, user_id, name, json, updated_at, version, tracks_indexed)
+         VALUES (?, ?, ?, ?, ?, 1, 1)`,
       )
       .bind(id, userId, name, json, this.now())
       .run();
+    await this.replaceProjectTracks(id, userId, hashes);
     return { id, version: 1 };
+  }
+
+  /** Ganti seluruh daftar lagu satu project. Dipanggil tiap kali ia disimpan. */
+  async replaceProjectTracks(
+    projectId: string,
+    userId: string,
+    hashes: readonly string[],
+  ): Promise<void> {
+    await this.db.prepare('DELETE FROM project_track WHERE project_id = ?').bind(projectId).run();
+    for (const hash of hashes) {
+      await this.db
+        .prepare(
+          'INSERT OR IGNORE INTO project_track (project_id, user_id, hash) VALUES (?, ?, ?)',
+        )
+        .bind(projectId, userId, hash)
+        .run();
+    }
+  }
+
+  /** Project milik user ini yang belum punya baris `project_track`. */
+  async unindexedProjects(userId: string): Promise<readonly { id: string; json: string }[]> {
+    const { results } = await this.db
+      .prepare('SELECT id, json FROM project WHERE user_id = ? AND tracks_indexed = 0')
+      .bind(userId)
+      .all<{ id: string; json: string }>();
+    return results;
+  }
+
+  async markIndexed(projectId: string): Promise<void> {
+    await this.db.prepare('UPDATE project SET tracks_indexed = 1 WHERE id = ?').bind(projectId).run();
   }
 
   /**
@@ -243,17 +279,21 @@ export class Store {
     name: string,
     json: string,
     expectedVersion: number,
+    hashes: readonly string[],
   ): Promise<{ ok: true; version: number } | { ok: false; current: number | null }> {
     const next = expectedVersion + 1;
     const res = await this.db
       .prepare(
-        `UPDATE project SET name = ?, json = ?, updated_at = ?, version = ?
+        `UPDATE project SET name = ?, json = ?, updated_at = ?, version = ?, tracks_indexed = 1
           WHERE id = ? AND user_id = ? AND version = ?`,
       )
       .bind(name, json, this.now(), next, id, userId, expectedVersion)
       .run();
 
-    if (res.meta.changes > 0) return { ok: true, version: next };
+    if (res.meta.changes > 0) {
+      await this.replaceProjectTracks(id, userId, hashes);
+      return { ok: true, version: next };
+    }
 
     const row = await this.db
       .prepare('SELECT version FROM project WHERE id = ? AND user_id = ?')
@@ -263,6 +303,10 @@ export class Store {
   }
 
   async deleteProject(userId: string, id: string): Promise<boolean> {
+    // Dihapus eksplisit: `ON DELETE CASCADE` hanya berlaku kalau
+    // `PRAGMA foreign_keys` menyala, dan itu bukan sesuatu yang boleh
+    // diandalkan dari sisi kode ini.
+    await this.db.prepare('DELETE FROM project_track WHERE project_id = ?').bind(id).run();
     const res = await this.db
       .prepare('DELETE FROM project WHERE id = ? AND user_id = ?')
       .bind(id, userId)
@@ -271,18 +315,28 @@ export class Store {
   }
 
   /**
-   * Project milik user ini yang JSON-nya menyebut hash tertentu.
+   * Project milik user ini yang memakai hash tertentu.
    *
-   * `LIKE '%hash%'` atas TEXT, bukan penguraian JSON di SQL. Hash-nya 64
-   * karakter heksadesimal, jadi kecocokan palsu praktis mustahil; dan D1 tidak
-   * punya indeks yang bisa dipakai untuk pertanyaan ini bagaimanapun caranya.
-   * Yang penting jawabannya tidak boleh melewatkan apa pun — dan pemindaian
-   * penuh memang tidak.
+   * Dulu `json LIKE '%hash%'`. Itu bekerja sampai project mulai besar, lalu D1
+   * menolak dengan `LIKE or GLOB pattern too complex` — dan yang terlihat user
+   * adalah lagu yang tidak bisa dihapus, tanpa satu pun petunjuk soal SQL.
+   * Polanya sendiri cuma 66 karakter; yang membuatnya jatuh adalah ukuran TEKS
+   * yang dipindai, dan itu tumbuh mengikuti isi project.
+   *
+   * Sekarang lewat `project_track`, yang punya indeks untuk persis pertanyaan
+   * ini — lebih murah bahkan sebelum batas itu tersentuh.
    */
-  async projectsReferencing(userId: string, hash: string): Promise<readonly { id: string; name: string }[]> {
+  async projectsReferencing(
+    userId: string,
+    hash: string,
+  ): Promise<readonly { id: string; name: string }[]> {
     const { results } = await this.db
-      .prepare(`SELECT id, name FROM project WHERE user_id = ? AND json LIKE ?`)
-      .bind(userId, `%${hash}%`)
+      .prepare(
+        `SELECT p.id, p.name FROM project_track t
+           JOIN project p ON p.id = t.project_id
+          WHERE t.user_id = ? AND t.hash = ?`,
+      )
+      .bind(userId, hash)
       .all<{ id: string; name: string }>();
     return results;
   }

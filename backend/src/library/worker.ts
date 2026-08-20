@@ -426,6 +426,7 @@ async function route(
      * merujuk asset hilang tidak gagal saat dihapus melainkan saat DIBUKA,
      * berminggu-minggu kemudian, tanpa petunjuk apa yang hilang.
      */
+    await indexOldProjects(store, user.id);
     const used = await store.projectsReferencing(user.id, hash);
     if (used.length > 0) {
       return json(
@@ -464,7 +465,12 @@ async function route(
       const missing = await missingClaims(store, user.id, parsed.json);
       if (missing.length > 0) return missingResponse(missing);
 
-      const made = await store.createProject(user.id, parsed.name, parsed.json);
+      const made = await store.createProject(
+        user.id,
+        parsed.name,
+        parsed.json,
+        hashesIn(parsed.json),
+      );
       return json({ id: made.id, version: made.version }, 201);
     }
     return fail(405, 'METODE', 'pakai GET atau POST');
@@ -505,7 +511,14 @@ async function route(
       const missing = await missingClaims(store, user.id, parsed.json);
       if (missing.length > 0) return missingResponse(missing);
 
-      const saved = await store.updateProject(user.id, id, parsed.name, parsed.json, expected);
+      const saved = await store.updateProject(
+        user.id,
+        id,
+        parsed.name,
+        parsed.json,
+        expected,
+        hashesIn(parsed.json),
+      );
       if (saved.ok) return json({ ok: true, version: saved.version }, 200, { etag: `"${saved.version}"` });
       if (saved.current === null) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
       return json(
@@ -613,8 +626,17 @@ async function readProjectBody(
  * yang kebetulan berbentuk hash. Saat L1 mengunci bentuk serialisasinya,
  * fungsi ini yang ikut menyempit.
  */
-async function missingClaims(store: Store, userId: string, projectJson: string): Promise<readonly string[]> {
-  const hashes = new Set<string>();
+/**
+ * Semua `contentHash` yang disebut sebuah project, di mana pun letaknya.
+ *
+ * Dipakai dua kali: untuk mengisi `project_track` saat menyimpan, dan untuk
+ * menjawab "asset mana yang belum ter-commit". Satu penelusuran, satu aturan —
+ * kalau keduanya punya salinan sendiri, yang satu akan menemukan hash yang
+ * tidak ditemukan yang lain, dan bedanya berbentuk lagu yang bisa dihapus
+ * padahal masih dipakai.
+ */
+export function hashesIn(projectJson: string): readonly string[] {
+  const out = new Set<string>();
   const walk = (node: unknown): void => {
     if (Array.isArray(node)) {
       for (const item of node) walk(item);
@@ -623,16 +645,44 @@ async function missingClaims(store: Store, userId: string, projectJson: string):
     if (typeof node !== 'object' || node === null) return;
     for (const [key, value] of Object.entries(node)) {
       if ((key === 'contentHash' || key === 'content_hash') && typeof value === 'string' && HASH_RE.test(value)) {
-        hashes.add(value);
+        out.add(value);
+      } else if (key === 'assetGridsByHash' && typeof value === 'object' && value !== null) {
+        // Kunci-kunci di sini ADALAH hash-nya.
+        for (const h of Object.keys(value)) if (HASH_RE.test(h)) out.add(h);
       } else {
         walk(value);
       }
     }
   };
   walk(safeParse(projectJson));
+  return [...out];
+}
 
+/**
+ * Isi `project_track` untuk project yang ditulis SEBELUM tabel itu ada.
+ *
+ * Sekali per project, ditandai `tracks_indexed`. Dijalankan tepat sebelum
+ * pertanyaan "lagu ini masih dipakai?" — di situlah jawabannya harus lengkap,
+ * dan di situ pula biayanya paling jarang ditagih.
+ *
+ * Yang dihindari: menjawab "tidak dipakai siapa pun" untuk lagu yang sebenarnya
+ * dipakai project lama, lalu menghapusnya — dan project itu gagal dibuka
+ * berminggu-minggu kemudian.
+ */
+async function indexOldProjects(store: Store, userId: string): Promise<void> {
+  for (const row of await store.unindexedProjects(userId)) {
+    await store.replaceProjectTracks(row.id, userId, hashesIn(row.json));
+    await store.markIndexed(row.id);
+  }
+}
+
+async function missingClaims(
+  store: Store,
+  userId: string,
+  projectJson: string,
+): Promise<readonly string[]> {
   const missing: string[] = [];
-  for (const hash of hashes) {
+  for (const hash of hashesIn(projectJson)) {
     if (!(await store.hasClaim(userId, hash))) missing.push(hash);
   }
   return missing;
