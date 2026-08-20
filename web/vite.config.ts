@@ -184,9 +184,35 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    // Pre-bundler esbuild akan memproses glue wasm-bindgen dan merusak
-    // resolusi `new URL('...wasm', import.meta.url)` (docs/04).
-    exclude: ['@daw/wasm', '@breezystack/lamejs', 'vorbis-encoder-js'],
+    /**
+     * HANYA paket yang punya jalur ESM sendiri yang boleh ada di sini.
+     *
+     * `exclude` mematikan pre-bundle esbuild, dan pre-bundle itulah yang
+     * mengubah CommonJS jadi ESM untuk dev server. Paket CJS-only yang
+     * di-exclude akan disajikan MENTAH ke browser, dan `module.exports` di
+     * baris pertamanya meledak jadi `module is not defined`. Di build produksi
+     * plugin commonjs Rollup tetap mengubahnya, jadi bug-nya cuma ada di dev —
+     * yang membuatnya terasa muncul-hilang tanpa pola.
+     *
+     * `vorbis-encoder-js` pernah ada di daftar ini dan itu persis yang terjadi:
+     * export OGG gagal di `pnpm dev` dengan "module is not defined", tapi
+     * berhasil dari `pnpm build`. Paketnya CJS murni (`main: index.js` berisi
+     * `module.exports = { … require(…) }`, tanpa `module`/`exports`/
+     * `type: module`), dan alasan exclusion di bawah tidak berlaku untuknya
+     * sama sekali: `dist/`-nya hanya dua berkas .js (libvorbis itu asm.js),
+     * tanpa `.wasm` dan tanpa satu pun `new URL`.
+     *
+     * `wasm-exclude.test.ts` menjaga aturan ini supaya pelanggarannya jatuh di
+     * CI, bukan di tangan user.
+     *
+     * Yang tersisa di sini, dan alasannya:
+     *   - `@daw/wasm`          : glue wasm-bindgen. esbuild memproses ulang
+     *                            `new URL('...wasm', import.meta.url)` dan
+     *                            mengarahkannya ke berkas yang salah (docs/04).
+     *   - `@breezystack/lamejs`: ESM asli (`type: module`, `exports.import`),
+     *                            jadi aman — tidak ada CJS yang perlu diubah.
+     */
+    exclude: ['@daw/wasm', '@breezystack/lamejs'],
   },
 
   build: {
