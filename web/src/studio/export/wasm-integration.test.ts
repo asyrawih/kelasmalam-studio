@@ -626,8 +626,8 @@ describe('biaya memori registerAsset', () => {
    * selama renderer — dua salinan penuh berdiri bersamaan.
    *
    * Konsekuensinya bukan "agak boros". Satu lane 28 menit stereo @48k = 610 MiB,
-   * plafon linear memory 2 GiB, jadi project 3 lane butuh 610×3 + 610 = 2440 MiB
-   * dan `memory.grow` menolak di lane ketiga. Kegagalannya pun tidak berupa
+   * dan di mesin yang plafonnya jatuh ke 2 GiB, project 3 lane butuh
+   * 610×3 + 610 = 2440 MiB — `memory.grow` menolak di lane ketiga. Kegagalannya pun tidak berupa
    * `Err`: `handle_alloc_error` memanggil `abort()`, jadi yang sampai ke user
    * cuma `RuntimeError: unreachable executed` — atau, lebih sering, error
    * `free()` di `finally` yang menimpanya dan tidak menyebut memori sama sekali.

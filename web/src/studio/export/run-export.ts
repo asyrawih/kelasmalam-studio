@@ -271,9 +271,9 @@ const MIB = 1024 * 1024;
  * adalah `RuntimeError: unreachable executed`, tanpa satu kata pun tentang
  * memori atau tentang apa yang harus ia lakukan.
  *
- * Skalanya nyata, bukan teoretis: satu lane 28 menit stereo @48k = 610 MiB,
- * dan plafonnya 2 GiB untuk SELURUH engine. Tiga lane sepanjang itu sudah
- * menyentuh langit-langit.
+ * Skalanya nyata, bukan teoretis: satu lane 28 menit stereo @48k = 610 MiB, dan
+ * plafonnya (2 atau 4 GiB, hasil negosiasi di `wasm-loader.ts`) berlaku untuk
+ * SELURUH engine, bukan per asset.
  */
 function assertPcmFitsInMemory(
   assets: readonly ExportAssetPcm[],
@@ -298,7 +298,7 @@ function assertPcmFitsInMemory(
   throw new Error(
     `Project terlalu besar untuk di-render dalam satu jalan: PCM-nya butuh ` +
       `${mib(need)} MiB, sisa linear memory engine ${mib(headroom)} MiB ` +
-      `(plafon 2 GiB, dan seluruh audio harus ada di sana selama render). ` +
+      `(seluruh audio harus ada di sana selama render). ` +
       `${assets.length} asset, terpanjang ${minutes(longest)} menit × ` +
       `${longest.channels} channel. Yang bisa dilakukan: export per-lane lalu ` +
       `gabungkan, persempit rentang waktunya, atau jadikan asset panjang mono.`,

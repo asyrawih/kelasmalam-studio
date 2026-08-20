@@ -495,6 +495,7 @@ export class EngineClient {
         type: 'start',
         module: this.wasm.module,
         memory: this.shared ? this.wasm.memory : null,
+        memoryMaximumBytes: this.wasm.memoryMaximumBytes,
         controlPtr: this.wasm.controlPtr,
         // Worker ini berbagi linear memory dengan main thread DAN worklet di
         // jalur mt, jadi ia butuh stack-nya sendiri (audio/thread-stack.ts).
