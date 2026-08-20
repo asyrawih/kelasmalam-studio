@@ -210,6 +210,10 @@ export interface WasmBindgenExports {
   allocControlBlock(): number;
   controlBlockSize(): number;
   buildHasAtomics(): boolean;
+  /** Byte PCM asset yang saat ini terdaftar di linear memory. */
+  assetBytesLive(): number;
+  /** Puncak byte PCM asset yang pernah hidup bersamaan. */
+  assetBytesPeak(): number;
   buildHasSimd(): boolean;
   importFromPcm(
     data: Float32Array,

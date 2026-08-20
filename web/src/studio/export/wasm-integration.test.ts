@@ -34,6 +34,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { buildExportPayload } from './payload';
 import { runExport, type ExportEncoder, type ExportEngine } from './run-export';
 import { BlobSink } from './sinks';
+import { createWasmExportEngine } from './wasm-engine';
+import type { LoadedWasm } from '../../audio/wasm-loader';
 import type {
   EqBandKind,
   ExportFormat,
@@ -52,6 +54,10 @@ interface Glue {
   initSync(o: { module: WebAssembly.Module }): { memory: WebAssembly.Memory };
   initNonRealtime(): void;
   abiVersion(): number;
+  /** Byte PCM asset yang saat ini terdaftar di linear memory. */
+  assetBytesLive(): number;
+  /** Puncak byte PCM asset yang pernah hidup bersamaan. */
+  assetBytesPeak(): number;
   snapshotFromStudioJson(json: string): {
     bytes(): Uint8Array;
     warnings(): string[];
@@ -745,5 +751,105 @@ describe('biaya memori registerAsset', () => {
     } finally {
       render.free();
     }
+  });
+});
+
+/**
+ * Penjaga memori export, LINTAS export.
+ *
+ * Bug yang dijaga di sini pernah nyata dan gejalanya menyesatkan: export
+ * pertama berhasil, export KEDUA dengan project yang sama ditolak dengan
+ * "Project terlalu besar untuk di-render dalam satu jalan: PCM-nya butuh
+ * 2.440 MiB, sisa linear memory engine 1.640 MiB". Angka 1.640 itu persis
+ * 4.096 − 2.440 − 16: plafon dikurangi PCM export PERTAMA yang sudah lama
+ * dibebaskan, dikurangi memory awal.
+ *
+ * Sebabnya rumus lama, `plafon − byteLength`. Linear memory wasm tidak pernah
+ * menyusut, jadi begitu satu export besar pernah jalan, angka itu tidak pernah
+ * pulih sampai tab di-reload — walaupun seluruh ruangnya bebas dan siap dipakai
+ * ulang. Pesannya pun terdengar masuk akal, jadi yang disalahkan project-nya.
+ */
+describe('penjaga memori export lintas export', () => {
+  /** Plafon 4 GiB, sama dengan yang dinegosiasikan loader. */
+  const CEILING = 4 * 1024 * 1024 * 1024;
+
+  const guard = (): ReturnType<typeof createWasmExportEngine> =>
+    createWasmExportEngine({
+      exports: glue,
+      memory,
+      memoryMaximumBytes: CEILING,
+    } as unknown as LoadedWasm);
+
+  /** Renderer dengan satu clip sepanjang `frames`, siap didaftari asset. */
+  function renderFor(frames: number): {
+    registerAsset: (id: number, d: Float32Array, ch: number, f: number, sr: number) => void;
+    free: () => void;
+  } {
+    const snap = glue.snapshotFromStudioJson(
+      JSON.stringify({
+        sampleRate: SR,
+        lanes: [{ id: 'a', clips: [{ id: 'c', assetId: 0, start: 0, len: frames }] }],
+      }),
+    );
+    const bytes = snap.bytes();
+    snap.free();
+    return new glue.OfflineRender(bytes, SR, 0, frames, 100) as never;
+  }
+
+  it('sisa memori PULIH setelah renderer dibebaskan', () => {
+    const frames = 4 * 1024 * 1024; // 32 MiB stereo f32
+    const pcmBytes = frames * CHANNELS * 4;
+    const eng = guard();
+
+    const before = eng.memoryHeadroomBytes!();
+    const render = renderFor(frames);
+    render.registerAsset(0, new Float32Array(frames * CHANNELS), CHANNELS, frames, SR);
+
+    // Turun kira-kira sebesar PCM-nya. Dengan rumus lama angka ini TIDAK
+    // bergerak sama sekali saat ruangnya dipakai ulang, dan itulah yang
+    // membuat penolakannya tidak masuk akal.
+    const during = eng.memoryHeadroomBytes!();
+    expect(before - during).toBeGreaterThan(pcmBytes * 0.9);
+    expect(glue.assetBytesLive()).toBe(pcmBytes);
+
+    render.free();
+
+    // Dan kembali seperti semula: export berikutnya harus dinilai dengan
+    // ukuran yang sama seperti export pertama.
+    expect(glue.assetBytesLive()).toBe(0);
+    expect(eng.memoryHeadroomBytes!()).toBe(before);
+  });
+
+  /**
+   * Dua export berturut-turut dengan ukuran yang sama: yang kedua harus
+   * dinilai persis sama dengan yang pertama. Ini bentuk paling langsung dari
+   * keluhan aslinya.
+   */
+  it('export kedua dinilai sama dengan yang pertama', () => {
+    const frames = 2 * 1024 * 1024;
+    const eng = guard();
+    const seen: number[] = [];
+
+    for (let i = 0; i < 2; i++) {
+      seen.push(eng.memoryHeadroomBytes!());
+      const render = renderFor(frames);
+      render.registerAsset(0, new Float32Array(frames * CHANNELS), CHANNELS, frames, SR);
+      render.free();
+    }
+
+    expect(seen[1]).toBe(seen[0]);
+  });
+
+  /**
+   * Memory yang tumbuh BUKAN karena asset tetap harus dihitung sebagai
+   * terpakai — ia memang tidak akan dipakai ulang oleh PCM. Kalau tidak,
+   * penjaganya berayun dari terlalu pesimis jadi terlalu optimis, dan
+   * kegagalannya kembali jadi trap `unreachable executed` di tengah render.
+   */
+  it('tidak pernah melaporkan lebih dari plafon dikurangi memory non-asset', () => {
+    const eng = guard();
+    const nonAsset = memory.buffer.byteLength - glue.assetBytesPeak();
+    expect(eng.memoryHeadroomBytes!()).toBeLessThanOrEqual(CEILING - nonAsset);
+    expect(eng.memoryHeadroomBytes!()).toBeGreaterThan(0);
   });
 });

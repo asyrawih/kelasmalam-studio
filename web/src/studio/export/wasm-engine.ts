@@ -44,11 +44,28 @@ export function createWasmExportEngine(wasm: LoadedWasm): ExportEngine {
     },
 
     memoryHeadroomBytes(): number {
-      // `byteLength` = yang SUDAH ditumbuhkan, bukan yang terpakai. Sisanya
-      // memang pesimis (blok bebas di dalamnya tidak terhitung), dan itu
-      // disengaja: linear memory wasm tidak pernah menyusut, jadi angka yang
-      // sudah tumbuh itu tetap harus dibayar sampai tab ditutup.
-      return Math.max(0, wasm.memoryMaximumBytes - wasm.memory.buffer.byteLength);
+      // Dulu rumusnya `plafon − byteLength`, dan itu SALAH dengan cara yang
+      // hanya muncul di export KEDUA.
+      //
+      // Linear memory wasm tidak pernah menyusut. Sesudah satu export besar,
+      // `byteLength` tetap 2,4 GiB walaupun seluruh PCM-nya sudah dibebaskan
+      // dan ruangnya siap dipakai ulang oleh alokator. Rumus lama membaca itu
+      // sebagai "terpakai" dan menolak export berikutnya selamanya, sampai tab
+      // di-reload. Laporannya pun terdengar masuk akal — "sisa 1.640 MiB" —
+      // jadi tidak ada yang curiga angkanya yang salah, bukan project-nya.
+      //
+      // Yang benar: pisahkan memory yang tumbuh KARENA asset (bisa dipakai
+      // ulang) dari yang tumbuh karena hal lain (tidak).
+      //
+      //   bukan-asset = byteLength − puncak asset yang pernah hidup
+      //   sisa        = plafon − bukan-asset − asset yang hidup sekarang
+      //
+      // Angkanya datang dari Rust, satu-satunya pihak yang tahu — lihat
+      // `LIVE_ASSET_BYTES` di `wasm-bridge/src/bindgen.rs`.
+      const live = wasm.exports.assetBytesLive();
+      const peak = wasm.exports.assetBytesPeak();
+      const nonAsset = Math.max(0, wasm.memory.buffer.byteLength - peak);
+      return Math.max(0, wasm.memoryMaximumBytes - nonAsset - live);
     },
   };
 }
