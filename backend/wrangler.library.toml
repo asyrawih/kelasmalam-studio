@@ -10,6 +10,11 @@ name = "dawonweb-library"
 main = "src/library/worker.ts"
 compatibility_date = "2026-08-20"
 
+# Domain ditulis DI SINI, bukan dipasang lewat dashboard: yang di dashboard
+# hilang dari pandangan orang berikutnya yang men-deploy dari mesin lain.
+# Lihat docs/18 §3.6.
+# routes = [{ pattern = "api.contoh.com", custom_domain = true }]
+
 [vars]
 # HARUS subdomain dari domain yang sama dengan APP_ORIGIN — docs/16 §5b.
 # Kalau beda registrable domain, cookie sesi terpaksa SameSite=None, yaitu
@@ -18,7 +23,8 @@ compatibility_date = "2026-08-20"
 APP_ORIGIN = "https://app.contoh.com"
 API_ORIGIN = "https://api.contoh.com"
 
-# Kosongkan untuk memakai APP_ORIGIN saja.
+# Kosongkan untuk memakai APP_ORIGIN saja. Dikosongkan berarti DIKOSONGKAN:
+# Worker memperlakukan string kosong sama dengan tidak diisi (lihat worker.ts).
 ALLOWED_ORIGINS = ""
 
 GOOGLE_CLIENT_ID = "ISI-DI-DASHBOARD"

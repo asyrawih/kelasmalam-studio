@@ -142,6 +142,22 @@ describe('pintu masuk', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe(APP);
   });
 
+  it('ALLOWED_ORIGINS kosong jatuh ke APP_ORIGIN — bukan menolak semua origin', async () => {
+    // `wrangler.toml` mengirim string kosong untuk var yang dikosongkan, dan
+    // Worker yang memperlakukannya sebagai "tidak ada yang diizinkan" akan
+    // menolak aplikasinya sendiri di deploy pertama.
+    env = { ...env, ALLOWED_ORIGINS: '' };
+    const res = await call('/health');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe(APP);
+  });
+
+  it('ALLOWED_ORIGINS yang terisi menggantikan APP_ORIGIN, bukan menambahinya', async () => {
+    env = { ...env, ALLOWED_ORIGINS: 'https://lain.test' };
+    const dariApp = await call('/health');
+    expect(dariApp.status).toBe(403);
+  });
+
   it('balasan sungguhan juga membawa allow-credentials, bukan cuma preflight', async () => {
     const res = await call('/health');
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
