@@ -483,8 +483,12 @@ async function route(
       return json({ ok: true });
     }
     if (method === 'DELETE') {
-      await store.removeProjectTrack(user.id, projectId, hash);
-      return json({ ok: true });
+      const removed = await store.removeProjectTrack(user.id, projectId, hash);
+      let deletedFromLibrary = false;
+      if (removed && (await store.projectsReferencing(user.id, hash)).length === 0) {
+        deletedFromLibrary = await store.releaseTrack(user.id, hash);
+      }
+      return json({ ok: true, deletedFromLibrary });
     }
     return fail(405, 'METODE', 'pakai POST atau DELETE');
   }
@@ -545,8 +549,17 @@ async function route(
     }
 
     if (method === 'DELETE') {
+      const row = await store.getProject(user.id, id);
+      if (row === null) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
+      const members = await store.listProjectTracks(user.id, id);
       const gone = await store.deleteProject(user.id, id);
-      return gone ? json({ ok: true }) : fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
+      if (!gone) return fail(404, 'TIDAK_ADA', 'project tidak ditemukan');
+      for (const hash of members) {
+        if ((await store.projectsReferencing(user.id, hash)).length === 0) {
+          await store.releaseTrack(user.id, hash);
+        }
+      }
+      return json({ ok: true });
     }
 
     return fail(405, 'METODE', 'pakai GET, PUT, atau DELETE');

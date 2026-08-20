@@ -10,7 +10,7 @@
  *  - isi project diambil saat dipilih, sekali, lalu diingat
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LibraryDock } from './LibraryDock';
@@ -97,7 +97,7 @@ describe('dua panel', () => {
   });
 
   it('HAPUS di dalam project hanya mengeluarkan lagu dari folder', async () => {
-    const removeProjectTrack = vi.fn(async () => {});
+    const removeProjectTrack = vi.fn(async () => false);
     const deleteTrack = vi.fn(async () => {});
     await bukaDok(api({ removeProjectTrack, deleteTrack }));
     fireEvent.click(sisi(/Set Malam/));
@@ -178,10 +178,16 @@ describe('dua panel', () => {
 });
 
 describe('menambah lagu', () => {
-  it('ada pintu yang kelihatan, bukan cuma lewat timeline', async () => {
+  it('SEMUA LAGU hanya gabungan project dan tidak menerima upload langsung', async () => {
     await bukaDok();
-    // Pertanyaan "gimana cara masukin audio" harus punya jawaban yang terlihat
-    // di dok itu sendiri.
+    expect(screen.queryByRole('button', { name: /TAMBAH LAGU/i })).toBeNull();
+    expect(screen.getByText(/Pilih project untuk menambahkan lagu/i)).toBeDefined();
+  });
+
+  it('upload tersedia setelah project dipilih', async () => {
+    await bukaDok();
+    fireEvent.click(sisi(/Set Malam/));
+    await waitFor(() => expect(lagu()).toHaveLength(1));
     expect(screen.getByRole('button', { name: /TAMBAH LAGU/i })).toBeDefined();
     expect(screen.getByLabelText('tambah lagu ke kepustakaan')).toBeDefined();
   });
@@ -208,6 +214,44 @@ describe('nama project', () => {
 
     fireEvent.change(kolom, { target: { value: 'Set Sabtu' } });
     expect((kolom as HTMLInputElement).value).toBe('Set Sabtu');
+  });
+
+  it('sesudah create, nama di-reset dan form tetap bisa membuat project berikutnya', async () => {
+    const rows: Array<{ id: string; name: string; updatedAt: number; version: number }> = [];
+    const createProject = vi.fn(async (name: string) => {
+      const id = `p${rows.length + 1}`;
+      rows.push({ id, name, updatedAt: rows.length + 1, version: 1 });
+      return { id, version: 1 };
+    });
+    await bukaDok(api({
+      projects: async () => [...rows],
+      createProject,
+    }));
+
+    const kolom = screen.getByLabelText('nama project baru') as HTMLInputElement;
+    fireEvent.change(kolom, { target: { value: 'BKB' } });
+    fireEvent.click(screen.getByRole('button', { name: '+ TAMBAH PROJECT' }));
+
+    await waitFor(() => expect(sisi(/BKB/)).toBeDefined());
+    expect(kolom.value).toBe('');
+    expect(screen.getByLabelText('nama project baru')).toBeDefined();
+    expect(
+      (screen.getByRole('button', { name: '+ TAMBAH PROJECT' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    fireEvent.change(kolom, { target: { value: 'Project Kedua' } });
+    fireEvent.click(screen.getByRole('button', { name: '+ TAMBAH PROJECT' }));
+    await waitFor(() => expect(sisi(/Project Kedua/)).toBeDefined());
+    expect(createProject).toHaveBeenCalledTimes(2);
+  });
+
+  it('field project baru tetap tampil saat project timeline sedang dibuka', async () => {
+    await bukaDok();
+    act(() => libraryActions.setOpenProject({ id: 'p1', name: 'Set Malam', version: 3 }));
+
+    expect(screen.getByLabelText('nama project baru')).toBeDefined();
+    expect(screen.getByRole('button', { name: '+ TAMBAH PROJECT' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'SIMPAN PROJECT' })).toBeDefined();
   });
 
   it('nama project yang dipilih bisa disunting di tempat', async () => {

@@ -39,7 +39,6 @@ import { placeAssetOnLane } from '../studio/timeline/audio-import';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
 import {
-  currentProjectName,
   openProject,
   renameProject,
   saveProject,
@@ -298,12 +297,17 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       libraryActions.setNotice(null);
       try {
         if (projectId !== null) {
-          await api.removeProjectTrack(projectId, track.hash);
+          const deleted = await api.removeProjectTrack(projectId, track.hash);
           const cached = libraryStore.getState().projectTracks[projectId];
           if (cached !== undefined && cached !== 'memuat') {
             libraryActions.setProjectTracks(projectId, cached.filter((hash) => hash !== track.hash));
           }
-          libraryActions.setNotice(`${track.name} dikeluarkan dari project`);
+          if (deleted) libraryActions.setTracks(await api.tracks());
+          libraryActions.setNotice(
+            deleted
+              ? `${track.name} dihapus karena tidak ada di project lain`
+              : `${track.name} dikeluarkan dari project`,
+          );
         } else {
           await api.deleteTrack(track.hash);
           libraryActions.setTracks(await api.tracks());
@@ -324,6 +328,31 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
    * `busy` untuk semuanya berarti tidak ada dua perbuatan berat yang bisa
    * berjalan bersamaan tanpa terlihat.
    */
+  const onCreateProject = useCallback(async (): Promise<void> => {
+    if (api === null) return;
+    const nama = saveName.trim();
+    if (nama === '') return;
+
+    setBusy(true);
+    libraryActions.setNotice(null);
+    const out = await saveProject(api, { id: null, name: nama, version: 0 });
+    setBusy(false);
+    if (!out.ok) {
+      libraryActions.setNotice(out.message);
+      return;
+    }
+
+    setSaveName('');
+    libraryActions.selectProject(out.id);
+    libraryActions.setProjectTracks(out.id, []);
+    libraryActions.setNotice(`${nama} dibuat`);
+    try {
+      libraryActions.setProjects(await api.projects());
+    } catch {
+      // Folder sudah dibuat; kegagalan refresh daftar tidak membatalkannya.
+    }
+  }, [api, saveName]);
+
   const onSave = useCallback(async (): Promise<void> => {
     if (api === null) return;
     const belum = unsavedAssets();
@@ -336,16 +365,15 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     }
 
     const open = libraryStore.getState().openProject;
-    // Nama dari kolom di sidebar; kalau dikosongkan, jatuh ke nama project di
-    // state supaya menyimpan tidak pernah gagal hanya karena judulnya kosong.
-    const nama = open?.name ?? (saveName.trim() === '' ? currentProjectName() : saveName.trim());
+    if (open === null) return;
+    const nama = open.name;
 
     setBusy(true);
     libraryActions.setNotice(null);
     const out = await saveProject(api, {
-      id: open?.id ?? null,
+      id: open.id,
       name: nama,
-      version: open?.version ?? 0,
+      version: open.version,
     });
     setBusy(false);
 
@@ -430,8 +458,11 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       setBusy(true);
       try {
         await api.deleteProject(id);
-        libraryActions.setProjects(await api.projects());
+        const [projects, tracks] = await Promise.all([api.projects(), api.tracks()]);
+        libraryActions.setProjects(projects);
+        libraryActions.setTracks(tracks);
         libraryActions.forgetProjectTracks(id);
+        if (libraryStore.getState().selectedProject === id) libraryActions.selectProject(null);
         if (libraryStore.getState().openProject?.id === id) libraryActions.setOpenProject(null);
         libraryActions.setNotice(`${name} dihapus`);
       } catch (err: unknown) {
@@ -508,6 +539,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
               assets={assets}
               onPick={onPick}
               onRemove={onRemove}
+              onCreateProject={onCreateProject}
               onSave={onSave}
               onOpen={onOpen}
               onDeleteProject={onDeleteProject}

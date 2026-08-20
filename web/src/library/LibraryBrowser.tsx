@@ -39,6 +39,7 @@ export interface LibraryBrowserProps {
   readonly assets: Readonly<Record<number, unknown>>;
   readonly onPick: (track: LibraryTrack) => void | Promise<void>;
   readonly onRemove: (track: LibraryTrack, projectId: string | null) => void | Promise<void>;
+  readonly onCreateProject: () => void | Promise<void>;
   readonly onSave: () => void | Promise<void>;
   readonly onOpen: (id: string, name: string, version: number) => void | Promise<void>;
   readonly onDeleteProject: (id: string, name: string) => void | Promise<void>;
@@ -74,6 +75,7 @@ export function LibraryBrowser({
   assets,
   onPick,
   onRemove,
+  onCreateProject,
   onSave,
   onOpen,
   onDeleteProject,
@@ -150,30 +152,31 @@ export function LibraryBrowser({
         ) : null}
 
         <div style={{ display: 'grid', gap: '6px', marginTop: '2px' }}>
-          {state.openProject === null ? (
-            /*
-             * Nama project baru diketik SEBELUM menyimpan, bukan dikarang dari
-             * `projectName` di state. Yang di sana adalah nama demo bawaan, dan
-             * project pertama siapa pun akan bernama sama — lalu yang kedua
-             * juga, dan daftarnya jadi tiga baris berjudul identik.
-             */
-            <input
-              className="cy-focusable"
-              value={saveName}
-              placeholder="nama project baru"
-              aria-label="nama project baru"
-              disabled={busy}
-              onChange={(e) => onSaveName(e.target.value)}
-              style={FIELD}
-            />
-          ) : null}
-          <Button size="sm" disabled={busy} onClick={() => void onSave()}>
-            {state.openProject === null ? 'SIMPAN JADI PROJECT' : 'SIMPAN PROJECT'}
+          <input
+            className="cy-focusable"
+            value={saveName}
+            placeholder="nama project baru"
+            aria-label="nama project baru"
+            disabled={busy}
+            onChange={(e) => onSaveName(e.target.value)}
+            style={FIELD}
+          />
+          <Button
+            size="sm"
+            disabled={busy || saveName.trim() === ''}
+            onClick={() => void onCreateProject()}
+          >
+            + TAMBAH PROJECT
           </Button>
           {state.openProject === null ? null : (
-            <Badge tone="success" height={22}>
-              {state.openProject.name} · v{state.openProject.version}
-            </Badge>
+            <>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void onSave()}>
+                SIMPAN PROJECT
+              </Button>
+              <Badge tone="success" height={22}>
+                {state.openProject.name} · v{state.openProject.version}
+              </Badge>
+            </>
           )}
         </div>
       </div>
@@ -204,7 +207,13 @@ export function LibraryBrowser({
           )}
         </div>
 
-        <AddAudio busy={busy} />
+        {selected === null ? (
+          <p style={{ margin: 0, fontSize: '10px', color: 'var(--cy-text-muted)' }}>
+            Pilih project untuk menambahkan lagu. SEMUA LAGU adalah gabungan isi seluruh project.
+          </p>
+        ) : (
+          <AddAudio busy={busy} />
+        )}
 
         {isi === 'memuat' ? (
           <Kosong>memuat isinya…</Kosong>

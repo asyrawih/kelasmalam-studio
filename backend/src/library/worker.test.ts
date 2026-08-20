@@ -508,9 +508,12 @@ describe('projects', () => {
     expect(folder.tracks).toEqual([HASH_A]);
     expect(folder.json).toEqual({ lanes: [] });
 
-    expect((await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+    const removed = await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie });
+    expect(removed.status).toBe(200);
+    expect((await removed.json()).deletedFromLibrary).toBe(true);
     expect((await (await call(`/projects/${id}`, { cookie })).json()).tracks).toEqual([]);
-    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+    expect((await (await call('/tracks', { cookie })).json()).tracks).toEqual([]);
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(404);
   });
 
   it('membership lagu terisolasi per folder', async () => {
@@ -530,6 +533,11 @@ describe('projects', () => {
 
     expect((await (await call(`/projects/${a}`, { cookie })).json()).tracks).toEqual([HASH_A]);
     expect((await (await call(`/projects/${b}`, { cookie })).json()).tracks).toEqual([HASH_B]);
+    expect((await (await call('/tracks', { cookie })).json()).tracks).toHaveLength(2);
+
+    await call(`/projects/${b}/tracks/${HASH_A}`, { method: 'POST', cookie });
+    const removed = await call(`/projects/${a}/tracks/${HASH_A}`, { method: 'DELETE', cookie });
+    expect((await removed.json()).deletedFromLibrary).toBe(false);
     expect((await (await call('/tracks', { cookie })).json()).tracks).toHaveLength(2);
   });
 
@@ -774,7 +782,7 @@ describe('lagu yang masih dipakai project', () => {
     expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(409);
     expect((await call(`/tracks/${HASH_B}`, { method: 'DELETE', cookie })).status).toBe(200);
     await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'DELETE', cookie });
-    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(404);
   });
 
   it('project yang dihapus melepas semua lagunya', async () => {
@@ -788,7 +796,7 @@ describe('lagu yang masih dipakai project', () => {
     await call(`/projects/${id}/tracks/${HASH_A}`, { method: 'POST', cookie });
 
     await call(`/projects/${id}`, { method: 'DELETE', cookie });
-    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(404);
   });
 
   it('JSON project lama tidak otomatis mencemari membership folder', async () => {

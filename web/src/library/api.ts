@@ -98,7 +98,8 @@ export interface LibraryApi {
   updateProject(id: string, name: string, json: unknown, expectedVersion: number): Promise<number>;
   deleteProject(id: string): Promise<void>;
   addProjectTrack(projectId: string, hash: string): Promise<void>;
-  removeProjectTrack(projectId: string, hash: string): Promise<void>;
+  /** `true` kalau lagu ikut hilang karena tidak dimiliki project lain. */
+  removeProjectTrack(projectId: string, hash: string): Promise<boolean>;
   /** Melempar dengan pesan yang menyebut project pemakainya kalau ditolak. */
   deleteTrack(hash: string): Promise<void>;
   /** Cue DJ + koreksi grid satu lagu. Selalu keadaan LENGKAP, bukan tambalan. */
@@ -319,12 +320,14 @@ export function createLibraryApi(baseUrl: string, fetchImpl: typeof fetch = fetc
       if (!res.ok) throw await readError(res);
     },
 
-    async removeProjectTrack(projectId, hash): Promise<void> {
+    async removeProjectTrack(projectId, hash): Promise<boolean> {
       const res = await call(
         `/projects/${encodeURIComponent(projectId)}/tracks/${encodeURIComponent(hash)}`,
         { method: 'DELETE' },
       );
       if (!res.ok) throw await readError(res);
+      const body = (await res.json()) as { deletedFromLibrary?: unknown };
+      return body.deletedFromLibrary === true;
     },
 
     async deleteTrack(hash): Promise<void> {
