@@ -99,7 +99,10 @@ per permintaan dan tidak pernah menetap di Worker (alasannya di
 npx wrangler d1 create dawonweb-library
 ```
 
-Salin `database_id` dari keluarannya ke `wrangler.library.toml`:
+Salin `database_id` dari keluarannya ke `wrangler.library.toml`. **Jangan ubah
+`binding`** — ia harus `DB`, karena itu yang dibaca kode (`env.DB`). Dashboard
+menyarankan nama yang mengikuti nama database; saran itu membuat `env.DB`
+undefined tanpa menggagalkan deploy:
 
 ```toml
 [[d1_databases]]
@@ -305,6 +308,7 @@ Urutannya menaik: yang gagal lebih dulu menyempitkan masalahnya.
 | Unggah lagu gagal CORS ke `*.r2.cloudflarestorage.com` | CORS bucket belum dipasang | §3.2 |
 | Audio kepustakaan gagal dimuat di halaman | jalur unduh tidak lewat Worker | jangan pakai presigned untuk unduh — `GET /tracks/:hash/blob` yang menambahkan CORP (§5a) |
 | `no such table: user` | migrasi belum dijalankan di **remote** | `npm run migrate:library` |
+| `Cannot read properties of undefined (reading 'prepare')` | nama binding di `wrangler.toml` bukan `DB` | kode membaca `env.DB`; dashboard menyarankan nama yang mengikuti nama database, dan saran itu salah. Sejak versi ini pesannya langsung menyebut `BINDING_HILANG` |
 | `error code: 1101` dari Worker | Worker melempar exception — HAMPIR SELALU binding basi (deploy lebih tua dari config) atau tabel belum ada | redeploy, lalu ulangi tes di §5; sejak versi ini galatnya dibalas ber-JSON dengan pesannya, bukan halaman 1101 |
 | `/tracks/init` menjawab 413 | berkas > `MAX_TRACK_BYTES` | naikkan, atau tunggu multipart (§5c) |
 

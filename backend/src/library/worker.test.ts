@@ -513,6 +513,47 @@ describe('projects', () => {
   });
 });
 
+describe('binding hilang', () => {
+  /*
+   * Kejadian nyata: nama binding di wrangler.toml mengikuti saran dashboard
+   * (`dawonweb_library`) alih-alih `DB`. Deploy SUKSES — dan tiap permintaan
+   * yang menyentuh database meledak dengan "Cannot read properties of
+   * undefined (reading 'prepare')", jauh dari berkas yang salah.
+   */
+  it('menyebut binding mana yang hilang, bukan meledak di kedalaman kode', async () => {
+    env = { ...env, DB: undefined as unknown as Env['DB'] };
+    const res = await call('/me', { cookie: '__Host-lib_session=apa-saja' });
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('BINDING_HILANG');
+    expect(body.message).toContain('DB');
+    expect(body.message).toContain('wrangler.library.toml');
+    // Yang TIDAK boleh muncul: jejak kegagalan di kedalaman kode.
+    expect(body.message).not.toContain('prepare');
+  });
+
+  it('R2 yang hilang juga disebut', async () => {
+    env = { ...env, TRACKS: undefined as unknown as Env['TRACKS'] };
+    const res = await call('/tracks', { cookie: '__Host-lib_session=apa-saja' });
+    expect((await res.json()).message).toContain('TRACKS');
+  });
+
+  it('/health TETAP menjawab, dan mengatakan bindingnya tidak lengkap', async () => {
+    env = { ...env, DB: undefined as unknown as Env['DB'] };
+    const res = await call('/health');
+
+    // Worker salah konfigurasi TIDAK boleh terlihat sama dengan Worker mati:
+    // keduanya butuh tindakan yang berbeda.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, bindings: false });
+  });
+
+  it('konfigurasi yang benar melaporkan bindings: true', async () => {
+    expect(await (await call('/health')).json()).toMatchObject({ bindings: true });
+  });
+});
+
 describe('galat internal', () => {
   it('D1 yang melempar jadi 500 BER-JSON, bukan halaman 1101 tanpa kata', async () => {
     /*
