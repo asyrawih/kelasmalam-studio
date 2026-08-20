@@ -14,7 +14,7 @@ compatibility_date = "2026-08-20"
 # hilang dari pandangan orang berikutnya yang men-deploy dari mesin lain.
 # Lihat docs/18 §3.6.
 # routes = [{ pattern = "api.contoh.com", custom_domain = true }]
-routes = [{ pattern = "robloz.kelasmalam.app", custom_domain = true }]
+routes = [{ pattern = "lib.kelasmalam.app", custom_domain = true }]
 
 [vars]
 # HARUS subdomain dari domain yang sama dengan APP_ORIGIN — docs/16 §5b.
@@ -32,8 +32,8 @@ ALLOWED_ORIGINS = ""
 
 GOOGLE_CLIENT_ID = "481640866366-qpgi7prr1bqp7sshhbf0599ls4f0qoo6.apps.googleusercontent.com"
 
-R2_ACCOUNT_ID = "50e581e2e656a57101931cd40913d8c"
-R2_BUCKET = "pustak"
+R2_ACCOUNT_ID = "50e581e2e656a57101931cd40913d8cc"
+R2_BUCKET = "pustaka"
 
 # Batas satu berkas. Di atas ini butuh multipart S3 yang belum ada (§5c) —
 # `/tracks/init` menolaknya SEBELUM ada byte yang naik.
@@ -61,4 +61,4 @@ migrations_dir = "migrations"
 # atas tetap dibutuhkan meski binding ini ada. Alasannya di src/library/presign.ts.
 [[r2_buckets]]
 binding = "TRACKS"
-bucket_name = "dawonweb-tracks"
+bucket_name = "pustaka"
