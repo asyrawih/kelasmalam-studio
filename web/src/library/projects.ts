@@ -81,6 +81,35 @@ export async function saveProject(
   }
 }
 
+/**
+ * Ganti nama project — TANPA menyentuh isinya.
+ *
+ * Dua permintaan, dan yang pertama tidak bisa dilewati: server menerima nama
+ * dan json bersamaan (`PUT /projects/:id`), jadi mengirim nama baru dengan json
+ * kosong berarti menghapus seluruh project demi mengganti judulnya.
+ *
+ * Yang di-PUT karena itu adalah json yang BARU SAJA dibaca, bukan yang ada di
+ * timeline: mengganti nama project yang sedang dilihat-lihat di sidebar tidak
+ * boleh diam-diam menimpanya dengan apa pun yang kebetulan sedang dikerjakan.
+ */
+export async function renameProject(
+  api: LibraryApi,
+  id: string,
+  name: string,
+): Promise<SaveOutcome> {
+  try {
+    const body = await api.project(id);
+    const version = await api.updateProject(id, name, body.json, body.version);
+    return { ok: true, id, version };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+      conflict: err instanceof Error && err.name === 'VersionConflict',
+    };
+  }
+}
+
 export type OpenOutcome =
   | { readonly ok: true; readonly missingAssets: number }
   | { readonly ok: false; readonly message: string };
