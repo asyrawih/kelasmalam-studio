@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    /* `WebWorker` memberi Request/Response/FormData/Blob/fetch — persis yang ada
+       di runtime Workers. Tidak ada `@cloudflare/workers-types` di sini dengan
+       sengaja: kode ini hanya memakai API web standar, dan bergantung pada tipe
+       spesifik Cloudflare akan menyembunyikan kalau suatu saat ia tidak lagi
+       begitu (lihat catatan "portabilitas" di README). */
+    "lib": ["ES2022", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+
+    /* Sama persis dengan web/tsconfig.json. Backend yang lebih longgar dari UI
+       adalah cara termurah membuat bug pindah tempat, bukan hilang. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}

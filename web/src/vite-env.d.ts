@@ -12,4 +12,13 @@ interface ImportMetaEnv {
   readonly VITE_BUILD_COMMIT?: string;
   readonly VITE_BUILD_BRANCH?: string;
   readonly VITE_BUILD_TIME?: string;
+  /**
+   * Basis URL Worker unggah Roblox (`backend/`), mis.
+   * `https://dawonweb-roblox.contoh.workers.dev`.
+   *
+   * TIDAK ada nilai bawaan, dengan sengaja: halaman `/roblox` hanya menyalakan
+   * tombol UNGGAH kalau ini diisi DAN Worker-nya menjawab. Lihat
+   * `roblox/RobloxRoute.tsx`.
+   */
+  readonly VITE_ROBLOX_API?: string;
 }

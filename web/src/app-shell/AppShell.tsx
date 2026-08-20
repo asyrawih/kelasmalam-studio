@@ -26,7 +26,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { App } from '../App';
 import { DjPage } from '../dj';
 import { LandingPage } from '../landing';
-import { RobloxPage } from '../roblox';
+import { RobloxRoute } from '../roblox';
 import { CommandPalette } from './CommandPalette';
 import { KeymapEditor } from './KeymapEditor';
 import { useCommands } from './useCommands';
@@ -148,7 +148,7 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
       ) : route === 'dj' ? (
         <DjPage onClose={() => navigate(HOME_PATH)} />
       ) : route === 'roblox' ? (
-        <RobloxPage
+        <RobloxRoute
           onClose={() => navigate(HOME_PATH)}
           onOpenStudio={() => navigate(STUDIO_PATH)}
         />

@@ -10,7 +10,10 @@ yang benar-benar mengirim byte ke Open Cloud dikerjakan terpisah.
 web/src/roblox/
   model.ts              aturan Roblox + format angka. MURNI: tanpa React, DOM, jaringan
   store.ts              antrean + target. useSyncExternalStore, pola sama dengan dj/store.ts
-  RobloxPage.tsx        merangkai semuanya; satu-satunya yang tahu soal routing
+  RobloxPage.tsx        merangkai semuanya. UI MURNI: tidak tahu apa pun soal HTTP
+  RobloxRoute.tsx       halaman + sambungan ke Worker unggah (yang dirender AppShell)
+  backend/transport.ts  URL + header + XHR/fetch ke `backend/`
+  backend/runner.ts     penggerak antrean: kirim, tunggu moderasi, lapor ke store
   roblox.css            media query + hover yang tidak bisa jadi inline style
   header/RobloxHeader   judul, batas Roblox, badge SIAP/UI ONLY
   destination/TargetPanel  pemilik asset (user/grup) + API key
@@ -51,27 +54,44 @@ Dua hal yang mudah dibalik tanpa sadar merusaknya, dan keduanya dijaga tes:
 Format yang salah tidak pernah jadi baris antrean (`isAudioFile` menjaga pintu);
 yang lolos pintu dinilai `violationsOf`.
 
-## Menyambungkan lapisan unggah
+## Lapisan unggah
 
-Tidak ada yang perlu diubah di komponen. Empat langkah:
+Sudah ada: `backend/` — Cloudflare Worker yang meneruskan berkas ke Open Cloud.
+Rinciannya di `backend/README.md`; yang perlu diketahui dari sisi UI:
 
-1. `robloxActions.setBackendReady(true, sisaKuota)` saat lapisannya hidup —
-   badge header berubah dari `UI ONLY` ke `SIAP`, dan tombol UNGGAH ikut hidup
-   begitu target dan antreannya juga siap.
-2. Pasang `onUpload` di `<RobloxPage onUpload={…} />` (dari `AppShell`). Ia
-   menerima `readonly QueueItem[]` — hasil `readyItems(state)`, yaitu baris
-   berstatus `draft`/`failed` yang lolos seluruh validasi.
-3. Ambil byte-nya dengan `fileOf(item.id)`. `File` sengaja TIDAK disimpan di
-   state; alasannya di kepala `store.ts`.
-4. Lapor balik: `markQueued` → `markUploading` → `markProgress(id, 0..100)` →
-   `markProcessing` (byte sampai, Roblox masih memoderasi) → `markDone(id,
-   assetId)` atau `markFailed(id, pesan)`. Laporan untuk baris yang sudah
-   dihapus user diabaikan diam-diam, jadi respons yang datang terlambat tidak
-   perlu dijaga pemanggil.
+```
+web/src/roblox/
+  RobloxRoute.tsx           halaman + sambungannya. Yang dirender AppShell
+  backend/transport.ts      URL, header, XHR/fetch. Tanpa aturan bisnis
+  backend/runner.ts         antrean berjalan: kirim → tunggu moderasi → lapor
+```
 
-`targetProblems(target)` memberi alasan target belum lengkap; halaman sudah
-memajangnya dan mematikan tombol, jadi pengunggah tidak perlu memvalidasi ulang
-— tapi kalau ia mau, sumbernya sama.
+Alurnya: `RobloxRoute` membaca `VITE_ROBLOX_API`, memprobe `/health`, dan hanya
+kalau Worker MENJAWAB ia memanggil `setBackendReady(true)` dan memasang
+`onUpload`. Tanpa variabel itu — atau dengan Worker yang mati — halaman persis
+seperti sebelum backend ada: tombol UNGGAH mati, badge `UI ONLY`.
+
+`runner.ts` adalah "pemasang backend" yang dijanjikan seam di bawah, dan ia
+memakai persis permukaan itu: `fileOf(id)` untuk byte, lalu `markUploading` /
+`markProgress` / `markProcessing` / `markDone` / `markFailed`. Tidak ada satu
+pun komponen yang berubah untuk membuatnya bekerja.
+
+Tiga keputusan di runner yang tidak terlihat dari kodenya:
+
+- **Satu berkas pada satu waktu.** Yang membatasi bukan bandwidth kami melainkan
+  kuota Roblox; serempak hanya membuat satu `429` menjatuhkan seluruh antrean.
+- **Progres nyata lewat XMLHttpRequest.** `fetch` tidak melaporkan kemajuan
+  pengiriman badan permintaan, dan bar yang bergerak sendiri mengarang angka.
+- **Moderasi lama ≠ gagal unggah.** Kalau Roblox belum selesai setelah 5 menit,
+  pesannya menyebut bahwa berkasnya SUDAH terkirim dan menyertakan id operasinya
+  — user yang mengunggah ulang membayar kuota bulanannya dua kali.
+
+### Seam-nya sendiri (kalau lapisan lain mau menggantikan runner)
+
+1. `robloxActions.setBackendReady(true, sisaKuota)` — badge + tombol hidup
+2. `onUpload` di `<RobloxPage>` menerima hasil `readyItems(state)`
+3. `fileOf(item.id)` memberi byte-nya (`File` tidak disimpan di state)
+4. lapor balik lewat kelima aksi `mark*`
 
 ## Keputusan yang jangan dibalik tanpa alasan
 
