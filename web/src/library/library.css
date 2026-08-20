@@ -1,0 +1,17 @@
+/*
+ * Yang tidak bisa jadi inline style di `LibraryBrowser.tsx` — aturan yang sama
+ * dipakai `landing.css` dan `roblox.css`: media query pindah ke sini.
+ */
+
+/*
+ * Di bawah 760px sidebar naik ke atas, tidak lagi berdampingan.
+ *
+ * Dua kolom pada layar sempit menyisakan ~120px untuk nama lagu, dan nama yang
+ * terpotong jadi "Kelas Mala…" membuat daftar tidak bisa dibaca justru saat
+ * isinya paling banyak.
+ */
+@media (max-width: 760px) {
+  .lib-browser {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

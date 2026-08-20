@@ -137,8 +137,9 @@ export const libraryActions = {
     set(() => ({ openProject: project }));
   },
 
-  toggleFolder(projectId: string): void {
-    set((s) => ({ expanded: { ...s.expanded, [projectId]: !s.expanded[projectId] } }));
+  /** `null` = SEMUA LAGU. */
+  selectProject(projectId: string | null): void {
+    set((s) => (s.selectedProject === projectId ? null : { selectedProject: projectId }));
   },
 
   setProjectTracks(projectId: string, hashes: readonly string[] | 'memuat'): void {

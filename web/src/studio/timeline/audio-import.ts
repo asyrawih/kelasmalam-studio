@@ -373,24 +373,45 @@ export async function importBytesToLane(
   const got = await importBytesToAsset(input, name, projectSampleRate, opts.onProgress);
   if (!got.ok) return { ok: false, reason: got.reason };
 
+  placeAssetOnLane(got.assetId, name, got.frames, laneId, startSamples, opts);
+  return { ok: true };
+}
+
+/**
+ * Taruh asset yang SUDAH terdaftar sebagai satu clip di lane.
+ *
+ * Dipisah dari `importBytesToLane` supaya bentuk clip — `len`, `sourceLen`,
+ * `seed`, fade bawaan — hidup di SATU tempat. Pemakainya sekarang dua: import
+ * berkas, dan lagu yang diseret dari kepustakaan (yang asetnya mungkin sudah
+ * ada di sesi ini, jadi tidak ada yang perlu di-decode lagi). Kalau keduanya
+ * menyusun clip sendiri-sendiri, salah satunya akan salah diam-diam begitu
+ * bentuknya berubah.
+ */
+export function placeAssetOnLane(
+  assetId: number,
+  name: string,
+  frames: number,
+  laneId: string,
+  startSamples: number,
+  opts: LaneImportOptions = {},
+): void {
   const start = opts.avoidOverlap
     ? Math.max(startSamples, laneContentEnd(laneId))
     : startSamples;
   const clip: StudioClip = {
     id: studioActions.newClipId(),
-    assetId: got.assetId,
+    assetId,
     chain: [],
     start: Math.max(0, Math.round(start)),
-    len: got.frames,
+    len: frames,
     sourceStart: 0,
-    sourceLen: got.frames,
+    sourceLen: frames,
     label: name.toUpperCase(),
     gainDb: 0,
     fadeInMs: 0,
     fadeOutMs: 0,
     fadeCurve: DEFAULT_FADE_CURVE,
-    seed: got.assetId % 97,
+    seed: assetId % 97,
   };
   studioActions.addClip(laneId, clip);
-  return { ok: true };
 }

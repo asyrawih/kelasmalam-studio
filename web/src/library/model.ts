@@ -113,8 +113,15 @@ export interface LibraryState {
   readonly openProject: OpenProject | null;
   /** Kabar hasil perbuatan terakhir (simpan/buka/hapus), untuk dipajang. */
   readonly notice: string | null;
-  /** Folder project yang sedang terbuka di pohon. */
-  readonly expanded: Readonly<Record<string, boolean>>;
+  /**
+   * Project yang sedang dipilih di sidebar. `null` = "SEMUA LAGU".
+   *
+   * Ini pilihan TAMPILAN, bukan project yang sedang dibuka di timeline —
+   * `openProject` yang itu. Melihat isi sebuah project tidak berarti sedang
+   * mengerjakannya, dan menyatukan keduanya membuat sekadar melihat-lihat
+   * terasa seperti membuka project.
+   */
+  readonly selectedProject: string | null;
   /**
    * Hash lagu yang dipakai tiap project — diambil SAAT foldernya dibuka.
    *
@@ -146,15 +153,10 @@ export function createInitialLibrary(): LibraryState {
     projects: [],
     openProject: null,
     notice: null,
-    /*
-     * "Tanpa project" terbuka sejak awal.
-     *
-     * Ke situlah lagu yang baru diunggah mendarat, dan folder yang terlipat
-     * membuat unggahan yang BERHASIL tampak seperti tidak terjadi apa-apa —
-     * dok terbuka, daftarnya kosong, dan tidak ada yang menunjukkan bahwa
-     * isinya ada satu klik di bawah.
-     */
-    expanded: { __loose: true },
+    // "SEMUA LAGU" yang terpilih saat dok pertama dibuka: ke situlah lagu yang
+    // baru diunggah muncul, dan tampilan yang mulai dari daftar project kosong
+    // membuat unggahan yang BERHASIL tampak tidak terjadi apa-apa.
+    selectedProject: null,
     projectTracks: {},
   };
 }
