@@ -40,7 +40,17 @@ export { OverviewStrip, type OverviewStripProps } from './OverviewStrip';
 export { LaneHeaders } from './LaneHeaders';
 export { TimelineRuler, markStepFor, type TimelineRulerProps } from './TimelineRuler';
 export { ClipArea, type ClipAreaProps } from './ClipArea';
-export { importFileToLane, assetFromBuffer, type DropResult } from './audio-import';
+export {
+  importFileToLane,
+  assetFromBuffer,
+  laneContentEnd,
+  type DropResult,
+  type ImportProgress,
+  type ImportProgressFn,
+  type LaneImportOptions,
+} from './audio-import';
+export { runFileImport, runUrlImport } from './lane-import';
+export { LaneImportOverlay, type LaneImportOverlayProps } from './LaneImportOverlay';
 export {
   drawAssetWave,
   drawClipWave,

@@ -387,6 +387,51 @@ Tiga hal yang membuat ini tidak menyakitkan:
   bitrate × ukuran file lalu `memory.grow` sekali di akhir kalau meleset — bukan
   tumbuh inkremental.
 
+### Yang terpasang hari ini: progres di jalur `decodeAudioData`
+
+Skema worker di atas adalah bentuk tujuan. Selama import masih lewat
+`decodeAudioData` (lihat catatan kepala `studio/timeline/audio-import.ts`),
+umpan baliknya dibangun dari apa yang MEMANG bisa diukur di main thread:
+
+| Tahap | Sumber angkanya | Ditampilkan sebagai |
+|---|---|---|
+| `reading` | byte terbaca / `file.size`, lewat `file.stream()` | persen sungguhan |
+| `decoding` | tidak ada — `decodeAudioData` bisu sampai selesai | bar redup, tanpa persen |
+| `analyzing` | `buildEnvelope`, ~76 ms untuk lagu 3 menit | bar redup, tanpa persen |
+
+Tiga keputusan yang menempel di situ:
+
+- **Tidak ada persen karangan untuk dua tahap terakhir.** Bar yang merangkak
+  sendiri lewat timer akan berbohong tepat di tahap yang paling lama, dan
+  kebohongan itu baru ketahuan saat ia berhenti di 99%. Yang diberikan sebagai
+  gantinya adalah NAMA tahap — itu yang membedakan "sedang decode" dari "macet".
+- **Satu tugas makro dilepas sebelum `buildEnvelope`.** Ia sinkron; tanpa jeda
+  itu React tidak sempat menggambar tahap "ANALISIS", dan tiga import yang
+  selesai berbarengan membekukan layar tanpa satu pun penjelasan.
+- **Progresnya diteruskan lewat callback, bukan ditulis ke store dari dalam
+  decoder.** Jalur decode yang sama dipakai halaman `/dj`, yang punya store
+  sendiri. `studio/timeline/lane-import.ts` yang menjembatani: ia membuka
+  `ImportJob`, meneruskan tiap kabar, dan menutup job di `finally` — job yang
+  bocor akan terlihat sebagai bar progres abadi di lane.
+
+Import berjalan **per file, tanpa antrean**: menjatuhkan tiga lagu (atau memilih
+tiga dari file manager) memulai tiga jalur yang berjalan bersamaan, masing-masing
+dengan bar-nya sendiri di lane tujuannya, dan kegagalan satu file tidak menyentuh
+yang lain. Karena ketiganya bisa mendarat kapan saja, posisi clip untuk import
+yang membawa >1 file dihitung **tepat sebelum clip dibuat** (setelah decode),
+digeser ke belakang materi yang sudah ada di lane. Menghitungnya saat import
+DIMULAI tidak cukup: ketiganya mulai saat lane masih kosong, jadi ketiganya akan
+mendapat angka yang sama persis dan tetap menumpuk — di layar hanya satu clip
+yang terlihat, dua sisanya seperti hilang. Drop SATU file tetap perintah yang
+tegas ("taruh di sini") dan tidak ikut digeser.
+
+**Lane kosong bisa DIKETUK** untuk membuka file manager, selain menerima drop
+file dan drop URL. Ketukannya hidup di gerakan yang sama dengan kotak seleksi,
+jadi syaratnya ketat: tombol kiri, tanpa modifier, di lane yang benar-benar
+kosong, dan pointer bergerak ≤ 6 px. Di lane yang sudah berisi clip, klik latar
+tetap berarti "batalkan seleksi" — dialog yang menyembul tiap kali user
+membatalkan seleksi akan terasa seperti kerusakan.
+
 ### Sample-rate mismatch: resample saat import
 
 File 44.1k di project 48k. Dua pilihan, dan ini tidak seimbang:

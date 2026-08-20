@@ -24,8 +24,8 @@ import {
 import { isAudible, laneHeightPx, type StudioClip, type StudioLane } from '../model';
 import { studioActions, studioStore, useStudio, type ClipOrigin, type StudioAsset } from '../store';
 import { isSpaceHeld, markSpacePan, subscribeSpace } from '../shortcuts/space-pan';
-import { importFileToLane } from './audio-import';
-import { importUrlToLane } from './url-to-lane';
+import { runFileImport, runUrlImport } from './lane-import';
+import { LaneImportOverlay } from './LaneImportOverlay';
 import { activeLoopLen } from './clip-loop';
 import { drawClipWave, drawLoopedClipWave } from './waveform';
 import { fadeOverlayGradient } from './fade';
@@ -100,6 +100,17 @@ type Gesture =
       readonly y0: number;
       /** Seleksi sebelum kotak dimulai; dipertahankan saat Shift/Ctrl ditahan. */
       readonly base: readonly string[];
+      /**
+       * Lane KOSONG tempat pointer turun, atau null.
+       *
+       * Disimpan saat pointer TURUN, bukan dicari lagi saat dilepas: begitu
+       * import pertama selesai lane-nya tidak kosong lagi, dan mencari ulang
+       * di akhir akan membuat perilaku ketukan bergantung pada apa yang
+       * kebetulan sudah mendarat di sana.
+       */
+      readonly emptyLaneId: string | null;
+      /** Posisi ketukan dalam sample; jadi titik mulai clip kalau picker dibuka. */
+      readonly atSamples: number;
     };
 
 /**
@@ -113,6 +124,18 @@ type Gesture =
  */
 const DOUBLE_TAP_MS = 400;
 const DOUBLE_TAP_PX = 6;
+
+/**
+ * Batas gerak sebuah KETUKAN pada lane kosong (px, koordinat track).
+ *
+ * Ketukan itulah yang membuka file manager. Ambangnya ada supaya gerakan yang
+ * SEBENARNYA kotak seleksi tidak ikut membuka dialog: menarik kotak melewati
+ * lane kosong adalah hal biasa, dan dialog yang muncul setelahnya akan
+ * membatalkan seleksi yang baru saja dibuat. Nilainya sama dengan toleransi
+ * double-click — dua-duanya menjawab pertanyaan yang sama, "apakah tangan ini
+ * diam?".
+ */
+const TAP_PX = DOUBLE_TAP_PX;
 
 /** Kotak seleksi dalam koordinat track, siap digambar. */
 interface MarqueeBox {
@@ -381,7 +404,22 @@ export function ClipArea({
 
   const gesture = useRef<Gesture | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  /**
+   * Satu `<input type="file">` tersembunyi untuk SELURUH area clip, bukan satu
+   * per lane: elemen input tidak bisa dibuka secara terprogram tanpa gestur
+   * user, jadi yang dibutuhkan hanya satu — lane dan posisi tujuannya dititip
+   * di `pendingPick` sesaat sebelum dialognya dibuka.
+   */
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pendingPick = useRef<{ laneId: string; start: number } | null>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
+  /**
+   * SELURUH job, disaring per lane saat render. Selector-nya sengaja
+   * mengembalikan array yang tersimpan di state apa adanya: menyaring di dalam
+   * selector menghasilkan array baru tiap panggilan, dan `getSnapshot` yang
+   * selalu berbeda membuat React me-render tanpa henti (lihat kepala `store.ts`).
+   */
+  const importJobs = useStudio((s) => s.importJobs);
   const [marquee, setMarquee] = useState<MarqueeBox | null>(null);
   /** Ketukan terakhir pada sebuah clip; dipakai mendeteksi double-click. */
   const lastTap = useRef<{ id: string; t: number; x: number; y: number } | null>(null);
@@ -589,12 +627,21 @@ export function ClipArea({
     if (p === null) return;
     e.preventDefault();
     const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    // Lane KOSONG yang diketuk = jalan pintas ke file manager (lihat
+    // `endGesture`). Lane yang sudah berisi clip sengaja tidak ikut: di sana
+    // klik latar adalah cara membatalkan seleksi, dan dialog yang menyembul
+    // tiap kali user membatalkan seleksi akan segera terasa seperti kerusakan.
+    // Dengan modifier ditahan pun tidak: itu jelas-jelas gerakan seleksi.
+    const row = lanes[Math.floor(p.y / laneH)];
+    const emptyLaneId = !additive && row !== undefined && row.clips.length === 0 ? row.id : null;
     gesture.current = {
       kind: 'marquee',
       pointerId: e.pointerId,
       x0: p.x,
       y0: p.y,
       base: additive ? studioStore.getState().selectedClipIds : [],
+      emptyLaneId,
+      atSamples: el.scrollWidth > 0 ? (p.x / el.scrollWidth) * duration : 0,
     };
     if (!additive) studioActions.clearClipSelection();
     setMarquee({ left: p.x, top: p.y, width: 0, height: 0 });
@@ -672,10 +719,40 @@ export function ClipArea({
     return [...picked];
   };
 
+  /**
+   * Mulai import beberapa file SEKALIGUS ke satu lane.
+   *
+   * Tanpa `await` dan tanpa antrean: tiap file berjalan sendiri, jadi lagu
+   * kedua sudah mulai dibaca saat lagu pertama masih di-decode, dan lane lain
+   * tetap bisa menerima file di saat yang sama. Kegagalan satu file tidak
+   * menyentuh yang lain — masing-masing melaporkan alasannya sendiri.
+   */
+  const startFileImports = (files: readonly File[], laneId: string, start: number): void => {
+    const avoidOverlap = files.length > 1;
+    for (const file of files) {
+      void runFileImport(file, laneId, start, sampleRate, { avoidOverlap }).then((r) => {
+        if (!r.ok) onImportError(`${file.name}: ${r.reason ?? 'gagal'}`);
+      });
+    }
+  };
+
+  /** Ketukan pada lane kosong → dialog berkas, dengan tujuannya dititip dulu. */
+  const openPicker = (laneId: string, start: number): void => {
+    pendingPick.current = { laneId, start };
+    fileRef.current?.click();
+  };
+
   const endGesture = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const g = gesture.current;
     if (g === null || g.pointerId !== e.pointerId) return;
     gesture.current = null;
+    if (g.kind === 'marquee' && g.emptyLaneId !== null) {
+      const p = trackPoint(e.clientX, e.clientY);
+      const moved = p === null ? Number.POSITIVE_INFINITY : Math.hypot(p.x - g.x0, p.y - g.y0);
+      // Dibuka dari `pointerup`, dan itu memang syaratnya: browser hanya
+      // mengizinkan dialog berkas dibuka dari event yang membawa aktivasi user.
+      if (moved <= TAP_PX) openPicker(g.emptyLaneId, g.atSamples);
+    }
     const el = scrollerRef.current;
     if (el !== null) {
       el.style.cursor = 'grab';
@@ -705,14 +782,10 @@ export function ClipArea({
       const rect = el.getBoundingClientRect();
       start = ((el.scrollLeft + (e.clientX - rect.left)) / el.scrollWidth) * duration;
     }
-    for (const file of files) {
-      void importFileToLane(file, laneId, start, sampleRate).then((r) => {
-        if (!r.ok) onImportError(`${file.name}: ${r.reason ?? 'gagal'}`);
-      });
-    }
+    startFileImports(files, laneId, start);
 
     if (files.length === 0 && droppedText.trim() !== '') {
-      void importUrlToLane(droppedText, laneId, start, sampleRate).then((r) => {
+      void runUrlImport(droppedText, laneId, start, sampleRate).then((r) => {
         if (!r.ok) onImportError(r.reason ?? 'gagal mengimpor URL');
       });
     }
@@ -777,7 +850,13 @@ export function ClipArea({
                 onTrimDown={beginTrimDrag}
               />
             ))}
-            {lane.clips.length === 0 ? (
+            <LaneImportOverlay jobs={importJobs.filter((j) => j.laneId === lane.id)} />
+            {/* Ajakan hanya untuk lane yang benar-benar kosong DAN diam. Selama
+                import berjalan, tempatnya dipakai bar progres — dua tulisan
+                bertumpuk di kotak setinggi satu lane tidak terbaca, dan
+                "DROP AUDIO DI SINI" di atas file yang sedang dibaca terbaca
+                seperti file-nya tidak masuk. */}
+            {lane.clips.length === 0 && !importJobs.some((j) => j.laneId === lane.id) ? (
               <div
                 style={{
                   position: 'absolute',
@@ -788,10 +867,14 @@ export function ClipArea({
                   fontSize: '9px',
                   letterSpacing: '.16em',
                   color: 'var(--cy-text-muted)',
+                  // Tetap tembus pointer: ketukan yang membuka file manager
+                  // ditangkap scroller (lihat `endGesture`), dan elemen yang
+                  // menadah pointer di sini akan memutus kotak seleksi yang
+                  // ditarik melewati lane kosong.
                   pointerEvents: 'none',
                 }}
               >
-                DROP AUDIO DI SINI
+                KLIK ATAU DROP AUDIO DI SINI
               </div>
             ) : null}
           </div>
@@ -826,6 +909,26 @@ export function ClipArea({
           }}
         />
       </div>
+      <input
+        ref={fileRef}
+        data-lane-file-input
+        type="file"
+        accept="audio/*"
+        multiple
+        onChange={(e) => {
+          const target = pendingPick.current;
+          pendingPick.current = null;
+          const files = Array.from(e.target.files ?? []);
+          // Dikosongkan SEBELUM import dimulai: tanpa ini, memilih file yang
+          // sama persis untuk kedua kalinya tidak memicu `change` sama sekali —
+          // nilainya tidak berubah — dan bagi user itu terlihat seperti klik
+          // yang tidak melakukan apa-apa.
+          e.target.value = '';
+          if (target === null || files.length === 0) return;
+          startFileImports(files, target.laneId, target.start);
+        }}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }
