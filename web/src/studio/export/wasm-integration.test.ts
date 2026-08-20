@@ -299,6 +299,20 @@ async function runOne(
   return { ...r, blob: sink.blob(encoder.mime) };
 }
 
+/**
+ * `Encoder.limitFrames` opsional — FLAC/MP3/OGG tidak punya batas yang praktis
+ * dan tidak mengimplementasikannya. Encoder WAV WAJIB punya; kalau suatu saat
+ * hilang, tes harus jatuh di sini dengan kalimat yang jelas, bukan lewat `!`
+ * yang diam-diam mengubah `undefined` jadi NaN di aritmetika di bawahnya.
+ */
+function limitOf(enc: ExportEncoder): number {
+  const n = enc.limitFrames?.();
+  if (n === undefined || n === null) {
+    throw new Error('encoder WAV harus melaporkan batas frame');
+  }
+  return n;
+}
+
 /** Encoder WAV Rust, dipanggil lewat jalur yang sama dengan UI. */
 function wavEncoder(bitDepth: 16 | 24 | 32): ExportEncoder {
   const Ctor = glue.WavEncoderHandle as new (
@@ -432,12 +446,12 @@ describe('export lewat engine WASM sungguhan', () => {
     for (const [bits, frames] of expected) {
       const enc = wavEncoder(bits);
       await enc.init({ sampleRate: SR, channels: CHANNELS });
-      expect(enc.limitFrames?.()).toBe(frames);
+      expect(limitOf(enc)).toBe(frames);
     }
     // Sanity dalam satuan yang berarti bagi user: 24-bit stereo @48k ≈ 4,1 jam.
     const enc24 = wavEncoder(24);
     await enc24.init({ sampleRate: SR, channels: CHANNELS });
-    const hours = enc24.limitFrames()! / SR / 3600;
+    const hours = limitOf(enc24) / SR / 3600;
     expect(hours).toBeGreaterThan(4.0);
     expect(hours).toBeLessThan(4.2);
   });
@@ -454,7 +468,7 @@ describe('export lewat engine WASM sungguhan', () => {
     const payload = buildExportPayload(st, getBuffer);
     const enc = wavEncoder(24);
     await enc.init({ sampleRate: SR, channels: CHANNELS });
-    const tooLong = { ...payload, endSample: enc.limitFrames()! + 1 };
+    const tooLong = { ...payload, endSample: limitOf(enc) + 1 };
 
     const sink = new BlobSink();
     await expect(
