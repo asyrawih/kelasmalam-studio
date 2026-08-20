@@ -49,7 +49,7 @@ describe('lipat / buka', () => {
     render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
     expect(strip().getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('table', { name: 'kepustakaan' })).toBeNull();
+    expect(screen.queryByRole('tree', { name: 'kepustakaan' })).toBeNull();
   });
 
   it('strip yang terlipat tetap menyebut isinya', async () => {
@@ -63,11 +63,11 @@ describe('lipat / buka', () => {
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
 
     fireEvent.click(strip());
-    expect(await screen.findByRole('table', { name: 'kepustakaan' })).toBeDefined();
+    expect(await screen.findByRole('tree', { name: 'kepustakaan' })).toBeDefined();
     expect(strip().getAttribute('aria-expanded')).toBe('true');
 
     fireEvent.click(strip());
-    expect(screen.queryByRole('table', { name: 'kepustakaan' })).toBeNull();
+    expect(screen.queryByRole('tree', { name: 'kepustakaan' })).toBeNull();
   });
 
   it('SELURUH strip adalah tombolnya, bukan segitiga kecil di pojok', async () => {
@@ -139,10 +139,11 @@ describe('daftar lagu', () => {
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     fireEvent.click(strip());
 
-    const row = screen.getAllByRole('row')[0]!;
+    const row = screen.getAllByRole('treeitem').find((r) => r.textContent?.includes('♪'))!;
     expect(within(row).getByText('Kelas Malam')).toBeDefined();
-    expect(within(row).getByText('3:07')).toBeDefined();
-    expect(within(row).getByText('3.0 MB')).toBeDefined();
+    // Durasi dan ukuran berbagi satu sel di pohon: "3:07 · 3.0 MB".
+    expect(row.textContent).toContain('3:07');
+    expect(row.textContent).toContain('3.0 MB');
     expect(row.textContent).not.toContain(HASH);
   });
 
@@ -150,7 +151,8 @@ describe('daftar lagu', () => {
     render(<LibraryDock api={fakeLibraryApi({ tracks: async () => [track({ frames: 0 })] })} />);
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     fireEvent.click(strip());
-    expect(within(screen.getAllByRole('row')[0]!).getByText('—')).toBeDefined();
+    const row = screen.getAllByRole('treeitem').find((r) => r.textContent?.includes('♪'))!;
+    expect(row.textContent).toContain('—');
   });
 
   it('lagu yang sudah di sesi ditandai, dan tidak menawarkan MUAT lagi', async () => {
