@@ -1,0 +1,31 @@
+/*
+ * Yang tidak bisa jadi inline style di `RobloxPage.tsx` — persis aturan yang
+ * dipakai `landing.css`: media query dan pseudo-class pindah ke sini, sisanya
+ * tetap inline supaya nilainya terbaca di tempat ia dipakai.
+ */
+
+/*
+ * Di bawah 900px, kolom tujuan+detail turun ke bawah antrean.
+ *
+ * Dua kolom pada layar sempit menyisakan ~180px untuk nama berkas, dan nama
+ * berkas yang terpotong jadi "Kelas Malam — Set…" membuat antrean tidak bisa
+ * dibaca justru saat isinya paling banyak.
+ */
+@media (max-width: 900px) {
+  .rbx-body {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* Kolom teks memakai border tipis yang sama dengan kartu; tanpa aturan hover
+ * ini, satu-satunya umpan balik sebelum fokus adalah kursor teks. */
+.rbx-body input:hover:not(:disabled),
+.rbx-body textarea:hover:not(:disabled) {
+  border-color: var(--cy-border-strong);
+}
+
+.rbx-body input:disabled,
+.rbx-body textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

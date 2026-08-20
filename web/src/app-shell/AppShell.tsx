@@ -26,11 +26,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { App } from '../App';
 import { DjPage } from '../dj';
 import { LandingPage } from '../landing';
+import { RobloxPage } from '../roblox';
 import { CommandPalette } from './CommandPalette';
 import { KeymapEditor } from './KeymapEditor';
 import { useCommands } from './useCommands';
 import { useKeyDispatch } from './useKeyDispatch';
-import { DJ_PATH, HOME_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
+import { DJ_PATH, HOME_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
 
 export interface AppShellProps {
   readonly createEngine?: () => Promise<unknown>;
@@ -100,6 +101,13 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
         run: () => navigate(STUDIO_PATH),
       },
       {
+        id: 'shell.goto.roblox',
+        title: 'Buka unggah Roblox',
+        group: 'Aplikasi',
+        defaultChord: null,
+        run: () => navigate(ROBLOX_PATH),
+      },
+      {
         id: 'shell.goto.home',
         title: 'Kembali ke beranda',
         group: 'Aplikasi',
@@ -139,10 +147,16 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
         />
       ) : route === 'dj' ? (
         <DjPage onClose={() => navigate(HOME_PATH)} />
+      ) : route === 'roblox' ? (
+        <RobloxPage
+          onClose={() => navigate(HOME_PATH)}
+          onOpenStudio={() => navigate(STUDIO_PATH)}
+        />
       ) : (
         <LandingPage
           onOpenStudio={() => navigate(STUDIO_PATH)}
           onOpenDj={() => navigate(DJ_PATH)}
+          onOpenRoblox={() => navigate(ROBLOX_PATH)}
         />
       )}
 

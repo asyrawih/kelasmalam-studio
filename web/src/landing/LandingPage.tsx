@@ -39,6 +39,8 @@ export interface LandingPageProps {
   readonly onOpenStudio: () => void;
   /** Dipanggil oleh CTA yang membuka mixer DJ (`/dj`). */
   readonly onOpenDj?: () => void;
+  /** Dipanggil oleh CTA yang membuka unggah asset Roblox (`/roblox`). */
+  readonly onOpenRoblox?: () => void;
 }
 
 /** Label bernomor di atas tiap judul section ("01 / FITUR"). */
@@ -88,7 +90,11 @@ function Bullet({ children }: { children: string }): JSX.Element {
   );
 }
 
-export function LandingPage({ onOpenStudio, onOpenDj }: LandingPageProps): JSX.Element {
+export function LandingPage({
+  onOpenStudio,
+  onOpenDj,
+  onOpenRoblox,
+}: LandingPageProps): JSX.Element {
   // Paket yang sedang disorot. Belum ada checkout — memilih hanya mengubah
   // sorotan kartunya, sama seperti di design.
   const [plan, setPlan] = useState<PlanId>('d7');
@@ -162,6 +168,16 @@ export function LandingPage({ onOpenStudio, onOpenDj }: LandingPageProps): JSX.E
                 onClick={onOpenDj}
               >
                 MODE DJ
+              </Button>
+            )}
+            {onOpenRoblox !== undefined && (
+              <Button
+                size="sm"
+                variant="outline"
+                style={{ height: '34px' }}
+                onClick={onOpenRoblox}
+              >
+                ROBLOX
               </Button>
             )}
             <Button size="sm" style={{ height: '34px' }} onClick={onOpenStudio}>
