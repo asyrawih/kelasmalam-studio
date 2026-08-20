@@ -12,7 +12,7 @@
  *   - hapus lagu yang masih dipakai project: ditolak, dengan menyebut project-nya
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleRequest, type Deps } from './worker';
@@ -20,7 +20,18 @@ import type { Env } from './bindings';
 import { openTestDb, type TestDb } from '../test-support/d1-sqlite';
 import { fakeR2, type FakeR2 } from '../test-support/fake-r2';
 
-const SCHEMA = readFileSync(new URL('../../migrations/0001_init.sql', import.meta.url), 'utf8');
+/**
+ * SEMUA migrasi, urut — bukan hanya yang pertama.
+ *
+ * Skema yang dites harus sama dengan yang benar-benar dijalankan di produksi;
+ * memuat satu berkas saja berarti tabel yang ditambahkan migrasi berikutnya
+ * tidak pernah teruji, dan bug-nya baru muncul sesudah deploy.
+ */
+const SCHEMA = readdirSync(new URL('../../migrations/', import.meta.url))
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .map((f) => readFileSync(new URL(`../../migrations/${f}`, import.meta.url), 'utf8'))
+  .join('\n');
 
 const APP = 'https://app.test';
 const API = 'https://api.test';
@@ -588,6 +599,116 @@ describe('galat internal', () => {
     const res = await call('/me', { cookie: '__Host-lib_session=apa-saja' });
     expect(res.headers.get('access-control-allow-origin')).toBe(APP);
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+  });
+});
+
+describe('lagu yang masih dipakai project', () => {
+  /*
+   * Bug produksi yang melahirkan tes ini: `json LIKE '%hash%'` atas project
+   * yang besar membuat D1 menjawab
+   *
+   *     D1_ERROR: LIKE or GLOB pattern too complex
+   *
+   * dan yang terlihat user adalah lagu yang tidak bisa dihapus, tanpa satu pun
+   * petunjuk soal SQL. Sekarang jawabannya datang dari `project_track`, yang
+   * punya indeks untuk persis pertanyaan ini.
+   *
+   * YANG TIDAK DIBUKTIKAN TES INI: galat D1 itu sendiri. SQLite di sini tidak
+   * menolak pola 66 karakter, jadi versi lama pun akan LULUS. Bug-nya hilang
+   * karena `LIKE` sudah tidak ada sama sekali, bukan karena tes ini menangkapnya.
+   * Yang benar-benar dijaga di sini adalah jalur BARU-nya: daftar yang ikut
+   * berubah saat project disimpan ulang, dihapus, dan diisi susulan untuk
+   * project lama.
+   */
+  it('project BESAR tidak lagi menjatuhkan penghapusan lagu', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+
+    // ~2 MB JSON: ukuran yang membuat pemindaian LIKE jatuh.
+    const besar = {
+      lanes: [{ clips: [{ contentHash: HASH_A }] }],
+      sampah: 'x'.repeat(2 * 1024 * 1024),
+    };
+    await call('/projects', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'Besar', json: besar }),
+    });
+
+    const res = await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie });
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toContain('Besar');
+  });
+
+  it('lagu yang tidak dipakai siapa pun tetap bisa dihapus', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    await seedTrack(cookie, HASH_B);
+    await call('/projects', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'A', json: { lanes: [{ clips: [{ contentHash: HASH_A }] }] } }),
+    });
+
+    expect((await call(`/tracks/${HASH_B}`, { method: 'DELETE', cookie })).status).toBe(200);
+  });
+
+  it('project yang isinya diganti melepas lagu yang tidak lagi dipakainya', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    await seedTrack(cookie, HASH_B);
+
+    const { id } = await (await call('/projects', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'A', json: { lanes: [{ clips: [{ contentHash: HASH_A }] }] } }),
+    })).json();
+
+    // Disimpan ulang tanpa HASH_A.
+    await call(`/projects/${id}`, {
+      method: 'PUT',
+      cookie,
+      headers: { 'if-match': '"1"' },
+      body: JSON.stringify({ name: 'A', json: { lanes: [{ clips: [{ contentHash: HASH_B }] }] } }),
+    });
+
+    // HASH_A sudah lepas; kalau daftarnya tidak ikut diganti, ia akan
+    // "masih dipakai" selamanya dan tidak pernah bisa dihapus.
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+    expect((await call(`/tracks/${HASH_B}`, { method: 'DELETE', cookie })).status).toBe(409);
+  });
+
+  it('project yang dihapus melepas semua lagunya', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    const { id } = await (await call('/projects', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'A', json: { lanes: [{ clips: [{ contentHash: HASH_A }] }] } }),
+    })).json();
+
+    await call(`/projects/${id}`, { method: 'DELETE', cookie });
+    expect((await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie })).status).toBe(200);
+  });
+
+  it('project LAMA (ditulis sebelum tabel indeks ada) tetap dihitung', async () => {
+    const cookie = await login();
+    await seedTrack(cookie, HASH_A);
+    const { id } = await (await call('/projects', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({ name: 'Lama', json: { lanes: [{ clips: [{ contentHash: HASH_A }] }] } }),
+    })).json();
+
+    // Dibuat menyerupai keadaan sebelum migrasi: barisnya dibuang, penandanya
+    // dinolkan. Kalau pengisian susulannya tidak jalan, lagu yang MASIH dipakai
+    // akan terhapus — dan project itu gagal dibuka berminggu-minggu kemudian.
+    db.exec(`DELETE FROM project_track WHERE project_id = '${id}'`);
+    db.exec(`UPDATE project SET tracks_indexed = 0 WHERE id = '${id}'`);
+
+    const res = await call(`/tracks/${HASH_A}`, { method: 'DELETE', cookie });
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toContain('Lama');
   });
 });
 
