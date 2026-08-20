@@ -77,7 +77,15 @@ const num = (raw: string | undefined, fallback: number): number => {
 };
 
 export async function handleRequest(request: Request, env: Env, deps: Deps = {}): Promise<Response> {
-  const allowed = parseOrigins(env.ALLOWED_ORIGINS ?? env.APP_ORIGIN);
+  /*
+   * `??` TIDAK cukup di sini: ia hanya jatuh ke cadangan saat nilainya
+   * `undefined`, sementara `wrangler.toml` mengirim STRING KOSONG untuk var
+   * yang sengaja dikosongkan. Dengan `??`, `ALLOWED_ORIGINS = ""` berarti
+   * "tidak ada origin yang diizinkan" — Worker menolak aplikasinya sendiri,
+   * dan gejalanya hanya galat CORS di browser yang tidak menyebut var ini.
+   */
+  const configured = parseOrigins(env.ALLOWED_ORIGINS);
+  const allowed = configured.length > 0 ? configured : parseOrigins(env.APP_ORIGIN);
   const cors = decideCors(request.headers.get('origin'), allowed);
 
   if (request.method === 'OPTIONS') return preflight(cors.allowOrigin, { credentials: true });

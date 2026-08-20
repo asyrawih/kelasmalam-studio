@@ -5,6 +5,10 @@
 | `dawonweb-roblox` | unggah asset audio ke Roblox Open Cloud | `wrangler.roblox.toml` | `docs/17-roblox-upload.md` |
 | `dawonweb-library` | kepustakaan user: lagu, cue, project (R2 + D1) | `wrangler.library.toml` | `docs/16-kepustakaan.md` |
 
+**Cara memasangnya: `docs/18-deploy-backend.md`** — langkah demi langkah, dari
+`wrangler login` sampai alur login yang benar-benar jalan, berikut daftar gejala
+kalau ada yang meleset.
+
 **Deploy-nya terpisah, dengan sengaja.** Umur datanya berbeda — yang satu tidak
 menyimpan apa pun, yang satu memegang seluruh kepustakaan user — dan satu deploy
 yang salah tidak boleh menjatuhkan dua-duanya. Yang dibagi hanyalah tooling
