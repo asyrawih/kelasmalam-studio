@@ -33,6 +33,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { buildExportPayload } from './payload';
 import { runExport, type ExportEncoder, type ExportEngine } from './run-export';
+import { BlobSink } from './sinks';
 import type {
   EqBandKind,
   ExportFormat,
@@ -293,7 +294,23 @@ async function runOne(
   extra: { onProgress?: (f: number) => void; isCancelled?: () => boolean } = {},
 ) {
   await encoder.init({ sampleRate: SR, channels: CHANNELS });
-  return runExport({ payload, sampleRate: SR, engine: engine(), encoder, ...extra });
+  const sink = new BlobSink();
+  const r = await runExport({ payload, sampleRate: SR, engine: engine(), encoder, sink, ...extra });
+  return { ...r, blob: sink.blob(encoder.mime) };
+}
+
+/**
+ * `Encoder.limitFrames` opsional — FLAC/MP3/OGG tidak punya batas yang praktis
+ * dan tidak mengimplementasikannya. Encoder WAV WAJIB punya; kalau suatu saat
+ * hilang, tes harus jatuh di sini dengan kalimat yang jelas, bukan lewat `!`
+ * yang diam-diam mengubah `undefined` jadi NaN di aritmetika di bawahnya.
+ */
+function limitOf(enc: ExportEncoder): number {
+  const n = enc.limitFrames?.();
+  if (n === undefined || n === null) {
+    throw new Error('encoder WAV harus melaporkan batas frame');
+  }
+  return n;
 }
 
 /** Encoder WAV Rust, dipanggil lewat jalur yang sama dengan UI. */
@@ -305,6 +322,7 @@ function wavEncoder(bitDepth: 16 | 24 | 32): ExportEncoder {
     seed: number,
   ) => {
     header(): Uint8Array;
+    maxFrames(): number;
     encode(l: Float32Array, r: Float32Array): Uint8Array;
     flush(): Uint8Array;
     patchHeader(): Uint8Array;
@@ -320,6 +338,7 @@ function wavEncoder(bitDepth: 16 | 24 | 32): ExportEncoder {
       return Promise.resolve();
     },
     header: () => h!.header(),
+    limitFrames: () => h!.maxFrames(),
     encode: (p) => h!.encode(p[0]!, p[1]!),
     finish: () => h!.flush(),
     finalHeader: () => {
@@ -409,6 +428,54 @@ describe('export lewat engine WASM sungguhan', () => {
   it('artefak st bisa di-compile dan ABI-nya cocok', () => {
     expect(glue.abiVersion()).toBe(1);
     expect(memory.buffer.byteLength).toBeGreaterThan(0);
+  });
+
+  /**
+   * Batas 4 GiB WAV, lewat glue sungguhan.
+   *
+   * Angkanya datang dari `WavStreamWriter::max_frames()` di Rust; kalau rumus
+   * di sana berubah, tes ini yang jatuh — bukan file export seseorang.
+   */
+  it('melaporkan batas RIFF yang benar per bit depth', async () => {
+    const expected: Array<[16 | 24 | 32, number]> = [
+      // (2^32 - 1 - 36) / (2 channel × byte per sample)
+      [16, Math.floor((4294967295 - 36) / 4)],
+      [24, Math.floor((4294967295 - 36) / 6)],
+      [32, Math.floor((4294967295 - 36) / 8)],
+    ];
+    for (const [bits, frames] of expected) {
+      const enc = wavEncoder(bits);
+      await enc.init({ sampleRate: SR, channels: CHANNELS });
+      expect(limitOf(enc)).toBe(frames);
+    }
+    // Sanity dalam satuan yang berarti bagi user: 24-bit stereo @48k ≈ 4,1 jam.
+    const enc24 = wavEncoder(24);
+    await enc24.init({ sampleRate: SR, channels: CHANNELS });
+    const hours = limitOf(enc24) / SR / 3600;
+    expect(hours).toBeGreaterThan(4.0);
+    expect(hours).toBeLessThan(4.2);
+  });
+
+  /**
+   * Dan penolakannya terjadi SEBELUM render, bukan di byte terakhir.
+   *
+   * Sebelum perbaikan ini tidak ada penolakan sama sekali: header ditulis
+   * dengan `saturating_add`, jadi export 5 jam selesai dengan panjang yang
+   * dijepit ke 4 GiB dan file-nya berhenti di tengah saat diputar.
+   */
+  it('menolak export yang melewati batas RIFF sebelum satu blok pun dirender', async () => {
+    const { st, getBuffer } = twoLaneProject();
+    const payload = buildExportPayload(st, getBuffer);
+    const enc = wavEncoder(24);
+    await enc.init({ sampleRate: SR, channels: CHANNELS });
+    const tooLong = { ...payload, endSample: limitOf(enc) + 1 };
+
+    const sink = new BlobSink();
+    await expect(
+      runExport({ payload: tooLong, sampleRate: SR, engine: engine(), encoder: enc, sink }),
+    ).rejects.toThrow(/terlalu panjang untuk format ini/);
+    // Tidak ada byte yang ditulis: kegagalannya terjadi sebelum render dibuat.
+    expect(sink.bytes().length).toBe(0);
   });
 
   it('menghasilkan WAV 16-bit yang TIDAK senyap, panjang & header-nya benar', async () => {
@@ -603,8 +670,9 @@ describe('export lewat engine WASM sungguhan', () => {
     const sizes: string[] = [];
     for (const [name, enc] of cases) {
       await enc.init({ sampleRate: SR, channels: CHANNELS, quality: name.startsWith('mp3') ? 192 : 0.5 });
-      const r = await runExport({ payload, sampleRate: SR, engine: engine(), encoder: enc });
-      const bytes = await blobBytes(r.blob);
+      const sink = new BlobSink();
+      const r = await runExport({ payload, sampleRate: SR, engine: engine(), encoder: enc, sink });
+      const bytes = sink.bytes();
       expect(r.frames).toBe(FRAMES * 2);
       // Ambang 1 KB, bukan 0: file "berhasil" yang hanya berisi header adalah
       // kegagalan yang paling gampang lolos.

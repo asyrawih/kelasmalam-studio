@@ -15,6 +15,7 @@
  */
 
 import type { ExportAssetPcm, ExportPayload } from './payload';
+import type { ExportSink } from './sinks';
 
 /** 100 blok × 128 frame ≈ 267 ms audio @48k (docs/03 §3a). */
 export const BLOCKS_PER_BATCH = 100;
@@ -82,6 +83,11 @@ export interface ExportEncoder {
   finalHeader?(): Uint8Array | null;
   /** WAV: header placeholder yang ditulis lebih dulu. */
   header?(): Uint8Array;
+  /**
+   * Frame maksimum yang bisa dinyatakan format ini, `null` kalau tak terbatas.
+   * Dicek SEBELUM render — lihat `assertFitsEncoderLimit`.
+   */
+  limitFrames?(): number | null;
 }
 
 export interface RunExportOptions {
@@ -89,6 +95,12 @@ export interface RunExportOptions {
   readonly sampleRate: number;
   readonly engine: ExportEngine;
   readonly encoder: ExportEncoder;
+  /**
+   * Ke mana byte-nya pergi. WAJIB, dan sengaja tanpa default: default apa pun
+   * di sini akan menumpuk seluruh file di memori, dan itu persis yang membuat
+   * export panjang gagal sebelum lapisan ini ada (lihat `sinks.ts`).
+   */
+  readonly sink: ExportSink;
   /** 0..1. Dipanggil sesudah tiap batch. */
   readonly onProgress?: (fraction01: number) => void;
   /** Selisih preview vs file, dilaporkan SEBELUM render mulai. */
@@ -100,7 +112,6 @@ export interface RunExportOptions {
 }
 
 export interface ExportResult {
-  readonly blob: Blob;
   readonly warnings: readonly string[];
   readonly frames: number;
 }
@@ -134,7 +145,7 @@ export function defaultYield(): Promise<void> {
 }
 
 export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
-  const { payload, engine, encoder, sampleRate } = opts;
+  const { payload, engine, encoder, sampleRate, sink } = opts;
   const yieldFn = opts.yieldToEventLoop ?? defaultYield;
 
   const snap = engine.snapshot(payload.json);
@@ -157,6 +168,10 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
   // dengan kalimat yang bisa ditindaklanjuti — bukan nanti sebagai trap wasm di
   // tengah `registerAsset`, dengan `OfflineRender` yang sudah terlanjur berdiri.
   assertPcmFitsInMemory(payload.assets, engine);
+  // Dan sebelum render berjam-jam dimulai: apakah formatnya SANGGUP menyatakan
+  // panjang sepanjang itu. Menemukannya di byte terakhir berarti membuang
+  // seluruh waktu render.
+  assertFitsEncoderLimit(encoder, payload.endSample, sampleRate);
 
   const render = engine.createRender(
     snap.bytes,
@@ -178,7 +193,6 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
     );
   }
 
-  const parts: BlobPart[] = [];
   let frames = 0;
   /** Error asli dari badan `try`, supaya `finally` tidak menimpanya. */
   let failure: unknown = null;
@@ -189,7 +203,7 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
     for (const a of payload.assets) registerAsset(render, a);
 
     const header = encoder.header?.();
-    if (header && header.length > 0) parts.push(header.slice() as BlobPart);
+    if (header && header.length > 0) await sink.header(header);
 
     const total = render.totalFrames();
     for (;;) {
@@ -204,9 +218,12 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
       const r = engine.view(render.outRPtr(), n);
 
       const bytes = encoder.encode([l, r]);
-      // `slice()` menyalin KELUAR dari linear memory — buffer WASM tidak akan
-      // valid lagi setelah grow berikutnya, dan Blob menyimpannya jauh lebih lama.
-      if (bytes.length > 0) parts.push(bytes.slice() as BlobPart);
+      // Tidak ada `slice()` di sini. Glue wasm-bindgen SUDAH menyalin keluar
+      // dari linear memory saat mengembalikan `Vec<u8>` (lihat
+      // `getArrayU8FromWasm0(...).slice()` di web/src/wasm/mt/engine.js), jadi
+      // salinan kedua hanya menggandakan puncak memori tiap chunk 4 MiB —
+      // dan mencegah buffer-nya di-transfer utuh ke main thread.
+      if (bytes.length > 0) await sink.chunk(bytes);
 
       frames += n;
       opts.onProgress?.(total > 0 ? Math.min(1, frames / total) : 1);
@@ -215,17 +232,20 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
     }
 
     const tail = await encoder.finish();
-    if (tail.length > 0) parts.push(tail.slice() as BlobPart);
+    if (tail.length > 0) await sink.chunk(tail);
 
     // WAV: ukuran RIFF/data baru diketahui sekarang, jadi header placeholder di
-    // part pertama diganti oleh yang final.
+    // depan file ditimpa oleh yang final.
     const finalHeader = encoder.finalHeader?.();
-    if (finalHeader && finalHeader.length > 0) {
-      if (parts.length > 0 && header && header.length > 0) parts[0] = finalHeader.slice() as BlobPart;
-      else parts.unshift(finalHeader.slice() as BlobPart);
-    }
+    if (finalHeader && finalHeader.length > 0) await sink.patchHeader(finalHeader);
+
+    await sink.close();
   } catch (e: unknown) {
     failure = e;
+    // Sink DULU, baru lempar: kalau tidak, jalur File System Access
+    // meninggalkan berkas separuh jadi di disk yang terlihat seperti export
+    // yang berhasil. `abort()` sengaja tidak boleh melempar sendiri.
+    await sink.abort(e);
     throw e;
   } finally {
     // `free()` di sini BISA melempar sendiri, dan kalau dibiarkan ia akan
@@ -252,7 +272,38 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
   }
 
   opts.onProgress?.(1);
-  return { blob: new Blob(parts, { type: encoder.mime }), warnings, frames };
+  return { warnings, frames };
+}
+
+/**
+ * Tolak SEBELUM render kalau formatnya tidak bisa menyatakan panjang segitu.
+ *
+ * WAV klasik menyimpan ukuran RIFF dan ukuran data di field 32-bit, jadi
+ * batasnya ~4 GiB — sekitar 4,1 jam untuk stereo 24-bit @48k, dan hanya 3,1 jam
+ * untuk float 32-bit. Angka batasnya datang dari `WavStreamWriter::max_frames()`
+ * di Rust, bukan dihitung ulang di sini.
+ *
+ * Sebelum ini tidak ada cek sama sekali DAN tidak ada error: header ditulis
+ * dengan `saturating_add`, jadi file di atas batas tetap selesai dengan panjang
+ * yang dijepit. Yang didapat user adalah berkas berukuran benar yang berhenti
+ * di tengah saat diputar — kegagalan yang baru ketahuan setelah semuanya
+ * terlihat berhasil.
+ */
+function assertFitsEncoderLimit(
+  encoder: ExportEncoder,
+  frames: number,
+  sampleRate: number,
+): void {
+  const limit = encoder.limitFrames?.();
+  if (limit === undefined || limit === null || !Number.isFinite(limit)) return;
+  if (frames <= limit) return;
+
+  const hours = (n: number): string => (n / Math.max(1, sampleRate) / 3600).toFixed(1);
+  throw new Error(
+    `Export ${hours(frames)} jam terlalu panjang untuk format ini: batasnya ` +
+      `${hours(limit)} jam (ukuran berkas WAV disimpan dalam field 32-bit, ~4 GiB). ` +
+      'Yang bisa dilakukan: pilih FLAC, turunkan bit depth, atau persempit rentang waktunya.',
+  );
 }
 
 function registerAsset(render: RenderHandle, a: ExportAssetPcm): void {

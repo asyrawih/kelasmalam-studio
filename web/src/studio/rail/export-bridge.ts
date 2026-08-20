@@ -17,6 +17,7 @@ import type { EncoderFormat } from '../../encoders';
 import { loadWasm, type LoadedWasm } from '../../audio/wasm-loader';
 import { buildExportPayload, type BufferLookup } from '../export/payload';
 import { ExportCancelled, runExport, type ExportEncoder } from '../export/run-export';
+import { BlobSink, FileSystemSink, type ExportSink } from '../export/sinks';
 import { createWasmExportEngine } from '../export/wasm-engine';
 import type { StudioState } from '../model';
 
@@ -230,19 +231,6 @@ export interface CompileParams {
 }
 
 /**
- * Tulis ke lokasi yang dipilih user. Kalau gagal di tengah jalan (disk penuh,
- * izin dicabut), error-nya dibiarkan naik: file separuh jadi di disk yang
- * dilaporkan sebagai sukses jauh lebih buruk daripada pesan error.
- */
-async function writeToDisk(handle: FileSystemFileHandle, blob: Blob): Promise<void> {
-  const writable = await (
-    handle as unknown as { createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }> }
-  ).createWritable();
-  await writable.write(blob);
-  await writable.close();
-}
-
-/**
  * Jalankan export. HARUS dipanggil dari handler klik: `pickSaveLocation()`
  * membutuhkan user gesture (docs/03 §3d).
  */
@@ -287,18 +275,28 @@ export async function runCompile(p: CompileParams): Promise<void> {
     throw e;
   }
 
+  // Ke disk kalau user memilih lokasi, kalau tidak ditumpuk di memori.
+  // Perbedaannya bukan kenyamanan: lewat `FileSystemSink` byte turun ke disk
+  // begitu di-encode, jadi ukuran file tidak lagi dibatasi RAM. `BlobSink`
+  // adalah yang terbaik yang bisa dilakukan di browser tanpa File System
+  // Access (Firefox, Safari) — dan di sana batas itu memang tetap ada.
+  const blobSink = fileHandle ? null : new BlobSink();
+  const sink: ExportSink = blobSink ?? (await FileSystemSink.create(fileHandle!));
+
   try {
-    const result = await runExport({
+    await runExport({
       payload,
       sampleRate: state.sampleRate,
       engine: createWasmExportEngine(wasm),
       encoder,
+      sink,
       onProgress: p.onProgress,
       onWarnings: p.onWarnings,
       isCancelled: p.isCancelled,
     });
-    if (fileHandle) await writeToDisk(fileHandle, result.blob);
-    else downloadBlob(result.blob, fileName);
+    // `runExport` sudah memanggil `sink.abort()` kalau gagal/dibatalkan, jadi
+    // di sini kita hanya sampai kalau berkasnya memang lengkap.
+    if (blobSink) downloadBlob(blobSink.blob(mime), fileName);
   } catch (e) {
     // Batal bukan kegagalan — jangan tampilkan sebagai error merah.
     if (!(e instanceof ExportCancelled)) throw e;

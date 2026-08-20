@@ -140,6 +140,8 @@ export interface WavEncoderCtor {
 
 export interface WavEncoderHandleT {
   header(): Uint8Array;
+  /** Frame maksimum yang muat di header RIFF untuk spec ini (batas 4 GiB). */
+  maxFrames(): number;
   encode(l: Float32Array, r: Float32Array): Uint8Array;
   /** Sisa chunk terakhir. */
   flush(): Uint8Array;

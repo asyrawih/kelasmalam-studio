@@ -36,6 +36,7 @@ import {
   type TransportState,
 } from './sab-layout';
 import type { ThreadStack } from './thread-stack';
+import { BlobSink, FileSystemSink, type ExportSink } from '../studio/export/sinks';
 import { loadWasm, type LoadedWasm } from './wasm-loader';
 
 export const PROCESSOR_NAME = 'daw-engine';
@@ -429,21 +430,45 @@ export class EngineClient {
       rejectDone = rej;
     });
 
-    const parts: BlobPart[] = [];
     let mime = 'audio/wav';
-    let writable: FileSystemWritableFileStream | null = null;
 
-    const openWritable = req.fileHandle
-      ? req.fileHandle.createWritable().then((w) => {
-          writable = w;
-        })
-      : Promise.resolve();
+    // Sink yang SAMA dengan yang dipakai di dalam worker dan di jalur UI —
+    // bukan penanganan chunk versi ketiga. Versi sebelumnya di sini punya
+    // logikanya sendiri, dan di situ pula bug-nya: header final ditaruh di
+    // `parts[0]` bahkan ketika tujuannya berkas di disk, jadi di jalur disk ia
+    // tidak pernah sampai ke mana pun.
+    const blobSink = req.fileHandle ? null : new BlobSink();
+    const openSink: Promise<ExportSink> = req.fileHandle
+      ? FileSystemSink.create(req.fileHandle)
+      : Promise.resolve(blobSink as ExportSink);
+    // Kegagalan membuka berkas muncul lagi di `enqueue` (dan dari sana sampai
+    // ke `done`). Handler kosong ini hanya menandainya sudah tertangani supaya
+    // ia tidak ikut dilaporkan sebagai unhandled rejection.
+    void openSink.catch(() => undefined);
+
+    /**
+     * Tulisan ke sink DIURUTKAN lewat satu rantai promise.
+     *
+     * `onmessage` di bawah `async`, jadi pesan berikutnya bisa mulai diproses
+     * saat yang sebelumnya masih menunggu `write()`. Untuk aliran byte, dua
+     * penulisan yang saling menyalip bukan sekadar keanehan — ia menukar isi
+     * file, dan hasilnya berkas yang panjangnya benar tapi datanya teracak.
+     */
+    let writes: Promise<unknown> = Promise.resolve();
+    const enqueue = (fn: (sink: ExportSink) => Promise<void> | void): Promise<void> => {
+      writes = writes.then(async () => {
+        const sink = await openSink;
+        await fn(sink);
+      });
+      return writes as Promise<void>;
+    };
 
     worker.onmessage = async (ev: MessageEvent) => {
       const m = ev.data as
         | { type: 'progress'; rendered: number; total: number; stage: 'render' | 'encode'; etaMs: number }
         | { type: 'chunk'; buffer: ArrayBuffer }
         | { type: 'header'; buffer: ArrayBuffer }
+        | { type: 'patch-header'; buffer: ArrayBuffer }
         | { type: 'done'; mime: string }
         | { type: 'cancelled' }
         | { type: 'error'; message: string };
@@ -453,35 +478,35 @@ export class EngineClient {
           onProgress?.({ stage: m.stage, rendered: m.rendered, total: m.total, etaMs: m.etaMs });
           break;
         case 'header':
-          // Header final menggantikan placeholder → selalu jadi part pertama.
-          parts[0] = m.buffer;
+          // Placeholder: panjangnya belum diketahui, ditimpa di akhir oleh
+          // `patch-header`.
+          await enqueue((sink) => sink.header(new Uint8Array(m.buffer)));
+          break;
+        case 'patch-header':
+          await enqueue((sink) => sink.patchHeader(new Uint8Array(m.buffer)));
           break;
         case 'chunk':
-          await openWritable;
-          if (writable) await writable.write(m.buffer);
-          else parts.push(m.buffer);
+          await enqueue((sink) => sink.chunk(new Uint8Array(m.buffer)));
           break;
         case 'done': {
           mime = m.mime;
-          await openWritable;
-          if (writable) {
-            await writable.close();
-            onProgress?.({ stage: 'done', rendered: 1, total: 1, etaMs: 0 });
-            resolveDone(null);
-          } else {
-            const blob = new Blob(parts.filter(Boolean), { type: mime });
-            onProgress?.({ stage: 'done', rendered: 1, total: 1, etaMs: 0 });
-            resolveDone(blob);
-          }
+          await enqueue((sink) => sink.close());
+          onProgress?.({ stage: 'done', rendered: 1, total: 1, etaMs: 0 });
+          resolveDone(blobSink ? blobSink.blob(mime) : null);
           worker.terminate();
           break;
         }
         case 'cancelled':
+          // Buang yang sudah ditulis. Berkas separuh jadi di disk yang tidak
+          // pernah diberi header final adalah hasil paling membingungkan dari
+          // sebuah pembatalan.
+          await enqueue((sink) => sink.abort('cancelled'));
           onProgress?.({ stage: 'cancelled', rendered: 0, total: 0, etaMs: 0 });
           resolveDone(null);
           worker.terminate();
           break;
         case 'error':
+          await enqueue((sink) => sink.abort(m.message));
           onProgress?.({ stage: 'error', rendered: 0, total: 0, etaMs: 0, message: m.message });
           rejectDone(new Error(m.message));
           worker.terminate();

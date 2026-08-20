@@ -65,7 +65,7 @@ fn decode(bytes: &[u8]) -> (Vec<f32>, Vec<f32>, hound::WavSpec) {
 #[test]
 fn roundtrip_pcm16() {
     let (l, r) = test_signal(4096);
-    let bytes = encode_all(&[&l, &r], spec(WavFormat::Pcm16), DitherSettings::default());
+    let bytes = encode_all(&[&l, &r], spec(WavFormat::Pcm16), DitherSettings::default()).unwrap();
     let (dl, dr, s) = decode(&bytes);
     assert_eq!(s.bits_per_sample, 16);
     assert_eq!(s.channels, 2);
@@ -81,7 +81,7 @@ fn roundtrip_pcm16() {
 #[test]
 fn roundtrip_pcm24() {
     let (l, r) = test_signal(4096);
-    let bytes = encode_all(&[&l, &r], spec(WavFormat::Pcm24), DitherSettings::default());
+    let bytes = encode_all(&[&l, &r], spec(WavFormat::Pcm24), DitherSettings::default()).unwrap();
     let (dl, dr, s) = decode(&bytes);
     assert_eq!(s.bits_per_sample, 24);
     // Dither MATI untuk 24-bit secara default → error murni kuantisasi ≤ 0.5 LSB.
@@ -99,7 +99,8 @@ fn roundtrip_float32_is_bit_exact() {
         &[&l, &r],
         spec(WavFormat::Float32),
         DitherSettings::default(),
-    );
+    )
+    .unwrap();
     let (dl, dr, s) = decode(&bytes);
     assert_eq!(s.sample_format, hound::SampleFormat::Float);
     // f32 tidak pernah di-dither dan tidak dikuantisasi → identik bit-per-bit.
@@ -113,7 +114,7 @@ fn roundtrip_float32_is_bit_exact() {
 fn i24_packing_is_little_endian_and_sign_correct() {
     let l = vec![-1.0f32, 1.0, 0.0];
     let r = vec![-1.0f32, 1.0, 0.0];
-    let bytes = encode_all(&[&l, &r], spec(WavFormat::Pcm24), DitherSettings::default());
+    let bytes = encode_all(&[&l, &r], spec(WavFormat::Pcm24), DitherSettings::default()).unwrap();
     let data = &bytes[44..];
     // Sample pertama = -8388607 (clamp) → 0x800001 little-endian.
     assert_eq!(&data[0..3], &[0x01, 0x00, 0x80]);
@@ -132,7 +133,7 @@ fn streaming_chunks_equal_single_shot() {
         let (l, r) = test_signal(200_000);
         let sp = spec(format);
         let ds = DitherSettings::default();
-        let single = encode_all(&[&l, &r], sp, ds);
+        let single = encode_all(&[&l, &r], sp, ds).unwrap();
 
         // Chunk kecil (64 KiB) supaya banyak batas chunk terlewati di tes.
         let mut w = WavStreamWriter::with_chunk_size(sp, ds, 64 * 1024);
@@ -151,7 +152,7 @@ fn streaming_chunks_equal_single_shot() {
         }
         out.extend_from_slice(w.finish());
         // Patch header di akhir, setelah panjang total diketahui.
-        out[0..44].copy_from_slice(&w.patch_header());
+        out[0..44].copy_from_slice(&w.patch_header().unwrap());
 
         assert_eq!(out.len(), single.len(), "{format:?} panjang");
         assert!(out == single, "{format:?} byte berbeda");
@@ -188,6 +189,75 @@ fn streaming_does_not_reallocate_after_first_chunk() {
     );
 }
 
+/// Batas RIFF 32-bit.
+///
+/// Sebelum ini `header_bytes` memakai `saturating_add` dan `patch_header`
+/// menjepit dengan `.min(u32::MAX)`: file di atas 4 GiB tetap ditulis, dengan
+/// panjang yang bohong, tanpa satu pun error. Kegagalan paling mahal adalah
+/// yang menghasilkan file yang terlihat normal — jadi sekarang ia menolak.
+#[test]
+fn riff_header_refuses_data_beyond_the_32_bit_limit() {
+    let sp = spec(WavFormat::Pcm24);
+    assert!(
+        header_bytes(&sp, RIFF_MAX_DATA_BYTES).is_ok(),
+        "tepat di batas harus boleh"
+    );
+    assert_eq!(
+        header_bytes(&sp, RIFF_MAX_DATA_BYTES + 1),
+        Err(RiffOverflow {
+            data_bytes: RIFF_MAX_DATA_BYTES + 1
+        }),
+        "satu byte di atas batas harus gagal, bukan dijepit"
+    );
+}
+
+/// Di batas, KEDUA field ukuran harus masih konsisten satu sama lain: yang di
+/// offset 4 berisi `36 + data`, yang di offset 40 berisi `data`.
+#[test]
+fn riff_size_fields_stay_consistent_at_the_limit() {
+    let h = header_bytes(&spec(WavFormat::Pcm24), RIFF_MAX_DATA_BYTES).unwrap();
+    let riff = u32::from_le_bytes(h[4..8].try_into().unwrap());
+    let data = u32::from_le_bytes(h[40..44].try_into().unwrap());
+    assert_eq!(riff, u32::MAX);
+    assert_eq!(data as u64, RIFF_MAX_DATA_BYTES);
+    assert_eq!(riff as u64, 36 + data as u64);
+}
+
+/// `max_frames()` adalah angka yang dipakai sisi JS untuk menolak export
+/// SEBELUM render dimulai, jadi ia harus persis: frame ke-`n` masih muat,
+/// frame ke-`n+1` tidak.
+#[test]
+fn max_frames_is_the_exact_last_frame_that_fits() {
+    for format in [WavFormat::Pcm16, WavFormat::Pcm24, WavFormat::Float32] {
+        let w = WavStreamWriter::new(spec(format), DitherSettings::default());
+        let per_frame = 2 * format.bytes_per_sample() as u64;
+        let n = w.max_frames();
+        assert!(
+            header_bytes(&spec(format), n * per_frame).is_ok(),
+            "{format:?}: frame ke-{n} seharusnya masih muat"
+        );
+        assert!(
+            header_bytes(&spec(format), (n + 1) * per_frame).is_err(),
+            "{format:?}: frame ke-{} seharusnya sudah tidak muat",
+            n + 1
+        );
+    }
+}
+
+/// Writer yang datanya melewati batas melaporkannya lewat `riff_overflow()`,
+/// dan `patch_header()` menolak. Ini lapis kedua: yang pertama adalah
+/// penolakan di sisi JS sebelum render.
+#[test]
+fn writer_reports_overflow_instead_of_finishing_a_broken_file() {
+    let mut w = WavStreamWriter::new(spec(WavFormat::Pcm16), DitherSettings::default());
+    assert!(w.riff_overflow().is_none());
+    assert!(w.patch_header().is_ok());
+    let (l, r) = test_signal(64);
+    w.write_planar(&[&l, &r]);
+    assert!(w.riff_overflow().is_none(), "64 frame jelas masih muat");
+    assert!(w.patch_header().is_ok());
+}
+
 /// Export byte-reproducible: seed yang sama → file yang sama persis.
 #[test]
 fn dithered_export_is_byte_reproducible() {
@@ -197,14 +267,15 @@ fn dithered_export_is_byte_reproducible() {
         dither_24: false,
         seed: 0xABCD_1234_5678_9F01,
     };
-    let a = encode_all(&[&l, &r], spec(WavFormat::Pcm16), ds);
-    let b = encode_all(&[&l, &r], spec(WavFormat::Pcm16), ds);
+    let a = encode_all(&[&l, &r], spec(WavFormat::Pcm16), ds).unwrap();
+    let b = encode_all(&[&l, &r], spec(WavFormat::Pcm16), ds).unwrap();
     assert_eq!(a, b);
     let c = encode_all(
         &[&l, &r],
         spec(WavFormat::Pcm16),
         DitherSettings { seed: 1, ..ds },
-    );
+    )
+    .unwrap();
     assert_ne!(a, c, "seed berbeda harus menghasilkan noise dither berbeda");
 }
 
@@ -215,7 +286,7 @@ fn hound_path_decodes_to_the_same_values() {
         dither_16: false,
         ..Default::default()
     };
-    let mine = encode_all(&[&l, &r], spec(WavFormat::Pcm16), ds);
+    let mine = encode_all(&[&l, &r], spec(WavFormat::Pcm16), ds).unwrap();
     let theirs = encode_all_hound(&[&l, &r], spec(WavFormat::Pcm16), ds).unwrap();
     let (a, _, _) = decode(&mine);
     let (b, _, _) = decode(&theirs);
@@ -232,7 +303,7 @@ fn dither_never_applies_to_float32() {
         dither_24: true,
         seed: 5,
     };
-    let a = encode_all(&[&l, &r], spec(WavFormat::Float32), with);
+    let a = encode_all(&[&l, &r], spec(WavFormat::Float32), with).unwrap();
     let b = encode_all(
         &[&l, &r],
         spec(WavFormat::Float32),
@@ -240,7 +311,8 @@ fn dither_never_applies_to_float32() {
             seed: 999_999,
             ..with
         },
-    );
+    )
+    .unwrap();
     assert_eq!(a, b, "f32 tidak boleh terpengaruh setelan dither");
 }
 
@@ -523,7 +595,8 @@ mod flac_tests {
                 format: WavFormat::Pcm24,
             },
             no_dither(),
-        );
+        )
+        .unwrap();
         assert!(
             flac.len() < wav.len(),
             "flac {} byte tidak lebih kecil dari wav {} byte",
