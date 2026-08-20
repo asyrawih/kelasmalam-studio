@@ -15,9 +15,19 @@ import { useEffect, useState } from 'react';
 import { createEncoder, downloadBlob, pickSaveLocation } from '../../encoders';
 import type { EncoderFormat } from '../../encoders';
 import { loadWasm, type LoadedWasm } from '../../audio/wasm-loader';
-import { buildExportPayload, type BufferLookup } from '../export/payload';
+import {
+  buildExportPayload,
+  type BufferLookup,
+  type ExportAssetSource,
+  type ExportPayload,
+} from '../export/payload';
 import { ExportCancelled, runExport, type ExportEncoder } from '../export/run-export';
 import { BlobSink, FileSystemSink, type ExportSink } from '../export/sinks';
+import {
+  ExportWorkerUnavailable,
+  canRunExportInWorker,
+  runExportInWorker,
+} from '../export/worker-host';
 import { createWasmExportEngine } from '../export/wasm-engine';
 import type { StudioState } from '../model';
 
@@ -236,8 +246,6 @@ export interface CompileParams {
  */
 export async function runCompile(p: CompileParams): Promise<void> {
   if (!host) throw new Error(NO_HOST);
-  const wasm = wasmCache ?? (await loadWasm());
-  wasmCache = wasm;
 
   const state = host.state();
   // PCM-nya TIDAK ikut di sini — `pcm` mengambilnya satu per satu saat
@@ -249,6 +257,7 @@ export async function runCompile(p: CompileParams): Promise<void> {
 
   const ext = p.format;
   const mime = MIME[p.format];
+  const bitDepth = p.bitDepth ?? 16;
   // Satu nama untuk DUA jalur simpan: `suggestedName` picker File System Access
   // dan atribut `download` anchor. Kalau keduanya dihitung terpisah, file yang
   // sama bisa mendarat dengan dua nama berbeda tergantung browser.
@@ -257,25 +266,6 @@ export async function runCompile(p: CompileParams): Promise<void> {
   // begitu kita menunggu batch pertama. `null` = browser tanpa File System
   // Access API (atau user batal) → jalur anchor+Blob.
   const fileHandle = await pickSaveLocation(fileName, mime, ext);
-
-  const encoder = createEncoder(p.format, wasm.exports) as unknown as ExportEncoder;
-  try {
-    await encoder.init({
-      sampleRate: state.sampleRate,
-      channels: 2,
-      bitDepth: p.bitDepth ?? 16,
-      quality: p.quality,
-    });
-  } catch (e) {
-    const label = LAZY_ENCODER_LABEL[p.format];
-    if (label) {
-      throw new Error(
-        `${label} gagal dimuat: ${e instanceof Error ? e.message : String(e)}. ` +
-          'Format lain (WAV/FLAC) tetap bisa dipakai.',
-      );
-    }
-    throw e;
-  }
 
   // Ke disk kalau user memilih lokasi, kalau tidak ditumpuk di memori.
   // Perbedaannya bukan kenyamanan: lewat `FileSystemSink` byte turun ke disk
@@ -286,24 +276,121 @@ export async function runCompile(p: CompileParams): Promise<void> {
   const sink: ExportSink = blobSink ?? (await FileSystemSink.create(fileHandle!));
 
   try {
-    await runExport({
+    await render({
       payload,
-      sampleRate: state.sampleRate,
-      engine: createWasmExportEngine(wasm),
-      encoder,
-      sink,
       pcm,
+      sink,
+      sampleRate: state.sampleRate,
+      format: p.format,
+      bitDepth,
+      quality: p.quality,
       onProgress: p.onProgress,
       onWarnings: p.onWarnings,
       isCancelled: p.isCancelled,
     });
-    // `runExport` sudah memanggil `sink.abort()` kalau gagal/dibatalkan, jadi
-    // di sini kita hanya sampai kalau berkasnya memang lengkap.
-    if (blobSink) downloadBlob(blobSink.blob(mime), fileName);
+    // Jalur mana pun sudah memanggil `sink.abort()` kalau gagal/dibatalkan,
+    // jadi di sini kita hanya sampai kalau berkasnya memang lengkap.
+    if (blobSink) downloadBlob(blobSink.takeBlob(mime), fileName);
   } catch (e) {
     // Batal bukan kegagalan — jangan tampilkan sebagai error merah.
     if (!(e instanceof ExportCancelled)) throw e;
   } finally {
     p.onProgress?.(null);
   }
+}
+
+/** Argumen bersama kedua jalur render — worker maupun main thread. */
+interface RenderParams {
+  payload: ExportPayload;
+  pcm: ExportAssetSource;
+  sink: ExportSink;
+  sampleRate: number;
+  format: EncoderFormat;
+  bitDepth: 16 | 24 | 32;
+  quality?: number;
+  onProgress?: (fraction01: number | null) => void;
+  onWarnings?: (warnings: readonly string[]) => void;
+  isCancelled?: () => boolean;
+}
+
+/**
+ * Render di worker; main thread hanya sebagai cadangan.
+ *
+ * Worker BUKAN sekadar demi UI yang tidak membeku. Linear memory wasm tidak
+ * pernah menyusut, jadi export yang berjalan di instance main thread menahan
+ * seluruh PCM project di tab itu sampai halaman di-reload — walaupun engine
+ * sudah membebaskannya. Worker punya satu langkah yang tidak dimiliki main
+ * thread: `terminate()`. Lihat `export/worker-host.ts`.
+ *
+ * Cadangannya dipakai HANYA kalau worker gagal sebelum satu byte pun ditulis
+ * (tidak ada `Worker` sama sekali, modul worker gagal dimuat, encoder lazy-nya
+ * tidak bisa hidup di worker). Sesudah byte pertama, mengulang berarti berkas
+ * berisi dua export yang disambung.
+ */
+async function render(r: RenderParams): Promise<void> {
+  if (canRunExportInWorker()) {
+    try {
+      await runExportInWorker({
+        payload: r.payload,
+        pcm: r.pcm,
+        sink: r.sink,
+        sampleRate: r.sampleRate,
+        format: r.format,
+        bitDepth: r.bitDepth,
+        quality: r.quality,
+        onProgress: r.onProgress,
+        onWarnings: r.onWarnings,
+        isCancelled: r.isCancelled,
+      });
+      return;
+    } catch (e: unknown) {
+      if (!(e instanceof ExportWorkerUnavailable)) throw e;
+      // Jangan ditelan: jalur cadangan bekerja, tapi ia meninggalkan memori
+      // yang tidak bisa dikembalikan, dan itu harus bisa dilihat kalau nanti
+      // ada yang bertanya kenapa memori naik lagi.
+      console.warn('[export] worker export tidak bisa dipakai, jatuh ke main thread:', e);
+    }
+  }
+  await renderOnMainThread(r);
+}
+
+/**
+ * Jalur cadangan: render di main thread, dengan instance WASM yang sama yang
+ * dipakai sisa aplikasi. Berfungsi penuh — hanya saja memori yang ditumbuhkan
+ * export tidak pernah kembali sampai tab di-reload.
+ */
+async function renderOnMainThread(r: RenderParams): Promise<void> {
+  const wasm = wasmCache ?? (await loadWasm());
+  wasmCache = wasm;
+
+  const encoder = createEncoder(r.format, wasm.exports) as unknown as ExportEncoder;
+  try {
+    await encoder.init({
+      sampleRate: r.sampleRate,
+      channels: 2,
+      bitDepth: r.bitDepth,
+      quality: r.quality,
+    });
+  } catch (e) {
+    const label = LAZY_ENCODER_LABEL[r.format];
+    if (label) {
+      throw new Error(
+        `${label} gagal dimuat: ${e instanceof Error ? e.message : String(e)}. ` +
+          'Format lain (WAV/FLAC) tetap bisa dipakai.',
+      );
+    }
+    throw e;
+  }
+
+  await runExport({
+    payload: r.payload,
+    sampleRate: r.sampleRate,
+    engine: createWasmExportEngine(wasm),
+    encoder,
+    sink: r.sink,
+    pcm: r.pcm,
+    onProgress: r.onProgress,
+    onWarnings: r.onWarnings,
+    isCancelled: r.isCancelled,
+  });
 }

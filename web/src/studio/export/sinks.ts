@@ -183,6 +183,24 @@ export class BlobSink implements ExportSink {
     return new Blob(this.parts as BlobPart[], { type: mime });
   }
 
+  /**
+   * `blob()`, lalu LEPASKAN potongannya.
+   *
+   * `new Blob(parts)` menyalin isinya ke penyimpanan milik Blob sendiri, jadi
+   * sesudah baris itu file yang sama ada DUA KALI di memori: sekali di `parts`,
+   * sekali di Blob. Untuk export 8 MB itu tidak terasa; untuk WAV satu jam
+   * (600 MB) itu selisih antara berhasil dan tab yang mati.
+   *
+   * Dipakai jalur produksi, yang memang tidak butuh `parts` lagi sesudah
+   * Blob-nya jadi. `blob()` biasa tetap ada untuk tes, yang memeriksa isinya
+   * lebih dari sekali.
+   */
+  takeBlob(mime: string): Blob {
+    const out = this.blob(mime);
+    this.parts = [];
+    return out;
+  }
+
   /** Byte gabungan. Dipakai tes; jalur produksi memakai `blob()`. */
   bytes(): Uint8Array {
     const total = this.parts.reduce((n, p) => n + p.byteLength, 0);
