@@ -34,6 +34,16 @@ export interface ExportWorkerStart {
   module: WebAssembly.Module;
   /** Hanya ada di varian mt (shared). Di st, worker punya memory sendiri. */
   memory: WebAssembly.Memory | null;
+  /**
+   * Plafon linear memory yang dinegosiasikan main thread (byte).
+   *
+   * Dikirim, bukan dihitung ulang di sini: plafonnya hasil fallback runtime
+   * (4 GiB → 2 GiB), jadi konstanta di worker bisa menyebut angka yang tidak
+   * pernah didapat mesin ini. Penjaga export memakainya untuk menolak PCM yang
+   * tidak akan muat, dan penjaga yang memakai angka salah lebih buruk daripada
+   * tidak ada penjaga.
+   */
+  memoryMaximumBytes: number;
   /** Stack privat thread ini — lihat audio/thread-stack.ts. */
   stack: ThreadStack | null;
   variant: 'mt' | 'st';
@@ -90,6 +100,7 @@ async function run(m: ExportWorkerStart): Promise<void> {
   const wasm = {
     module: m.module,
     memory,
+    memoryMaximumBytes: m.memoryMaximumBytes,
     variant: m.variant,
     caps: { variant: m.variant } as LoadedWasm['caps'],
     exports: glue,

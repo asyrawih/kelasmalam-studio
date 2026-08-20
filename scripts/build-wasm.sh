@@ -68,13 +68,21 @@ fi
 RUSTFLAGS_MT="-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128 \
 -C link-arg=--import-memory \
 -C link-arg=--shared-memory \
--C link-arg=--max-memory=2147483648 \
+-C link-arg=--max-memory=4294967296 \
 -C link-arg=--export=__stack_pointer \
 -C link-arg=-zstack-size=1048576"
 
 # Varian ST: tanpa atomics dan tanpa shared/imported memory. SIMD tetap boleh —
 # SIMD tidak butuh cross-origin isolation (docs/01 §1d tabel).
-RUSTFLAGS_ST="-C target-feature=+bulk-memory,+mutable-globals,+simd128"
+#
+# `--max-memory` dipasang di sini juga, padahal memory-nya TIDAK di-import.
+# Alasannya bukan mengizinkan lebih banyak, tapi supaya plafonnya DIKETAHUI:
+# tanpa deklarasi maximum, batas tumbuhnya ditentukan mesin dan berbeda-beda per
+# browser, jadi penjaga export tidak punya angka untuk dibandingkan dan satu-
+# satunya bentuk kegagalan yang tersisa adalah trap. Non-shared tidak dipesan
+# di muka, jadi angka ini tidak berbiaya apa pun saat boot.
+RUSTFLAGS_ST="-C target-feature=+bulk-memory,+mutable-globals,+simd128 \
+-C link-arg=--max-memory=4294967296"
 
 BUILD_STD_ARGS=(-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort)
 
@@ -104,7 +112,7 @@ BUILD_STD_ARGS=(-Z build-std=std,panic_abort -Z build-std-features=panic_immedia
 # console tetap hanya menampilkan `unreachable` TANPA pesan apa pun, itu BUKAN
 # panic melainkan GAGAL ALOKASI (kehabisan memori). `handle_alloc_error` di
 # wasm memanggil `abort()` langsung, bukan lewat mesin panic, jadi hook-nya
-# tidak pernah kebagian. Varian mt di-link dengan `--max-memory=2 GiB`; seluruh
+# tidak pernah kebagian. Varian mt di-link dengan `--max-memory=4 GiB`; seluruh
 # PCM project ada di linear memory selama export, jadi plafon itu nyata.
 if [ "${DEBUG_PANIC:-0}" = "1" ]; then
   echo "==> DEBUG_PANIC=1: panic akan menyebut pesan + stack (artefak lebih besar)"

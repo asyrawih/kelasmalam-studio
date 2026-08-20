@@ -230,15 +230,16 @@ impl OfflineRender {
     /// hidup selama renderer. Dua salinan penuh berdiri bersamaan.
     ///
     /// Itu bukan detail: satu lane 28 menit stereo @48k = 610 MiB, dan plafon
-    /// linear memory kita 2 GiB (`--max-memory` di `.cargo/config.toml`).
-    /// Dengan salinan ganda, project 3 lane butuh 610×3 + 610 = 2440 MiB dan
-    /// `memory.grow` gagal di lane ketiga. Kegagalannya tidak berupa `Err`:
+    /// linear memory dinegosiasikan 4 GiB dengan fallback 2 GiB — di mesin yang
+    /// jatuh ke 2 GiB, salinan ganda membuat project 3 lane butuh
+    /// 610×3 + 610 = 2440 MiB dan `memory.grow` gagal di lane ketiga. Kegagalannya tidak berupa `Err`:
     /// `handle_alloc_error` memanggil `abort()` langsung, jadi yang sampai ke
     /// browser adalah `RuntimeError: unreachable executed` — dan seringnya
     /// bahkan itu pun tertimpa oleh error `free()` di `finally` pemanggil.
     ///
     /// `Vec<f32>` mengambil ALIH buffer yang sudah dibuat glue itu. Salinannya
-    /// jadi satu, dan project yang sama butuh 1830 MiB — muat.
+    /// jadi satu, dan project yang sama butuh 1830 MiB — muat bahkan di plafon
+    /// terendah.
     #[wasm_bindgen(js_name = registerAsset)]
     pub fn register_asset(
         &mut self,
