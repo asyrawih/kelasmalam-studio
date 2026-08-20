@@ -251,35 +251,56 @@ curl -i https://api.contoh.com/me
 
 ## 4. Sisi frontend
 
-Kedua alamat masuk sebagai variabel build. Di Vercel: **Settings → Environment
-Variables**, lalu **redeploy** — Vite menanamkannya saat build, jadi mengubah
-variabel tanpa build ulang tidak mengubah apa pun.
+Kedua alamat ditanam Vite **saat build**, dan build produksi terjadi di
+**GitHub Actions** — bukan di Vercel. Job `web` menghasilkan `web/dist`, dan
+job `deploy` hanya merakit `.vercel/output` lalu mengirimnya dengan
+`vercel deploy --prebuilt`.
+
+> **Mengisi variabel di dashboard Vercel karena itu TIDAK berpengaruh apa pun.**
+> Yang sampai ke sana adalah berkas yang sudah selesai ditulis; variabel yang
+> datang belakangan tidak bisa masuk ke dalamnya. Gejalanya persis seperti
+> tidak diisi sama sekali — dok berkata "belum dipasang" pada build yang
+> variabelnya sudah diisi dengan benar di tempat yang salah.
+
+Tempatnya: **Settings → Secrets and variables → Actions → Variables**
+(*variables*, bukan *secrets* — keduanya URL publik yang muncul di setiap
+permintaan browser):
 
 ```
-VITE_ROBLOX_API   = https://dawonweb-roblox.<akun>.workers.dev
-VITE_LIBRARY_API  = https://api.contoh.com
+VITE_ROBLOX_API   = https://robloz.kelasmalam.app
+VITE_LIBRARY_API  = https://lib.kelasmalam.app
 ```
 
-Lokal:
+Lalu jalankan ulang CI di `main` — variabel build hanya berlaku untuk build
+yang dijalankan sesudahnya.
+
+### Lokal
 
 ```bash
-VITE_ROBLOX_API=http://localhost:8787 \
-VITE_LIBRARY_API=http://localhost:8788 \
+cat > web/.env.local <<'EOF'
+VITE_ROBLOX_API=https://robloz.kelasmalam.app
+VITE_LIBRARY_API=https://lib.kelasmalam.app
+EOF
 pnpm -C web dev
+```
+
+`.env.local` diabaikan git. Ia menunjuk backend PRODUKSI, jadi lagu yang
+diunggah dari dev mendarat di kepustakaan sungguhan — itu biasanya yang
+diinginkan, tapi layak diketahui sebelum menjatuhkan berkas uji coba.
+
+Untuk menjalankan Worker di lokal, ganti alamatnya dan beri port berbeda:
+
+```bash
+npm --prefix backend run dev:roblox   -- --port 8787
+npm --prefix backend run dev:library  -- --port 8788
 ```
 
 Keduanya **opsional**. Tanpa `VITE_ROBLOX_API`, halaman `/roblox` tetap jalan
 sebagai UI dengan badge `UI ONLY`. Tanpa `VITE_LIBRARY_API`, dok kepustakaan
-tetap tampil dan berkata `BELUM DIPASANG`. Tidak ada nilai bawaan dengan
-sengaja: bawaan yang menunjuk ke mana pun akan membuat build lokal siapa pun
-mengirim kredensial user ke host yang tidak mereka pilih.
-
-Untuk menjalankan kedua Worker sekaligus di lokal, beri port berbeda:
-
-```bash
-npm run dev:roblox   -- --port 8787
-npm run dev:library  -- --port 8788
-```
+tetap tampil dan berkata `BELUM DIPASANG` — import berkas lokal berjalan penuh,
+yang tidak ada hanyalah daya tahan. Tidak ada nilai bawaan dengan sengaja:
+bawaan yang menunjuk ke mana pun akan membuat build lokal siapa pun mengirim
+kredensial user ke host yang tidak mereka pilih.
 
 ---
 
@@ -308,6 +329,7 @@ Urutannya menaik: yang gagal lebih dulu menyempitkan masalahnya.
 | Unggah lagu gagal CORS ke `*.r2.cloudflarestorage.com` | CORS bucket belum dipasang | §3.2 |
 | Audio kepustakaan gagal dimuat di halaman | jalur unduh tidak lewat Worker | jangan pakai presigned untuk unduh — `GET /tracks/:hash/blob` yang menambahkan CORP (§5a) |
 | `no such table: user` | migrasi belum dijalankan di **remote** | `npm run migrate:library` |
+| Dok berkata "belum dipasang" padahal variabel sudah diisi | diisi di dashboard **Vercel**, bukan di variables **GitHub Actions** | §4 — build-nya di CI, bukan di Vercel |
 | `Cannot read properties of undefined (reading 'prepare')` | nama binding di `wrangler.toml` bukan `DB` | kode membaca `env.DB`; dashboard menyarankan nama yang mengikuti nama database, dan saran itu salah. Sejak versi ini pesannya langsung menyebut `BINDING_HILANG` |
 | `error code: 1101` dari Worker | Worker melempar exception — HAMPIR SELALU binding basi (deploy lebih tua dari config) atau tabel belum ada | redeploy, lalu ulangi tes di §5; sejak versi ini galatnya dibalas ber-JSON dengan pesannya, bukan halaman 1101 |
 | `/tracks/init` menjawab 413 | berkas > `MAX_TRACK_BYTES` | naikkan, atau tunggu multipart (§5c) |
