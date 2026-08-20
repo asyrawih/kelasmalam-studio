@@ -51,7 +51,12 @@ SESSION_TTL_DAYS = "30"
 #   npx wrangler secret put R2_SECRET_ACCESS_KEY  --config wrangler.library.toml
 
 [[d1_databases]]
-binding = "dawonweb_library"
+# `DB`, bukan nama databasenya. Dashboard Cloudflare menyarankan nama yang
+# mengikuti nama D1-nya, dan itu MENYESATKAN: yang harus cocok adalah nama
+# binding di sini dengan `env.DB` di kode. Salah nama tidak membuat deploy
+# gagal — ia membuat `env.DB` undefined, dan meledak baru saat ada permintaan
+# yang menyentuh database.
+binding = "DB"
 database_name = "dawonweb-library"
 database_id = "b3bc8f21-76cb-4b45-b5ec-247eb14ae523"
 migrations_dir = "migrations"

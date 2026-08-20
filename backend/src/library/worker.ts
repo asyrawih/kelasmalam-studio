@@ -147,7 +147,28 @@ async function route(
   const method = request.method;
 
   if (path === '/health' || path === '/') {
-    return json({ ok: true, service: 'dawonweb-library' });
+    // Sengaja SEBELUM pemeriksaan binding: `/health` harus tetap menjawab pada
+    // Worker yang salah konfigurasi, kalau tidak yang terlihat dari luar sama
+    // dengan Worker yang mati — dan keduanya butuh tindakan yang berbeda.
+    return json({ ok: true, service: 'dawonweb-library', bindings: missingBindings(env).length === 0 });
+  }
+
+  /*
+   * Binding diperiksa dengan namanya SENDIRI.
+   *
+   * Nama binding yang salah di `wrangler.toml` TIDAK membuat deploy gagal — ia
+   * membuat `env.DB` undefined, dan yang muncul adalah `Cannot read properties
+   * of undefined (reading 'prepare')` dari kedalaman kode, jauh dari berkas
+   * yang salah. Kejadian nyata: dashboard Cloudflare menyarankan nama binding
+   * yang mengikuti nama database (`dawonweb_library`), dan saran itu diikuti.
+   */
+  const missing = missingBindings(env);
+  if (missing.length > 0) {
+    return fail(
+      500,
+      'BINDING_HILANG',
+      `binding ${missing.join(' dan ')} tidak terpasang — periksa nama binding di wrangler.library.toml`,
+    );
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -509,6 +530,14 @@ async function route(
 }
 
 // ── Bagian bersama ───────────────────────────────────────────────────────────
+
+/** Binding yang tidak ada, disebut dengan nama yang dicari kode ini. */
+function missingBindings(env: Env): readonly string[] {
+  const out: string[] = [];
+  if (env.DB === undefined || env.DB === null) out.push('DB (d1_databases)');
+  if (env.TRACKS === undefined || env.TRACKS === null) out.push('TRACKS (r2_buckets)');
+  return out;
+}
 
 /** Kunci R2. Hash-nya, bukan `<user>/<nama>` — dua user berbagi satu objek (§3). */
 function objectKey(hash: string): string {
