@@ -22,6 +22,7 @@ import { studioActions, studioStore } from './studio/store';
 import { registerExportHost } from './studio/rail/export-bridge';
 import { bufferLookup } from './studio/preview/audio-preview';
 import { BeatProvider, TimelinePanel } from './studio/timeline';
+import { LibraryDock } from './library';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
 
@@ -98,6 +99,13 @@ export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element 
         header={<StudioHeader onClose={onClose} onOpenDj={onOpenDj} />}
         readouts={<ReadoutStrip />}
         menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} />}
+        /*
+         * Kepustakaan duduk di DASAR layar, menempel, dan terlipat sampai
+         * diminta. Alasannya di kepala `LibraryDock`: ia tempat mengambil
+         * bahan, bukan permukaan kerja, dan panel yang memakan kolom permanen
+         * di samping timeline membayar ruang tetap untuk pemakaian sesekali.
+         */
+        dock={<LibraryDock />}
         main={
           /*
            * Yang tersisa di kolom kerja HANYA timeline.

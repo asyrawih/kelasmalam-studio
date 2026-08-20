@@ -21,6 +21,15 @@ export interface StudioLayoutProps {
    */
   readonly menuBar?: ReactNode;
   readonly main: ReactNode;
+  /**
+   * Dok yang MENEMPEL di dasar layar (kepustakaan).
+   *
+   * Ia bekerja karena halaman ini sengaja tidak punya scroller sendiri —
+   * dokumen yang menggulir, dan `position: sticky` di dalam dok bekerja
+   * terhadapnya. Catatan yang sama sudah menjaga `menuBar` di atas; keduanya
+   * mati bersamaan kalau body dibungkus `overflow: auto`.
+   */
+  readonly dock?: ReactNode;
 }
 
 /**
@@ -31,7 +40,13 @@ export interface StudioLayoutProps {
  * mendapat lebar penuh layar, dan tiap kontrol baru yang ditambahkan nanti tidak
  * lagi memakan bagiannya.
  */
-export function StudioLayout({ header, readouts, menuBar, main }: StudioLayoutProps): JSX.Element {
+export function StudioLayout({
+  header,
+  readouts,
+  menuBar,
+  main,
+  dock,
+}: StudioLayoutProps): JSX.Element {
   return (
     <div
       style={{
@@ -40,7 +55,7 @@ export function StudioLayout({ header, readouts, menuBar, main }: StudioLayoutPr
         fontFamily: 'var(--cy-font-mono)',
         display: 'grid',
         gridTemplateColumns: 'minmax(0,1fr)',
-        gridTemplateRows: 'auto auto auto minmax(0,1fr)',
+        gridTemplateRows: 'auto auto auto minmax(0,1fr) auto',
       }}
     >
       {header}
@@ -59,6 +74,7 @@ export function StudioLayout({ header, readouts, menuBar, main }: StudioLayoutPr
       >
         {main}
       </div>
+      {dock}
     </div>
   );
 }
