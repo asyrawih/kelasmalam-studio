@@ -46,6 +46,31 @@ export interface TrackMeta {
   readonly sampleRate: number;
 }
 
+export interface ProjectSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly updatedAt: number;
+  readonly version: number;
+}
+
+export interface ProjectBody {
+  readonly id: string;
+  readonly name: string;
+  /** Isi `serialize()`, sudah terurai. Server tidak menafsirkannya. */
+  readonly json: unknown;
+  readonly version: number;
+}
+
+/** Kalah versi: ada yang menyimpan project ini di tempat lain (docs/16 §8c). */
+export class VersionConflict extends Error {
+  readonly currentVersion: number | null;
+  constructor(message: string, currentVersion: number | null) {
+    super(message);
+    this.name = 'VersionConflict';
+    this.currentVersion = currentVersion;
+  }
+}
+
 export interface LibraryApi {
   readonly base: string;
   /** `null` = belum login (401). Melempar untuk kegagalan lain. */
@@ -64,6 +89,16 @@ export interface LibraryApi {
   ): Promise<void>;
   /** Catat klaim sesudah byte-nya ada. */
   commitTrack(meta: TrackMeta): Promise<void>;
+  projects(): Promise<readonly ProjectSummary[]>;
+  project(id: string): Promise<ProjectBody>;
+  createProject(name: string, json: unknown): Promise<{ id: string; version: number }>;
+  /** Melempar `VersionConflict` kalau versinya sudah berubah di tempat lain. */
+  updateProject(id: string, name: string, json: unknown, expectedVersion: number): Promise<number>;
+  deleteProject(id: string): Promise<void>;
+  /** Melempar dengan pesan yang menyebut project pemakainya kalau ditolak. */
+  deleteTrack(hash: string): Promise<void>;
+  /** Cue DJ + koreksi grid satu lagu. Selalu keadaan LENGKAP, bukan tambalan. */
+  putMarks(hash: string, marks: unknown): Promise<void>;
   logout(): Promise<void>;
   /** URL yang harus dibuka sebagai NAVIGASI, bukan di-fetch. */
   loginUrl(nextPath: string): string;
@@ -214,6 +249,76 @@ export function createLibraryApi(baseUrl: string, fetchImpl: typeof fetch = fetc
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(meta),
+      });
+      if (!res.ok) throw await readError(res);
+    },
+
+    async projects(): Promise<readonly ProjectSummary[]> {
+      const res = await call('/projects');
+      if (!res.ok) throw await readError(res);
+      const body = (await res.json()) as { projects?: readonly ProjectSummary[] };
+      return body.projects ?? [];
+    },
+
+    async project(id): Promise<ProjectBody> {
+      const res = await call(`/projects/${encodeURIComponent(id)}`);
+      if (!res.ok) throw await readError(res);
+      return (await res.json()) as ProjectBody;
+    },
+
+    async createProject(name, json): Promise<{ id: string; version: number }> {
+      const res = await call('/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, json }),
+      });
+      if (!res.ok) throw await readError(res);
+      return (await res.json()) as { id: string; version: number };
+    },
+
+    async updateProject(id, name, json, expectedVersion): Promise<number> {
+      const res = await call(`/projects/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-match': `"${expectedVersion}"` },
+        body: JSON.stringify({ name, json }),
+      });
+      if (res.status === 412) {
+        /*
+         * Kalah versi bukan galat biasa — ia butuh KEPUTUSAN user, bukan
+         * sekadar pesan merah. Karena itu tipenya sendiri: pemanggil yang lupa
+         * menanganinya akan terlihat, alih-alih menampilkan "gagal menyimpan"
+         * untuk sesuatu yang sebenarnya bisa diselamatkan.
+         */
+        const body = (await res.json()) as { message?: unknown; currentVersion?: unknown };
+        throw new VersionConflict(
+          typeof body.message === 'string'
+            ? body.message
+            : 'project ini sudah berubah di tempat lain',
+          typeof body.currentVersion === 'number' ? body.currentVersion : null,
+        );
+      }
+      if (!res.ok) throw await readError(res);
+      const body = (await res.json()) as { version?: unknown };
+      return typeof body.version === 'number' ? body.version : expectedVersion + 1;
+    },
+
+    async deleteProject(id): Promise<void> {
+      const res = await call(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) throw await readError(res);
+    },
+
+    async deleteTrack(hash): Promise<void> {
+      const res = await call(`/tracks/${hash}`, { method: 'DELETE' });
+      // 409 MASIH_DIPAKAI sudah membawa nama project pemakainya di `message`;
+      // `readError` meneruskannya apa adanya, dan itu yang perlu dibaca user.
+      if (!res.ok) throw await readError(res);
+    },
+
+    async putMarks(hash, marks): Promise<void> {
+      const res = await call(`/tracks/${hash}/marks`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(marks),
       });
       if (!res.ok) throw await readError(res);
     },

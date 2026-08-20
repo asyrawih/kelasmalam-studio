@@ -6,12 +6,16 @@ user, di-upload atas **perintahnya**, dipakai bersama oleh `/studio` dan `/dj`.
 Dokumen ini adalah keputusan + fase kerja, bukan tutorial. Yang tidak diputuskan
 di sini dinyatakan terbuka di §8, bukan disembunyikan.
 
-> **Status per 2026-08-20.** Sisi SERVER dari L2–L7 sudah ada: `backend/`,
-> Worker `dawonweb-library`, seluruh permukaan §4, skema §3, dan ketiga jebakan
-> §5 sudah ditangani. Sisi WEB belum: L0 dan L1 (contentHash di `StudioAsset`,
-> dedup saat import, `serialize` menulis hash) belum dikerjakan, dan sampai
-> keduanya ada, belum ada yang memanggil API ini. Catatan pelaksanaan ada di
-> `backend/README.md`.
+> **Status per 2026-08-21.** L0–L7 sudah ada, sisi server MAUPUN sisi web.
+> Server: `backend/`, Worker `dawonweb-library`, seluruh permukaan §4, skema §3,
+> ketiga jebakan §5. Web: `web/src/library/` — dok kepustakaan, unggah saat
+> import, unduh sesuai permintaan, simpan/buka project, cue+grid tersinkron,
+> dan hapus. Catatan pelaksanaan di `backend/README.md`; cara memasangnya di
+> `docs/18-deploy-backend.md`.
+>
+> Yang MASIH terbuka ada di §8 dan tidak berkurang: pembersih objek yatim
+> (§8d), multipart > 100 MB (§5c), nasib hasil bake (§8e), pengukuran biaya
+> unduh-ulang (§8b), dan `buildEnvelope` yang memblokir main thread (§8a).
 
 ---
 
@@ -323,11 +327,22 @@ dibuktikan begitu berarti belum cukup sempit.
 | **L6** | Simpan/buka project; menolak simpan kalau ada asset yang belum ter-commit | Simpan → refresh → Buka → timeline identik, termasuk fade dan chain FX |
 | **L7** | Hapus lagu (refcount, §8d), hapus project, kuota per user | Hapus lagu yang dipakai project → **ditolak** dengan menyebut project mana |
 
-**Sisi server L2–L7 sudah ada** (`backend/src/library`), lengkap dengan tesnya:
+**Kedelapan fase sudah terpasang**, server maupun web:
+
+| | Sisi server | Sisi web |
+|---|---|---|
+| L0 | — | `timeline/content-hash.ts`, dedup di `importBytesToAsset` |
+| L1 | — | `persist/persistence.ts`: clip membawa hash, `relinkLanes` |
+| L2 | `library/oauth.ts`, `session.ts` | dok: MASUK/KELUAR, badge status |
+| L3 | `/tracks/init`+`commit`, `presign.ts` | `library/upload.ts` + `import-sink` |
+| L4 | `/tracks`, `/tracks/:hash/blob` | `load-track.ts`, bar progres di dok |
+| L5 | `/tracks/:hash/marks` | `library/marks.ts` |
+| L6 | `/projects*` + If-Match | tab PROJECT di dok |
+| L7 | `DELETE` keduanya | tombol HAPUS di kedua tab |
+
 D1 diuji di atas SQLite sungguhan, jadi "user A tidak melihat kepustakaan user
 B" dan "yang kalah versi diberi tahu" adalah hal yang dibuktikan, bukan
-diasumsikan. Yang tersisa untuk menutup tiap fase adalah bagian yang terlihat
-user — dan itu semua ada di sisi web.
+diasumsikan.
 
 L0 dan L1 tidak butuh backend sama sekali. Keduanya bisa dikerjakan, di-review,
 dan di-merge sebelum satu baris Worker pun ditulis — dan keduanya berdiri

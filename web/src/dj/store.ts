@@ -1040,6 +1040,22 @@ export const djActions = {
     set(() => data);
   },
 
+  /**
+   * Pasang cue satu ASSET sekaligus — jalur pemulihan dari kepustakaan (L5).
+   *
+   * Per assetId, bukan per deck: cue milik lagunya, bukan milik deck yang
+   * kebetulan memutarnya, dan pemulihan terjadi saat lagunya dimuat — mungkin
+   * jauh sebelum ia ditaruh di deck mana pun.
+   *
+   * Yang sudah ada TIDAK ditimpa. Kalau user sempat memasang hot cue di sesi
+   * ini sebelum kepustakaan menjawab, cue itu yang menang: yang tersimpan di
+   * server adalah keadaan sesi SEBELUMNYA, dan menimpanya berarti membuang
+   * pekerjaan yang lebih baru dengan yang lebih lama.
+   */
+  restoreCues(assetId: number, cues: TrackCues): void {
+    set((s) => (s.cues[assetId] !== undefined ? null : { cues: { ...s.cues, [assetId]: cues } }));
+  },
+
   __resetForTest(): void {
     state = withDerived(createInitialDj());
     for (const fn of [...listeners]) fn();

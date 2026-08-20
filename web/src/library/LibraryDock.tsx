@@ -31,12 +31,22 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useCommands } from '../app-shell';
 import { Badge, Button, ProgressBar } from '../ui/cyber';
-import { useStudio } from '../studio/store';
+import { studioStore, useStudio } from '../studio/store';
+import { djStore } from '../dj/store';
 import { registerImportSink } from '../studio/timeline/import-sink';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
-import { formatBytes, formatDuration, summarize, type LibraryTrack, type UploadState } from './model';
+import { currentProjectName, openProject, saveProject, unsavedAssets } from './projects';
+import {
+  formatBytes,
+  formatDuration,
+  summarize,
+  type LibraryState,
+  type LibraryTrack,
+  type UploadState,
+} from './model';
 import { libraryActions, libraryStore, useLibrary } from './store';
+import { createMarksSync } from './marks';
 import { createUploadQueue } from './upload';
 
 export interface LibraryDockProps {
@@ -106,8 +116,10 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
         }
         libraryActions.setStatus('masuk', user);
         libraryActions.setListing(true);
-        const tracks = await api.tracks();
-        if (alive) libraryActions.setTracks(tracks);
+        const [tracks, projects] = await Promise.all([api.tracks(), api.projects()]);
+        if (!alive) return;
+        libraryActions.setTracks(tracks);
+        libraryActions.setProjects(projects);
       } catch (err: unknown) {
         if (alive) libraryActions.fail(err instanceof Error ? err.message : String(err));
       }
@@ -148,6 +160,63 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     return detach;
   }, [api, state.status]);
 
+  /*
+   * Cue DJ + koreksi grid ikut tersimpan (L5).
+   *
+   * Dipasang sebagai PENGAMAT store, bukan panggilan di tiap aksi cue: aksi
+   * yang menyentuh cue ada belasan (hot cue, memory cue, CUE, grid, kunci,
+   * anchor), dan menempelkan satu baris ke masing-masing berarti dua belas
+   * tempat yang harus diingat — dan satu di antaranya suatu saat terlupa.
+   *
+   * Yang diamati cukup dua irisan: peta cue milik DJ dan registry asset milik
+   * Studio. Perubahan lain (posisi fader, playhead) tidak menyentuh keduanya.
+   */
+  useEffect(() => {
+    if (api === null || state.status !== 'masuk') return undefined;
+
+    const sync = createMarksSync(api);
+    const known = (): ReadonlyMap<number, string> => {
+      const out = new Map<number, string>();
+      for (const [hash, assetId] of Object.entries(libraryStore.getState().loaded)) {
+        out.set(assetId, hash);
+      }
+      return out;
+    };
+
+    let prevCues = djStore.getState().cues;
+    let prevAssets = studioStore.getState().assets;
+
+    const onChange = (): void => {
+      const map = known();
+      const cues = djStore.getState().cues;
+      const assets = studioStore.getState().assets;
+
+      if (cues !== prevCues) {
+        for (const [id, hash] of map) {
+          if (cues[id] !== prevCues[id]) sync.touch(id, hash);
+        }
+        prevCues = cues;
+      }
+      if (assets !== prevAssets) {
+        for (const [id, hash] of map) {
+          if (assets[id] !== prevAssets[id]) sync.touch(id, hash);
+        }
+        prevAssets = assets;
+      }
+    };
+
+    const offDj = djStore.subscribe(onChange);
+    const offStudio = studioStore.subscribe(onChange);
+    return () => {
+      offDj();
+      offStudio();
+      // Yang tertunda dikirim saat halaman ditinggalkan — cue yang dipasang
+      // dua detik sebelum pindah halaman tidak boleh hilang karena timernya
+      // belum sempat berbunyi.
+      void sync.flush();
+    };
+  }, [api, state.status]);
+
   useCommands(
     [
       {
@@ -174,6 +243,28 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       setNote(out.cached ? `${track.name} sudah ada di sesi ini` : null);
     },
     [api, onLoaded],
+  );
+
+  /**
+   * Hapus lagu dari kepustakaan (L7).
+   *
+   * Server menolak kalau masih dipakai project, DENGAN menyebut project mana —
+   * pesan itu diteruskan apa adanya. Menggantinya dengan "gagal menghapus"
+   * berarti membuang satu-satunya petunjuk yang bisa dikerjakan user.
+   */
+  const onRemove = useCallback(
+    async (track: LibraryTrack): Promise<void> => {
+      if (api === null) return;
+      libraryActions.setNotice(null);
+      try {
+        await api.deleteTrack(track.hash);
+        libraryActions.setTracks(await api.tracks());
+        libraryActions.setNotice(`${track.name} dihapus dari kepustakaan`);
+      } catch (err: unknown) {
+        libraryActions.setNotice(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [api],
   );
 
   const collapsed = state.collapsed;
@@ -216,14 +307,22 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
             </p>
           ) : null}
 
-          <Uploads uploads={state.uploads} />
+          <Tabs tab={state.tab} onTab={libraryActions.setTab} />
 
-          <Body
-            state={state}
-            api={api}
-            assets={assets}
-            onPick={onPick}
-          />
+          {state.notice === null ? null : (
+            <p role="status" style={{ margin: 0, fontSize: '10px', color: 'var(--cy-warning)' }}>
+              {state.notice}
+            </p>
+          )}
+
+          {state.tab === 'lagu' ? (
+            <>
+              <Uploads uploads={state.uploads} />
+              <Body state={state} api={api} assets={assets} onPick={onPick} onRemove={onRemove} />
+            </>
+          ) : (
+            <Projects state={state} api={api} />
+          )}
         </div>
       )}
     </div>
@@ -342,11 +441,13 @@ function Body({
   api,
   assets,
   onPick,
+  onRemove,
 }: {
-  readonly state: ReturnType<typeof libraryStore.getState>;
+  readonly state: LibraryState;
   readonly api: LibraryApi | null;
   readonly assets: Readonly<Record<number, unknown>>;
   readonly onPick: (track: LibraryTrack) => void | Promise<void>;
+  readonly onRemove: (track: LibraryTrack) => void | Promise<void>;
 }): JSX.Element {
   if (api === null) {
     return (
@@ -407,23 +508,219 @@ function Body({
             <span style={CELL}>{formatDuration(track.frames, track.sampleRate)}</span>
             <span style={CELL}>{formatBytes(track.bytes)}</span>
 
-            {inSession ? (
-              <Badge tone="success" height={22}>
-                DI SESI
-              </Badge>
-            ) : (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {inSession ? (
+                <Badge tone="success" height={22}>
+                  DI SESI
+                </Badge>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={percent !== undefined}
+                  onClick={() => void onPick(track)}
+                >
+                  {percent === undefined ? 'MUAT' : 'MEMUAT…'}
+                </Button>
+              )}
               <Button
                 size="sm"
-                variant="outline"
-                disabled={percent !== undefined}
-                onClick={() => void onPick(track)}
+                variant="ghost"
+                aria-label={`hapus ${track.name}`}
+                onClick={() => void onRemove(track)}
               >
-                {percent === undefined ? 'MUAT' : 'MEMUAT…'}
+                HAPUS
               </Button>
-            )}
+            </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Dua tab: lagu dan project. Keduanya kepustakaan, umurnya beda. */
+function Tabs({
+  tab,
+  onTab,
+}: {
+  readonly tab: 'lagu' | 'project';
+  readonly onTab: (t: 'lagu' | 'project') => void;
+}): JSX.Element {
+  return (
+    <div style={{ display: 'flex', gap: '6px' }}>
+      {(['lagu', 'project'] as const).map((t) => (
+        <Button
+          key={t}
+          size="sm"
+          variant="outline"
+          active={tab === t}
+          aria-pressed={tab === t}
+          onClick={() => onTab(t)}
+        >
+          {t}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Tab PROJECT: simpan yang sekarang, buka yang tersimpan, hapus yang tidak
+ * dipakai lagi.
+ *
+ * Tombol SIMPAN sengaja menolak lebih dulu kalau ada lagu yang belum ada di
+ * kepustakaan — dengan menyebut NAMANYA. Server juga menolak (dan itu yang
+ * mengikat), tapi ia hanya tahu hash; yang tahu bahwa hash itu bernama
+ * "Kelas Malam — Set 3" cuma sisi ini.
+ */
+function Projects({
+  state,
+  api,
+}: {
+  readonly state: LibraryState;
+  readonly api: LibraryApi | null;
+}): JSX.Element {
+  const [busy, setBusy] = useState(false);
+
+  if (api === null) return <Empty>Kepustakaan belum dipasang di build ini.</Empty>;
+  if (state.status !== 'masuk') return <Empty>Masuk untuk menyimpan project.</Empty>;
+
+  const open = state.openProject;
+
+  const doSave = async (): Promise<void> => {
+    const belum = unsavedAssets();
+    if (belum.length > 0) {
+      libraryActions.setNotice(
+        `${belum.length} lagu belum ada di kepustakaan: ${belum.join(', ')}. ` +
+          'Unggah dulu — project yang menunjuk lagu yang tidak ada akan gagal dibuka nanti.',
+      );
+      return;
+    }
+
+    setBusy(true);
+    libraryActions.setNotice(null);
+    const out = await saveProject(api, {
+      id: open?.id ?? null,
+      name: open?.name ?? currentProjectName(),
+      version: open?.version ?? 0,
+    });
+    setBusy(false);
+
+    if (!out.ok) {
+      libraryActions.setNotice(
+        out.conflict
+          ? `${out.message} — buka ulang project ini sebelum menyimpan, atau simpan sebagai project baru.`
+          : out.message,
+      );
+      return;
+    }
+    libraryActions.setOpenProject({
+      id: out.id,
+      name: open?.name ?? currentProjectName(),
+      version: out.version,
+    });
+    libraryActions.setNotice(`tersimpan (versi ${out.version})`);
+    try {
+      libraryActions.setProjects(await api.projects());
+    } catch {
+      // Daftar yang gagal disegarkan bukan alasan meragukan simpan yang sudah
+      // dijawab server dengan versi baru.
+    }
+  };
+
+  const doOpen = async (id: string, name: string, version: number): Promise<void> => {
+    setBusy(true);
+    libraryActions.setNotice('mengunduh audionya…');
+    const out = await openProject(api, id, (done, total) => {
+      libraryActions.setNotice(total === 0 ? 'memuat…' : `mengunduh ${done}/${total} lagu…`);
+    });
+    setBusy(false);
+
+    if (!out.ok) {
+      libraryActions.setNotice(out.message);
+      return;
+    }
+    libraryActions.setOpenProject({ id, name, version });
+    libraryActions.setNotice(
+      out.missingAssets === 0
+        ? `${name} dibuka`
+        : `${name} dibuka — ${out.missingAssets} lagu tidak bisa dimuat, clip-nya bisu`,
+    );
+  };
+
+  const doDelete = async (id: string, name: string): Promise<void> => {
+    setBusy(true);
+    try {
+      await api.deleteProject(id);
+      libraryActions.setProjects(await api.projects());
+      if (state.openProject?.id === id) libraryActions.setOpenProject(null);
+      libraryActions.setNotice(`${name} dihapus`);
+    } catch (err: unknown) {
+      libraryActions.setNotice(err instanceof Error ? err.message : String(err));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <Button size="sm" disabled={busy} onClick={() => void doSave()}>
+          {open === null ? 'SIMPAN BARU' : 'SIMPAN'}
+        </Button>
+        {open === null ? (
+          <span style={{ fontSize: '10px', color: 'var(--cy-text-muted)' }}>
+            belum tersimpan di sesi ini
+          </span>
+        ) : (
+          <Badge tone="success" height={22}>
+            {open.name} · v{open.version}
+          </Badge>
+        )}
+      </div>
+
+      {state.projects.length === 0 ? (
+        <Empty>Belum ada project tersimpan.</Empty>
+      ) : (
+        <div role="table" aria-label="project" style={{ display: 'grid', gap: '4px' }}>
+          {state.projects.map((p) => (
+            <div key={p.id} role="row" style={ROW}>
+              <span
+                style={{
+                  fontSize: '11px',
+                  color: 'var(--cy-text)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {p.name}
+              </span>
+              <span style={CELL}>v{p.version}</span>
+              <span style={CELL} />
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void doOpen(p.id, p.name, p.version)}
+                >
+                  BUKA
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  aria-label={`hapus project ${p.name}`}
+                  onClick={() => void doDelete(p.id, p.name)}
+                >
+                  HAPUS
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LibraryDock } from './LibraryDock';
 import { libraryActions, libraryStore } from './store';
 import type { LibraryApi } from './api';
+import { fakeLibraryApi } from './fake-api';
 import type { LibraryTrack } from './model';
 
 const HASH = 'a'.repeat(64);
@@ -28,20 +29,15 @@ const track = (over: Partial<LibraryTrack> = {}): LibraryTrack => ({
   ...over,
 });
 
-function fakeApi(over: Partial<LibraryApi> = {}): LibraryApi {
-  return {
-    base: 'https://api.test',
-    me: async () => ({ id: 'u1', email: 'a@test', name: 'Ana' }),
-    tracks: async () => [track()],
-    blob: async () => new ArrayBuffer(8),
-    initTrack: async () => ({ exists: false, uploadUrl: 'https://r2.test/put' }),
-    putUpload: async () => {},
-    commitTrack: async () => {},
-    logout: async () => {},
-    loginUrl: (next) => `https://api.test/auth/google?next=${next}`,
-    ...over,
-  };
-}
+/**
+ * Palsuan dengan SATU lagu di kepustakaan.
+ *
+ * Bawaan `fakeLibraryApi` adalah kepustakaan kosong — benar sebagai bawaan
+ * (itu keadaan user baru), tapi hampir semua tes di berkas ini menguji apa
+ * yang terjadi pada baris lagu, jadi mereka butuh setidaknya satu.
+ */
+const withTrack = (over: Partial<LibraryApi> = {}): LibraryApi =>
+  fakeLibraryApi({ tracks: async () => [track()], ...over });
 
 const strip = (): HTMLElement => screen.getByRole('button', { name: /kepustakaan/i });
 
@@ -50,20 +46,20 @@ afterEach(cleanup);
 
 describe('lipat / buka', () => {
   it('mulai terlipat — permukaan kerja tidak dimakan sebelum diminta', async () => {
-    render(<LibraryDock api={fakeApi()} />);
+    render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
     expect(strip().getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByRole('table', { name: 'kepustakaan' })).toBeNull();
   });
 
   it('strip yang terlipat tetap menyebut isinya', async () => {
-    render(<LibraryDock api={fakeApi()} />);
+    render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     expect(strip().textContent).toContain('1 LAGU');
   });
 
   it('sekali klik membuka, sekali lagi menutup', async () => {
-    render(<LibraryDock api={fakeApi()} />);
+    render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
 
     fireEvent.click(strip());
@@ -75,7 +71,7 @@ describe('lipat / buka', () => {
   });
 
   it('SELURUH strip adalah tombolnya, bukan segitiga kecil di pojok', async () => {
-    render(<LibraryDock api={fakeApi()} />);
+    render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
     // Judulnya ada DI DALAM tombol — bukan di sebelahnya.
     expect(within(strip()).getByText('KEPUSTAKAAN')).toBeDefined();
@@ -92,7 +88,7 @@ describe('keadaan sambungan', () => {
   });
 
   it('belum login: ada ajakan masuk, dan aplikasi tidak dikatakan rusak', async () => {
-    render(<LibraryDock api={fakeApi({ me: async () => null })} />);
+    render(<LibraryDock api={withTrack({ me: async () => null })} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
     expect(screen.getByRole('button', { name: /MASUK DENGAN GOOGLE/ })).toBeDefined();
 
@@ -102,7 +98,7 @@ describe('keadaan sambungan', () => {
 
   it('daftar TIDAK diambil kalau belum login', async () => {
     const tracks = vi.fn(async () => []);
-    render(<LibraryDock api={fakeApi({ me: async () => null, tracks })} />);
+    render(<LibraryDock api={fakeLibraryApi({ me: async () => null, tracks })} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
     expect(tracks).not.toHaveBeenCalled();
   });
@@ -110,7 +106,7 @@ describe('keadaan sambungan', () => {
   it('server yang mati ditandai TIDAK TERSAMBUNG, dengan pesannya', async () => {
     render(
       <LibraryDock
-        api={fakeApi({
+        api={withTrack({
           me: async () => {
             throw new Error('gagal menghubungi server');
           },
@@ -125,12 +121,12 @@ describe('keadaan sambungan', () => {
   });
 
   it('sudah login: nama user tampil di strip', async () => {
-    render(<LibraryDock api={fakeApi()} />);
+    render(<LibraryDock api={withTrack()} />);
     expect(await screen.findByText('Ana')).toBeDefined();
   });
 
   it('kepustakaan kosong dikatakan kosong, bukan dibiarkan blank', async () => {
-    render(<LibraryDock api={fakeApi({ tracks: async () => [] })} />);
+    render(<LibraryDock api={fakeLibraryApi({ tracks: async () => [] })} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
     fireEvent.click(strip());
     expect(screen.getByText(/masih kosong/i)).toBeDefined();
@@ -139,7 +135,7 @@ describe('keadaan sambungan', () => {
 
 describe('daftar lagu', () => {
   it('menampilkan durasi dan ukuran, bukan hash', async () => {
-    render(<LibraryDock api={fakeApi()} />);
+    render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     fireEvent.click(strip());
 
@@ -151,14 +147,14 @@ describe('daftar lagu', () => {
   });
 
   it('durasi yang tidak diketahui server tampil `—`, bukan 0:00', async () => {
-    render(<LibraryDock api={fakeApi({ tracks: async () => [track({ frames: 0 })] })} />);
+    render(<LibraryDock api={fakeLibraryApi({ tracks: async () => [track({ frames: 0 })] })} />);
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     fireEvent.click(strip());
     expect(within(screen.getAllByRole('row')[0]!).getByText('—')).toBeDefined();
   });
 
   it('lagu yang sudah di sesi ditandai, dan tidak menawarkan MUAT lagi', async () => {
-    render(<LibraryDock api={fakeApi()} />);
+    render(<LibraryDock api={withTrack()} />);
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     act(() => libraryActions.markLoaded(HASH, 7));
     fireEvent.click(strip());
@@ -170,7 +166,7 @@ describe('daftar lagu', () => {
 
   it('menekan MUAT mengunduh sekali; klik kedua tidak mengunduh lagi', async () => {
     const blob = vi.fn(async (_hash: string) => new ArrayBuffer(8));
-    render(<LibraryDock api={fakeApi({ blob })} />);
+    render(<LibraryDock api={withTrack({ blob })} />);
     await waitFor(() => expect(libraryStore.getState().tracks).toHaveLength(1));
     fireEvent.click(strip());
 
@@ -186,7 +182,7 @@ describe('daftar lagu', () => {
   it('kegagalan memuat dikatakan APA ADANYA, bukan "gagal"', async () => {
     render(
       <LibraryDock
-        api={fakeApi({
+        api={withTrack({
           blob: async () => {
             throw new Error('lagu ini tidak ada di kepustakaanmu');
           },

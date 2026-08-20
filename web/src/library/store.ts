@@ -20,6 +20,8 @@ import {
   type LibraryStatus,
   type LibraryTrack,
   type LibraryUser,
+  type OpenProject,
+  type ProjectRow,
   type UploadState,
 } from './model';
 
@@ -112,6 +114,32 @@ export const libraryActions = {
       delete loading[hash];
       return { loading };
     });
+  },
+
+  // ── Project ───────────────────────────────────────────────────────────────
+
+  setTab(tab: LibraryState['tab']): void {
+    set((s) => (s.tab === tab ? null : { tab }));
+  },
+
+  setProjects(projects: readonly ProjectRow[]): void {
+    set(() => ({ projects }));
+  },
+
+  /**
+   * Project yang sedang dipegang tab ini, berikut versinya.
+   *
+   * Versinya WAJIB ikut: ia yang dikirim sebagai `If-Match` saat menyimpan, dan
+   * tanpanya simpan berikutnya berarti "timpa apa pun yang ada di sana" — persis
+   * yang docs/16 §8c ingin cegah.
+   */
+  setOpenProject(project: OpenProject | null): void {
+    set(() => ({ openProject: project }));
+  },
+
+  /** Kabar sekali pakai untuk dipajang di dok. `null` menghapusnya. */
+  setNotice(notice: string | null): void {
+    set((s) => (s.notice === notice ? null : { notice }));
   },
 
   // ── Unggah ────────────────────────────────────────────────────────────────
