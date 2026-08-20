@@ -10,7 +10,6 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../persist/db', () => ({ saveAsset: () => Promise.resolve(true) }));
 vi.mock('../analysis/tempo-client', () => ({ requestAssetTempo: () => undefined }));
 
 /** Penahan decode: tes yang menentukan kapan tiap file selesai. */

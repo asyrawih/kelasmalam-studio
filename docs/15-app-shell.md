@@ -140,10 +140,12 @@ pernah menyala dan tidak bisa dijelaskan.
 
 ## Penyimpanan: localStorage, dan satu jebakan
 
-Sisa aplikasi memakai IndexedDB, dan itu benar untuk audio dan project. Keymap
-dibaca **sebelum render pertama** supaya daftar shortcut tidak berkedip dari
-bawaan ke milik user; IndexedDB asinkron, localStorage sinkron dan cukup untuk
-beberapa ratus byte.
+Keymap dibaca **sebelum render pertama** supaya daftar shortcut tidak berkedip
+dari bawaan ke milik user, dan localStorage sinkron. Ini juga satu-satunya yang
+tersisa di penyimpanan browser: audio dan project **tidak** lagi disimpan lokal
+(IndexedDB sudah dibuang seluruhnya) dan akan pindah ke kepustakaan eksplisit
+lewat backend. Beberapa ratus byte preferensi tidak butuh backend; puluhan MB
+audio butuh.
 
 **Jebakannya**, dan ini ditemukan oleh tes: `typeof localStorage === 'undefined'`
 BUKAN penjaga yang cukup. Node 22 mendefinisikan `localStorage` sebagai global

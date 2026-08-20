@@ -409,8 +409,9 @@ function browserCommands(): Command[] {
       /*
        * TANPA binding bawaan, dan itu disengaja.
        *
-       * Penghapusan tidak bisa dibatalkan: byte aslinya ikut hilang dari
-       * IndexedDB. Memberinya satu tombol berarti satu ketukan salah — Delete
+       * Penghapusan tidak bisa dibatalkan: lagunya lenyap dari sesi ini dan
+       * harus diimpor ulang dari berkasnya. Memberinya satu tombol berarti satu
+       * ketukan salah — Delete
        * yang meleset saat tangan mengira sedang di tempat lain — membuang lagu
        * untuk selamanya, tanpa langkah kedua. Lewat command palette, namanya
        * harus diketik dan dipilih; itu langkah kedua yang cukup.

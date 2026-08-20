@@ -3,7 +3,7 @@
  *
  * Sumbernya `studioStore.assets`, BUKAN daftar kedua. Lagu yang diimpor di
  * `/studio` langsung muncul di sini dan sebaliknya; satu registry, satu jalur
- * decode, satu IndexedDB.
+ * decode.
  *
  * Dua kolom yang sengaja menampilkan ketidaktahuan alih-alih angka:
  *
@@ -123,8 +123,9 @@ export function CollectionBrowser(): JSX.Element {
    * Baris yang sedang MENUNGGU KONFIRMASI hapus.
    *
    * Konfirmasi dua-langkah di dalam barisnya sendiri, bukan dialog: menghapus
-   * lagu **tidak bisa dibatalkan** — byte aslinya ikut hilang dari IndexedDB,
-   * dan kalau berkasnya sudah tidak ada di disk user, ia hilang untuk selamanya.
+   * lagu **tidak bisa dibatalkan** — byte aslinya tidak disimpan di mana pun,
+   * jadi memulihkannya berarti mencari berkasnya lagi di disk dan mengimpornya
+   * ulang, lengkap dengan cue yang harus dibuat dari awal.
    * Tapi dialog untuk daftar yang bisa berisi ratusan lagu adalah gangguan yang
    * membuat orang berhenti membacanya, lalu mengklik OK tanpa melihat.
    *

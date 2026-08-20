@@ -1,18 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-vi.mock('../../studio/persist/db', () => ({
-  deleteAsset: () => Promise.resolve(true),
-  loadAllAssets: () => Promise.resolve([]),
-  loadDjSession: () => Promise.resolve(null),
-  saveDjSession: () => Promise.resolve(true),
-  saveProjectJson: () => Promise.resolve(true),
-  loadProjectJson: () => Promise.resolve(null),
-  saveAsset: () => Promise.resolve(true),
-  pruneAssets: () => Promise.resolve(),
-  isPersistenceAvailable: () => false,
-}));
-
 import { CollectionBrowser } from './CollectionBrowser';
 import { djActions, djStore } from '../store';
 import { studioActions, studioStore, type StudioAsset } from '../../studio/store';

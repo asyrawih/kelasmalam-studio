@@ -10,14 +10,6 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const deleted: number[] = [];
-vi.mock('../../studio/persist/db', () => ({
-  deleteAsset: (id: number) => {
-    deleted.push(id);
-    return Promise.resolve(true);
-  },
-}));
-
 const unregistered: number[] = [];
 vi.mock('../../studio/preview/audio-preview', () => ({
   unregisterBuffer: (id: number) => void unregistered.push(id),
@@ -69,7 +61,6 @@ function laneWith(assetId: number): StudioLane {
 }
 
 beforeEach(() => {
-  deleted.length = 0;
   unregistered.length = 0;
   djActions.__resetForTest();
   studioActions.__resetForTest?.();
@@ -86,7 +77,6 @@ describe('menolak yang masih dipakai Studio', () => {
     expect(r.reason).toMatch(/LANE UJI/);
     // Dan benar-benar tidak tersentuh: bukan "ditolak lalu dihapus juga".
     expect(studioStore.getState().assets[1]).toBeDefined();
-    expect(deleted).toEqual([]);
     expect(unregistered).toEqual([]);
   });
 
@@ -100,12 +90,11 @@ describe('menolak yang masih dipakai Studio', () => {
 });
 
 describe('menghapus yang tidak dipakai', () => {
-  it('lenyap dari registry, cache PCM, dan penyimpanan — ketiganya', async () => {
+  it('lenyap dari registry DAN dari cache PCM — keduanya', async () => {
     const r = await removeAssetFromLibrary(2);
     expect(r.ok).toBe(true);
     expect(studioStore.getState().assets[2]).toBeUndefined();
     expect(unregistered).toEqual([2]);
-    expect(deleted).toEqual([2]);
     // Lagu lain tidak ikut terbawa.
     expect(studioStore.getState().assets[1]).toBeDefined();
   });

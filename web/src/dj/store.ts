@@ -27,7 +27,7 @@
  * ## YANG SENGAJA TIDAK ADA DI SINI
  *
  *   - `assets`. Kepustakaan hidup di `studioStore`. Satu registry, satu jalur
- *     decode, satu IndexedDB. Deck hanya memegang `assetId`.
+ *     decode. Deck hanya memegang `assetId`.
  *   - BPM. Diturunkan lewat `resolveBeatGrid(asset)` saat dipakai, tidak pernah
  *     disalin — `bpmOverride` bisa diubah user di Studio kapan saja.
  *   - Apa pun yang berbau Web Audio. Iterasi ini tidak menyentuhnya sama sekali.

@@ -1,6 +1,6 @@
 /**
  * Peak pyramid untuk waveform — SATU implementasi yang dipakai import,
- * pemulihan dari IndexedDB, dan semua penggambar canvas.
+ * pemulihan asset dari byte tersimpan, dan semua penggambar canvas.
  *
  * Bentuknya mengikuti docs/06 §6c: bucket 64 / 512 / 4096 sample, tiap bucket
  * menyimpan `min`, `max`, dan `rms`. Tiga hal yang perlu dijelaskan:

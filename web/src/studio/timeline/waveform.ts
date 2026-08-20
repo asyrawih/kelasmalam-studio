@@ -258,7 +258,7 @@ export function drawAssetWave(
 
 /**
  * Gambar placeholder untuk clip yang asset-nya tidak ada (demo, atau file yang
- * gagal dipulihkan dari IndexedDB).
+ * gagal di-decode ulang saat project dipulihkan).
  *
  * Sengaja TIDAK menyerupai audio: garis putus-putus di tengah + arsir diagonal.
  * Versi lama memakai mock deterministik dari `clip.seed` yang terlihat persis

@@ -22,7 +22,6 @@
  * lagunya memang sudah tidak ada.
  */
 
-import { deleteAsset } from '../../studio/persist/db';
 import { unregisterBuffer } from '../../studio/preview/audio-preview';
 import { assetUsage, studioActions, studioStore } from '../../studio/store';
 import { DECK_IDS, type DeckId } from '../model';
@@ -56,6 +55,12 @@ export interface RemoveResult {
   readonly reason?: string;
 }
 
+/**
+ * Tetap `async` walau tidak ada lagi I/O yang ditunggu. Dulu ia menghapus byte
+ * dari penyimpanan lokal; penggantinya menghapus dari kepustakaan di backend,
+ * dan itu I/O lagi. Membuatnya sinkron sekarang berarti mengubah setiap
+ * pemanggil dua kali untuk keadaan sementara.
+ */
 export async function removeAssetFromLibrary(assetId: number): Promise<RemoveResult> {
   const asset = studioStore.getState().assets[assetId];
   if (asset === undefined) return { ok: false, reason: 'lagu itu sudah tidak ada' };
@@ -83,7 +88,6 @@ export async function removeAssetFromLibrary(assetId: number): Promise<RemoveRes
 
   studioActions.removeAsset(assetId);
   unregisterBuffer(assetId);
-  await deleteAsset(assetId);
 
   return { ok: true };
 }

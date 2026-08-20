@@ -16,7 +16,6 @@
 
 import { STEM_BYPASS, isStemBypass, samplesToSec, type StudioClip } from '../model';
 import { resolveBeatGrid } from '../analysis/beat-grid';
-import { saveAsset } from '../persist/db';
 import { getBuffer, registerBuffer } from '../preview/audio-preview';
 import { buildStemChain } from '../preview/stem-chain';
 import { studioActions, studioStore } from '../store';
@@ -104,70 +103,9 @@ export async function bakeClipStem(clipId: string): Promise<BakeResult> {
   studioActions.updateClip(clip.id, { assetId, sourceStart: 0, sourceLen: frames });
   studioActions.setClipStem(clip.id, STEM_BYPASS);
 
-  // Simpan byte-nya supaya hasil bake selamat dari refresh: persistence
-  // menyimpan BYTE per asset dan men-decode ulang saat boot (lihat
-  // persist/persistence.ts), jadi asset yang tidak punya byte akan hilang.
-  // Kegagalan di sini tidak membatalkan bake — audionya sudah benar di sesi
-  // ini, dan itu lebih baik daripada membuang pekerjaan user.
-  try {
-    await saveAsset({ id: assetId, name, bytes: encodeWavFloat32(rendered) });
-  } catch {
-    return { ok: true, assetId, reason: 'hasil bake tidak bisa disimpan — hilang saat refresh' };
-  }
-
+  // Hasil bake TIDAK disimpan ke mana pun. Dulu byte WAV-nya ditulis ke
+  // penyimpanan lokal supaya selamat dari refresh; penyimpanan itu sudah
+  // dibuang, dan penggantinya menyimpan atas perintah user. Seperti asset hasil
+  // import, hasil bake hidup selama sesi ini saja.
   return { ok: true, assetId };
-}
-
-/**
- * WAV IEEE-float 32-bit, ditulis di sini dan BUKAN lewat `encoders/wav.ts`.
- *
- * Encoder itu adalah encoder EXPORT: ia punya pilihan bit depth dan dither, dan
- * ia berjalan di atas Rust sehingga menuntut modul WASM sudah termuat. BAKE
- * tidak butuh satu pun dari itu — yang diperlukan hanya wadah lossless yang
- * bisa dibaca kembali oleh `decodeAudioData`. Menggantungkannya pada engine
- * berarti tombol BAKE gagal justru di keadaan yang paling sering terjadi
- * sekarang: build WASM belum ada.
- *
- * Float32 (bukan PCM 16-bit): hasil render adalah float, dan membulatkannya
- * berarti setiap kali membekukan stem user membayar satu lapis kuantisasi.
- */
-function encodeWavFloat32(buf: AudioBuffer): ArrayBuffer {
-  const channels = buf.numberOfChannels;
-  const frames = buf.length;
-  const bytesPerSample = 4;
-  const blockAlign = channels * bytesPerSample;
-  const dataBytes = frames * blockAlign;
-  const out = new ArrayBuffer(44 + dataBytes);
-  const view = new DataView(out);
-
-  const ascii = (at: number, s: string): void => {
-    for (let i = 0; i < s.length; i++) view.setUint8(at + i, s.charCodeAt(i));
-  };
-  ascii(0, 'RIFF');
-  view.setUint32(4, 36 + dataBytes, true);
-  ascii(8, 'WAVE');
-  ascii(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 3, true); // 3 = IEEE float
-  view.setUint16(22, channels, true);
-  view.setUint32(24, buf.sampleRate, true);
-  view.setUint32(28, buf.sampleRate * blockAlign, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 8 * bytesPerSample, true);
-  ascii(36, 'data');
-  view.setUint32(40, dataBytes, true);
-
-  // Interleave. Data kanal diambil sekali per kanal (bukan per frame):
-  // `getChannelData` menyalin di sebagian implementasi, dan memanggilnya di
-  // dalam loop frame mengubah operasi O(n) jadi O(n²).
-  const planar: Float32Array[] = [];
-  for (let c = 0; c < channels; c++) planar.push(buf.getChannelData(c));
-  let at = 44;
-  for (let i = 0; i < frames; i++) {
-    for (let c = 0; c < channels; c++) {
-      view.setFloat32(at, planar[c]![i] ?? 0, true);
-      at += 4;
-    }
-  }
-  return out;
 }

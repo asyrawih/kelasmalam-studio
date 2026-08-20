@@ -17,7 +17,6 @@
 import { DEFAULT_FADE_CURVE, type StudioClip } from '../model';
 import { studioActions, studioStore, type ImportStage, type StudioAsset } from '../store';
 import { ensureContext, registerBuffer } from '../preview/audio-preview';
-import { saveAsset } from '../persist/db';
 import { canGunzip, gunzip, sniff } from './sniff';
 import { buildEnvelope } from './envelope';
 import { requestAssetTempo } from '../analysis/tempo-client';
@@ -25,10 +24,11 @@ import { requestAssetTempo } from '../analysis/tempo-client';
 /**
  * Buat asset dari `AudioBuffer` hasil decode dan daftarkan ke store.
  *
- * SATU jalur untuk import DAN pemulihan dari IndexedDB (`persist/usePersistence`
- * memanggil fungsi ini). Sebelumnya `computePeaks` ada dua salinan, dan dua
- * salinan berarti waveform bisa berubah bentuk hanya karena user me-refresh
- * halaman — bug yang mustahil dilacak dari layar.
+ * SATU jalur untuk import DAN untuk pemulihan asset dari byte tersimpan
+ * (`persist/decode-asset` memanggil fungsi ini). Sebelumnya `computePeaks` ada
+ * dua salinan, dan dua salinan berarti waveform bisa berubah bentuk hanya
+ * karena lagunya dimuat lewat jalur lain — bug yang mustahil dilacak dari
+ * layar.
  */
 export function assetFromBuffer(id: number, name: string, buffer: AudioBuffer): StudioAsset {
   return {
@@ -143,7 +143,7 @@ export async function importFileToLane(
 /**
  * BYTE → ASSET TERDAFTAR. Ini jalur decode SATU-SATUNYA di aplikasi:
  * sniff → gunzip → `decodeAudioData` → peak pyramid → `registerAsset` →
- * `requestAssetTempo` → `registerBuffer` → `saveAsset`.
+ * `requestAssetTempo` → `registerBuffer`.
  *
  * Ia sengaja TIDAK membuat clip dan TIDAK menyentuh lane, karena tidak setiap
  * pemakai punya lane: halaman `/dj` memuat lagu ke DECK, bukan ke timeline.
@@ -211,9 +211,10 @@ export async function importBytesToAsset(
     let buffer: AudioBuffer;
     try {
       // `.slice(0)` WAJIB: `decodeAudioData` men-*detach* ArrayBuffer yang
-      // diberikan padanya. Tanpa salinan, `bytes` di bawah sudah berukuran 0
-      // saat disimpan ke IndexedDB — project tersimpan dengan audio KOSONG,
-      // dan baru ketahuan setelah refresh berikutnya.
+      // diberikan padanya. Tanpa salinan, `bytes` MILIK PEMANGGIL berubah jadi
+      // berukuran 0 setelah fungsi ini selesai — dan pemanggil berikutnya yang
+      // membutuhkannya (jalur simpan/upload kepustakaan) mendapat berkas
+      // kosong tanpa satu pun tanda bahwa ada yang salah.
       buffer = await ctx.decodeAudioData(bytes.slice(0));
     } catch {
       // Formatnya dikenali tapi browser menolak men-decode — hampir selalu soal
@@ -245,10 +246,10 @@ export async function importBytesToAsset(
     requestAssetTempo(assetId, buffer);
     // Simpan PCM-nya supaya preview playback bisa membunyikannya.
     registerBuffer(assetId, buffer);
-    // Byte ASLI disimpan untuk pemulihan setelah refresh — bukan PCM-nya,
-    // yang puluhan kali lebih besar dan bisa dihasilkan ulang. Sengaja tidak
-    // di-`await`: import tidak boleh menunggu I/O penyimpanan.
-    void saveAsset({ id: assetId, name, bytes });
+    // Byte aslinya TIDAK disimpan ke mana pun: penyimpanan lokal sudah dibuang,
+    // dan penggantinya (kepustakaan eksplisit lewat backend) menyimpan atas
+    // PERINTAH user, bukan sebagai efek samping import. Sampai jalur itu ada,
+    // lagu yang diimpor hanya hidup selama sesi ini.
 
     return { ok: true, assetId, name, frames, sampleRate: buffer.sampleRate };
   } catch (err: unknown) {
