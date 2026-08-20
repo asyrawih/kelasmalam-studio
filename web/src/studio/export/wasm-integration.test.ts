@@ -615,3 +615,67 @@ describe('export lewat engine WASM sungguhan', () => {
     console.log(`[export] ${SECONDS * 2}s stereo — ${sizes.join(' ')}`);
   });
 });
+
+describe('biaya memori registerAsset', () => {
+  /**
+   * PCM harus disalin ke linear memory TEPAT SEKALI.
+   *
+   * Ini bukan tes optimasi. Sebelumnya `registerAsset` menerima `&[f32]`, yang
+   * artinya glue wasm-bindgen `malloc` satu buffer sebesar PCM dan menyalin dari
+   * JS ke situ, lalu Rust menyalin SEKALI LAGI (`to_vec`) supaya datanya hidup
+   * selama renderer — dua salinan penuh berdiri bersamaan.
+   *
+   * Konsekuensinya bukan "agak boros". Satu lane 28 menit stereo @48k = 610 MiB,
+   * plafon linear memory 2 GiB, jadi project 3 lane butuh 610×3 + 610 = 2440 MiB
+   * dan `memory.grow` menolak di lane ketiga. Kegagalannya pun tidak berupa
+   * `Err`: `handle_alloc_error` memanggil `abort()`, jadi yang sampai ke user
+   * cuma `RuntimeError: unreachable executed` — atau, lebih sering, error
+   * `free()` di `finally` yang menimpanya dan tidak menyebut memori sama sekali.
+   *
+   * Regresi ini MUSTAHIL terlihat dari tes fungsional: dengan salinan ganda pun
+   * audionya benar sempurna. Yang berubah cuma berapa panjang project yang masih
+   * bisa di-export, dan itu hanya terukur di sini.
+   */
+  it('menyalin PCM ke linear memory tepat sekali, bukan dua kali', () => {
+    // 64 MiB: jauh di atas sisa blok bebas yang mungkin ditinggalkan tes lain,
+    // jadi pertumbuhannya benar-benar mencerminkan alokasi baru.
+    const frames = 8 * 1024 * 1024;
+    const pcmBytes = frames * CHANNELS * 4;
+
+    const snap = glue.snapshotFromStudioJson(
+      JSON.stringify({
+        sampleRate: SR,
+        lanes: [{ id: 'a', clips: [{ id: 'c', assetId: 0, start: 0, len: frames }] }],
+      }),
+    );
+    const bytes = snap.bytes();
+    snap.free();
+
+    const render = new glue.OfflineRender(bytes, SR, 0, frames, 100) as unknown as {
+      registerAsset: (
+        id: number,
+        data: Float32Array,
+        ch: number,
+        frames: number,
+        sr: number,
+      ) => void;
+      free: () => void;
+    };
+    try {
+      const before = memory.buffer.byteLength;
+      render.registerAsset(0, new Float32Array(frames * CHANNELS), CHANNELS, frames, SR);
+      const grown = memory.buffer.byteLength - before;
+
+      // Ambang 1.5×, bukan 1.0×: alokator membulatkan ke page dan renderer punya
+      // buffer kecilnya sendiri. Yang dijaga adalah jarak ke 2×, dan itu lebar.
+      expect(grown).toBeLessThan(pcmBytes * 1.5);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[export] registerAsset ${(pcmBytes / 1048576).toFixed(0)} MiB PCM → ` +
+          `memory +${(grown / 1048576).toFixed(0)} MiB (${(grown / pcmBytes).toFixed(2)}×)`,
+      );
+    } finally {
+      render.free();
+    }
+  });
+});

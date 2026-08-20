@@ -484,3 +484,152 @@ describe('penjaga export senyap', () => {
     expect(r.frames).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('penjaga muat-memori', () => {
+  /** Payload dengan satu asset sebesar `frames` × `channels` sample. */
+  const bigPayload = (frames: number, channels = 2): ExportPayload => ({
+    json: JSON.stringify({ sampleRate: 48_000, speed: 1, lanes: [] }),
+    assets: [
+      {
+        assetId: 0,
+        data: new Float32Array(frames * channels),
+        channels,
+        frames,
+        sampleRate: 48_000,
+      },
+    ],
+    endSample: frames,
+  });
+
+  it('menolak SEBELUM renderer dibuat kalau PCM melewati sisa linear memory', async () => {
+    const f = fakeEngine();
+    // 4 MiB PCM (512k frame stereo f32) vs sisa 1 MiB.
+    f.engine.memoryHeadroomBytes = () => 1024 * 1024;
+
+    await expect(
+      runExport({
+        payload: bigPayload(512 * 1024),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: fakeEncoder(),
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toThrow(/terlalu besar/i);
+
+    // Yang penting bukan cuma "melempar": tanpa ini kegagalannya terjadi di
+    // tengah registerAsset sebagai trap wasm, dengan OfflineRender yang sudah
+    // berdiri dan tidak pernah di-free.
+    expect(f.calls).not.toContain('free');
+    expect(f.calls.some((c) => c.startsWith('createRender'))).toBe(false);
+    expect(f.calls.some((c) => c.startsWith('registerAsset'))).toBe(false);
+  });
+
+  it('pesannya menyebut angka yang bisa ditindaklanjuti, bukan cuma "gagal"', async () => {
+    const f = fakeEngine();
+    f.engine.memoryHeadroomBytes = () => 1024 * 1024;
+
+    let err: Error | null = null;
+    try {
+      await runExport({
+        payload: bigPayload(512 * 1024),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: fakeEncoder(),
+        yieldToEventLoop: noYield,
+      });
+    } catch (e: unknown) {
+      err = e as Error;
+    }
+    expect(err).not.toBeNull();
+
+    // Butuh 4 MiB, sisa 1 MiB — keduanya harus kelihatan, plus jalan keluarnya.
+    expect(err!.message).toContain('4 MiB');
+    expect(err!.message).toContain('1 MiB');
+    expect(err!.message).toMatch(/per-lane/);
+  });
+
+  it('yang muat tetap jalan — penjaga tidak boleh jadi pagar yang kelewat rapat', async () => {
+    const f = fakeEngine();
+    f.engine.memoryHeadroomBytes = () => 8 * 1024 * 1024;
+
+    const r = await runExport({
+      payload: bigPayload(512 * 1024),
+      sampleRate: 48_000,
+      engine: f.engine,
+      encoder: fakeEncoder(),
+      yieldToEventLoop: noYield,
+    });
+    expect(r.frames).toBeGreaterThan(0);
+  });
+
+  it('engine tanpa laporan sisa memori tidak diperiksa sama sekali', async () => {
+    // `undefined` berarti "tidak tahu", dan tidak tahu bukan alasan menolak.
+    const f = fakeEngine();
+    expect(f.engine.memoryHeadroomBytes).toBeUndefined();
+    const r = await runExport({
+      payload: bigPayload(4 * 1024 * 1024),
+      sampleRate: 48_000,
+      engine: f.engine,
+      encoder: fakeEncoder(),
+      yieldToEventLoop: noYield,
+    });
+    expect(r.frames).toBeGreaterThan(0);
+  });
+});
+
+describe('error asli tidak tertimpa free()', () => {
+  it('render yang gagal tetap yang dilaporkan, meski free() ikut melempar', async () => {
+    // Ini bentuk kegagalan yang sesungguhnya terjadi di browser: render kehabisan
+    // memori dan trap, lalu `free()` di `finally` melempar "attempted to take
+    // ownership of Rust value while it was borrowed" karena flag borrow
+    // wasm-bindgen tertinggal aktif. Yang kedua itu akibat, bukan sebab.
+    const f = fakeEngine();
+    f.engine.createRender = () => ({
+      totalFrames: () => 1024,
+      renderedFrames: () => 0,
+      render: () => {
+        throw new Error('unreachable executed');
+      },
+      outLPtr: () => 0,
+      outRPtr: () => 0,
+      registerAsset: () => {},
+      free: () => {
+        throw new Error('attempted to take ownership of Rust value while it was borrowed');
+      },
+    });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(
+      runExport({
+        payload: payload(),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: fakeEncoder(),
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toThrow('unreachable executed');
+
+    // Yang tertimpa tidak boleh hilang diam-diam — ia turun ke console.
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('kalau HANYA free() yang gagal, error itu yang dilaporkan', async () => {
+    const f = fakeEngine();
+    const base = f.engine.createRender;
+    f.engine.createRender = (...args) => {
+      const h = base(...args);
+      return { ...h, free: () => { throw new Error('free rusak'); } };
+    };
+
+    await expect(
+      runExport({
+        payload: payload(),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: fakeEncoder(),
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toThrow('free rusak');
+  });
+});

@@ -63,6 +63,12 @@ export interface ExportEngine {
    * melempar apa pun (docs/05).
    */
   view(ptr: number, len: number): Float32Array;
+  /**
+   * Sisa byte yang masih boleh ditumbuhkan linear memory sebelum plafonnya.
+   * Opsional: engine palsu di tes tidak punya linear memory sama sekali, dan
+   * `undefined` berarti "jangan periksa", bukan "tak terbatas".
+   */
+  memoryHeadroomBytes?(): number;
 }
 
 /** Encoder — bentuknya sama dengan `encoders/types.ts`. */
@@ -147,6 +153,11 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
   ];
   if (warnings.length > 0) opts.onWarnings?.(warnings);
 
+  // Sebelum apa pun dialokasi: kalau PCM-nya tidak akan muat, gagal SEKARANG
+  // dengan kalimat yang bisa ditindaklanjuti — bukan nanti sebagai trap wasm di
+  // tengah `registerAsset`, dengan `OfflineRender` yang sudah terlanjur berdiri.
+  assertPcmFitsInMemory(payload.assets, engine);
+
   const render = engine.createRender(
     snap.bytes,
     sampleRate,
@@ -169,6 +180,8 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
 
   const parts: BlobPart[] = [];
   let frames = 0;
+  /** Error asli dari badan `try`, supaya `finally` tidak menimpanya. */
+  let failure: unknown = null;
   try {
     // Asset didaftarkan SEBELUM batch pertama. Tanpa langkah ini setiap clip
     // menunjuk slot kosong dan engine merender senyap sempurna — tanpa error,
@@ -211,8 +224,31 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
       if (parts.length > 0 && header && header.length > 0) parts[0] = finalHeader.slice() as BlobPart;
       else parts.unshift(finalHeader.slice() as BlobPart);
     }
+  } catch (e: unknown) {
+    failure = e;
+    throw e;
   } finally {
-    render.free();
+    // `free()` di sini BISA melempar sendiri, dan kalau dibiarkan ia akan
+    // MENIMPA penyebab sebenarnya. Persis itu yang terjadi saat render kehabisan
+    // memori: `panic_immediate_abort` memutus method `&mut self` di tengah jalan
+    // tanpa menjalankan destruktor, jadi flag borrow wasm-bindgen tertinggal
+    // aktif, dan `free()` berikutnya melempar
+    //
+    //     attempted to take ownership of Rust value while it was borrowed
+    //
+    // — kalimat yang tidak menyebut-nyebut memori sama sekali, menggantikan
+    // `RuntimeError: unreachable executed` yang setidaknya menunjuk ke tempat
+    // yang benar. Yang asli menang; yang ini turun ke console.
+    try {
+      render.free();
+    } catch (freeError: unknown) {
+      if (failure === null) throw freeError;
+      console.error(
+        '[export] render.free() ikut gagal setelah error di atas (biasanya efek ' +
+          'lanjutan, bukan penyebab):',
+        freeError,
+      );
+    }
   }
 
   opts.onProgress?.(1);
@@ -221,4 +257,50 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
 
 function registerAsset(render: RenderHandle, a: ExportAssetPcm): void {
   render.registerAsset(a.assetId, a.data, a.channels, a.frames, a.sampleRate);
+}
+
+const MIB = 1024 * 1024;
+
+/**
+ * Tolak DULU export yang PCM-nya tidak muat di linear memory.
+ *
+ * Tanpa ini kegagalannya bukan exception melainkan trap: `registerAsset`
+ * meminta blok sebesar seluruh PCM satu lane, `memory.grow` menolak, dan
+ * `handle_alloc_error` di wasm memanggil `abort()` — bukan lewat mesin panic,
+ * jadi `console_error_panic_hook` pun tidak kebagian. Yang sampai ke user
+ * adalah `RuntimeError: unreachable executed`, tanpa satu kata pun tentang
+ * memori atau tentang apa yang harus ia lakukan.
+ *
+ * Skalanya nyata, bukan teoretis: satu lane 28 menit stereo @48k = 610 MiB,
+ * dan plafonnya 2 GiB untuk SELURUH engine. Tiga lane sepanjang itu sudah
+ * menyentuh langit-langit.
+ */
+function assertPcmFitsInMemory(
+  assets: readonly ExportAssetPcm[],
+  engine: ExportEngine,
+): void {
+  const headroom = engine.memoryHeadroomBytes?.();
+  if (headroom === undefined) return;
+
+  // Satu salinan per asset: `registerAsset` mengambil alih buffer yang dibuat
+  // glue wasm-bindgen alih-alih menyalinnya lagi (lihat `bindgen.rs`).
+  const need = assets.reduce((sum, a) => sum + a.data.length * 4, 0);
+  if (need <= headroom) return;
+
+  const mib = (bytes: number): string => Math.ceil(bytes / MIB).toLocaleString('id-ID');
+  const longest = assets.reduce(
+    (best, a) => (a.frames > best.frames ? a : best),
+    assets[0] as ExportAssetPcm,
+  );
+  const minutes = (a: ExportAssetPcm): string =>
+    (a.frames / Math.max(1, a.sampleRate) / 60).toFixed(1);
+
+  throw new Error(
+    `Project terlalu besar untuk di-render dalam satu jalan: PCM-nya butuh ` +
+      `${mib(need)} MiB, sisa linear memory engine ${mib(headroom)} MiB ` +
+      `(plafon 2 GiB, dan seluruh audio harus ada di sana selama render). ` +
+      `${assets.length} asset, terpanjang ${minutes(longest)} menit × ` +
+      `${longest.channels} channel. Yang bisa dilakukan: export per-lane lalu ` +
+      `gabungkan, persempit rentang waktunya, atau jadikan asset panjang mono.`,
+  );
 }
