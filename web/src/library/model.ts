@@ -58,6 +58,27 @@ export interface UploadState {
   readonly error: string | null;
 }
 
+/** Project yang sedang dibuka/tersimpan di sesi ini. */
+export interface OpenProject {
+  readonly id: string;
+  readonly name: string;
+  /**
+   * Versi yang dipegang tab INI.
+   *
+   * Dikirim sebagai `If-Match` tiap simpan. Kalau server menolak, berarti ada
+   * yang menyimpan project ini di tempat lain — dan user DIBERI TAHU, bukan
+   * tulisannya dibuang diam-diam (docs/16 §8c).
+   */
+  readonly version: number;
+}
+
+export interface ProjectRow {
+  readonly id: string;
+  readonly name: string;
+  readonly updatedAt: number;
+  readonly version: number;
+}
+
 export interface LibraryState {
   readonly status: LibraryStatus;
   readonly user: LibraryUser | null;
@@ -85,6 +106,13 @@ export interface LibraryState {
    * tab lain. Menggabungkannya berarti bar yang sama menampilkan dua hal.
    */
   readonly uploads: Readonly<Record<string, UploadState>>;
+  /** Tab dok yang sedang tampil. */
+  readonly tab: 'lagu' | 'project';
+  readonly projects: readonly ProjectRow[];
+  /** `null` = belum pernah disimpan di sesi ini. */
+  readonly openProject: OpenProject | null;
+  /** Kabar hasil perbuatan terakhir (simpan/buka/hapus), untuk dipajang. */
+  readonly notice: string | null;
 }
 
 export function createInitialLibrary(): LibraryState {
@@ -100,6 +128,10 @@ export function createInitialLibrary(): LibraryState {
     loaded: {},
     loading: {},
     uploads: {},
+    tab: 'lagu',
+    projects: [],
+    openProject: null,
+    notice: null,
   };
 }
 

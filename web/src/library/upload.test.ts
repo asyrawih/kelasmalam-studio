@@ -11,8 +11,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createUploadQueue, uploadImported } from './upload';
-import type { InitResult, LibraryApi, TrackMeta } from './api';
+import type { LibraryApi, TrackMeta } from './api';
 import { LibraryError } from './api';
+import { fakeLibraryApi } from './fake-api';
 import { libraryActions, libraryStore } from './store';
 import type { ImportedForLibrary } from '../studio/timeline/import-sink';
 
@@ -29,24 +30,6 @@ const imported = (over: Partial<ImportedForLibrary> = {}): ImportedForLibrary =>
   ...over,
 });
 
-function fakeApi(over: Partial<LibraryApi> = {}): LibraryApi {
-  return {
-    base: 'https://api.test',
-    me: async () => ({ id: 'u1', email: 'a@test', name: 'Ana' }),
-    tracks: async () => [],
-    blob: async () => new ArrayBuffer(8),
-    initTrack: async (): Promise<InitResult> => ({
-      exists: false,
-      uploadUrl: 'https://r2.test/put',
-    }),
-    putUpload: async () => {},
-    commitTrack: async () => {},
-    logout: async () => {},
-    loginUrl: () => 'https://api.test/auth/google',
-    ...over,
-  };
-}
-
 const uploads = () => libraryStore.getState().uploads;
 
 beforeEach(() => libraryActions.__resetForTest());
@@ -55,7 +38,7 @@ describe('dedup', () => {
   it('exists:true → TIDAK ada satu byte pun yang naik', async () => {
     const putUpload = vi.fn(async () => {});
     const commitTrack = vi.fn(async () => {});
-    const api = fakeApi({
+    const api = fakeLibraryApi({
       initTrack: async () => ({ exists: true, uploadUrl: null }),
       putUpload,
       commitTrack,
@@ -72,7 +55,7 @@ describe('dedup', () => {
 
   it('exists:false → unggah lalu commit, urut', async () => {
     const urutan: string[] = [];
-    const api = fakeApi({
+    const api = fakeLibraryApi({
       initTrack: async () => {
         urutan.push('init');
         return { exists: false, uploadUrl: 'https://r2.test/put' };
@@ -92,7 +75,7 @@ describe('dedup', () => {
 
   it('metadata yang dikirim init dan commit menyebut hash dan ukuran yang sama', async () => {
     const seen: TrackMeta[] = [];
-    const api = fakeApi({
+    const api = fakeLibraryApi({
       initTrack: async (meta) => {
         seen.push(meta);
         return { exists: true, uploadUrl: null };
@@ -112,7 +95,7 @@ describe('dedup', () => {
 describe('yang sengaja TIDAK diunggah', () => {
   it('hasil bake (tanpa berkas asal) dilewati, bukan digagalkan', async () => {
     const initTrack = vi.fn();
-    const api = fakeApi({ initTrack: initTrack as unknown as LibraryApi['initTrack'] });
+    const api = fakeLibraryApi({ initTrack: initTrack as unknown as LibraryApi['initTrack'] });
 
     const out = await uploadImported(api, imported({ contentHash: '' }));
     expect(out).toMatchObject({ ok: true, skipped: true });
@@ -120,7 +103,7 @@ describe('yang sengaja TIDAK diunggah', () => {
   });
 
   it('format yang tidak didukung server dilewati dengan alasannya', async () => {
-    const out = await uploadImported(fakeApi(), imported({ format: 'WebM/Matroska' }));
+    const out = await uploadImported(fakeLibraryApi(), imported({ format: 'WebM/Matroska' }));
     expect(out).toMatchObject({ ok: true, skipped: true });
     expect((out as { reason: string }).reason).toContain('WebM');
   });
@@ -133,7 +116,7 @@ describe('yang sengaja TIDAK diunggah', () => {
       ['FLAC', 'audio/flac'],
     ] as const) {
       const seen: TrackMeta[] = [];
-      const api = fakeApi({
+      const api = fakeLibraryApi({
         initTrack: async (meta) => {
           seen.push(meta);
           return { exists: true, uploadUrl: null };
@@ -147,7 +130,7 @@ describe('yang sengaja TIDAK diunggah', () => {
 
 describe('kegagalan', () => {
   it('pesan server dipajang apa adanya, dan barisnya BERTAHAN', async () => {
-    const api = fakeApi({
+    const api = fakeLibraryApi({
       initTrack: async () => {
         throw new LibraryError('KUOTA', 'kepustakaan kamu sudah penuh');
       },
@@ -160,13 +143,13 @@ describe('kegagalan', () => {
   });
 
   it('init yang menjawab tanpa uploadUrl dihitung gagal, bukan sukses diam', async () => {
-    const api = fakeApi({ initTrack: async () => ({ exists: false, uploadUrl: null }) });
+    const api = fakeLibraryApi({ initTrack: async () => ({ exists: false, uploadUrl: null }) });
     const out = await uploadImported(api, imported());
     expect(out).toMatchObject({ ok: false });
   });
 
   it('yang berhasil TIDAK meninggalkan baris — buktinya ada di daftar kepustakaan', async () => {
-    await uploadImported(fakeApi(), imported());
+    await uploadImported(fakeLibraryApi(), imported());
     expect(uploads()).toEqual({});
   });
 });
@@ -175,7 +158,7 @@ describe('antrean', () => {
   it('mengunggah satu per satu, bukan serempak', async () => {
     let inFlight = 0;
     let peak = 0;
-    const api = fakeApi({
+    const api = fakeLibraryApi({
       putUpload: async () => {
         inFlight += 1;
         peak = Math.max(peak, inFlight);
@@ -194,7 +177,7 @@ describe('antrean', () => {
 
   it('satu yang gagal tidak menghentikan sisanya', async () => {
     const dikirim: string[] = [];
-    const api = fakeApi({
+    const api = fakeLibraryApi({
       initTrack: async (meta) => {
         if (meta.hash.startsWith('b')) throw new LibraryError('X', 'gagal');
         dikirim.push(meta.hash);
@@ -213,7 +196,7 @@ describe('antrean', () => {
 
   it('lagu yang BARU SAJA diunduh dari kepustakaan tidak dikirim balik ke sana', async () => {
     const initTrack = vi.fn();
-    const api = fakeApi({ initTrack: initTrack as unknown as LibraryApi['initTrack'] });
+    const api = fakeLibraryApi({ initTrack: initTrack as unknown as LibraryApi['initTrack'] });
     libraryActions.markLoaded(HASH, 7);
 
     const queue = createUploadQueue(api);

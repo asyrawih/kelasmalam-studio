@@ -42,11 +42,22 @@ import { collectAssetRoots } from './asset-roots';
 /** Naikkan kalau bentuk data berubah dan yang lama tidak bisa dibaca lagi. */
 const SCHEMA_VERSION = 1;
 
+/**
+ * Clip sebagaimana ia DISIMPAN: `StudioClip` + `contentHash`.
+ *
+ * `assetId` tetap ditulis, dan itu bukan kelebihan: ia yang membuat project
+ * yang ditulis SEBELUM L1 tetap terbuka, dan ia yang dipakai kalau hash-nya
+ * tidak ketemu di kepustakaan. Yang dipakai lebih dulu saat memulihkan adalah
+ * hash — nomor sesi tidak berarti apa-apa di sesi berikutnya (docs/16 §2).
+ */
+type PersistedClip = StudioLane['clips'][number] & { readonly contentHash?: string };
+type PersistedLane = Omit<StudioLane, 'clips'> & { readonly clips: PersistedClip[] };
+
 interface PersistedProject {
   readonly version: number;
   readonly projectName: string;
   readonly sampleRate: number;
-  readonly lanes: StudioLane[];
+  readonly lanes: PersistedLane[];
   readonly playhead: number;
   readonly speed: number;
   readonly loop: boolean;
@@ -80,6 +91,15 @@ interface PersistedProject {
    * berarti membuang project yang sudah ada demi satu peta kecil.
    */
   readonly assetGrids?: Record<number, PersistedGrid>;
+  /**
+   * Koreksi grid ber-kunci HASH — kembaran `assetGrids` yang bertahan melewati
+   * sesi.
+   *
+   * Keduanya ditulis, dan yang lama tidak dibuang: project yang disimpan
+   * sebelum L1 hanya punya `assetGrids`, dan membuangnya berarti membuang
+   * koreksi BPM yang sudah diketik user demi kerapian bentuk data.
+   */
+  readonly assetGridsByHash?: Record<string, PersistedGrid>;
 }
 
 interface PersistedGrid {
@@ -127,12 +147,45 @@ function collectAssetGrids(s: StudioAppState): Record<number, PersistedGrid> {
   return out;
 }
 
+/**
+ * Sematkan `contentHash` ke tiap clip.
+ *
+ * Ini inti L1: yang tersimpan harus menunjuk lagu yang SAMA saat dibuka lagi
+ * besok. `assetId` numerik adalah penghitung sesi — nomor 3 hari ini dan nomor
+ * 3 besok adalah lagu yang berbeda, dan project yang menyimpannya menunjuk
+ * lagu yang SALAH tanpa satu pun tanda (docs/16 §2).
+ *
+ * Asset tanpa hash (hasil bake) tetap tersimpan dengan `assetId` saja — ia
+ * memang tidak punya identitas yang bertahan, dan §8e belum memutuskan
+ * nasibnya. Yang tidak boleh terjadi adalah ia hilang diam-diam dari project.
+ */
+function laneWithHashes(s: StudioAppState): PersistedLane[] {
+  return s.lanes.map((lane) => ({
+    ...lane,
+    clips: lane.clips.map((clip) => {
+      const hash = s.assets[clip.assetId]?.contentHash ?? '';
+      return hash === '' ? clip : { ...clip, contentHash: hash };
+    }),
+  }));
+}
+
+/** `collectAssetGrids`, tapi ber-kunci hash. Asset tanpa hash dilewati. */
+function collectAssetGridsByHash(s: StudioAppState): Record<string, PersistedGrid> {
+  const byId = collectAssetGrids(s);
+  const out: Record<string, PersistedGrid> = {};
+  for (const [id, grid] of Object.entries(byId)) {
+    const hash = s.assets[Number(id)]?.contentHash ?? '';
+    if (hash !== '') out[hash] = grid;
+  }
+  return out;
+}
+
 export function serialize(s: StudioAppState): string {
   const data: PersistedProject = {
     version: SCHEMA_VERSION,
     projectName: s.projectName,
     sampleRate: s.sampleRate,
-    lanes: s.lanes,
+    lanes: laneWithHashes(s),
     playhead: s.playhead,
     speed: s.speed,
     loop: s.loop,
@@ -149,6 +202,7 @@ export function serialize(s: StudioAppState): string {
     selectedLaneId: s.selectedLaneId,
     selectedClipId: s.selectedClipId,
     assetGrids: collectAssetGrids(s),
+    assetGridsByHash: collectAssetGridsByHash(s),
   };
   return JSON.stringify(data);
 }
@@ -200,9 +254,48 @@ export interface RestoreResult {
 
 /** Satu asset sebagaimana ia disimpan: byte file ASLI, bukan PCM. */
 export interface StoredAssetBytes {
+  /** Id yang akan dipakai asset ini DI SESI INI. */
   readonly id: number;
   readonly name: string;
   readonly bytes: ArrayBuffer;
+  /**
+   * SHA-256 berkasnya, kalau pemanggil mengetahuinya (kepustakaan selalu tahu).
+   *
+   * Inilah yang menyambungkan clip tersimpan ke asset sesi ini. Tanpa hash,
+   * pemulihan jatuh ke `assetId` lama — cukup untuk project yang ditulis
+   * sebelum L1, dan salah untuk yang mana pun sesudahnya.
+   */
+  readonly contentHash?: string;
+}
+
+/**
+ * Tulis ulang `assetId` tiap clip memakai peta hash → id sesi ini.
+ *
+ * Clip yang hash-nya tidak dikenal DIBIARKAN memakai `assetId` lamanya. Itu
+ * bukan kelalaian: project lama tidak punya hash sama sekali, dan clip yang
+ * asetnya memang hilang harus tetap ada di timeline sebagai clip bisu — bukan
+ * lenyap. Yang hilang tanpa jejak tidak bisa diperbaiki user; yang bisu bisa.
+ */
+export function relinkLanes(
+  lanes: readonly PersistedLane[],
+  byHash: ReadonlyMap<string, number>,
+): StudioLane[] {
+  return lanes.map((lane) => ({
+    ...lane,
+    clips: lane.clips.map((clip) => {
+      const hash = clip.contentHash;
+      if (hash === undefined || hash === '') return stripHash(clip);
+      const id = byHash.get(hash);
+      return id === undefined ? stripHash(clip) : { ...stripHash(clip), assetId: id };
+    }),
+  })) as StudioLane[];
+}
+
+/** `contentHash` tidak ikut masuk state runtime — di sana yang berlaku `assetId`. */
+function stripHash(clip: PersistedClip): StudioLane['clips'][number] {
+  if (clip.contentHash === undefined) return clip;
+  const { contentHash: _buang, ...rest } = clip;
+  return rest;
 }
 
 /**
@@ -228,15 +321,24 @@ export async function restoreProject(
   // sempat menggambar clip yang asetnya belum ada dan waveform-nya berkedip
   // dari mock ke bentuk asli.
   let missing = 0;
+  /** hash → id sesi ini. Inilah peta yang docs/16 §2 sebut dibangun tiap sesi. */
+  const byHash = new Map<string, number>();
   for (const a of assets) {
     const ok = await decodeAsset(a.id, a.name, a.bytes);
-    if (!ok) missing += 1;
+    if (!ok) {
+      missing += 1;
+      continue;
+    }
+    // Hanya yang BERHASIL di-decode yang masuk peta: clip yang menunjuk asset
+    // gagal-decode lebih baik tetap menunjuk id lamanya dan jadi bisu daripada
+    // menunjuk asset yang tidak pernah terdaftar.
+    if (a.contentHash !== undefined && a.contentHash !== '') byHash.set(a.contentHash, a.id);
   }
 
   studioActions.hydrate({
     projectName: data.projectName,
     sampleRate: data.sampleRate,
-    lanes: normalizeLanes(data.lanes),
+    lanes: normalizeLanes(relinkLanes(data.lanes, byHash)),
     playhead: data.playhead,
     speed: data.speed as StudioState['speed'],
     loop: data.loop,
@@ -258,6 +360,14 @@ export async function restoreProject(
     selectedClipId: data.selectedClipId,
   });
 
+  /*
+   * Grid ber-HASH dipakai lebih dulu, dan yang ber-id numerik jadi cadangan
+   * untuk project yang ditulis sebelum L1.
+   *
+   * Urutannya penting: yang ber-hash ditulis belakangan supaya ia menang kalau
+   * keduanya menyebut asset yang sama. Kalau dibalik, koreksi BPM user
+   * ditimpa oleh nomor sesi yang kebetulan bertabrakan.
+   */
   // SETELAH hydrate, bukan sebelum: `setAssetBeatGrid` menolak asset yang belum
   // terdaftar, dan pendaftarannya baru terjadi lewat `decodeAsset` di atas.
   for (const [id, grid] of Object.entries(data.assetGrids ?? {})) {
@@ -267,6 +377,14 @@ export async function restoreProject(
     studioActions.setAssetBeatGrid(Number(id), { bpm: grid.bpm, offsetSec: grid.offsetSec });
     studioActions.setAssetBeatAnchors(Number(id), grid.anchors ?? null);
     if (grid.lock === true) studioActions.setAnalysisLock(Number(id), true);
+  }
+
+  for (const [hash, grid] of Object.entries(data.assetGridsByHash ?? {})) {
+    const id = byHash.get(hash);
+    if (id === undefined) continue;
+    studioActions.setAssetBeatGrid(id, { bpm: grid.bpm, offsetSec: grid.offsetSec });
+    studioActions.setAssetBeatAnchors(id, grid.anchors ?? null);
+    if (grid.lock === true) studioActions.setAnalysisLock(id, true);
   }
 
   return { restored: true, missingAssets: missing };
