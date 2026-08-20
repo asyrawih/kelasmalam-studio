@@ -18,8 +18,9 @@ keputusan domain lebih dulu.
 **API kepustakaan harus berada di subdomain domain yang sama dengan aplikasi.**
 
 ```
-app.contoh.com   ← frontend (Vercel)
-api.contoh.com   ← Worker kepustakaan
+studio.kelasmalam.app   ← frontend (Vercel)
+lib.kelasmalam.app      ← Worker kepustakaan
+robloz.kelasmalam.app   ← Worker Roblox
 ```
 
 Bukan `dawonweb-library.<akun>.workers.dev`, dan bukan domain lain.
@@ -34,7 +35,8 @@ Mengubahnya sesudah terpasang berarti mengganti redirect URI Google, domain
 cookie, dan konfigurasi CORS sekaligus. Putuskan sekarang.
 
 > Worker Roblox tidak punya syarat ini — ia tidak memakai cookie sama sekali.
-> `*.workers.dev` sudah cukup untuknya.
+> Ia dipasang di `robloz.kelasmalam.app` demi alamat yang enak dibaca, bukan
+> karena terpaksa; `*.workers.dev` pun jalan.
 
 ---
 
@@ -42,13 +44,13 @@ cookie, dan konfigurasi CORS sekaligus. Putuskan sekarang.
 
 - Akun Cloudflare (tier gratis cukup untuk memulai)
 - Node ≥ 22.5 (`node --version`)
-- Domain yang zone DNS-nya ada di Cloudflare — untuk `api.contoh.com`
+- Domain yang zone DNS-nya ada di Cloudflare — untuk `lib.kelasmalam.app`
 - Project Google Cloud — untuk OAuth
 
 ```bash
 cd backend
 npm ci
-npm test          # 86 tes; kalau merah, jangan deploy
+npm test          # 88 tes; kalau merah, jangan deploy
 npx wrangler login
 ```
 
@@ -62,15 +64,18 @@ lewat `npx` dengan versi terpin.
 
 Tiga langkah, tanpa rahasia dan tanpa penyimpanan.
 
-**2.1** Isi origin aplikasi di `wrangler.roblox.toml`:
+**2.1** `wrangler.roblox.toml` sudah terisi:
 
 ```toml
+routes = [{ pattern = "robloz.kelasmalam.app", custom_domain = true }]
+
 [vars]
-ALLOWED_ORIGINS = "https://app.contoh.com"
+ALLOWED_ORIGINS = "https://studio.kelasmalam.app,http://localhost:5173"
 ```
 
-Beberapa origin dipisah koma, tanpa spasi. Untuk dev lokal tambahkan
-`http://localhost:5173`.
+Origin dipisah koma, tanpa spasi, tanpa slash di ujung. Worker ini tidak punya
+syarat same-site seperti kepustakaan — ia tidak memakai cookie — jadi domainnya
+bebas; `*.workers.dev` pun cukup kalau tidak mau memakai subdomain.
 
 **2.2** Deploy:
 
@@ -81,7 +86,7 @@ npm run deploy:roblox
 **2.3** Periksa:
 
 ```bash
-curl https://dawonweb-roblox.<akun>.workers.dev/health
+curl https://robloz.kelasmalam.app/health
 # {"ok":true,"service":"dawonweb-roblox"}
 ```
 
@@ -140,7 +145,7 @@ Di dashboard: **R2 → dawonweb-tracks → Settings → CORS Policy**:
 ```json
 [
   {
-    "AllowedOrigins": ["https://app.contoh.com"],
+    "AllowedOrigins": ["https://studio.kelasmalam.app"],
     "AllowedMethods": ["PUT"],
     "AllowedHeaders": ["content-type"],
     "ExposeHeaders": ["etag"],
@@ -177,7 +182,7 @@ Google Cloud Console → **APIs & Services → Credentials → Create credential
 OAuth client ID**:
 
 - Application type: **Web application**
-- Authorized redirect URI: **`https://api.contoh.com/auth/callback`**
+- Authorized redirect URI: **`https://lib.kelasmalam.app/auth/callback`**
 
 Persis itu, termasuk `https` dan tanpa slash di ujung. Kalau tidak cocok
 karakter per karakter, Google menolak dengan `redirect_uri_mismatch`.
@@ -195,8 +200,8 @@ Yang tidak rahasia masuk `wrangler.library.toml`:
 
 ```toml
 [vars]
-APP_ORIGIN = "https://app.contoh.com"
-API_ORIGIN = "https://api.contoh.com"
+APP_ORIGIN = "https://studio.kelasmalam.app"
+API_ORIGIN = "https://lib.kelasmalam.app"
 ALLOWED_ORIGINS = ""                     # kosong = pakai APP_ORIGIN saja
 GOOGLE_CLIENT_ID = "....apps.googleusercontent.com"
 R2_ACCOUNT_ID = "<account id>"
@@ -220,23 +225,22 @@ npx wrangler secret put R2_SECRET_ACCESS_KEY --config wrangler.library.toml
 npm run deploy:library
 ```
 
-Lalu pasang domainnya. Cara paling tahan lama adalah menuliskannya di config,
-supaya tidak hilang saat orang lain men-deploy dari mesin lain:
+Domainnya sudah tertulis di config, jadi ia terpasang saat deploy:
 
 ```toml
-routes = [{ pattern = "api.contoh.com", custom_domain = true }]
+routes = [{ pattern = "lib.kelasmalam.app", custom_domain = true }]
 ```
 
-Deploy sekali lagi sesudah menambahkannya. (Alternatifnya: **Workers & Pages →
-dawonweb-library → Settings → Domains & Routes → Add custom domain**.)
+Syaratnya zone `kelasmalam.app` ada di Cloudflare. Kalau deploy mengeluh soal
+zone, itu yang harus dibereskan lebih dulu — bukan konfigurasi Worker-nya.
 
 Periksa:
 
 ```bash
-curl https://api.contoh.com/health
+curl https://lib.kelasmalam.app/health
 # {"ok":true,"service":"dawonweb-library"}
 
-curl -i https://api.contoh.com/me
+curl -i https://lib.kelasmalam.app/me
 # HTTP/2 401  → benar: belum ada sesi
 ```
 
@@ -249,8 +253,8 @@ Variables**, lalu **redeploy** — Vite menanamkannya saat build, jadi mengubah
 variabel tanpa build ulang tidak mengubah apa pun.
 
 ```
-VITE_ROBLOX_API   = https://dawonweb-roblox.<akun>.workers.dev
-VITE_LIBRARY_API  = https://api.contoh.com
+VITE_ROBLOX_API   = https://robloz.kelasmalam.app
+VITE_LIBRARY_API  = https://lib.kelasmalam.app
 ```
 
 Lokal:
@@ -280,8 +284,8 @@ npm run dev:library  -- --port 8788
 
 Urutannya menaik: yang gagal lebih dulu menyempitkan masalahnya.
 
-1. `curl https://api.contoh.com/health` → `{"ok":true,…}`
-2. `curl -i https://api.contoh.com/me` → `401` (bukan 500, bukan CORS)
+1. `curl https://lib.kelasmalam.app/health` → `{"ok":true,…}`
+2. `curl -i https://lib.kelasmalam.app/me` → `401` (bukan 500, bukan CORS)
 3. Buka `/studio`, buka dok kepustakaan → **BELUM MASUK** + tombol masuk
 4. Klik **MASUK DENGAN GOOGLE** → consent → kembali ke `/studio`, nama muncul
 5. Refresh → masih masuk (kalau tidak: cookie tidak bertahan, lihat §6)

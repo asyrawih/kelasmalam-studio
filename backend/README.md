@@ -85,7 +85,7 @@ autentikasi — bukan mengetatkan daftar origin.
 ```bash
 cd backend
 npm ci
-npm test              # 86 tes; tanpa jaringan, tanpa Cloudflare
+npm test              # 88 tes; tanpa jaringan, tanpa Cloudflare
 npm run typecheck     # dua tsconfig — lihat catatan di bawah
 npm run dev:roblox
 npm run deploy:roblox
@@ -226,7 +226,7 @@ Di Google Cloud Console, redirect URI-nya `https://<API_ORIGIN>/auth/callback`.
 ## Tentang tesnya
 
 D1 diuji dengan **SQLite sungguhan** (`node:sqlite`), bukan palsuan. Ini yang
-membuat 34 tes kepustakaan berarti: palsuan yang "mengerti" query kami akan
+membuat 36 tes kepustakaan berarti: palsuan yang "mengerti" query kami akan
 mengerti persis apa yang kami KIRA kami tulis — `WHERE user_id` yang lupa,
 `ON CONFLICT` yang tidak cocok dengan PK, `UPDATE … WHERE version` yang tidak
 benar-benar menghitung perubahan. R2 sebaliknya dipalsukan, karena "objeknya
