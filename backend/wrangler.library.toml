@@ -14,23 +14,26 @@ compatibility_date = "2026-08-20"
 # hilang dari pandangan orang berikutnya yang men-deploy dari mesin lain.
 # Lihat docs/18 §3.6.
 # routes = [{ pattern = "api.contoh.com", custom_domain = true }]
+routes = [{ pattern = "robloz.kelasmalam.app", custom_domain = true }]
 
 [vars]
 # HARUS subdomain dari domain yang sama dengan APP_ORIGIN — docs/16 §5b.
 # Kalau beda registrable domain, cookie sesi terpaksa SameSite=None, yaitu
 # cookie pihak ketiga: sudah diblokir Safari dan sedang dimatikan Chrome.
 # Rusaknya senyap — jalan di Chrome hari ini, mati di Safari.
-APP_ORIGIN = "https://app.contoh.com"
-API_ORIGIN = "https://api.contoh.com"
+APP_ORIGIN = "https://studio.kelasmalam.app"
+API_ORIGIN = "https://lib.kelasmalam.app"
+
+
 
 # Kosongkan untuk memakai APP_ORIGIN saja. Dikosongkan berarti DIKOSONGKAN:
 # Worker memperlakukan string kosong sama dengan tidak diisi (lihat worker.ts).
 ALLOWED_ORIGINS = ""
 
-GOOGLE_CLIENT_ID = "ISI-DI-DASHBOARD"
+GOOGLE_CLIENT_ID = "481640866366-qpgi7prr1bqp7sshhbf0599ls4f0qoo6.apps.googleusercontent.com"
 
-R2_ACCOUNT_ID = "ISI-DI-DASHBOARD"
-R2_BUCKET = "dawonweb-tracks"
+R2_ACCOUNT_ID = "50e581e2e656a57101931cd40913d8c"
+R2_BUCKET = "pustak"
 
 # Batas satu berkas. Di atas ini butuh multipart S3 yang belum ada (§5c) —
 # `/tracks/init` menolaknya SEBELUM ada byte yang naik.
@@ -38,7 +41,7 @@ MAX_TRACK_BYTES = "104857600"
 
 # Kuota total per user. Kosong = tanpa batas (§8f). Satu user dengan seratus
 # lagu WAV bisa menghabiskan tier gratis R2 sendirian.
-MAX_USER_BYTES = ""
+MAX_USER_BYTES = "" # 500mb aja nant
 
 SESSION_TTL_DAYS = "30"
 
@@ -48,9 +51,9 @@ SESSION_TTL_DAYS = "30"
 #   npx wrangler secret put R2_SECRET_ACCESS_KEY  --config wrangler.library.toml
 
 [[d1_databases]]
-binding = "DB"
+binding = "dawonweb_library"
 database_name = "dawonweb-library"
-database_id = "ISI-DI-DASHBOARD"
+database_id = "b3bc8f21-76cb-4b45-b5ec-247eb14ae523"
 migrations_dir = "migrations"
 
 # Binding R2 dipakai untuk MEMBACA saja (head + get). Upload tidak lewat sini:
