@@ -326,6 +326,12 @@ export function levelFor(samplesPerPixel: number): number {
 }
 
 /**
+ * Toleransi pembulatan indeks bucket, dalam satuan BUCKET. Lihat pemakaiannya
+ * di `readEnvelope`.
+ */
+const EPS = 1e-9;
+
+/**
  * Isi `out` untuk rentang source `[from, from + len)` pada lebar `width` kolom.
  *
  * Clip yang di-speed-up TIDAK butuh pyramid baru: `width` mengecil karena
@@ -360,8 +366,23 @@ export function readEnvelope(
   for (let px = 0; px < w; px += 1) {
     const s0 = from + (px * len) / w;
     const s1 = from + ((px + 1) * len) / w;
-    const b0 = Math.max(0, Math.floor(s0 / bucket));
-    const b1 = Math.min(buckets - 1, Math.max(b0, Math.ceil(s1 / bucket) - 1));
+    // `+ EPS`: `s0` dihitung lewat perkalian dan pembagian, jadi nilai yang
+    // secara matematis PERSIS jatuh di batas bucket bisa tiba di sini sebagai
+    // satu ulp di bawahnya — dan `floor` lalu memundurkannya satu bucket penuh,
+    // memasukkan 64 sample milik kolom sebelumnya. Gejalanya: kolom yang sama
+    // tergambar beda tinggi (terukur sampai 2 px) hanya karena rentangnya
+    // sampai ke sini lewat urutan perkalian yang berbeda — misalnya saat sebuah
+    // ubin loop terpotong tepi jendela. Toleransinya setara ~6e-8 sample, jauh
+    // di bawah apa pun yang punya arti.
+    const b0 = Math.max(0, Math.floor(s0 / bucket + EPS));
+    // Bucket yang memuat sample TERAKHIR kolom ini, bukan `ceil(s1) - 1`.
+    // Keduanya sama untuk hampir semua nilai, tapi berbeda tepat saat `s1`
+    // jatuh di batas bucket: `ceil` di sana menarik masuk bucket BERIKUTNYA,
+    // yaitu 64 sample yang bukan milik kolom ini. Bentuknya jadi ikut naik
+    // karena transien tetangga, dan — lebih buruk — hasilnya berubah-ubah
+    // mengikuti galat pembulatan, sehingga kolom yang sama bisa tergambar beda
+    // hanya karena rentangnya dihitung lewat perkalian yang berbeda urutan.
+    const b1 = Math.min(buckets - 1, Math.max(b0, Math.floor((s1 - 1) / bucket + EPS)));
     let lo = 0;
     let hi = 0;
     let sq = 0;

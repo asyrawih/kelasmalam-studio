@@ -18,11 +18,10 @@ import { MenuBar } from './studio/shell/MenuBar';
 import { STUDIO_MENUS } from './studio/shell/StudioMenus';
 import { TransportButtons } from './studio/shell/TransportButtons';
 import { ReorderableStack } from './studio/shell/ReorderableStack';
-import { studioActions, studioStore, useStudio } from './studio/store';
+import { studioActions, studioStore } from './studio/store';
 import { registerExportHost } from './studio/rail/export-bridge';
 import { bufferLookup } from './studio/preview/audio-preview';
 import { BeatProvider, TimelinePanel } from './studio/timeline';
-import { usePersistence } from './studio/persist/usePersistence';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
 
@@ -58,8 +57,10 @@ export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element 
     });
     return () => registerExportHost(null);
   }, []);
-  // Pulihkan project tersimpan + nyalakan autosave.
-  usePersistence(useStudio((s) => s.sampleRate));
+  // Studio TIDAK memulihkan project sendiri saat boot, dan tidak menyimpannya
+  // otomatis. Alasannya di kepala `persist/persistence.ts`: autosave lama
+  // membaca ulang seluruh asset dari IndexedDB tiap perubahan state. Pemuatan
+  // project akan datang lewat kepustakaan yang eksplisit.
   // Shortcut transport: Space, Backspace/Enter/Home, End, ←/→.
   useTransportShortcuts();
   // Coba bangun engine sekali. Kegagalannya adalah informasi, bukan crash.

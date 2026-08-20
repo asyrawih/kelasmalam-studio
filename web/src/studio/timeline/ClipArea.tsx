@@ -13,6 +13,7 @@
  */
 
 import {
+  useEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -28,6 +29,7 @@ import { runFileImport, runUrlImport } from './lane-import';
 import { LaneImportOverlay } from './LaneImportOverlay';
 import { activeLoopLen } from './clip-loop';
 import { drawClipWave, drawLoopedClipWave } from './waveform';
+import { visibleWindow, type WaveWindow } from './wave-window';
 import { fadeOverlayGradient } from './fade';
 import { useCanvasDraw } from '../../ui/lib/canvas';
 
@@ -146,11 +148,105 @@ interface MarqueeBox {
 }
 
 /**
+ * Jendela yang sedang terlihat, dalam koordinat TRACK (px).
+ *
+ * `track === 0` berarti BELUM TERUKUR — elemen belum di-layout, atau kita
+ * sedang di jsdom yang tidak punya layout sama sekali. Pemakainya harus
+ * membacanya sebagai "gambar lebar penuh", bukan sebagai "tidak ada yang
+ * terlihat": jendela yang dihitung dari nol akan menyembunyikan seluruh
+ * waveform, dan di tes itu terlihat seperti waveform yang hilang.
+ */
+interface TrackView {
+  /** `scrollLeft` scroller. */
+  readonly left: number;
+  /** Lebar viewport yang terlihat. */
+  readonly width: number;
+  /** Lebar penuh track. */
+  readonly track: number;
+}
+
+const UNMEASURED: TrackView = { left: 0, width: 0, track: 0 };
+
+/**
+ * Ukur viewport, dan ukur ulang saat scroll atau ukuran berubah.
+ *
+ * Pengukuran dikoalesir ke satu `requestAnimationFrame`: event `scroll` bisa
+ * datang lebih rapat dari satu frame, dan tiap `setState` di sini me-render
+ * ulang seluruh pohon clip. Satu pengukuran per frame adalah batas atas yang
+ * memang dibutuhkan — jendelanya sendiri sudah dikuantisasi, jadi sebagian
+ * besar frame tidak mengubah apa pun dan `setState` mengembalikan objek lama.
+ */
+function useTrackView(
+  scrollerRef: RefObject<HTMLDivElement>,
+  trackRef: RefObject<HTMLDivElement>,
+): TrackView {
+  const [view, setView] = useState<TrackView>(UNMEASURED);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const track = trackRef.current;
+    if (scroller === null || track === null) return;
+
+    let frame = 0;
+    const measure = (): void => {
+      frame = 0;
+      const next: TrackView = {
+        left: scroller.scrollLeft,
+        width: scroller.clientWidth,
+        track: track.getBoundingClientRect().width,
+      };
+      // Identitas dipertahankan kalau tidak ada yang berubah, supaya guliran di
+      // dalam satu kuantum tidak menghasilkan render sama sekali.
+      setView((cur) =>
+        cur.left === next.left && cur.width === next.width && cur.track === next.track ? cur : next,
+      );
+    };
+    const schedule = (): void => {
+      if (frame !== 0) return;
+      // Lingkungan tanpa rAF (jsdom lama) mengukur langsung — lebih baik satu
+      // pengukuran sinkron daripada tidak pernah mengukur sama sekali.
+      if (typeof requestAnimationFrame !== 'function') {
+        measure();
+        return;
+      }
+      frame = requestAnimationFrame(measure);
+    };
+
+    measure();
+    scroller.addEventListener('scroll', schedule, { passive: true });
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(schedule);
+      ro.observe(track);
+      ro.observe(scroller);
+    }
+    return () => {
+      if (frame !== 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      scroller.removeEventListener('scroll', schedule);
+      ro?.disconnect();
+    };
+  }, [scrollerRef, trackRef]);
+
+  return view;
+}
+
+/** Jarak pembungkus waveform dari tepi clip (`inset` di `ClipView`), px. */
+const WAVE_INSET = 2;
+
+/**
  * Waveform clip di canvas.
  *
- * Ukurannya ditentukan CSS (clip diposisikan dalam persen), dan
- * `useCanvasDraw` menggambar ulang lewat ResizeObserver — jadi zoom timeline
- * otomatis menaikkan kerapatan kolom tanpa komponen ini tahu soal zoom.
+ * CANVAS-NYA TIDAK SELEBAR CLIP. Dulu begitu — `width: 100%` dari sebuah clip
+ * yang sendirinya diposisikan dalam persen terhadap track — dan itu berarti
+ * lagu 27 menit pada zoom 400 px/detik meminta canvas selebar 648.000 px,
+ * jauh melewati batas dimensi canvas browser. Sekarang lebarnya mengikuti
+ * `win` (lihat `wave-window.ts`): hanya irisan yang terlihat, dipasang pada
+ * `left: win.x`. `fullWidth` tetap dikirim ke penggambar supaya pemetaan
+ * sample→pixel dihitung terhadap clip UTUH — kalau tidak, waveform akan
+ * meregang mengikuti jendela setiap kali user menggulir.
+ *
+ * `win === null` berarti belum terukur (jsdom, atau sebelum layout pertama) dan
+ * canvas kembali memakai lebar penuh clip — bukan menyembunyikan waveform.
  */
 function ClipWave({
   asset,
@@ -159,6 +255,8 @@ function ClipWave({
   loopLen,
   color,
   style,
+  win,
+  fullWidth,
 }: {
   asset: StudioAsset | undefined;
   sourceStart: number;
@@ -167,11 +265,17 @@ function ClipWave({
   loopLen: number | null;
   color: string;
   style: CSSProperties;
+  /** Irisan yang punya canvas; null = gambar lebar penuh. */
+  win: WaveWindow | null;
+  /** Lebar penuh area waveform clip, px. Hanya dipakai kalau `win` ada. */
+  fullWidth: number;
 }): JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null);
   useCanvasDraw(
     ref,
     (ctx, size) => {
+      // Tanpa jendela, lebar canvas MEMANG lebar clip — itu kasus lama.
+      const width = win === null ? size.width : fullWidth;
       const wave = {
         outline: color,
         body: color,
@@ -190,16 +294,20 @@ function ClipWave({
           sourceStart,
           sourceLen,
           loopLen,
-          size.width,
+          width,
           size.height,
           size.dpr,
           wave,
+          win,
         );
         return;
       }
-      drawClipWave(ctx, asset, sourceStart, sourceLen, size.width, size.height, size.dpr, wave);
+      drawClipWave(ctx, asset, sourceStart, sourceLen, width, size.height, size.dpr, wave, win);
     },
-    [asset, sourceStart, sourceLen, loopLen, color],
+    // Jendela masuk sebagai dua angka, bukan sebagai objek: `visibleWindow`
+    // membuat objek baru tiap render, jadi identitasnya tidak pernah sama dan
+    // canvas akan menggambar ulang tiap frame guliran walau isinya sama.
+    [asset, sourceStart, sourceLen, loopLen, color, win?.x ?? -1, win?.w ?? -1, fullWidth],
   );
   // Canvas dibungkus div, dan ukurannya dipaksa 100% — JANGAN mengandalkan
   // `left`/`right` untuk meregangkannya.
@@ -211,7 +319,21 @@ function ClipWave({
   // jadi bercak kecil di kiri, berapa pun lebar clip-nya.
   return (
     <div style={style}>
-      <canvas ref={ref} style={{ display: 'block', width: '100%', height: '100%' }} />
+      <canvas
+        ref={ref}
+        style={
+          win === null
+            ? { display: 'block', width: '100%', height: '100%' }
+            : {
+                display: 'block',
+                position: 'absolute',
+                left: `${win.x}px`,
+                top: 0,
+                width: `${win.w}px`,
+                height: '100%',
+              }
+        }
+      />
     </div>
   );
 }
@@ -224,6 +346,7 @@ function ClipView({
   asset,
   duration,
   sampleRate,
+  view,
   onPointerDown,
   onTrimDown,
 }: {
@@ -235,6 +358,7 @@ function ClipView({
   asset: StudioAsset | undefined;
   duration: number;
   sampleRate: number;
+  view: TrackView;
   onPointerDown: (e: ReactPointerEvent<HTMLDivElement>, clip: StudioClip) => void;
   onTrimDown: (
     e: ReactPointerEvent<HTMLDivElement>,
@@ -245,6 +369,23 @@ function ClipView({
   const span = duration > 0 ? duration : 1;
   const left = (clip.start / span) * 100;
   const width = Math.max(0.2, (clip.len / span) * 100);
+
+  // Jendela gambar dihitung dalam PX — persen tidak cukup, karena canvas
+  // dipasang dengan posisi dan lebar px. `track === 0` = belum terukur; di
+  // situ kita kembali ke perilaku lama (lebar penuh) daripada menebak.
+  const measured = view.track > 0 && view.width > 0;
+  const win = measured
+    ? visibleWindow(
+        (left / 100) * view.track + WAVE_INSET,
+        (width / 100) * view.track - 2 * WAVE_INSET,
+        view.left,
+        view.width,
+      )
+    : null;
+  // Clip yang seluruhnya di luar layar tidak memasang canvas sama sekali. Ini
+  // yang membuat project dengan puluhan clip panjang tetap murah: yang tidak
+  // terlihat tidak punya backing store, bukan sekadar tidak digambar.
+  const waveVisible = !measured || win !== null;
 
   return (
     <div
@@ -357,22 +498,29 @@ function ClipView({
         {activeLoopLen(clip) === null ? '' : '⟳ '}
         {clip.label}
       </div>
-      <ClipWave
-        asset={asset}
-        sourceStart={clip.sourceStart}
-        sourceLen={clip.sourceLen}
-        loopLen={activeLoopLen(clip)}
-        color={lane.color}
-        style={{
-          // Mengisi seluruh clip, bukan strip 20px di dasar seperti mock design.
-          // Di clip setinggi 50px, strip 20px membuang lebih dari separuh ruang
-          // yang justru dipakai untuk membaca bentuk audionya.
-          position: 'absolute',
-          inset: '2px',
-          // Overlay fade & drag clip harus tetap menerima pointer.
-          pointerEvents: 'none',
-        }}
-      />
+      {waveVisible ? (
+        <ClipWave
+          asset={asset}
+          sourceStart={clip.sourceStart}
+          sourceLen={clip.sourceLen}
+          loopLen={activeLoopLen(clip)}
+          color={lane.color}
+          win={win}
+          fullWidth={(width / 100) * view.track - 2 * WAVE_INSET}
+          style={{
+            // Mengisi seluruh clip, bukan strip 20px di dasar seperti mock design.
+            // Di clip setinggi 50px, strip 20px membuang lebih dari separuh ruang
+            // yang justru dipakai untuk membaca bentuk audionya.
+            position: 'absolute',
+            // Diturunkan dari konstanta yang sama dengan yang dipakai menghitung
+            // jendela — kalau keduanya berdiri sendiri, canvas akan melenceng
+            // dari area waveform begitu salah satunya diubah.
+            inset: `${WAVE_INSET}px`,
+            // Overlay fade & drag clip harus tetap menerima pointer.
+            pointerEvents: 'none',
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -846,6 +994,7 @@ export function ClipArea({
                 asset={assets[clip.assetId]}
                 duration={duration}
                 sampleRate={sampleRate}
+                view={view}
                 onPointerDown={beginClipDrag}
                 onTrimDown={beginTrimDrag}
               />

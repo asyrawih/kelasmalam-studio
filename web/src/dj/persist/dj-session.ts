@@ -17,11 +17,14 @@
  * berbunyi" membuat audio menyala setelah refresh tanpa user menekan apa pun —
  * di alat DJ itu bukan kejutan kecil, itu suara keras yang tidak diminta.
  *
- * ## Kenapa autosave sendiri, bukan menumpang milik Studio
+ * ## Kenapa simpan sendiri, bukan menumpang milik Studio
  *
- * `startAutosave` hanya hidup selama `App` ter-mount, dan yang ia tulis adalah
- * project Studio. Menumpanginya berarti halaman ini menulis ulang project yang
- * bahkan tidak sedang ia tampilkan.
+ * Studio sudah tidak punya autosave sama sekali (alasannya di kepala
+ * `studio/persist/persistence.ts`), dan yang dulu ia tulis adalah project
+ * Studio. Menumpanginya berarti halaman ini menulis ulang project yang bahkan
+ * tidak sedang ia tampilkan. Sesi DJ di bawah menulis satu record kecil berisi
+ * keadaan alat — bukan membaca ulang seluruh asset — jadi ia tidak punya
+ * masalah biaya yang membuat autosave Studio dibuang.
  */
 
 import { loadDjSession, saveDjSession } from '../../studio/persist/db';

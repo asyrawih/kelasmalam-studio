@@ -14,6 +14,13 @@
  *      outline. Ini yang membuat bagian sunyi terlihat sunyi meskipun
  *      transiennya menyentuh puncak.
  *
+ * VIRTUALISASI. Penggambar menerima `win` opsional: bagian mana dari lebar
+ * penuh yang benar-benar punya canvas di bawahnya. `width` tetap lebar penuh
+ * clip, jadi pemetaan sample→pixel tidak berubah saat user menggulir — hanya
+ * kolom yang tidak terlihat yang berhenti dihitung. Alasan lengkapnya, termasuk
+ * batas dimensi canvas browser yang dulu terlewat pada lagu panjang, ada di
+ * `wave-window.ts`.
+ *
  * MODE PITA (`WaveStyle.bands`). Kalau style membawa tiga warna, dua lapis di
  * atas diganti TIGA lapis — satu per pita frekuensi, digambar dari yang paling
  * tinggi ke yang paling pendek (low → mid → high). Hasilnya bacaan yang sama
@@ -26,9 +33,17 @@
 import type { StudioAsset } from '../store';
 import { loopTileCount } from './clip-loop';
 import { allocColumns, readEnvelope, type EnvelopeColumns } from './envelope';
+import type { WaveWindow } from './wave-window';
 
 /** Buffer kolom yang dipakai ulang lintas semua canvas. Menggambar tidak boleh
- *  mengalokasi: pada zoom/scroll fungsi ini terpanggil puluhan kali per gerakan. */
+ *  mengalokasi: pada zoom/scroll fungsi ini terpanggil puluhan kali per gerakan.
+ *
+ *  Ia hanya TUMBUH, tidak pernah menyusut — dan itu aman justru karena
+ *  virtualisasi: sejak clip timeline hanya menggambar jendela yang terlihat
+ *  (lihat `wave-window.ts`), jumlah kolom terbesar yang pernah diminta kira-kira
+ *  selebar viewport dikali dpr, bukan selebar project. Sebelum itu, satu kali
+ *  zoom pada lagu panjang bisa menumbuhkannya ke jutaan kolom dan menahan
+ *  puluhan MB selama halaman hidup. */
 let scratch: EnvelopeColumns = allocColumns(0);
 function columnsFor(width: number): EnvelopeColumns {
   if (scratch.min.length < width) scratch = allocColumns(width);
@@ -118,6 +133,16 @@ export function clipDetailGradient(
  * `width`/`height` dalam CSS pixel (konteks sudah ter-skala dpr oleh
  * `useCanvasDraw`); `dpr` dipakai untuk menentukan JUMLAH kolom, supaya satu
  * kolom = satu device pixel.
+ *
+ * `win` menyatakan bagian mana dari `width` yang benar-benar punya canvas di
+ * bawahnya (lihat `wave-window.ts`). `width` TETAP lebar penuh clip walaupun
+ * `win` menyempit — itu yang membuat pemetaan sample→pixel tidak berubah saat
+ * user menggulir, sehingga bentuk yang tergambar sama persis dengan versi
+ * lebar-penuh. Titik asal konteks dianggap ada di `win.x`; pemanggil yang
+ * memasang canvas di posisi itu tidak perlu men-translate apa pun.
+ *
+ * `win === null` berarti "gambar seluruh lebar" — dipakai panel Clip Detail dan
+ * strip overview, yang canvas-nya memang tidak pernah lebih lebar dari layar.
  */
 export function drawAssetWave(
   ctx: CanvasRenderingContext2D,
@@ -128,21 +153,34 @@ export function drawAssetWave(
   height: number,
   dpr: number,
   style: WaveStyle,
+  win: WaveWindow | null = null,
 ): void {
   // Canvas nol-ukuran (elemen belum di-layout, clip selebar 0%): tidak ada yang
   // bisa digambar dan semua pembagian di bawah akan menghasilkan NaN.
   if (!(width > 0) || !(height > 0)) return;
 
-  const cols = Math.max(1, Math.floor(width * Math.max(1, dpr)));
-  const cw = width / cols;
+  const winX = win === null ? 0 : win.x;
+  const winW = win === null ? width : win.w;
+  // Jendela nol lebar bukan kesalahan — clip yang baru saja tergulir keluar
+  // layar sah menghasilkannya. Yang salah adalah menggambarnya.
+  if (!(winW > 0)) return;
+
+  // Rentang source diiris dengan proporsi yang sama seperti jendelanya. Ini
+  // satu-satunya tempat virtualisasi terjadi: sisa fungsi ini tidak tahu bahwa
+  // ia sedang menggambar sepotong.
+  const winFrom = from + (winX / width) * len;
+  const winLen = (winW / width) * len;
+
+  const cols = Math.max(1, Math.floor(winW * Math.max(1, dpr)));
+  const cw = winW / cols;
   const cy = height / 2;
   const half = height / 2;
   const cs = columnsFor(cols);
-  readEnvelope(asset.envelope, from, len, cols, cs);
+  readEnvelope(asset.envelope, winFrom, winLen, cols, cs);
 
   if (style.centerLine !== null) {
     ctx.fillStyle = style.centerLine;
-    ctx.fillRect(0, cy - 0.5, width, 1);
+    ctx.fillRect(0, cy - 0.5, winW, 1);
   }
 
   // Outline: satu path yang menyusuri semua max lalu balik lewat semua min.
@@ -267,12 +305,17 @@ export function drawClipWave(
   height: number,
   dpr: number,
   style: WaveStyle,
+  win: WaveWindow | null = null,
 ): void {
   if (asset === undefined) {
-    drawPlaceholderWave(ctx, width, height, style.outline);
+    // Placeholder digambar selebar CANVAS-nya, bukan selebar clip: arsir
+    // diagonal dan garis putus-putus tidak memetakan apa pun ke sample, jadi
+    // tidak ada yang bisa melenceng, dan menggambarnya sepanjang clip penuh
+    // justru mengembalikan biaya yang baru saja dihilangkan.
+    drawPlaceholderWave(ctx, win === null ? width : win.w, height, style.outline);
     return;
   }
-  drawAssetWave(ctx, asset, sourceStart, sourceLen, width, height, dpr, style);
+  drawAssetWave(ctx, asset, sourceStart, sourceLen, width, height, dpr, style, win);
 }
 
 /**
@@ -306,12 +349,17 @@ export function drawLoopedClipWave(
   height: number,
   dpr: number,
   style: WaveStyle,
+  win: WaveWindow | null = null,
 ): void {
   if (asset === undefined) {
-    drawPlaceholderWave(ctx, width, height, style.outline);
+    drawPlaceholderWave(ctx, win === null ? width : win.w, height, style.outline);
     return;
   }
   if (!(width > 0) || !(height > 0) || !(loopLen > 0) || !(sourceLen > 0)) return;
+
+  const winX = win === null ? 0 : win.x;
+  const winW = win === null ? width : win.w;
+  if (!(winW > 0)) return;
 
   const tiles = loopTileCount(sourceLen, loopLen);
   const tileW = (loopLen / sourceLen) * width;
@@ -320,22 +368,39 @@ export function drawLoopedClipWave(
     // usahanya. Satu putaran diregangkan sepanjang clip — materinya jujur
     // (memang itu yang berbunyi), hanya JUMLAH putarannya yang tidak terbaca,
     // dan pada kerapatan ini ia memang tidak pernah terbaca.
-    drawAssetWave(ctx, asset, sourceStart, loopLen, width, height, dpr, style);
+    drawAssetWave(ctx, asset, sourceStart, loopLen, width, height, dpr, style, win);
     return;
   }
 
-  for (let i = 0; i < tiles; i++) {
-    const x = i * tileW;
-    const visible = Math.min(tileW, width - x);
-    if (visible <= 0) break;
+  // Hanya ubin yang benar-benar tersentuh jendela. Tanpa batas ini, clip loop
+  // sepanjang 27 menit tetap membayar satu iterasi per putaran walau canvas-nya
+  // sudah sesempit viewport — jumlah putarannya bisa puluhan ribu.
+  const first = Math.max(0, Math.floor(winX / tileW));
+  const last = Math.min(tiles - 1, Math.ceil((winX + winW) / tileW) - 1);
+
+  for (let i = first; i <= last; i++) {
+    const tileLeft = i * tileW;
+    // Ubin TERAKHIR hampir selalu terpotong di tengah putaran, persis seperti
+    // bunyinya — loop berhenti di ujung clip, bukan di ujung putaran.
+    const tileVisibleW = Math.min(tileW, width - tileLeft);
+    if (!(tileVisibleW > 0)) break;
+    // Irisan ubin ini yang jatuh di dalam jendela, dalam koordinat UBIN.
+    const from = Math.max(0, winX - tileLeft);
+    const to = Math.min(tileVisibleW, winX + winW - tileLeft);
+    if (!(to > from)) continue;
     ctx.save();
-    // Clip: ubin TERAKHIR hampir selalu terpotong di tengah putaran, persis
-    // seperti bunyinya — loop berhenti di ujung clip, bukan di ujung putaran.
-    ctx.beginPath();
-    ctx.rect(x, 0, visible, height);
-    ctx.clip();
-    ctx.translate(x, 0);
-    drawAssetWave(ctx, asset, sourceStart, loopLen, tileW, height, dpr, style);
+    // Digeser ke posisi ubin RELATIF terhadap jendela — titik asal canvas ada
+    // di `winX`, bukan di awal clip.
+    ctx.translate(tileLeft + from - winX, 0);
+    // `tileW` tetap lebar penuh satu putaran supaya pemetaan sample→pixel di
+    // dalam ubin tidak berubah saat ubinnya terpotong tepi layar. Irisan yang
+    // digambar dibatasi lewat jendela, bukan lewat `ctx.clip` — memotong
+    // dengan clip tetap membayar seluruh kolom ubin, dan itulah biaya yang
+    // sedang dihilangkan di sini.
+    drawAssetWave(ctx, asset, sourceStart, loopLen, tileW, height, dpr, style, {
+      x: from,
+      w: to - from,
+    });
     ctx.restore();
   }
 
@@ -346,9 +411,10 @@ export function drawLoopedClipWave(
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 3]);
     ctx.beginPath();
-    for (let i = 1; i < tiles; i++) {
-      const x = Math.round(i * tileW) + 0.5;
-      if (x >= width) break;
+    for (let i = Math.max(1, first); i <= last + 1 && i < tiles; i++) {
+      const x = Math.round(i * tileW - winX) + 0.5;
+      if (x >= winW) break;
+      if (x < 0) continue;
       ctx.moveTo(x, 0);
       ctx.lineTo(x, height);
     }
