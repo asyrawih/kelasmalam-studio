@@ -1,0 +1,55 @@
+# Worker KEPUSTAKAAN — docs/16.
+#
+# Deploy TERPISAH dari Worker Roblox dengan sengaja: umur datanya berbeda
+# (yang satu tidak menyimpan apa pun, yang ini memegang seluruh kepustakaan
+# user), dan satu deploy yang salah tidak boleh menjatuhkan dua-duanya.
+#
+#   npx wrangler deploy --config wrangler.library.toml
+
+name = "dawonweb-library"
+main = "src/library/worker.ts"
+compatibility_date = "2026-08-20"
+
+[vars]
+# HARUS subdomain dari domain yang sama dengan APP_ORIGIN — docs/16 §5b.
+# Kalau beda registrable domain, cookie sesi terpaksa SameSite=None, yaitu
+# cookie pihak ketiga: sudah diblokir Safari dan sedang dimatikan Chrome.
+# Rusaknya senyap — jalan di Chrome hari ini, mati di Safari.
+APP_ORIGIN = "https://app.contoh.com"
+API_ORIGIN = "https://api.contoh.com"
+
+# Kosongkan untuk memakai APP_ORIGIN saja.
+ALLOWED_ORIGINS = ""
+
+GOOGLE_CLIENT_ID = "ISI-DI-DASHBOARD"
+
+R2_ACCOUNT_ID = "ISI-DI-DASHBOARD"
+R2_BUCKET = "dawonweb-tracks"
+
+# Batas satu berkas. Di atas ini butuh multipart S3 yang belum ada (§5c) —
+# `/tracks/init` menolaknya SEBELUM ada byte yang naik.
+MAX_TRACK_BYTES = "104857600"
+
+# Kuota total per user. Kosong = tanpa batas (§8f). Satu user dengan seratus
+# lagu WAV bisa menghabiskan tier gratis R2 sendirian.
+MAX_USER_BYTES = ""
+
+SESSION_TTL_DAYS = "30"
+
+# Rahasia — JANGAN ditulis di sini. Pasang lewat:
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET  --config wrangler.library.toml
+#   npx wrangler secret put R2_ACCESS_KEY_ID      --config wrangler.library.toml
+#   npx wrangler secret put R2_SECRET_ACCESS_KEY  --config wrangler.library.toml
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dawonweb-library"
+database_id = "ISI-DI-DASHBOARD"
+migrations_dir = "migrations"
+
+# Binding R2 dipakai untuk MEMBACA saja (head + get). Upload tidak lewat sini:
+# ia langsung ke R2 dengan presigned PUT, dan itulah kenapa kredensial S3 di
+# atas tetap dibutuhkan meski binding ini ada. Alasannya di src/library/presign.ts.
+[[r2_buckets]]
+binding = "TRACKS"
+bucket_name = "dawonweb-tracks"

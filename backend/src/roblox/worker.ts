@@ -24,9 +24,9 @@
  * Rinciannya di README §Kunci.
  */
 
-import { decideCors, parseOrigins, preflight, withCors } from './http/cors';
-import { createAudioAsset, getOperation, type OpenCloudConfig } from './roblox/open-cloud';
-import { parseUpload } from './roblox/upload-request';
+import { decideCors, parseOrigins, preflight, withCors } from '../http/cors';
+import { createAudioAsset, getOperation, type OpenCloudConfig } from './open-cloud';
+import { parseUpload } from './upload-request';
 
 export interface Env {
   /** Origin yang boleh memanggil dari browser, dipisah koma. */

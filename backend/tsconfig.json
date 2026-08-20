@@ -30,5 +30,15 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src"]
+  /*
+   * Tes dan harness-nya TIDAK ikut di sini — mereka punya `tsconfig.test.json`
+   * sendiri yang menyalakan tipe Node.
+   *
+   * Pemisahannya bukan kerapian: dengan tipe Node aktif atas kode Worker, tsc
+   * dengan senang hati menerima `Buffer`, `process.env`, dan `require` — yang
+   * semuanya baru gagal saat sudah di produksi. Kode yang berjalan di Worker
+   * harus dinilai oleh tipe yang ADA di Worker.
+   */
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/test-support"]
 }
