@@ -43,6 +43,9 @@ cookie, dan konfigurasi CORS sekaligus. Putuskan sekarang.
 ## 1. Prasyarat
 
 - Akun Cloudflare (tier gratis cukup untuk memulai)
+- **Satu** akun, atau `account_id` tertulis di config kalau login-mu punya
+  beberapa. Tanpa itu, tiap perintah non-interaktif berhenti dengan "more than
+  one account available" — dan di CI tidak ada yang bisa menjawab promptnya.
 - Node ≥ 22.5 (`node --version`)
 - Domain yang zone DNS-nya ada di Cloudflare — untuk `lib.kelasmalam.app`
 - Project Google Cloud — untuk OAuth
@@ -128,10 +131,14 @@ npx wrangler d1 execute dawonweb-library --config wrangler.library.toml --remote
 # user, session, track, marks, project
 ```
 
+Kalau yang keluar hanya `_cf_KV`, migrasinya **belum jalan** — itu tabel
+internal Cloudflare, bukan tabel kita. Endpoint mana pun akan menjawab
+`no such table: user` sampai `npm run migrate:library` benar-benar sukses.
+
 ### 3.2 Bucket R2
 
 ```bash
-npx wrangler r2 bucket create dawonweb-tracks
+npx wrangler r2 bucket create pustaka
 ```
 
 **Lalu pasang CORS-nya.** Ini langkah yang paling mudah terlewat, dan
@@ -140,7 +147,7 @@ ke R2** dengan presigned PUT (`docs/16 §5c`), jadi bucket-nya harus mengizinkan
 origin aplikasi. Tanpa ini, unggahan pertama gagal dengan galat CORS yang tidak
 menyebut R2.
 
-Di dashboard: **R2 → dawonweb-tracks → Settings → CORS Policy**:
+Di dashboard: **R2 → pustaka → Settings → CORS Policy**:
 
 ```json
 [
@@ -170,7 +177,7 @@ upload, seluruh pembacaan tetap lewat binding.
 Dashboard: **R2 → Manage R2 API Tokens → Create API token**
 
 - Permission: **Object Read & Write**
-- Batasi ke bucket `dawonweb-tracks` saja
+- Batasi ke bucket `pustaka` saja
 - Simpan **Access Key ID** dan **Secret Access Key** — yang kedua hanya
   ditampilkan sekali
 
@@ -205,7 +212,7 @@ API_ORIGIN = "https://lib.kelasmalam.app"
 ALLOWED_ORIGINS = ""                     # kosong = pakai APP_ORIGIN saja
 GOOGLE_CLIENT_ID = "....apps.googleusercontent.com"
 R2_ACCOUNT_ID = "<account id>"
-R2_BUCKET = "dawonweb-tracks"
+R2_BUCKET = "pustaka"
 MAX_TRACK_BYTES = "104857600"            # 100 MB; di atas ini butuh multipart (§5c)
 MAX_USER_BYTES = ""                      # kosong = tanpa kuota (§8f)
 SESSION_TTL_DAYS = "30"

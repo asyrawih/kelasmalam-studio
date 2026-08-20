@@ -10,6 +10,10 @@ name = "dawonweb-roblox"
 main = "src/roblox/worker.ts"
 compatibility_date = "2026-08-20"
 
+# Lihat catatan yang sama di wrangler.library.toml: login ini punya lebih dari
+# satu akun, dan tanpa baris ini perintah non-interaktif tidak bisa memilih.
+account_id = "50e581e2e656a57101931cd40913d8cc"
+
 # Domain ditulis DI SINI, bukan dipasang lewat dashboard: yang di dashboard
 # hilang dari pandangan orang berikutnya yang men-deploy dari mesin lain.
 #

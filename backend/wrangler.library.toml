@@ -10,6 +10,12 @@ name = "dawonweb-library"
 main = "src/library/worker.ts"
 compatibility_date = "2026-08-20"
 
+# Login ini punya LEBIH DARI SATU akun, jadi tanpa baris ini setiap perintah
+# non-interaktif berhenti dengan "unable to select one in non-interactive
+# mode" — termasuk di CI, tempat tidak ada yang bisa menjawab promptnya.
+# Account ID bukan rahasia: ia muncul di tiap URL API wrangler.
+account_id = "50e581e2e656a57101931cd40913d8cc"
+
 # Domain ditulis DI SINI, bukan dipasang lewat dashboard: yang di dashboard
 # hilang dari pandangan orang berikutnya yang men-deploy dari mesin lain.
 # Lihat docs/18 §3.6.
@@ -27,10 +33,10 @@ API_ORIGIN = "https://lib.kelasmalam.app"
 # Worker memperlakukan string kosong sama dengan tidak diisi (lihat worker.ts).
 ALLOWED_ORIGINS = ""
 
-GOOGLE_CLIENT_ID = "ISI-DI-DASHBOARD"
+GOOGLE_CLIENT_ID = "481640866366-qpgi7prr1bqp7sshhbf0599ls4f0qoo6.apps.googleusercontent.com"
 
-R2_ACCOUNT_ID = "ISI-DI-DASHBOARD"
-R2_BUCKET = "dawonweb-tracks"
+R2_ACCOUNT_ID = "50e581e2e656a57101931cd40913d8cc"
+R2_BUCKET = "pustaka"
 
 # Batas satu berkas. Di atas ini butuh multipart S3 yang belum ada (§5c) —
 # `/tracks/init` menolaknya SEBELUM ada byte yang naik.
@@ -50,7 +56,7 @@ SESSION_TTL_DAYS = "30"
 [[d1_databases]]
 binding = "DB"
 database_name = "dawonweb-library"
-database_id = "ISI-DI-DASHBOARD"
+database_id = "b3bc8f21-76cb-4b45-b5ec-247eb14ae523"
 migrations_dir = "migrations"
 
 # Binding R2 dipakai untuk MEMBACA saja (head + get). Upload tidak lewat sini:
@@ -58,4 +64,4 @@ migrations_dir = "migrations"
 # atas tetap dibutuhkan meski binding ini ada. Alasannya di src/library/presign.ts.
 [[r2_buckets]]
 binding = "TRACKS"
-bucket_name = "dawonweb-tracks"
+bucket_name = "pustaka"
