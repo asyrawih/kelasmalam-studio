@@ -149,6 +149,10 @@ Di dashboard: **R2 → dawonweb-tracks → Settings → CORS Policy**:
 ]
 ```
 
+Contoh bawaan di dashboard berisi `localhost:3000` + `GET` — ganti seluruhnya.
+`GET` tidak dibutuhkan dan `PUT` yang dibutuhkan; `AllowedHeaders` wajib ada,
+kalau tidak preflight PUT-nya ditolak karena klien mengirim tipe berkasnya.
+
 > Jalur **unduh** tidak butuh ini: ia lewat Worker, bukan langsung ke R2 —
 > justru supaya Worker bisa menambahkan `Cross-Origin-Resource-Policy` yang
 > dituntut COEP aplikasi (`§5a`). Asimetrinya disengaja.
@@ -301,6 +305,7 @@ Urutannya menaik: yang gagal lebih dulu menyempitkan masalahnya.
 | Unggah lagu gagal CORS ke `*.r2.cloudflarestorage.com` | CORS bucket belum dipasang | §3.2 |
 | Audio kepustakaan gagal dimuat di halaman | jalur unduh tidak lewat Worker | jangan pakai presigned untuk unduh — `GET /tracks/:hash/blob` yang menambahkan CORP (§5a) |
 | `no such table: user` | migrasi belum dijalankan di **remote** | `npm run migrate:library` |
+| `error code: 1101` dari Worker | Worker melempar exception — HAMPIR SELALU binding basi (deploy lebih tua dari config) atau tabel belum ada | redeploy, lalu ulangi tes di §5; sejak versi ini galatnya dibalas ber-JSON dengan pesannya, bukan halaman 1101 |
 | `/tracks/init` menjawab 413 | berkas > `MAX_TRACK_BYTES` | naikkan, atau tunggu multipart (§5c) |
 
 Log langsung:

@@ -67,8 +67,24 @@ export async function handleRequest(request: Request, env: Env, deps: Deps = {})
 
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, '') || '/';
-  const res = await route(request, env, deps, path);
+  const res = await safeRoute(request, env, deps, path);
   return withCors(res, cors.allowOrigin);
+}
+
+/** Lihat catatan kembar di `library/worker.ts`: lemparan tidak boleh lolos. */
+async function safeRoute(
+  request: Request,
+  env: Env,
+  deps: Deps,
+  path: string,
+): Promise<Response> {
+  try {
+    return await route(request, env, deps, path);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[${request.method} ${path}]`, message);
+    return fail(500, 'GALAT_INTERNAL', message);
+  }
 }
 
 async function route(request: Request, env: Env, deps: Deps, path: string): Promise<Response> {
