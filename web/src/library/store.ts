@@ -137,6 +137,24 @@ export const libraryActions = {
     set(() => ({ openProject: project }));
   },
 
+  toggleFolder(projectId: string): void {
+    set((s) => ({ expanded: { ...s.expanded, [projectId]: !s.expanded[projectId] } }));
+  },
+
+  setProjectTracks(projectId: string, hashes: readonly string[] | 'memuat'): void {
+    set((s) => ({ projectTracks: { ...s.projectTracks, [projectId]: hashes } }));
+  },
+
+  /** Buang isi folder yang di-cache — dipakai sesudah project disimpan ulang. */
+  forgetProjectTracks(projectId: string): void {
+    set((s) => {
+      if (!(projectId in s.projectTracks)) return null;
+      const projectTracks = { ...s.projectTracks };
+      delete projectTracks[projectId];
+      return { projectTracks };
+    });
+  },
+
   /** Kabar sekali pakai untuk dipajang di dok. `null` menghapusnya. */
   setNotice(notice: string | null): void {
     set((s) => (s.notice === notice ? null : { notice }));

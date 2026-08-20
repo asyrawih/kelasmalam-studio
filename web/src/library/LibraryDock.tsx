@@ -37,17 +37,11 @@ import { registerImportSink } from '../studio/timeline/import-sink';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
 import { currentProjectName, openProject, saveProject, unsavedAssets } from './projects';
-import {
-  formatBytes,
-  formatDuration,
-  summarize,
-  type LibraryState,
-  type LibraryTrack,
-  type UploadState,
-} from './model';
+import { summarize, type LibraryTrack, type UploadState } from './model';
 import { libraryActions, libraryStore, useLibrary } from './store';
 import { createMarksSync } from './marks';
 import { createUploadQueue } from './upload';
+import { LibraryTree } from './LibraryTree';
 
 export interface LibraryDockProps {
   /** Ditimpa di tes. Default dari `import.meta.env.VITE_LIBRARY_API`. */
@@ -63,22 +57,7 @@ export interface LibraryDockProps {
   readonly onLoaded?: (assetId: number, track: LibraryTrack) => void;
 }
 
-const ROW: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'minmax(0,1fr) 64px 72px auto',
-  alignItems: 'center',
-  gap: '10px',
-  padding: '6px 10px',
-  border: '1px solid var(--cy-border)',
-  background: 'var(--cy-surface-1)',
-};
 
-const CELL: React.CSSProperties = {
-  fontSize: '10px',
-  color: 'var(--cy-text-dim)',
-  fontVariantNumeric: 'tabular-nums',
-  whiteSpace: 'nowrap',
-};
 
 export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockProps): JSX.Element {
   const base = (apiBase ?? import.meta.env.VITE_LIBRARY_API ?? '').trim();
@@ -89,7 +68,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
 
   const state = useLibrary();
   const assets = useStudio((s) => s.assets);
-  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   /*
    * Boot: siapa yang login, lalu daftarnya.
@@ -233,14 +212,14 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   const onPick = useCallback(
     async (track: LibraryTrack): Promise<void> => {
       if (api === null) return;
-      setNote(null);
+      libraryActions.setNotice(null);
       const out = await loadTrack(api, track);
       if (!out.ok) {
-        setNote(`${track.name}: ${out.message}`);
+        libraryActions.setNotice(`${track.name}: ${out.message}`);
         return;
       }
       onLoaded?.(out.assetId, track);
-      setNote(out.cached ? `${track.name} sudah ada di sesi ini` : null);
+      libraryActions.setNotice(out.cached ? `${track.name} sudah ada di sesi ini` : null);
     },
     [api, onLoaded],
   );
@@ -263,6 +242,101 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       } catch (err: unknown) {
         libraryActions.setNotice(err instanceof Error ? err.message : String(err));
       }
+    },
+    [api],
+  );
+
+  /*
+   * Simpan, buka, hapus project — sebelumnya tinggal di dalam tab PROJECT.
+   *
+   * Sekarang di sini, karena pohon tidak punya "tab" untuk menampungnya, dan
+   * karena ketiganya menyentuh state yang sama dengan muat/hapus lagu: satu
+   * `busy` untuk semuanya berarti tidak ada dua perbuatan berat yang bisa
+   * berjalan bersamaan tanpa terlihat.
+   */
+  const onSave = useCallback(async (): Promise<void> => {
+    if (api === null) return;
+    const belum = unsavedAssets();
+    if (belum.length > 0) {
+      libraryActions.setNotice(
+        `${belum.length} lagu belum ada di kepustakaan: ${belum.join(', ')}. ` +
+          'Unggah dulu — project yang menunjuk lagu yang tidak ada akan gagal dibuka nanti.',
+      );
+      return;
+    }
+
+    const open = libraryStore.getState().openProject;
+    setBusy(true);
+    libraryActions.setNotice(null);
+    const out = await saveProject(api, {
+      id: open?.id ?? null,
+      name: open?.name ?? currentProjectName(),
+      version: open?.version ?? 0,
+    });
+    setBusy(false);
+
+    if (!out.ok) {
+      libraryActions.setNotice(
+        out.conflict
+          ? `${out.message} — buka ulang project ini sebelum menyimpan, atau simpan sebagai project baru.`
+          : out.message,
+      );
+      return;
+    }
+    libraryActions.setOpenProject({
+      id: out.id,
+      name: open?.name ?? currentProjectName(),
+      version: out.version,
+    });
+    // Isi foldernya berubah; yang di-cache sudah tidak berlaku.
+    libraryActions.forgetProjectTracks(out.id);
+    libraryActions.setNotice(`tersimpan (versi ${out.version})`);
+    try {
+      libraryActions.setProjects(await api.projects());
+    } catch {
+      // Daftar yang gagal disegarkan bukan alasan meragukan simpan yang sudah
+      // dijawab server dengan versi baru.
+    }
+  }, [api]);
+
+  const onOpen = useCallback(
+    async (id: string, name: string, version: number): Promise<void> => {
+      if (api === null) return;
+      setBusy(true);
+      libraryActions.setNotice('mengunduh audionya…');
+      const out = await openProject(api, id, (done, total) => {
+        libraryActions.setNotice(total === 0 ? 'memuat…' : `mengunduh ${done}/${total} lagu…`);
+      });
+      setBusy(false);
+
+      if (!out.ok) {
+        libraryActions.setNotice(out.message);
+        return;
+      }
+      libraryActions.setOpenProject({ id, name, version });
+      libraryActions.setNotice(
+        out.missingAssets === 0
+          ? `${name} dibuka`
+          : `${name} dibuka — ${out.missingAssets} lagu tidak bisa dimuat, clip-nya bisu`,
+      );
+    },
+    [api],
+  );
+
+  const onDeleteProject = useCallback(
+    async (id: string, name: string): Promise<void> => {
+      if (api === null) return;
+      setBusy(true);
+      try {
+        await api.deleteProject(id);
+        libraryActions.setProjects(await api.projects());
+        libraryActions.forgetProjectTracks(id);
+        if (libraryStore.getState().openProject?.id === id) libraryActions.setOpenProject(null);
+        libraryActions.setNotice(`${name} dihapus`);
+      } catch (err: unknown) {
+        libraryActions.setNotice(err instanceof Error ? err.message : String(err));
+      }
+      setBusy(false);
     },
     [api],
   );
@@ -301,13 +375,6 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
             gap: '6px',
           }}
         >
-          {note !== null ? (
-            <p role="status" style={{ margin: 0, fontSize: '10px', color: 'var(--cy-warning)' }}>
-              {note}
-            </p>
-          ) : null}
-
-          <Tabs tab={state.tab} onTab={libraryActions.setTab} />
 
           {state.notice === null ? null : (
             <p role="status" style={{ margin: 0, fontSize: '10px', color: 'var(--cy-warning)' }}>
@@ -315,13 +382,36 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
             </p>
           )}
 
-          {state.tab === 'lagu' ? (
-            <>
-              <Uploads uploads={state.uploads} />
-              <Body state={state} api={api} assets={assets} onPick={onPick} onRemove={onRemove} />
-            </>
+          <Uploads uploads={state.uploads} />
+
+          {api === null ? (
+            <Empty>
+              Kepustakaan belum dipasang di build ini. Isi <code>VITE_LIBRARY_API</code> dengan
+              alamat Worker kepustakaan; sampai itu ada, import berkas lokal tetap berjalan penuh.
+            </Empty>
+          ) : state.status === 'memeriksa' ? (
+            <Empty>Memeriksa sesi…</Empty>
+          ) : state.status === 'gagal' ? (
+            <Empty tone="danger">{state.error ?? 'server kepustakaan tidak menjawab'}</Empty>
+          ) : state.status === 'anonim' ? (
+            <Empty>
+              Masuk untuk menyimpan lagu dan project. Tanpa akun, semuanya tetap bisa dipakai —
+              yang tidak ada hanyalah daya tahan: refresh mengosongkan sesi.
+            </Empty>
+          ) : state.listing ? (
+            <Empty>Mengambil daftar…</Empty>
           ) : (
-            <Projects state={state} api={api} />
+            <LibraryTree
+              state={state}
+              api={api}
+              assets={assets}
+              onPick={onPick}
+              onRemove={onRemove}
+              onSave={onSave}
+              onOpen={onOpen}
+              onDeleteProject={onDeleteProject}
+              busy={busy}
+            />
           )}
         </div>
       )}
@@ -436,303 +526,6 @@ const LABEL: Readonly<Record<string, string>> = {
   masuk: '',
 };
 
-function Body({
-  state,
-  api,
-  assets,
-  onPick,
-  onRemove,
-}: {
-  readonly state: LibraryState;
-  readonly api: LibraryApi | null;
-  readonly assets: Readonly<Record<number, unknown>>;
-  readonly onPick: (track: LibraryTrack) => void | Promise<void>;
-  readonly onRemove: (track: LibraryTrack) => void | Promise<void>;
-}): JSX.Element {
-  if (api === null) {
-    return (
-      <Empty>
-        Kepustakaan belum dipasang di build ini. Isi <code>VITE_LIBRARY_API</code> dengan
-        alamat Worker kepustakaan; sampai itu ada, import berkas lokal tetap berjalan penuh.
-      </Empty>
-    );
-  }
-  if (state.status === 'memeriksa') return <Empty>Memeriksa sesi…</Empty>;
-  if (state.status === 'gagal') {
-    return <Empty tone="danger">{state.error ?? 'server kepustakaan tidak menjawab'}</Empty>;
-  }
-  if (state.status === 'anonim') {
-    return (
-      <Empty>
-        Masuk untuk menyimpan lagu dan project. Tanpa akun, semuanya tetap bisa dipakai —
-        yang tidak ada hanyalah daya tahan: refresh mengosongkan sesi.
-      </Empty>
-    );
-  }
-  if (state.listing) return <Empty>Mengambil daftar…</Empty>;
-  if (state.tracks.length === 0) {
-    return <Empty>Kepustakaan masih kosong. Lagu yang diunggah akan muncul di sini.</Empty>;
-  }
-
-  return (
-    <div role="table" aria-label="kepustakaan" style={{ display: 'grid', gap: '4px' }}>
-      {state.tracks.map((track) => {
-        const assetId = state.loaded[track.hash];
-        // "Sudah dimuat" berarti asetnya MASIH ada di store — bukan sekadar
-        // pernah dimuat. Lagu yang dihapus user dari Collection harus bisa
-        // diambil lagi dari sini.
-        const inSession = assetId !== undefined && assets[assetId] !== undefined;
-        const percent = state.loading[track.hash];
-
-        return (
-          <div key={track.hash} role="row" style={ROW}>
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--cy-text)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {track.name}
-              </div>
-              {percent !== undefined ? (
-                <div style={{ marginTop: '4px' }}>
-                  <ProgressBar value={percent} showValue label="MENGUNDUH" />
-                </div>
-              ) : null}
-            </div>
-
-            <span style={CELL}>{formatDuration(track.frames, track.sampleRate)}</span>
-            <span style={CELL}>{formatBytes(track.bytes)}</span>
-
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {inSession ? (
-                <Badge tone="success" height={22}>
-                  DI SESI
-                </Badge>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={percent !== undefined}
-                  onClick={() => void onPick(track)}
-                >
-                  {percent === undefined ? 'MUAT' : 'MEMUAT…'}
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`hapus ${track.name}`}
-                onClick={() => void onRemove(track)}
-              >
-                HAPUS
-              </Button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Dua tab: lagu dan project. Keduanya kepustakaan, umurnya beda. */
-function Tabs({
-  tab,
-  onTab,
-}: {
-  readonly tab: 'lagu' | 'project';
-  readonly onTab: (t: 'lagu' | 'project') => void;
-}): JSX.Element {
-  return (
-    <div style={{ display: 'flex', gap: '6px' }}>
-      {(['lagu', 'project'] as const).map((t) => (
-        <Button
-          key={t}
-          size="sm"
-          variant="outline"
-          active={tab === t}
-          aria-pressed={tab === t}
-          onClick={() => onTab(t)}
-        >
-          {t}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Tab PROJECT: simpan yang sekarang, buka yang tersimpan, hapus yang tidak
- * dipakai lagi.
- *
- * Tombol SIMPAN sengaja menolak lebih dulu kalau ada lagu yang belum ada di
- * kepustakaan — dengan menyebut NAMANYA. Server juga menolak (dan itu yang
- * mengikat), tapi ia hanya tahu hash; yang tahu bahwa hash itu bernama
- * "Kelas Malam — Set 3" cuma sisi ini.
- */
-function Projects({
-  state,
-  api,
-}: {
-  readonly state: LibraryState;
-  readonly api: LibraryApi | null;
-}): JSX.Element {
-  const [busy, setBusy] = useState(false);
-
-  if (api === null) return <Empty>Kepustakaan belum dipasang di build ini.</Empty>;
-  if (state.status !== 'masuk') return <Empty>Masuk untuk menyimpan project.</Empty>;
-
-  const open = state.openProject;
-
-  const doSave = async (): Promise<void> => {
-    const belum = unsavedAssets();
-    if (belum.length > 0) {
-      libraryActions.setNotice(
-        `${belum.length} lagu belum ada di kepustakaan: ${belum.join(', ')}. ` +
-          'Unggah dulu — project yang menunjuk lagu yang tidak ada akan gagal dibuka nanti.',
-      );
-      return;
-    }
-
-    setBusy(true);
-    libraryActions.setNotice(null);
-    const out = await saveProject(api, {
-      id: open?.id ?? null,
-      name: open?.name ?? currentProjectName(),
-      version: open?.version ?? 0,
-    });
-    setBusy(false);
-
-    if (!out.ok) {
-      libraryActions.setNotice(
-        out.conflict
-          ? `${out.message} — buka ulang project ini sebelum menyimpan, atau simpan sebagai project baru.`
-          : out.message,
-      );
-      return;
-    }
-    libraryActions.setOpenProject({
-      id: out.id,
-      name: open?.name ?? currentProjectName(),
-      version: out.version,
-    });
-    libraryActions.setNotice(`tersimpan (versi ${out.version})`);
-    try {
-      libraryActions.setProjects(await api.projects());
-    } catch {
-      // Daftar yang gagal disegarkan bukan alasan meragukan simpan yang sudah
-      // dijawab server dengan versi baru.
-    }
-  };
-
-  const doOpen = async (id: string, name: string, version: number): Promise<void> => {
-    setBusy(true);
-    libraryActions.setNotice('mengunduh audionya…');
-    const out = await openProject(api, id, (done, total) => {
-      libraryActions.setNotice(total === 0 ? 'memuat…' : `mengunduh ${done}/${total} lagu…`);
-    });
-    setBusy(false);
-
-    if (!out.ok) {
-      libraryActions.setNotice(out.message);
-      return;
-    }
-    libraryActions.setOpenProject({ id, name, version });
-    libraryActions.setNotice(
-      out.missingAssets === 0
-        ? `${name} dibuka`
-        : `${name} dibuka — ${out.missingAssets} lagu tidak bisa dimuat, clip-nya bisu`,
-    );
-  };
-
-  const doDelete = async (id: string, name: string): Promise<void> => {
-    setBusy(true);
-    try {
-      await api.deleteProject(id);
-      libraryActions.setProjects(await api.projects());
-      if (state.openProject?.id === id) libraryActions.setOpenProject(null);
-      libraryActions.setNotice(`${name} dihapus`);
-    } catch (err: unknown) {
-      libraryActions.setNotice(err instanceof Error ? err.message : String(err));
-    }
-    setBusy(false);
-  };
-
-  return (
-    <div style={{ display: 'grid', gap: '8px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <Button size="sm" disabled={busy} onClick={() => void doSave()}>
-          {open === null ? 'SIMPAN BARU' : 'SIMPAN'}
-        </Button>
-        {open === null ? (
-          <span style={{ fontSize: '10px', color: 'var(--cy-text-muted)' }}>
-            belum tersimpan di sesi ini
-          </span>
-        ) : (
-          <Badge tone="success" height={22}>
-            {open.name} · v{open.version}
-          </Badge>
-        )}
-      </div>
-
-      {state.projects.length === 0 ? (
-        <Empty>Belum ada project tersimpan.</Empty>
-      ) : (
-        <div role="table" aria-label="project" style={{ display: 'grid', gap: '4px' }}>
-          {state.projects.map((p) => (
-            <div key={p.id} role="row" style={ROW}>
-              <span
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--cy-text)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {p.name}
-              </span>
-              <span style={CELL}>v{p.version}</span>
-              <span style={CELL} />
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void doOpen(p.id, p.name, p.version)}
-                >
-                  BUKA
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy}
-                  aria-label={`hapus project ${p.name}`}
-                  onClick={() => void doDelete(p.id, p.name)}
-                >
-                  HAPUS
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Unggahan yang sedang berjalan.
- *
- * Yang SELESAI tidak muncul di sini sama sekali — lagunya pindah ke daftar
- * kepustakaan di bawahnya, dan itu bukti yang lebih baik daripada baris
- * "selesai" yang menumpuk. Yang GAGAL bertahan sampai dibuang user, karena
- * kegagalan yang menghilang sendiri sama saja tidak pernah dilaporkan.
- */
 function Uploads({
   uploads,
 }: {

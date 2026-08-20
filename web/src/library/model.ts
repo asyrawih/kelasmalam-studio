@@ -113,6 +113,20 @@ export interface LibraryState {
   readonly openProject: OpenProject | null;
   /** Kabar hasil perbuatan terakhir (simpan/buka/hapus), untuk dipajang. */
   readonly notice: string | null;
+  /** Folder project yang sedang terbuka di pohon. */
+  readonly expanded: Readonly<Record<string, boolean>>;
+  /**
+   * Hash lagu yang dipakai tiap project — diambil SAAT foldernya dibuka.
+   *
+   * `GET /projects` hanya mengembalikan nama dan versi; isinya tidak ikut,
+   * dan itu benar: satu project bisa berukuran megabyte, dan menariknya
+   * semua hanya untuk menggambar daftar berarti membayar seluruh kepustakaan
+   * untuk melihat judulnya.
+   *
+   * `'memuat'` dibedakan dari daftar kosong: folder yang isinya sedang diambil
+   * bukan folder yang kosong.
+   */
+  readonly projectTracks: Readonly<Record<string, readonly string[] | 'memuat'>>;
 }
 
 export function createInitialLibrary(): LibraryState {
@@ -132,6 +146,16 @@ export function createInitialLibrary(): LibraryState {
     projects: [],
     openProject: null,
     notice: null,
+    /*
+     * "Tanpa project" terbuka sejak awal.
+     *
+     * Ke situlah lagu yang baru diunggah mendarat, dan folder yang terlipat
+     * membuat unggahan yang BERHASIL tampak seperti tidak terjadi apa-apa —
+     * dok terbuka, daftarnya kosong, dan tidak ada yang menunjukkan bahwa
+     * isinya ada satu klik di bawah.
+     */
+    expanded: { __loose: true },
+    projectTracks: {},
   };
 }
 
