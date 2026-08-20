@@ -8,7 +8,7 @@
  */
 
 import type { LoadedWasm } from '../../audio/wasm-loader';
-import { f32View } from '../../audio/wasm-loader';
+import { f32View, MEMORY_MAXIMUM_BYTES } from '../../audio/wasm-loader';
 import type { ExportEngine, RenderHandle, SnapshotResult } from './run-export';
 
 export function createWasmExportEngine(wasm: LoadedWasm): ExportEngine {
@@ -41,6 +41,14 @@ export function createWasmExportEngine(wasm: LoadedWasm): ExportEngine {
     view(ptr: number, len: number): Float32Array {
       // Selalu dari `memory.buffer` yang sekarang — lihat catatan di f32View.
       return f32View(wasm.memory, ptr, len);
+    },
+
+    memoryHeadroomBytes(): number {
+      // `byteLength` = yang SUDAH ditumbuhkan, bukan yang terpakai. Sisanya
+      // memang pesimis (blok bebas di dalamnya tidak terhitung), dan itu
+      // disengaja: linear memory wasm tidak pernah menyusut, jadi angka yang
+      // sudah tumbuh itu tetap harus dibayar sampai tab ditutup.
+      return Math.max(0, MEMORY_MAXIMUM_BYTES - wasm.memory.buffer.byteLength);
     },
   };
 }

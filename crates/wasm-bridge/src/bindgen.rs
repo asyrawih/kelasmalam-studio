@@ -220,22 +220,51 @@ impl OfflineRender {
     /// `data` = semua channel BERURUTAN (planar): channel `c` mulai di
     /// `c * frames`, sama seperti `importFromPcm`. Datanya DISALIN ke dalam
     /// renderer; view JS boleh dibuang setelah pemanggilan ini.
+    ///
+    /// # Kenapa `Vec<f32>`, bukan `&[f32]`
+    ///
+    /// Keduanya terlihat sama dari TypeScript (`Float32Array`), tapi biaya
+    /// memorinya beda dua kali lipat. Untuk `&[f32]`, glue wasm-bindgen
+    /// `malloc` satu buffer sebesar PCM-nya, menyalin dari JS ke situ, lalu
+    /// meminjamkannya — dan Rust harus menyalin SEKALI LAGI supaya datanya
+    /// hidup selama renderer. Dua salinan penuh berdiri bersamaan.
+    ///
+    /// Itu bukan detail: satu lane 28 menit stereo @48k = 610 MiB, dan plafon
+    /// linear memory kita 2 GiB (`--max-memory` di `.cargo/config.toml`).
+    /// Dengan salinan ganda, project 3 lane butuh 610×3 + 610 = 2440 MiB dan
+    /// `memory.grow` gagal di lane ketiga. Kegagalannya tidak berupa `Err`:
+    /// `handle_alloc_error` memanggil `abort()` langsung, jadi yang sampai ke
+    /// browser adalah `RuntimeError: unreachable executed` — dan seringnya
+    /// bahkan itu pun tertimpa oleh error `free()` di `finally` pemanggil.
+    ///
+    /// `Vec<f32>` mengambil ALIH buffer yang sudah dibuat glue itu. Salinannya
+    /// jadi satu, dan project yang sama butuh 1830 MiB — muat.
     #[wasm_bindgen(js_name = registerAsset)]
     pub fn register_asset(
         &mut self,
         id: u32,
-        data: &[f32],
+        data: Vec<f32>,
         channels: u32,
         frames: u32,
         sample_rate: u32,
     ) -> Result<(), JsValue> {
         let ch = channels.clamp(1, u8::MAX as u32) as usize;
         let n = frames as usize;
-        if data.len() < ch * n {
+        // `checked_mul`: `channels * frames` dari JS bisa meluap usize di
+        // wasm32 (32 bit), dan hasil yang meluap akan lolos cek panjang di
+        // bawah lalu dipakai sebagai batas baca.
+        let need = match ch.checked_mul(n) {
+            Some(v) => v,
+            None => {
+                return Err(JsValue::from_str(&format!(
+                    "asset {id}: channels*frames ({ch}*{n}) meluap"
+                )))
+            }
+        };
+        if data.len() < need {
             return Err(JsValue::from_str(&format!(
-                "asset {id}: panjang data {} < channels*frames {}",
+                "asset {id}: panjang data {} < channels*frames {need}",
                 data.len(),
-                ch * n
             )));
         }
         if id > u16::MAX as u32 {
@@ -244,7 +273,13 @@ impl OfflineRender {
             )));
         }
 
-        let owned: Box<[f32]> = data[..ch * n].to_vec().into_boxed_slice();
+        // `truncate` + `into_boxed_slice` TIDAK menyalin: glue mengalokasi
+        // tepat `data.len()` elemen, jadi di jalur normal kapasitas == panjang
+        // dan keduanya no-op. Kalau JS mengirim lebih panjang dari yang dipakai,
+        // shrink-nya pun dikerjakan di tempat oleh alokator.
+        let mut data = data;
+        data.truncate(need);
+        let owned: Box<[f32]> = data.into_boxed_slice();
         let asset = daw_engine::voice::Asset {
             data: owned.as_ptr(),
             frames: n,

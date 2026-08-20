@@ -25,8 +25,25 @@ export const EXPECTED_ABI_VERSION = 1;
 
 /** 16 MiB awal: engine + scratch. Growth hanya terjadi saat import asset. */
 const MEMORY_INITIAL_PAGES = 256;
-/** 2 GiB batas atas (32768 × 64 KiB). Tidak dialokasi di awal. */
-const MEMORY_MAXIMUM_PAGES = 32768;
+/**
+ * 2 GiB batas atas (32768 × 64 KiB). Tidak dialokasi di awal.
+ *
+ * HARUS sama dengan `--max-memory=2147483648` di `.cargo/config.toml` dan
+ * `scripts/build-wasm.sh`: shared memory wajib punya maximum, dan kalau JS
+ * meminta angka yang berbeda dari yang di-link, instantiate ditolak.
+ *
+ * Diekspor karena plafon ini PUNYA konsekuensi yang harus dijelaskan ke user,
+ * bukan cuma parameter build: seluruh PCM project ada di linear memory selama
+ * export, jadi ini yang menentukan berapa lama project masih bisa di-bounce.
+ * Lihat `memoryHeadroomBytes` di `studio/export/wasm-engine.ts`.
+ */
+export const MEMORY_MAXIMUM_PAGES = 32768;
+
+/** Ukuran satu page wasm. */
+export const WASM_PAGE_BYTES = 65536;
+
+/** Plafon linear memory dalam byte — bentuk yang dipakai penjaga export. */
+export const MEMORY_MAXIMUM_BYTES = MEMORY_MAXIMUM_PAGES * WASM_PAGE_BYTES;
 
 /** Surface bindgen yang dipakai main thread & worker. */
 export interface WasmBindgenExports {
