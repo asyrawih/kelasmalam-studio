@@ -38,6 +38,7 @@ function asset(): StudioAsset {
   return {
     id: ASSET_ID,
     name: 'lagu',
+    contentHash: '',
     envelope: buildEnvelope(fakeBuffer(2)),
     frames: FRAMES,
     sampleRate: SR,

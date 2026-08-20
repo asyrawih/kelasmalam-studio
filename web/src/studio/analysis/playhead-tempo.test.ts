@@ -10,6 +10,7 @@ function asset(id: number, bpm: number | null, opts: Partial<StudioAsset> = {}):
   return {
     id,
     name: `asset-${id}`,
+    contentHash: '',
     envelope: { levels: [], frames: 0 } as unknown as StudioAsset['envelope'],
     frames: 60 * SR,
     sampleRate: SR,

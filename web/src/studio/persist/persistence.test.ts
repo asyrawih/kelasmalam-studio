@@ -10,6 +10,7 @@ function asset(id: number): StudioAsset {
   return {
     id,
     name: `a-${id}`,
+    contentHash: '',
     envelope: buildEnvelope({
       numberOfChannels: 1,
       length: SR,

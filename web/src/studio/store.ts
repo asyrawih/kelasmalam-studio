@@ -97,6 +97,15 @@ export interface StudioAsset {
   readonly id: number;
   readonly name: string;
   /**
+   * SHA-256 berkas asalnya — identitas yang BERTAHAN melewati sesi (docs/16 §2).
+   *
+   * `''` berarti tidak punya berkas asal: hasil `bakeClipStem` lahir dari
+   * render, bukan dari file. Itu keadaan yang sah, dan sengaja dibedakan dari
+   * "belum dihitung" — asset tanpa hash tidak bisa diunggah ke kepustakaan,
+   * dan project yang merujuknya akan ditolak server (docs/16 §8e).
+   */
+  readonly contentHash: string;
+  /**
    * Peak pyramid multi-resolusi (min/max/rms per bucket, 64/512/4096 sample).
    * Menggantikan `peaks: Float32Array` beresolusi tunggal: dengan satu
    * resolusi tetap, waveform lagu panjang mentok jadi persegi panjang rata.

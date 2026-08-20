@@ -28,11 +28,22 @@ const { studioActions, studioStore } = await import('../store');
 
 const SR = 48_000;
 
-/** WAV minimal — cukup untuk lolos `sniff`. */
+/**
+ * WAV minimal — cukup untuk lolos `sniff`.
+ *
+ * Isinya BERBEDA tiap panggilan. Sejak import men-dedup berdasarkan SHA-256
+ * (docs/16 §2), dua "berkas" dengan byte identik memang satu lagu: yang kedua
+ * memakai asset yang sama dan tidak pernah men-decode. Tes ini menguji
+ * penempatan clip dari beberapa berkas BERBEDA, jadi byte-nya harus berbeda —
+ * kalau tidak, yang diuji berubah jadi dedup tanpa ada yang menyadarinya.
+ */
+let wavSeed = 0;
 function wav(): ArrayBuffer {
   const b = new Uint8Array(64);
   b.set([...'RIFF'].map((c) => c.charCodeAt(0)), 0);
   b.set([...'WAVE'].map((c) => c.charCodeAt(0)), 8);
+  wavSeed += 1;
+  b[60] = wavSeed & 0xff;
   return b.buffer;
 }
 
@@ -48,6 +59,17 @@ function buffer(frames: number): AudioBuffer {
 
 /** Selesaikan decode ke-`i` dengan materi sepanjang `frames`, lalu biarkan mikrotask jalan. */
 async function finish(i: number, frames: number): Promise<void> {
+  /*
+   * Ditunggu dulu sampai decode-nya benar-benar TERCAPAI.
+   *
+   * Import menghitung SHA-256 sebelum men-decode (dedup, docs/16 §2), dan itu
+   * satu langkah asinkron. Tanpa penantian ini, `pending[i]` masih kosong saat
+   * tes mencoba menyelesaikannya — gagal sebagai "pending[i] is not a
+   * function", yang tidak menyebut penyebabnya sama sekali.
+   */
+  for (let tries = 0; pending[i] === undefined && tries < 50; tries += 1) {
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
   pending[i]!(buffer(frames));
   // Dua putaran: satu untuk `decodeAudioData`, satu untuk jeda makro sebelum
   // `buildEnvelope` (jeda itu hanya dipasang kalau ada pendengar progres).
@@ -64,6 +86,7 @@ let laneA = '';
 
 beforeEach(() => {
   pending.length = 0;
+  wavSeed = 0;
   studioActions.__resetForTest('empty');
   laneA = studioStore.getState().lanes[0]!.id;
 });

@@ -32,10 +32,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCommands } from '../app-shell';
 import { Badge, Button, ProgressBar } from '../ui/cyber';
 import { useStudio } from '../studio/store';
+import { registerImportSink } from '../studio/timeline/import-sink';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
-import { formatBytes, formatDuration, summarize, type LibraryTrack } from './model';
+import { formatBytes, formatDuration, summarize, type LibraryTrack, type UploadState } from './model';
 import { libraryActions, libraryStore, useLibrary } from './store';
+import { createUploadQueue } from './upload';
 
 export interface LibraryDockProps {
   /** Ditimpa di tes. Default dari `import.meta.env.VITE_LIBRARY_API`. */
@@ -116,6 +118,36 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     };
   }, [api]);
 
+  /*
+   * Unggah otomatis, TAPI hanya saat sudah login.
+   *
+   * Sink dipasang di sini — bukan di jalur import — supaya `audio-import.ts`
+   * tetap tidak tahu apa-apa soal jaringan, dan supaya halaman tanpa
+   * kepustakaan tidak membayar apa pun. Saat belum login sink tidak terpasang
+   * sama sekali: import berjalan persis seperti sebelum kepustakaan ada.
+   *
+   * Daftar disegarkan sesudah antrean selesai, bukan per lagu: lima import
+   * sekaligus berarti lima `GET /tracks` yang empat di antaranya sudah basi
+   * sebelum sampai.
+   */
+  useEffect(() => {
+    if (api === null || state.status !== 'masuk') return undefined;
+
+    const queue = createUploadQueue(api);
+    const detach = registerImportSink((imported) => {
+      queue.push(imported);
+      void queue.idle().then(async () => {
+        try {
+          libraryActions.setTracks(await api.tracks());
+        } catch {
+          // Daftar yang gagal disegarkan bukan alasan menandai kepustakaan
+          // rusak: unggahannya sendiri sudah selesai dan tercatat di server.
+        }
+      });
+    });
+    return detach;
+  }, [api, state.status]);
+
   useCommands(
     [
       {
@@ -183,6 +215,8 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
               {note}
             </p>
           ) : null}
+
+          <Uploads uploads={state.uploads} />
 
           <Body
             state={state}
@@ -390,6 +424,72 @@ function Body({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Unggahan yang sedang berjalan.
+ *
+ * Yang SELESAI tidak muncul di sini sama sekali — lagunya pindah ke daftar
+ * kepustakaan di bawahnya, dan itu bukti yang lebih baik daripada baris
+ * "selesai" yang menumpuk. Yang GAGAL bertahan sampai dibuang user, karena
+ * kegagalan yang menghilang sendiri sama saja tidak pernah dilaporkan.
+ */
+function Uploads({
+  uploads,
+}: {
+  readonly uploads: Readonly<Record<string, UploadState>>;
+}): JSX.Element | null {
+  const rows = Object.entries(uploads);
+  if (rows.length === 0) return null;
+
+  return (
+    <div style={{ display: 'grid', gap: '4px' }}>
+      {rows.map(([hash, up]) => (
+        <div
+          key={hash}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0,1fr) auto',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '6px 10px',
+            border: `1px solid ${up.phase === 'gagal' ? '#ff4d4d59' : 'var(--cy-border)'}`,
+            background: up.phase === 'gagal' ? '#ff4d4d0f' : 'var(--cy-surface-2)',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: '10px',
+                color: up.phase === 'gagal' ? '#ff4d4d' : 'var(--cy-text)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {up.name}
+              {up.error === null ? '' : ` — ${up.error}`}
+            </div>
+            {up.phase === 'mengunggah' ? (
+              <div style={{ marginTop: '4px' }}>
+                <ProgressBar value={up.percent} showValue label="MENGUNGGAH" />
+              </div>
+            ) : null}
+          </div>
+
+          {up.phase === 'gagal' ? (
+            <Button size="sm" variant="ghost" onClick={() => libraryActions.dismissUpload(hash)}>
+              TUTUP
+            </Button>
+          ) : (
+            <Badge tone="accent" height={22} dot pulse>
+              {up.phase.toUpperCase()}
+            </Badge>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

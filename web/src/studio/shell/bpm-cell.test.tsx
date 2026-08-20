@@ -80,6 +80,7 @@ function asset(id: number, bpm: number, confidence: number): StudioAsset {
   return {
     id,
     name: `a${id}`,
+    contentHash: '',
     envelope: { levels: [], frames: 0 } as unknown as StudioAsset['envelope'],
     frames: 60 * SR,
     sampleRate: SR,

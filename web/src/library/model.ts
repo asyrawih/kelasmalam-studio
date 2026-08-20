@@ -44,6 +44,20 @@ export type LibraryStatus =
   | 'masuk'
   | 'gagal';
 
+/** Satu unggahan yang sedang berjalan atau baru saja gagal. */
+export interface UploadState {
+  readonly name: string;
+  /**
+   * `memeriksa` — menanyakan apakah byte-nya sudah ada (dedup)
+   * `mengunggah` — byte-nya sedang naik; `percent` berarti
+   * `mencatat` — byte sudah ada, tinggal klaimnya ditulis
+   * `gagal` — berhenti; `error` menyebutkan sebabnya
+   */
+  readonly phase: 'memeriksa' | 'mengunggah' | 'mencatat' | 'gagal';
+  readonly percent: number;
+  readonly error: string | null;
+}
+
 export interface LibraryState {
   readonly status: LibraryStatus;
   readonly user: LibraryUser | null;
@@ -63,6 +77,14 @@ export interface LibraryState {
   readonly loaded: Readonly<Record<string, number>>;
   /** `hash → 0..100` untuk yang sedang diunduh. */
   readonly loading: Readonly<Record<string, number>>;
+  /**
+   * `hash → keadaan unggah`.
+   *
+   * Terpisah dari `loading` walau keduanya "sedang sibuk": arah dan artinya
+   * berbeda, dan satu lagu bisa saja diunduh di satu tab sementara diunggah di
+   * tab lain. Menggabungkannya berarti bar yang sama menampilkan dua hal.
+   */
+  readonly uploads: Readonly<Record<string, UploadState>>;
 }
 
 export function createInitialLibrary(): LibraryState {
@@ -77,6 +99,7 @@ export function createInitialLibrary(): LibraryState {
     listing: false,
     loaded: {},
     loading: {},
+    uploads: {},
   };
 }
 
