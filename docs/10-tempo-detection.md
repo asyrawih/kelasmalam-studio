@@ -37,6 +37,36 @@ PCM (AudioBuffer)
                  └─ studio/shell/BpmCell.tsx
 ```
 
+### Harga PCM-nya, dan kenapa antre
+
+`detect_bpm` membaca materi pada sample rate PENUH — filterbank enam biquad
+tanpa desimasi (`odf.rs`), jadi tidak ada versi murah yang bisa dikirim
+menggantikannya. Artinya satu asset 28 menit stereo @48k = **610 MiB** PCM yang
+harus menyeberang ke worker.
+
+Dua aturan menahan biayanya, dan keduanya tidak terlihat dari hasilnya:
+
+1. **`copyFromChannel`, bukan `getChannelData`.** Salinannya sendiri tidak bisa
+   dihindari (buffer yang di-transfer jadi detached, dan audio yang baru
+   di-import harus tetap bisa diputar). Yang bisa dihindari adalah salinan
+   KEDUA: di Gecko, `AudioBuffer` hasil `decodeAudioData` menyimpan datanya di
+   luar heap JS, dan permintaan pertama lewat `getChannelData` memindahkannya ke
+   `Float32Array` JS yang menempel pada buffer itu (`mJSChannels`) selama ia
+   hidup. Snapshot memori produksi menunjukkannya apa adanya: 6 × 304,9 MiB
+   ArrayBuffer, semuanya berakar di `mJSChannels[i]` — tiga stem stereo 27,75
+   menit, seluruhnya pindah ke heap JS hanya karena analisis tempo membacanya.
+
+2. **Satu asset pada satu waktu.** Worker menganalisis serial, jadi mengirim
+   semuanya di muka tidak mempercepat apa pun — ia hanya menumpuk salinan PCM di
+   message queue. Empat stem yang di-drop bersamaan = 2,4 GiB yang menunggu
+   giliran. Dengan antrean di `tempo-client.ts`, yang berwujud di luar cache
+   preview tidak pernah lebih dari satu asset.
+
+Giliran dilepas pada hasil, pada `tempo-error`, DAN pada `worker.onerror`.
+Melewatkan yang terakhir membuat satu worker yang mati menghentikan antrean
+selamanya — gejalanya bukan error, melainkan BPM yang tidak pernah muncul untuk
+semua file berikutnya.
+
 ## Tiga mekanisme yang menentukan hasilnya
 
 Mencari periode itu mudah; yang sulit adalah **ambiguitas oktaf** — lagu 128 BPM
