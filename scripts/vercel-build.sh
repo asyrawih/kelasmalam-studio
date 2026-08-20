@@ -12,9 +12,15 @@
 #
 # KONSEKUENSI YANG HARUS DIINGAT: pada deploy `--prebuilt`, `vercel.json` TIDAK
 # dibaca. Konfigurasi rute/header datang dari `.vercel/output/config.json`, yang
-# disalin dari `deploy/vercel-config.json`. Itu satu-satunya sumber kebenaran —
-# sengaja tidak ada `vercel.json` di repo ini supaya tidak ada dua berkas yang
-# saling bertentangan dan hanya satu yang benar-benar berlaku.
+# disalin dari `deploy/vercel-config.json`. Itu satu-satunya sumber kebenaran
+# untuk rute dan header.
+#
+# `vercel.json` di root TETAP ADA, tapi tugasnya lain sama sekali: isinya hanya
+# `"ignoreCommand": "exit 0"`, yang membatalkan build yang dipicu integrasi Git
+# Vercel (exit 0 = lewati). Tanpa itu tiap push memicu dua jalur — CI yang benar
+# dan build Vercel sendiri yang pasti gagal karena runner-nya tidak punya Rust.
+# Berkas itu sengaja tidak memuat satu pun rute atau header, supaya tidak pernah
+# ada dua sumber yang bertentangan. Jangan hapus, dan jangan isi apa pun ke sana.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
