@@ -21,6 +21,7 @@
 
 import type { ExportPayload } from '../studio/export/payload';
 import { ExportCancelled, runExport, type ExportEncoder } from '../studio/export/run-export';
+import { PostMessageSink, type ExportChunkMessage } from '../studio/export/sinks';
 import { createWasmExportEngine } from '../studio/export/wasm-engine';
 import { createEncoder } from '../encoders';
 import { EXPORT_CANCEL } from './sab-layout';
@@ -111,29 +112,37 @@ async function run(m: ExportWorkerStart): Promise<void> {
     quality: m.quality,
   });
 
+  // Tiap chunk diteruskan dan dilupakan. Sebelumnya di sini ada
+  //
+  //     const buffer = await result.blob.arrayBuffer();
+  //
+  // — satu ArrayBuffer sebesar SELURUH export, di worker, sesudah `Blob` yang
+  // juga sebesar seluruh export. Dua salinan penuh dari file yang byte-nya
+  // sudah dipotong rapi 4 MiB oleh writer di Rust, dan batas keras ArrayBuffer
+  // membuat export panjang gagal di sini — bukan di engine.
+  const sink = new PostMessageSink((msg: ExportChunkMessage, transfer: Transferable[]) =>
+    (self as unknown as Worker).postMessage(msg, transfer),
+  );
+
   const result = await runExport({
     payload: m.payload,
     sampleRate: m.sampleRate,
     engine: createWasmExportEngine(wasm),
     encoder,
+    sink,
     isCancelled,
     onWarnings: (warnings) => post({ type: 'warnings', warnings: [...warnings] }),
     onProgress: (fraction01) => post({ type: 'progress', fraction01 }),
   });
 
-  // Blob dikirim sebagai ArrayBuffer transferable: menyalin puluhan MB lewat
-  // structured clone itu biaya yang tidak perlu dibayar.
-  const buffer = await result.blob.arrayBuffer();
-  (self as unknown as Worker).postMessage(
-    {
-      type: 'done',
-      buffer,
-      mime: result.blob.type,
-      frames: result.frames,
-      warnings: [...result.warnings],
-    },
-    [buffer],
-  );
+  // Byte-nya sudah di sisi main thread; yang tersisa hanya kabar bahwa aliran
+  // itu lengkap.
+  post({
+    type: 'done',
+    mime: encoder.mime,
+    frames: result.frames,
+    warnings: [...result.warnings],
+  });
 }
 
 /** Panjang blok kontrol dalam i32 (64 KiB). */

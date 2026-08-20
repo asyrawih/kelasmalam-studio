@@ -19,7 +19,10 @@ pub mod wav;
 
 pub use flac::{FlacBits, FlacSpec, FlacStreamWriter};
 pub use offline::{OfflineRenderer, DEFAULT_BATCH_BLOCKS};
-pub use wav::{DitherSettings, WavFormat, WavSpec, WavStreamWriter, CHUNK_BYTES};
+pub use wav::{
+    DitherSettings, RiffOverflow, WavFormat, WavSpec, WavStreamWriter, CHUNK_BYTES,
+    RIFF_MAX_DATA_BYTES,
+};
 
 #[cfg(test)]
 mod tests;

@@ -31,6 +31,16 @@ export interface Encoder {
   finish(): Uint8Array | Promise<Uint8Array>;
   /** Bagian header yang harus di-*patch* setelah selesai (khusus WAV). */
   finalHeader?(): Uint8Array | null;
+  /**
+   * Frame maksimum yang bisa dinyatakan format ini, atau `null` kalau tidak ada
+   * batas yang praktis (FLAC/MP3/OGG).
+   *
+   * Ada supaya pipeline bisa MENOLAK SEBELUM render dimulai. WAV klasik hanya
+   * punya field ukuran 32-bit; tanpa cek ini, export 5 jam berjalan sampai
+   * selesai lalu gagal di byte terakhir — atau, sebelum perbaikan di
+   * `crates/export/src/wav.rs`, menghasilkan file dengan panjang yang bohong.
+   */
+  limitFrames?(): number | null;
 }
 
 export type EncoderFormat = 'wav' | 'flac' | 'mp3' | 'ogg';

@@ -39,9 +39,18 @@ export class WavEncoder implements Encoder {
     this.headerBytes = this.handle.header();
   }
 
-  /** Header placeholder — ditulis sebagai part pertama. */
+  /** Header placeholder — ditulis lebih dulu, ditimpa di akhir. */
   header(): Uint8Array {
     return this.headerBytes;
+  }
+
+  /**
+   * Batas RIFF 32-bit, dihitung di Rust dari channel + bit depth. Sengaja TIDAK
+   * dihitung ulang di sini: dua rumus untuk satu batas berarti dua jawaban, dan
+   * yang salah di antaranya baru ketahuan sebagai file rusak.
+   */
+  limitFrames(): number | null {
+    return this.handle ? this.handle.maxFrames() : null;
   }
 
   encode(planar: Float32Array[]): Uint8Array {

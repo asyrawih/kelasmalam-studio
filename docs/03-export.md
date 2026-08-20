@@ -89,7 +89,8 @@ Kalau SAB tidak tersedia (degraded mode), cancel lewat `postMessage` yang
 terbaca saat yield — sama saja efeknya karena kita memang yield tiap batch.
 
 Setelah cancel: worker membuang buffer, mengirim `{type:'cancelled'}`, dan
-**tidak** memanggil encoder. Blob parts yang sudah terkumpul di-drop.
+**tidak** memanggil encoder. Sink di-`abort()` — apa yang sudah ditulis dibuang,
+termasuk swap file di disk (lihat 3b).
 
 ## 3b. WAV encoder (pure Rust, `wasm32-unknown-unknown`)
 
@@ -161,7 +162,7 @@ fn write_i24_le(out: &mut Vec<u8>, v: i32) {
 Perhatikan: `clamp` ke rentang 24-bit **sebelum** shift, dan `>> ` pada `i32`
 adalah arithmetic shift, jadi byte ke-3 sudah membawa bit tanda dengan benar.
 
-### Streaming ke Blob parts
+### Streaming lewat sink
 
 Render 10 menit stereo 24-bit = 48000×600×2×3 = **172 MB**. Satu `Vec<u8>`
 sebesar itu di WASM memaksa `memory.grow` besar (dan di 32-bit WASM, ruang
@@ -175,15 +176,51 @@ Pola yang dipakai:
      (zero-copy: buffer berpindah kepemilikan, tidak dikopi)
    - Rust me-*reset* `Vec` chunk (`clear()`, kapasitas dipertahankan → nol alokasi
      setelah chunk pertama)
-3. Main thread mengumpulkan chunk ke array `BlobPart[]`.
-4. Selesai: **patch header** (ukuran RIFF & data chunk sudah diketahui) →
-   `new Blob([header, ...chunks])`.
+3. Chunk diserahkan ke sebuah **sink** (`web/src/studio/export/sinks.ts`) dan
+   segera dilupakan. `runExport` tidak pernah memegang lebih dari satu chunk.
+4. Selesai: **patch header** (ukuran RIFF & data chunk sudah diketahui) ditulis
+   menimpa posisi 0, lalu sink ditutup.
 
-Karena `Blob` di browser di-back oleh disk kalau besar, memori JS tidak meledak.
+Ada tiga sink, dan pilihannya menentukan batas ukuran file:
 
-Untuk file >2 GB atau ketika ingin benar-benar streaming ke disk: pakai
-**File System Access API** `showSaveFilePicker()` → `createWritable()` →
-`write(chunk)` per chunk. Lihat 3d.
+| Sink | Ke mana | Batas |
+|---|---|---|
+| `FileSystemSink` | `createWritable()` → disk, per chunk | ukuran disk |
+| `PostMessageSink` | worker → main thread, transferable | (meneruskan saja) |
+| `BlobSink` | `BlobPart[]` di memori | RAM/limit Blob browser |
+
+**Kenapa lapisan ini ada.** Versi sebelumnya menumpuk SELURUH file di satu
+`BlobPart[]`, dan worker menambah satu tahap lagi: `blob.arrayBuffer()`, yaitu
+satu ArrayBuffer sebesar seluruh export. Semua kerja streaming di sisi Rust
+dibayar ulang di boundary JS, dan export panjang gagal di sana — bukan di
+engine. `BlobSink` masih melakukan hal yang sama, tapi sekarang ia adalah
+*fallback* yang dipilih secara sadar untuk browser tanpa File System Access
+(Firefox, Safari), bukan satu-satunya jalur.
+
+Pada pembatalan atau kegagalan, sink di-`abort()`: `FileSystemSink` membuang
+swap file-nya sehingga tidak ada berkas separuh jadi yang tertinggal di disk
+terlihat seperti export yang berhasil.
+
+### Batas 4 GiB WAV
+
+WAV klasik menyimpan ukuran RIFF **dan** ukuran data di field 32-bit, jadi
+batasnya `2^32 - 1 - 36` byte data:
+
+| Format (stereo @48k) | Byte/frame | Batas |
+|---|---|---|
+| PCM 16-bit | 4 | ~6,2 jam |
+| PCM 24-bit | 6 | ~4,1 jam |
+| Float 32-bit | 8 | ~3,1 jam |
+
+Angkanya dihitung `WavStreamWriter::max_frames()` dan **hanya** di sana; sisi JS
+membacanya lewat `Encoder.limitFrames()`. Export yang melewatinya ditolak
+sebelum blok pertama dirender — bukan di byte terakhir, dan bukan (seperti
+sebelumnya) dijepit diam-diam dengan `saturating_add` sehingga file selesai
+dengan panjang yang bohong.
+
+Untuk melewati batas itu diperlukan **RF64**, yang belum ada. Sementara ini
+jalan keluarnya: FLAC, bit depth lebih rendah, atau rentang yang lebih pendek —
+dan pesan errornya menyebutkan ketiganya.
 
 ## 3c. MP3 & OGG — analisis toolchain
 

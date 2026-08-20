@@ -394,19 +394,35 @@ impl WavEncoderHandle {
         self.inner.placeholder_header().to_vec()
     }
 
+    /// Frame maksimum yang muat di header RIFF untuk spec ini. Sisi JS
+    /// memakainya untuk menolak export SEBELUM render dimulai; `f64` karena di
+    /// JS angka ini akan dibandingkan dengan `number`.
+    #[wasm_bindgen(js_name = maxFrames)]
+    pub fn max_frames(&self) -> f64 {
+        self.inner.max_frames() as f64
+    }
+
     /// Encode satu batch planar. Mengembalikan chunk 4 MiB kalau ambangnya
     /// tercapai, atau kosong. `l`/`r` disalin dari view JS (bukan pointer):
     /// jalur ini tidak realtime dan salinannya ~1 ms per 4 MB.
-    pub fn encode(&mut self, l: &[f32], r: &[f32]) -> Vec<u8> {
+    ///
+    /// `Err` begitu data melewati batas RIFF: berhenti di tengah dengan pesan
+    /// yang jelas lebih baik daripada menyelesaikan file yang panjangnya tidak
+    /// bisa dinyatakan. Normalnya ini tidak pernah tercapai — sisi JS sudah
+    /// menolak lebih dulu lewat [`Self::max_frames`]; ini lapis keduanya.
+    pub fn encode(&mut self, l: &[f32], r: &[f32]) -> Result<Vec<u8>, JsError> {
         self.inner.write_planar(&[l, r]);
-        match self.inner.poll_chunk() {
+        if let Some(e) = self.inner.riff_overflow() {
+            return Err(JsError::new(&e.to_string()));
+        }
+        Ok(match self.inner.poll_chunk() {
             Some(chunk) => {
                 let out = chunk.to_vec();
                 self.inner.release_chunk();
                 out
             }
             None => Vec::new(),
-        }
+        })
     }
 
     /// Sisa chunk terakhir (boleh kosong).
@@ -419,8 +435,11 @@ impl WavEncoderHandle {
     /// Header final (RIFF size + data size sudah benar). Main thread menaruhnya
     /// sebagai part pertama Blob, menggantikan header placeholder.
     #[wasm_bindgen(js_name = patchHeader)]
-    pub fn patch_header(&self) -> Vec<u8> {
-        self.inner.patch_header().to_vec()
+    pub fn patch_header(&self) -> Result<Vec<u8>, JsError> {
+        self.inner
+            .patch_header()
+            .map(|h| h.to_vec())
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 }
 

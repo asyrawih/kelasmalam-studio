@@ -19,8 +19,22 @@ import {
   type ExportEngine,
   type RenderHandle,
 } from './run-export';
+import { BlobSink } from './sinks';
 import type { ExportPayload } from './payload';
 import type { StudioState } from '../model';
+
+/**
+ * `runExport` menuliskan byte ke sebuah sink, bukan mengembalikan Blob — lihat
+ * `sinks.ts`. Tes di bawah peduli pada apa yang KELUAR, jadi helper ini
+ * memasang `BlobSink` dan menyajikan hasilnya sebagai byte.
+ */
+async function runToBytes(
+  opts: Omit<Parameters<typeof runExport>[0], 'sink'>,
+): Promise<{ warnings: readonly string[]; frames: number; bytes: Uint8Array; blob: Blob }> {
+  const sink = new BlobSink();
+  const r = await runExport({ ...opts, sink });
+  return { ...r, bytes: sink.bytes(), blob: sink.blob(opts.encoder.mime) };
+}
 
 // ── Dobel ────────────────────────────────────────────────────────────────────
 
@@ -133,7 +147,7 @@ const noYield = (): Promise<void> => Promise.resolve();
 describe('runExport', () => {
   it('mendaftarkan SEMUA asset sebelum render pertama', async () => {
     const f = fakeEngine();
-    await runExport({
+    await runToBytes({
       payload: payload(),
       sampleRate: 48_000,
       engine: f.engine,
@@ -152,7 +166,7 @@ describe('runExport', () => {
   it('mengambil ULANG view tiap batch, jadi memory.grow tidak membuatnya membaca data basi', async () => {
     const f = fakeEngine({ batches: 3, growAtBatch: 2 });
     const enc = fakeEncoder();
-    await runExport({
+    await runToBytes({
       payload: payload(),
       sampleRate: 48_000,
       engine: f.engine,
@@ -170,7 +184,7 @@ describe('runExport', () => {
   it('melaporkan progress monoton 0..1 dan membebaskan renderer', async () => {
     const f = fakeEngine({ batches: 4 });
     const seen: number[] = [];
-    const r = await runExport({
+    const r = await runToBytes({
       payload: payload(),
       sampleRate: 48_000,
       engine: f.engine,
@@ -189,7 +203,7 @@ describe('runExport', () => {
     const f = fakeEngine({ batches: 100 });
     let batchesSeen = 0;
     await expect(
-      runExport({
+      runToBytes({
         payload: payload(),
         sampleRate: 48_000,
         engine: f.engine,
@@ -214,7 +228,7 @@ describe('runExport', () => {
   it('batal sebelum batch pertama tidak merender apa pun', async () => {
     const f = fakeEngine();
     await expect(
-      runExport({
+      runToBytes({
         payload: payload(),
         sampleRate: 48_000,
         engine: f.engine,
@@ -228,7 +242,7 @@ describe('runExport', () => {
 
   it('mengganti header placeholder dengan header final, bukan menambahkannya', async () => {
     const f = fakeEngine({ batches: 1 });
-    const r = await runExport({
+    const r = await runToBytes({
       payload: payload(),
       sampleRate: 48_000,
       engine: f.engine,
@@ -245,7 +259,7 @@ describe('runExport', () => {
   it('meneruskan peringatan dari Rust dan menambah peringatan sample-rate asset', async () => {
     const f = fakeEngine({ warnings: ['Lane "a" punya 5 band EQ.'] });
     const got: string[][] = [];
-    const r = await runExport({
+    const r = await runToBytes({
       payload: {
         ...payload(),
         assets: [
@@ -268,7 +282,7 @@ describe('runExport', () => {
   it('tanpa selisih, tidak ada peringatan sama sekali', async () => {
     const f = fakeEngine();
     const onWarnings = vi.fn();
-    const r = await runExport({
+    const r = await runToBytes({
       payload: payload(),
       sampleRate: 48_000,
       engine: f.engine,
@@ -459,7 +473,7 @@ describe('penjaga export senyap', () => {
   it('menolak render kalau ada clip tapi PCM tidak dikirim', async () => {
     const f = fakeEngine({ clipCount: 3 });
     await expect(
-      runExport({
+      runToBytes({
         payload: { ...payload(), assets: [] },
         sampleRate: 48_000,
         engine: f.engine,
@@ -474,7 +488,7 @@ describe('penjaga export senyap', () => {
 
   it('project kosong (nol clip) tetap boleh di-render', async () => {
     const f = fakeEngine({ clipCount: 0 });
-    const r = await runExport({
+    const r = await runToBytes({
       payload: { ...payload(), assets: [] },
       sampleRate: 48_000,
       engine: f.engine,
@@ -507,7 +521,7 @@ describe('penjaga muat-memori', () => {
     f.engine.memoryHeadroomBytes = () => 1024 * 1024;
 
     await expect(
-      runExport({
+      runToBytes({
         payload: bigPayload(512 * 1024),
         sampleRate: 48_000,
         engine: f.engine,
@@ -530,7 +544,7 @@ describe('penjaga muat-memori', () => {
 
     let err: Error | null = null;
     try {
-      await runExport({
+      await runToBytes({
         payload: bigPayload(512 * 1024),
         sampleRate: 48_000,
         engine: f.engine,
@@ -552,7 +566,7 @@ describe('penjaga muat-memori', () => {
     const f = fakeEngine();
     f.engine.memoryHeadroomBytes = () => 8 * 1024 * 1024;
 
-    const r = await runExport({
+    const r = await runToBytes({
       payload: bigPayload(512 * 1024),
       sampleRate: 48_000,
       engine: f.engine,
@@ -566,7 +580,7 @@ describe('penjaga muat-memori', () => {
     // `undefined` berarti "tidak tahu", dan tidak tahu bukan alasan menolak.
     const f = fakeEngine();
     expect(f.engine.memoryHeadroomBytes).toBeUndefined();
-    const r = await runExport({
+    const r = await runToBytes({
       payload: bigPayload(4 * 1024 * 1024),
       sampleRate: 48_000,
       engine: f.engine,
@@ -600,7 +614,7 @@ describe('error asli tidak tertimpa free()', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await expect(
-      runExport({
+      runToBytes({
         payload: payload(),
         sampleRate: 48_000,
         engine: f.engine,
@@ -623,7 +637,7 @@ describe('error asli tidak tertimpa free()', () => {
     };
 
     await expect(
-      runExport({
+      runToBytes({
         payload: payload(),
         sampleRate: 48_000,
         engine: f.engine,
@@ -631,5 +645,171 @@ describe('error asli tidak tertimpa free()', () => {
         yieldToEventLoop: noYield,
       }),
     ).rejects.toThrow('free rusak');
+  });
+});
+
+/**
+ * Kontrak `runExport` ↔ sink.
+ *
+ * Urutannya penting sampai ke detail: header placeholder harus keluar SEBELUM
+ * chunk pertama (kalau tidak ia tidak bisa ditimpa di posisi 0), dan
+ * `patchHeader` harus keluar SEBELUM `close` (sesudah ditutup, berkas di disk
+ * sudah dipindahkan ke tujuannya). Dan pada kegagalan apa pun, sink harus
+ * di-`abort` — berkas separuh jadi yang ditutup rapi adalah kegagalan yang
+ * paling sulit dikenali user.
+ */
+describe('runExport → sink', () => {
+  function recordingSink() {
+    const log: string[] = [];
+    let held = 0;
+    let maxHeld = 0;
+    return {
+      log,
+      maxHeld: () => maxHeld,
+      sink: {
+        header: (b: Uint8Array) => {
+          log.push(`header(${b.length})`);
+        },
+        chunk: (b: Uint8Array) => {
+          log.push(`chunk(${b.length})`);
+          // Sink nyata menuliskannya lalu melepasnya. Yang diukur di sini:
+          // `runExport` tidak pernah menyerahkan chunk kedua sambil masih
+          // memegang yang pertama.
+          held++;
+          maxHeld = Math.max(maxHeld, held);
+          held--;
+        },
+        patchHeader: (b: Uint8Array) => {
+          log.push(`patchHeader(${b.length})`);
+        },
+        close: () => {
+          log.push('close');
+        },
+        abort: () => {
+          log.push('abort');
+        },
+      },
+    };
+  }
+
+  it('menyerahkan header, tiap chunk, header final, lalu menutup — dengan urutan itu', async () => {
+    const f = fakeEngine({ batches: 3 });
+    const r = recordingSink();
+
+    await runExport({
+      payload: payload(),
+      sampleRate: 48_000,
+      engine: f.engine,
+      encoder: fakeEncoder(),
+      sink: r.sink,
+      yieldToEventLoop: noYield,
+    });
+
+    expect(r.log).toEqual([
+      'header(2)',
+      'chunk(1)',
+      'chunk(1)',
+      'chunk(1)',
+      'chunk(1)', // sisa dari finish()
+      'patchHeader(2)',
+      'close',
+    ]);
+    expect(r.maxHeld()).toBe(1);
+  });
+
+  it('membatalkan → abort, dan TIDAK close', async () => {
+    const f = fakeEngine({ batches: 100 });
+    const r = recordingSink();
+    let batches = 0;
+
+    await expect(
+      runExport({
+        payload: payload(),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: fakeEncoder(),
+        sink: r.sink,
+        onProgress: () => {
+          batches++;
+        },
+        isCancelled: () => batches >= 2,
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toBeInstanceOf(ExportCancelled);
+
+    expect(r.log).toContain('abort');
+    expect(r.log).not.toContain('close');
+    expect(r.log).not.toContain('patchHeader(2)');
+  });
+
+  it('encoder gagal di tengah → abort, dan error aslinya yang naik', async () => {
+    const f = fakeEngine({ batches: 5 });
+    const r = recordingSink();
+    const enc = fakeEncoder();
+    let n = 0;
+    enc.encode = () => {
+      if (++n === 3) throw new Error('encoder meledak');
+      return new Uint8Array([1]);
+    };
+
+    await expect(
+      runExport({
+        payload: payload(),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: enc,
+        sink: r.sink,
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toThrow('encoder meledak');
+
+    expect(r.log).toContain('abort');
+    expect(r.log).not.toContain('close');
+    expect(f.isFreed()).toBe(true);
+  });
+
+  /**
+   * Batas format dicek dari `endSample`, jadi ia bisa menolak sebelum
+   * `createRender` — tidak ada renderer yang dibuat, tidak ada byte yang
+   * ditulis, dan waktu render tidak terbuang.
+   */
+  it('menolak sebelum render kalau panjangnya melewati batas format', async () => {
+    const f = fakeEngine({ batches: 3 });
+    const r = recordingSink();
+    const enc = fakeEncoder();
+    enc.limitFrames = () => 100;
+
+    await expect(
+      runExport({
+        payload: { ...payload(), endSample: 101 },
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: enc,
+        sink: r.sink,
+        yieldToEventLoop: noYield,
+      }),
+    ).rejects.toThrow(/terlalu panjang untuk format ini/);
+
+    expect(r.log).toEqual([]);
+    expect(f.calls.filter((c) => c.startsWith('render('))).toEqual([]);
+  });
+
+  it('batas null berarti tak terbatas, bukan nol', async () => {
+    const f = fakeEngine({ batches: 1 });
+    const r = recordingSink();
+    const enc = fakeEncoder();
+    enc.limitFrames = () => null;
+
+    await expect(
+      runExport({
+        payload: payload(),
+        sampleRate: 48_000,
+        engine: f.engine,
+        encoder: enc,
+        sink: r.sink,
+        yieldToEventLoop: noYield,
+      }),
+    ).resolves.toBeTruthy();
+    expect(r.log).toContain('close');
   });
 });
