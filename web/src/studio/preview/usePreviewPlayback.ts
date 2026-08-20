@@ -187,9 +187,17 @@ export function usePreviewPlayback(): void {
       if (state.scrubbing) {
         if (wasScrubbing.current === false) stop();
         wasScrubbing.current = true;
-        // Senyap saat transport berhenti: menggeser playhead untuk menaruh
-        // posisi bukan permintaan untuk mendengar apa pun.
-        if (state.playing) scrubTo(state);
+        // TRANSPORT TIDAK IKUT MENENTUKAN. Butir berbunyi baik saat PLAY maupun
+        // saat berhenti, sama seperti jog deck DJ (`dj/audio/deck-player.ts`)
+        // dan sama seperti pita: memutar piringan dengan tangan berbunyi karena
+        // TANGAN-nya yang menggerakkan materi, bukan karena motornya menyala.
+        // Dulu di sini ada syarat `state.playing` dengan alasan "menggeser
+        // playhead untuk menaruh posisi bukan permintaan untuk mendengar" —
+        // tapi justru saat berhenti-lah scrub paling dibutuhkan: mencari titik
+        // potong dengan transport diam adalah cara kerja yang normal, dan
+        // memaksa PLAY dulu hanya supaya scrub bersuara membuat posisi awalnya
+        // ikut bergerak.
+        scrubTo(state);
         wasPlaying.current = state.playing;
         lastMix.current = mix;
         lastSeek.current = state.seekEpoch;
