@@ -56,7 +56,7 @@ describe('createAudioAsset', () => {
     expect(new Headers(init.headers).get('content-type')).toBeNull();
   });
 
-  it('mengirim `request` sebagai JSON dan `fileContent` sebagai berkas', async () => {
+  it('mengirim `request` sebagai field JSON teks dan `fileContent` sebagai berkas', async () => {
     const fetchImpl = spyFetch(() => reply({ path: 'operations/op-1' }));
     await createAudioAsset({ base: BASE, apiKey: KEY, fetchImpl: fetchImpl as unknown as typeof fetch }, input);
 
@@ -64,9 +64,8 @@ describe('createAudioAsset', () => {
     const form = init.body as FormData;
 
     const meta = form.get('request');
-    expect(meta).toBeInstanceOf(Blob);
-    expect((meta as Blob).type).toBe('application/json');
-    expect(JSON.parse(await (meta as Blob).text())).toEqual({
+    expect(typeof meta).toBe('string');
+    expect(JSON.parse(meta as string)).toEqual({
       assetType: 'Audio',
       displayName: 'LAGU',
       description: 'catatan',
@@ -79,6 +78,31 @@ describe('createAudioAsset', () => {
     expect((content as Blob).size).toBe(4);
   });
 
+  it('body multipart yang benar-benar terserialisasi tidak kosong dan tidak memberi filename pada metadata', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit = {}) => {
+      const wire = new Request('https://wire.test', {
+        method: 'POST',
+        body: init.body,
+      });
+      const contentType = wire.headers.get('content-type') ?? '';
+      const body = await wire.text();
+
+      expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
+      expect(body).toContain('name="request"');
+      expect(body).not.toContain('name="request"; filename=');
+      expect(body).toContain('name="fileContent"; filename="lagu.mp3"');
+      expect(body).toContain('"assetType":"Audio"');
+      expect(body.length).toBeGreaterThan(input.bytes.byteLength);
+      return reply({ path: 'operations/op-wire' });
+    });
+
+    const result = await createAudioAsset(
+      { base: BASE, apiKey: KEY, fetchImpl: fetchImpl as unknown as typeof fetch },
+      input,
+    );
+    expect(result).toMatchObject({ ok: true });
+  });
+
   it('grup memakai groupId, bukan userId', async () => {
     const fetchImpl = spyFetch(() => reply({ path: 'operations/op-1' }));
     await createAudioAsset(
@@ -87,7 +111,7 @@ describe('createAudioAsset', () => {
     );
 
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    const meta = JSON.parse(await ((init.body as FormData).get('request') as Blob).text());
+    const meta = JSON.parse((init.body as FormData).get('request') as string);
     expect(meta.creationContext.creator).toEqual({ groupId: '777' });
   });
 

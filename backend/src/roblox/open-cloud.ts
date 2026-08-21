@@ -69,11 +69,11 @@ export function normalizeBase(base: string): string {
 /**
  * Kirim satu berkas audio.
  *
- * Bagian `request` dikirim sebagai Blob ber-`type: application/json`, BUKAN
- * string biasa: `FormData.append(name, string)` menghasilkan bagian
- * `text/plain`, dan Open Cloud menolaknya dengan INVALID_ARGUMENT yang tidak
- * menyebut sebabnya. Ini persis padanan `-F 'request=…;type=application/json'`
- * di contoh curl dokumentasinya.
+ * Bagian `request` dikirim sebagai field teks multipart, persis padanan
+ * `--form 'request="{...}"'` di dokumentasi Roblox. Jangan membungkusnya dalam
+ * `Blob`: itu menambahkan `filename="blob"`, sehingga bagian metadata dibaca
+ * sebagai unggahan berkas alih-alih nilai form dan Roblox dapat melaporkan
+ * badan request kosong.
  */
 export async function createAudioAsset(
   cfg: OpenCloudConfig,
@@ -90,7 +90,7 @@ export async function createAudioAsset(
   });
 
   const form = new FormData();
-  form.append('request', new Blob([meta], { type: 'application/json' }));
+  form.append('request', meta);
   form.append('fileContent', new Blob([input.bytes], { type: input.mime }), input.fileName);
 
   const res = await call(cfg, `${normalizeBase(cfg.base)}/assets/v1/assets`, {
