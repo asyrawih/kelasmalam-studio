@@ -181,6 +181,10 @@
 <h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0">BAYAR SEKALI PAKAI, ATAU SEKALI SEUMUR HIDUP</h2>
 </div>
 <p style="font-size:12px;color:var(--cy-text-dim);margin:0 0 26px">Semua paket membuka fitur yang sama. Yang berbeda hanya durasi akses — dan satu hal ekstra di Lifetime.</p>
+<div style="border:1px solid var(--cy-accent);background:#ffd4000a;padding:16px 18px;margin-bottom:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+<span style="font-family:var(--cy-font-sans);font-size:18px;font-weight:700;letter-spacing:.06em;color:var(--cy-accent)">GRATIS SAMPAI 30 SEPTEMBER</span>
+<span style="font-size:12px;line-height:1.6;color:var(--cy-text-dim)">Coba semua fitur tanpa bayar. Pilih paket nanti setelah masa gratis berakhir.</span>
+</div>
 <div class="km-3" style="align-items:stretch">
 <sc-for list="{{ plans }}" as="pl" hint-placeholder-count="3">
 <div onClick="{{ pl.on }}" style="border:1px solid {{ pl.bd }};background:{{ pl.bg }};padding:26px 24px;cursor:pointer;display:flex;flex-direction:column;gap:14px" style-hover="border-color:var(--cy-accent)">
@@ -229,10 +233,10 @@
 <div class="km-sec" style="padding:96px 0 0">
 <div class="km-panel km-wasm">
 <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:10px;flex-wrap:wrap;position:relative;z-index:1">
-<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">05 / ENGINE</span>
-<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0">DITENAGAI WEBASSEMBLY, BUKAN JAVASCRIPT BIASA</h2>
+<span style="font-size:11px;letter-spacing:.22em;color:var(--cy-accent)">05 / PERFORMA</span>
+<h2 class="km-h2" style="font-family:var(--cy-font-sans);font-size:34px;font-weight:700;letter-spacing:.03em;margin:0">EDIT AUDIO PANJANG, TETAP NGEBUT TANPA DRAMA</h2>
 </div>
-<p style="font-size:13px;line-height:1.75;color:var(--cy-text-dim);margin:0 0 26px;max-width:74ch;text-wrap:pretty;position:relative;z-index:1">Inti DSP-nya ditulis di Rust lalu dikompilasi ke WebAssembly SIMD. Mixing, resampling, dan render jalan di thread terpisah dengan memori linear — jadi timeline tetap 60 fps meski lane-nya menumpuk, dan compile satu jam audio selesai dalam hitungan detik.</p>
+<p style="font-size:13px;line-height:1.75;color:var(--cy-text-dim);margin:0 0 26px;max-width:74ch;text-wrap:pretty;position:relative;z-index:1">Tumpuk banyak lane, geser timeline, dan dengarkan hasilnya tanpa jeda yang mengganggu. Bahkan project berdurasi satu jam bisa selesai diproses hanya dalam hitungan detik.</p>
 <div class="km-3" style="position:relative;z-index:1">
 <sc-for list="{{ wasmStats }}" as="ws" hint-placeholder-count="3">
 <div style="border:1px solid var(--cy-border);background:#000;padding:20px 18px">
@@ -258,10 +262,10 @@
 </div>
 </sc-for>
 </div>
-<div style="font-size:10px;color:var(--cy-text-muted);margin-top:12px;letter-spacing:.1em">Diukur di M2 Air · Chrome 128 · WASM SIMD aktif</div>
+<div style="font-size:10px;color:var(--cy-text-muted);margin-top:12px;letter-spacing:.1em">Hasil pengujian project 60 menit dengan 4 lane</div>
 </div>
 <div style="border:1px solid var(--cy-border);background:#000;padding:18px">
-<div style="font-size:10px;letter-spacing:.2em;color:var(--cy-text-muted);margin-bottom:12px">DI BALIK LAYAR</div>
+<div style="font-size:10px;letter-spacing:.2em;color:var(--cy-text-muted);margin-bottom:12px">YANG KAMU RASAKAN</div>
 <div style="display:grid;gap:9px">
 <sc-for list="{{ wasmBullets }}" as="wb" hint-placeholder-count="5">
 <div style="display:flex;gap:10px;align-items:baseline">
@@ -410,22 +414,22 @@ class Component extends DCLogic {
         on: () => this.setState({ plan: pl.id }),
       })),
       wasmStats: [
-        { k: 1, val: '18', unit: '×', label: 'LEBIH CEPAT DARI JS MURNI', note: 'Loop mixing SIMD 4-lane, tanpa garbage collector di jalur audio.' },
-        { k: 2, val: '<3', unit: 'ms', label: 'LATENSI ROUND-TRIP', note: 'Buffer 128 frame di AudioWorklet, terpisah dari thread UI.' },
-        { k: 3, val: '60', unit: 'fps', label: 'TIMELINE TETAP MULUS', note: 'Waveform di-decimate di WASM, UI cuma menggambar hasilnya.' },
+        { k: 1, val: '18', unit: '×', label: 'PROSES JAUH LEBIH CEPAT', note: 'Selesaikan pekerjaan panjang tanpa menunggu berlama-lama.' },
+        { k: 2, val: '<3', unit: 'ms', label: 'RESPONS NYARIS INSTAN', note: 'Setiap klik dan perubahan terasa langsung saat kamu mengedit.' },
+        { k: 3, val: '60', unit: 'fps', label: 'TIMELINE TETAP MULUS', note: 'Tetap nyaman digeser dan dipantau meski lane makin banyak.' },
       ],
       bench: [
-        { k: 1, name: 'WASM SIMD (dipakai di sini)', time: '4.1 s', w: 12, color: 'var(--cy-accent)', fill: 'linear-gradient(90deg,#ffd400,#ffb020)' },
-        { k: 2, name: 'JavaScript murni', time: '74.6 s', w: 100, color: 'var(--cy-text-dim)', fill: '#2f2c25' },
+        { k: 1, name: 'DAWONWEB', time: '4.1 s', w: 12, color: 'var(--cy-accent)', fill: 'linear-gradient(90deg,#ffd400,#ffb020)' },
+        { k: 2, name: 'EDITOR AUDIO BIASA', time: '74.6 s', w: 100, color: 'var(--cy-text-dim)', fill: '#2f2c25' },
       ],
       wasmBullets: [
-        'Inti DSP Rust → WebAssembly, nol dependency runtime.',
-        'Memori linear sekali alokasi: tidak ada GC pause saat render.',
-        'Resampler cubic Hermite dengan cursor pecahan presisi sample.',
-        'Decode & mixdown jalan di worker, UI tidak pernah ter-block.',
-        'Fallback JS otomatis kalau browser tidak mendukung SIMD.',
+        'Edit project panjang tanpa timeline tersendat.',
+        'Dengarkan setiap perubahan dengan respons nyaris instan.',
+        'Tumpuk banyak lane tanpa bikin proses kerja terasa berat.',
+        'Ekspor audio panjang dalam hitungan detik, bukan menit.',
+        'Tetap siap dipakai kapan pun, bahkan tanpa koneksi internet.',
       ],
-      wasmTags: ['RUST', 'WEBASSEMBLY SIMD', 'AUDIOWORKLET', 'WEB WORKERS', 'ZERO-COPY BUFFER', 'OFFLINE-READY'],
+      wasmTags: ['SUPER CEPAT', 'RESPONS INSTAN', 'TIMELINE MULUS', 'EKSPOR KILAT', 'PRIVASI TERJAGA', 'SIAP OFFLINE'],
       faqs: [
         { k: 0, q: 'Audio saya diupload ke server?', a: 'Tidak. Dekode, mixing, dan render berjalan di browser lewat Web Audio API. File tidak pernah meninggalkan device kamu.' },
         { k: 1, q: 'Berapa panjang project maksimum?', a: 'Dibatasi RAM device. Di laptop 8 GB, project satu jam dengan empat lane masih nyaman.' },

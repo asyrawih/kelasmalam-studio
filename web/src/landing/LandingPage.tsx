@@ -467,6 +467,33 @@ export function LandingPage({
               Semua paket membuka fitur yang sama. Yang berbeda hanya durasi akses — dan satu hal
               ekstra di Lifetime.
             </p>
+            <div
+              style={{
+                border: '1px solid var(--cy-accent)',
+                background: '#ffd4000a',
+                padding: '16px 18px',
+                marginBottom: '18px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'var(--cy-font-sans)',
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  letterSpacing: '.06em',
+                  color: 'var(--cy-accent)',
+                }}
+              >
+                GRATIS SAMPAI 30 SEPTEMBER
+              </span>
+              <span style={{ fontSize: '12px', lineHeight: 1.6, color: 'var(--cy-text-dim)' }}>
+                Coba semua fitur tanpa bayar. Pilih paket nanti setelah masa gratis berakhir.
+              </span>
+            </div>
             <div className="km-3" style={{ alignItems: 'stretch' }}>
               {PLANS.map((pl) => {
                 const active = plan === pl.id;
@@ -622,9 +649,9 @@ export function LandingPage({
         <div className="km-sec">
           <div className="km-panel km-wasm">
             <div style={{ ...SECTION_HEAD, marginBottom: '10px', position: 'relative', zIndex: 1 }}>
-              <span style={EYEBROW}>05 / ENGINE</span>
+              <span style={EYEBROW}>05 / PERFORMA</span>
               <h2 className="km-h2" style={H2}>
-                DITENAGAI WEBASSEMBLY, BUKAN JAVASCRIPT BIASA
+                EDIT AUDIO PANJANG, TETAP NGEBUT TANPA DRAMA
               </h2>
             </div>
             <p
@@ -639,9 +666,8 @@ export function LandingPage({
                 zIndex: 1,
               } as CSSProperties}
             >
-              Inti DSP-nya ditulis di Rust lalu dikompilasi ke WebAssembly SIMD. Mixing, resampling,
-              dan render jalan di thread terpisah dengan memori linear — jadi timeline tetap 60 fps
-              meski lane-nya menumpuk, dan compile satu jam audio selesai dalam hitungan detik.
+              Tumpuk banyak lane, geser timeline, dan dengarkan hasilnya tanpa jeda yang mengganggu.
+              Bahkan project berdurasi satu jam bisa selesai diproses hanya dalam hitungan detik.
             </p>
             <div className="km-3" style={{ position: 'relative', zIndex: 1 }}>
               {WASM_STATS.map((ws) => (
@@ -770,7 +796,7 @@ export function LandingPage({
                     letterSpacing: '.1em',
                   }}
                 >
-                  Diukur di M2 Air · Chrome 128 · WASM SIMD aktif
+                  Hasil pengujian project 60 menit dengan 4 lane
                 </div>
               </div>
               <div
@@ -784,7 +810,7 @@ export function LandingPage({
                     marginBottom: '12px',
                   }}
                 >
-                  DI BALIK LAYAR
+                  YANG KAMU RASAKAN
                 </div>
                 <div style={{ display: 'grid', gap: '9px' }}>
                   {WASM_BULLETS.map((wb) => (

@@ -208,33 +208,33 @@ export const WASM_STATS: readonly WasmStat[] = [
   {
     val: '18',
     unit: '×',
-    label: 'LEBIH CEPAT DARI JS MURNI',
-    note: 'Loop mixing SIMD 4-lane, tanpa garbage collector di jalur audio.',
+    label: 'PROSES JAUH LEBIH CEPAT',
+    note: 'Selesaikan pekerjaan panjang tanpa menunggu berlama-lama.',
   },
   {
     val: '<3',
     unit: 'ms',
-    label: 'LATENSI ROUND-TRIP',
-    note: 'Buffer 128 frame di AudioWorklet, terpisah dari thread UI.',
+    label: 'RESPONS NYARIS INSTAN',
+    note: 'Setiap klik dan perubahan terasa langsung saat kamu mengedit.',
   },
   {
     val: '60',
     unit: 'fps',
     label: 'TIMELINE TETAP MULUS',
-    note: 'Waveform di-decimate di WASM, UI cuma menggambar hasilnya.',
+    note: 'Tetap nyaman digeser dan dipantau meski lane makin banyak.',
   },
 ];
 
 export const BENCH: readonly Bench[] = [
   {
-    name: 'WASM SIMD (dipakai di sini)',
+    name: 'DAWONWEB',
     time: '4.1 s',
     w: 12,
     color: 'var(--cy-accent)',
     fill: 'linear-gradient(90deg,#ffd400,#ffb020)',
   },
   {
-    name: 'JavaScript murni',
+    name: 'EDITOR AUDIO BIASA',
     time: '74.6 s',
     w: 100,
     color: 'var(--cy-text-dim)',
@@ -243,20 +243,20 @@ export const BENCH: readonly Bench[] = [
 ];
 
 export const WASM_BULLETS: readonly string[] = [
-  'Inti DSP Rust → WebAssembly, nol dependency runtime.',
-  'Memori linear sekali alokasi: tidak ada GC pause saat render.',
-  'Resampler cubic Hermite dengan cursor pecahan presisi sample.',
-  'Decode & mixdown jalan di worker, UI tidak pernah ter-block.',
-  'Fallback JS otomatis kalau browser tidak mendukung SIMD.',
+  'Edit project panjang tanpa timeline tersendat.',
+  'Dengarkan setiap perubahan dengan respons nyaris instan.',
+  'Tumpuk banyak lane tanpa bikin proses kerja terasa berat.',
+  'Ekspor audio panjang dalam hitungan detik, bukan menit.',
+  'Tetap siap dipakai kapan pun, bahkan tanpa koneksi internet.',
 ];
 
 export const WASM_TAGS: readonly string[] = [
-  'RUST',
-  'WEBASSEMBLY SIMD',
-  'AUDIOWORKLET',
-  'WEB WORKERS',
-  'ZERO-COPY BUFFER',
-  'OFFLINE-READY',
+  'SUPER CEPAT',
+  'RESPONS INSTAN',
+  'TIMELINE MULUS',
+  'EKSPOR KILAT',
+  'PRIVASI TERJAGA',
+  'SIAP OFFLINE',
 ];
 
 export const FAQS: readonly Faq[] = [
