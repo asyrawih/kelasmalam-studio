@@ -70,6 +70,20 @@ export function RobloxRoute({
       : makeRunner(base);
   }, [base, grantApi, makeRunner]);
 
+  // Kredensial milik akun Google dimuat sejak route dibuka, bukan menunggu
+  // user masuk ke subtab Grant Access.
+  useEffect(() => {
+    if (grantApi === null) return undefined;
+    let alive = true;
+    void grantApi.settings().then((saved) => {
+      if (!alive || saved === null) return;
+      robloxActions.setCreatorKind(saved.creatorKind);
+      robloxActions.setCreatorId(saved.creatorId);
+      robloxActions.setApiKey(saved.apiKey);
+    }).catch(() => { /* belum login / belum pernah menyimpan */ });
+    return () => { alive = false; };
+  }, [grantApi]);
+
   /*
    * Kesiapan diperiksa, bukan diasumsikan dari adanya konfigurasi. URL yang
    * terisi tapi Worker-nya mati adalah keadaan yang paling sering terjadi saat
@@ -104,6 +118,7 @@ export function RobloxRoute({
       onClose={onClose}
       onOpenStudio={onOpenStudio}
       grantApi={grantApi}
+      onSaveTarget={grantApi === null ? undefined : async (target) => grantApi.saveSettings(target)}
       {...(runner === null ? null : { onUpload: runner.run })}
     />
   );

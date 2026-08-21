@@ -40,7 +40,7 @@ import { DetailPanel } from './upload/DetailPanel';
 import { DropZone } from './upload/DropZone';
 import { UploadQueue } from './upload/UploadQueue';
 import { useDurations } from './upload/useDurations';
-import { isBusy, readyItems, targetProblems, type QueueItem } from './model';
+import { isBusy, readyItems, targetProblems, type QueueItem, type RobloxTarget } from './model';
 import { robloxActions, robloxStore, useRoblox } from './store';
 import './roblox.css';
 
@@ -54,9 +54,10 @@ export interface RobloxPageProps {
    */
   readonly onUpload?: (items: readonly QueueItem[]) => void;
   readonly grantApi?: GrantApi | null;
+  readonly onSaveTarget?: (target: RobloxTarget) => Promise<void>;
 }
 
-export function RobloxPage({ onClose, onOpenStudio, onUpload, grantApi }: RobloxPageProps): JSX.Element {
+export function RobloxPage({ onClose, onOpenStudio, onUpload, grantApi, onSaveTarget }: RobloxPageProps): JSX.Element {
   const state = useRoblox();
   const [rejected, setRejected] = useState<readonly string[]>([]);
   const [tab, setTab] = useState<'upload' | 'grant'>('upload');
@@ -198,6 +199,7 @@ export function RobloxPage({ onClose, onOpenStudio, onUpload, grantApi }: Roblox
             onCreatorKind={robloxActions.setCreatorKind}
             onCreatorId={robloxActions.setCreatorId}
             onApiKey={robloxActions.setApiKey}
+            onSave={onSaveTarget}
             locked={busy}
           />
           <DetailPanel

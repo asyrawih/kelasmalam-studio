@@ -62,7 +62,7 @@ export interface RobloxTarget {
    * `number` jadi risiko nyata di masa depan.
    */
   readonly creatorId: string;
-  /** API key Open Cloud. Hanya hidup di memori tab ini — lihat `store.ts`. */
+  /** API key Open Cloud aktif; dapat dimuat dari penyimpanan D1 terenkripsi. */
   readonly apiKey: string;
 }
 

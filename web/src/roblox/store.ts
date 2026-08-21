@@ -15,14 +15,10 @@
  *
  * Pemasang backend mengambil byte-nya lewat `fileOf(id)`.
  *
- * ## API key tidak disimpan ke mana pun
+ * ## API key di state hanya salinan aktif
  *
- * Ia hidup di state, dan state hidup di memori tab. Tidak ada localStorage,
- * tidak ada IndexedDB — repo ini memang sudah membuang penyimpanan lokal
- * seluruhnya (`docs/16-kepustakaan.md`), dan kredensial Open Cloud adalah hal
- * TERAKHIR yang pantas jadi pengecualian: ia setara kata sandi akun Roblox
- * untuk hal-hal yang bisa dilakukannya, dan halaman ini tidak akan menyimpannya
- * di tempat yang tidak bisa dilihat atau dihapus user.
+ * Library Worker dapat menyimpannya terenkripsi di D1 per akun Google. Store
+ * browser tetap hanya memegang salinan aktif selama halaman digunakan.
  *
  * ## Seam untuk lapisan unggah
  *

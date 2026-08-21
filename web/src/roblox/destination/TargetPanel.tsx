@@ -12,8 +12,7 @@
  * punya tombol LIHAT supaya user tetap bisa memeriksa apa yang ia tempel —
  * menyembunyikan tanpa jalan keluar hanya memindahkan salahnya ke tempat lain.
  *
- * Yang TIDAK dilakukan halaman ini: menyimpan kunci itu. Lihat catatan di
- * `store.ts`.
+ * Penyimpanan dilakukan lewat Library Worker; kunci dienkripsi sebelum masuk D1.
  */
 
 import { useState } from 'react';
@@ -26,6 +25,7 @@ export interface TargetPanelProps {
   readonly onCreatorKind: (kind: CreatorKind) => void;
   readonly onCreatorId: (id: string) => void;
   readonly onApiKey: (key: string) => void;
+  readonly onSave?: (target: RobloxTarget) => Promise<void>;
   /** Dikunci selama ada baris yang sedang berjalan. */
   readonly locked: boolean;
 }
@@ -57,9 +57,11 @@ export function TargetPanel({
   onCreatorKind,
   onCreatorId,
   onApiKey,
+  onSave,
   locked,
 }: TargetPanelProps): JSX.Element {
   const [reveal, setReveal] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const problems = targetProblems(target);
 
   return (
@@ -145,8 +147,17 @@ export function TargetPanel({
           style={FIELD}
         />
         <span style={{ fontSize: '9px', lineHeight: 1.7, color: 'var(--cy-text-muted)' }}>
-          Kunci hanya disimpan di memori tab ini dan hilang saat halaman dimuat ulang.
+          Disimpan terenkripsi di D1 untuk akun Google yang sedang login.
         </span>
+        {onSave !== undefined ? <Button
+          size="sm"
+          variant="outline"
+          disabled={locked || problems.length > 0 || saveState === 'saving'}
+          onClick={() => {
+            setSaveState('saving');
+            void onSave(target).then(() => setSaveState('saved')).catch(() => setSaveState('failed'));
+          }}
+        >{saveState === 'saving' ? 'MENYIMPAN…' : saveState === 'saved' ? 'TERSIMPAN' : saveState === 'failed' ? 'COBA LAGI' : 'SIMPAN USER + API KEY'}</Button> : null}
       </div>
 
       {problems.length > 0 ? (
