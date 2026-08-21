@@ -10,10 +10,11 @@
  * memakai anggaran warna sama sekali.
  */
 
-import { DECK_ACCENT, type DeckId } from '../model';
-import { GridEditBar } from '../grid/GridEditBar';
-import { useDj } from '../store';
+import { DeckStems } from '../deck/DeckStems';
 import type { DeckView } from '../deck-view';
+import { GridEditBar } from '../grid/GridEditBar';
+import { DECK_ACCENT, type DeckId } from '../model';
+import { useDj } from '../store';
 import { DeckScrollingWave } from './DeckScrollingWave';
 
 export interface WaveRowProps {
@@ -28,6 +29,12 @@ export function WaveRow({ views }: WaveRowProps): JSX.Element {
    * `GridEditBar.tsx`.
    */
   const gridDeck = useDj((s) => s.gridEdit.deck);
+  const deckAAssetId = useDj((s) => s.decks.A.assetId);
+  const deckBAssetId = useDj((s) => s.decks.B.assetId);
+  const assetIds: Readonly<Record<DeckId, number | null>> = {
+    A: deckAAssetId,
+    B: deckBAssetId,
+  };
 
   return (
     <div
@@ -50,43 +57,54 @@ export function WaveRow({ views }: WaveRowProps): JSX.Element {
           gap: '1px',
         }}
       >
-      {(['A', 'B'] as const).map((id) => (
-        <div
-          key={id}
-          style={{
-            position: 'relative',
-            minHeight: 0,
-            background: 'var(--cy-surface-1)',
-            overflow: 'hidden',
-          }}
-        >
-          <DeckScrollingWave view={views[id]} accent={DECK_ACCENT[id]} />
-          <span
+        {(['A', 'B'] as const).map((id) => (
+          <div
+            key={id}
             style={{
-              position: 'absolute',
-              left: '6px',
-              top: '4px',
-              fontSize: '10px',
-              letterSpacing: '.16em',
-              color: DECK_ACCENT[id],
-              pointerEvents: 'none',
-              textShadow: '0 0 6px #000',
+              position: 'relative',
+              minHeight: 0,
+              background: 'var(--cy-surface-1)',
+              overflow: 'hidden',
             }}
           >
-            {id}
-          </span>
-          {/* Playhead tetap di TENGAH — itu seluruh guna tampilan ini. */}
-          <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: 0,
-              bottom: 0,
-              width: '1px',
-              background: '#ffffff',
-              pointerEvents: 'none',
-            }}
-          />
+            <DeckScrollingWave view={views[id]} accent={DECK_ACCENT[id]} />
+            <div
+              style={{
+                position: 'absolute',
+                zIndex: 2,
+                right: '6px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+              }}
+            >
+              <DeckStems id={id} assetId={assetIds[id]} overlay />
+            </div>
+            <span
+              style={{
+                position: 'absolute',
+                left: '6px',
+                top: '4px',
+                fontSize: '10px',
+                letterSpacing: '.16em',
+                color: DECK_ACCENT[id],
+                pointerEvents: 'none',
+                textShadow: '0 0 6px #000',
+              }}
+            >
+              {id}
+            </span>
+            {/* Playhead tetap di TENGAH — itu seluruh guna tampilan ini. */}
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: 0,
+                bottom: 0,
+                width: '1px',
+                background: '#ffffff',
+                pointerEvents: 'none',
+              }}
+            />
           </div>
         ))}
       </div>

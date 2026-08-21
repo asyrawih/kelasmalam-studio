@@ -1,5 +1,7 @@
 import { Button } from '../ui/cyber';
-import { setAutoStemEnabled, useAutoStem } from './auto-stem';
+import { enqueueAutoStem, setAutoStemEnabled, useAutoStem } from './auto-stem';
+import { studioStore } from '../studio/store';
+import { getBuffer } from '../studio/preview/audio-preview';
 
 export function AutoStemToggle(): JSX.Element {
   const state = useAutoStem();
@@ -29,7 +31,17 @@ export function AutoStemToggle(): JSX.Element {
       active={state.enabled}
       aria-pressed={state.enabled}
       title={title}
-      onClick={() => setAutoStemEnabled(!state.enabled)}
+      onClick={() => {
+        const enabled = !state.enabled;
+        setAutoStemEnabled(enabled);
+        if (!enabled) return;
+        // Toggle boleh dinyalakan SETELAH track masuk. Backfill seluruh PCM
+        // yang sudah ada supaya status tidak berhenti di "belum masuk queue".
+        for (const asset of Object.values(studioStore.getState().assets)) {
+          const buffer = getBuffer(asset.id);
+          if (buffer !== undefined) enqueueAutoStem(asset.id, asset.name, buffer);
+        }
+      }}
       style={{ minWidth: '132px' }}
     >
       {label}

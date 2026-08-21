@@ -35,6 +35,10 @@ export interface AutoStemSnapshot {
 export interface AutoStemAudio {
   readonly sampleRate: number;
   readonly frames: number;
+  /** Ujung PCM kontinu yang sudah tersedia dari awal track. */
+  readonly bufferedFrames: number;
+  /** Naik sekali per chunk; pemutar memakai ini untuk mengambil isi terbaru. */
+  readonly revision: number;
   readonly stems: Readonly<Record<ScnetStem, AudioBuffer>>;
 }
 
@@ -137,7 +141,10 @@ function onWorkerMessage(event: MessageEvent<WorkerResponse>): void {
     ])) as Record<ScnetStem, AudioBuffer>;
     building = {
       assetId: message.assetId,
-      audio: { sampleRate: message.sampleRate, frames: message.frames, stems },
+      audio: {
+        sampleRate: message.sampleRate, frames: message.frames,
+        bufferedFrames: 0, revision: 0, stems,
+      },
     };
     patchTrack(message.assetId, { state: 'processing', phase: 'stft', progress: 0 });
     return;
@@ -157,6 +164,18 @@ function onWorkerMessage(event: MessageEvent<WorkerResponse>): void {
       building.audio.stems[stem].copyToChannel(new Float32Array(message.stems[stem].left), 0, message.start);
       building.audio.stems[stem].copyToChannel(new Float32Array(message.stems[stem].right), 1, message.start);
     }
+    // Wrapper baru memaksa pemutar mengakuisisi ulang isi AudioBuffer. Web
+    // Audio boleh menahan snapshot buffer yang sudah dijadwalkan; tanpa revisi
+    // ini chunk ke-2 dst bisa sudah ada di memori tapi source tetap membaca nol.
+    const progressive: AutoStemAudio = {
+      ...building.audio,
+      bufferedFrames: Math.max(building.audio.bufferedFrames, message.start + message.frames),
+      revision: message.done,
+    };
+    building = { assetId: message.assetId, audio: progressive };
+    // Chunk PERTAMA langsung membuat output playable. `ready` tetap berarti
+    // SELURUH track selesai; availability dan completion sengaja dibedakan.
+    outputs.set(message.assetId, progressive);
     patchTrack(message.assetId, {
       state: 'processing', progress: message.total > 0 ? message.done / message.total : 0,
     });
@@ -224,6 +243,9 @@ export function setAutoStemEnabled(enabled: boolean): void {
   worker?.terminate();
   worker = null;
   modelReady = false;
+  if (current !== null && snapshot.tracks[current.assetId]?.state !== 'ready') {
+    outputs.delete(current.assetId);
+  }
   current = null;
   building = null;
   queue.length = 0;
@@ -237,7 +259,10 @@ export function setAutoStemEnabled(enabled: boolean): void {
 
 /** Dipanggil oleh pipeline import bersama; kalau fitur OFF, biayanya nol. */
 export function enqueueAutoStem(assetId: number, name: string, buffer: AudioBuffer): void {
-  if (!snapshot.enabled || outputs.has(assetId) || snapshot.tracks[assetId] !== undefined) return;
+  const previous = snapshot.tracks[assetId];
+  if (!snapshot.enabled || previous?.state === 'queued' || previous?.state === 'processing' || previous?.state === 'ready') return;
+  // Retry sesudah error tidak boleh memakai PCM parsial dari job sebelumnya.
+  outputs.delete(assetId);
   const left = buffer.getChannelData(0).slice();
   const sourceRight = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : buffer.getChannelData(0);
   const right = sourceRight.slice();
@@ -277,6 +302,10 @@ export function removeAutoStem(assetId: number): void {
 
 export function getAutoStemAudio(assetId: number): AutoStemAudio | undefined {
   return outputs.get(assetId);
+}
+
+export function hasPlayableAutoStem(assetId: number): boolean {
+  return (outputs.get(assetId)?.bufferedFrames ?? 0) > 0;
 }
 
 export function getAutoStemMask(consumerId: string): AutoStemMask {

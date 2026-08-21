@@ -103,7 +103,8 @@ export function mixFingerprint(): string {
                 (() => {
                   const mask = getAutoStemMask(`studio:${c.id}`);
                   if (isFullStemMask(mask)) return '';
-                  return `${getAutoStemAudio(c.assetId) === undefined ? 'Q' : 'M'}${autoStemMaskKey(mask)}`;
+                  const audio = getAutoStemAudio(c.assetId);
+                  return `${audio === undefined ? 'Q' : `M${audio.revision}`} ${autoStemMaskKey(mask)}`;
                 })() +
                 // Loop clip mengubah SUSUNAN voice (source jadi melingkar,
                 // titik masuknya modulo), jadi ia harus menjadwalkan ulang —

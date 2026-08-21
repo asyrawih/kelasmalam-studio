@@ -32,7 +32,7 @@
  */
 
 import { effectiveSpeed, isAudible } from '../model';
-import { clipLoopRange, type StudioAppState } from '../store';
+import { clipLoopRange, studioStore, type StudioAppState } from '../store';
 import { stemOf } from '../timeline/stem';
 import {
   PARAM_RAMP_SEC,
@@ -45,7 +45,7 @@ import {
 } from './graph-builder';
 import { pushFxParams, registerFxWorklet } from './fx-node';
 import { updateStemNodes, type StemNodes } from './stem-chain';
-import { getAutoStemAudio, getAutoStemMask } from '../../stem/auto-stem';
+import { enqueueAutoStem, getAutoStemAudio, getAutoStemMask } from '../../stem/auto-stem';
 
 /**
  * Perakitan grafnya sendiri TIDAK ada di sini — lihat `graph-builder.ts`.
@@ -190,6 +190,8 @@ export function previewSampleRate(): number {
 
 export function registerBuffer(assetId: number, buffer: AudioBuffer): void {
   buffers.set(assetId, buffer);
+  const name = studioStore.getState().assets[assetId]?.name ?? `TRACK ${assetId}`;
+  enqueueAutoStem(assetId, name, buffer);
 }
 
 export function hasBuffer(assetId: number): boolean {

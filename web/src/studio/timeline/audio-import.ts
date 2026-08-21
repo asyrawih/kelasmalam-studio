@@ -22,7 +22,6 @@ import { sha256Hex } from './content-hash';
 import { notifyImported } from './import-sink';
 import { buildEnvelope } from './envelope';
 import { requestAssetTempo } from '../analysis/tempo-client';
-import { enqueueAutoStem } from '../../stem/auto-stem';
 
 /**
  * Buat asset dari `AudioBuffer` hasil decode dan daftarkan ke store.
@@ -290,7 +289,6 @@ export async function importBytesToAsset(
     requestAssetTempo(assetId, buffer);
     // Simpan PCM-nya supaya preview playback bisa membunyikannya.
     registerBuffer(assetId, buffer);
-    enqueueAutoStem(assetId, name, buffer);
     /*
      * Byte aslinya tidak disimpan di sini, tapi DIUMUMKAN.
      *

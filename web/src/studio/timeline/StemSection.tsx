@@ -32,6 +32,7 @@ import { bakeClipStem } from './stem-bake';
 import type { ScnetStem } from '../../proof-stem/scnet-separate';
 import {
   getAutoStemMask,
+  hasPlayableAutoStem,
   setAutoStemPart,
   useAutoStem,
 } from '../../stem/auto-stem';
@@ -120,7 +121,7 @@ export function StemSection({
   const active = !isStemBypass(clip.stem);
   const autoStem = useAutoStem();
   const mlStatus = autoStem.tracks[clip.assetId];
-  const mlReady = mlStatus?.state === 'ready';
+  const mlPlayable = hasPlayableAutoStem(clip.assetId);
   const mlConsumer = `studio:${clip.id}`;
   const mlMask = autoStem.masks[mlConsumer] ?? getAutoStemMask(mlConsumer);
 
@@ -140,21 +141,23 @@ export function StemSection({
           <Button
             key={id}
             size="sm"
-            variant={mlReady && mlMask[id] ? 'outline' : 'ghost'}
-            active={mlReady && mlMask[id]}
-            disabled={!mlReady}
+            variant={mlPlayable && mlMask[id] ? 'outline' : 'ghost'}
+            active={mlPlayable && mlMask[id]}
+            disabled={!mlPlayable}
             aria-pressed={mlMask[id]}
             aria-label={`SCNET ${id.toUpperCase()}`}
-            title={mlReady ? `${mlMask[id] ? 'mute' : 'aktifkan'} ${id}` : 'menunggu separation background selesai'}
+            title={mlPlayable ? `${mlMask[id] ? 'mute' : 'aktifkan'} ${id}` : 'menunggu chunk pertama separation'}
             onClick={() => setAutoStemPart(mlConsumer, id, !mlMask[id])}
             style={{ padding: '0 9px' }}
           >
             {id.toUpperCase()}
           </Button>
         ))}
-        <span style={{ marginLeft: 'auto', fontSize: '10px', color: mlReady ? 'var(--cy-success)' : 'var(--cy-text-dim)' }}>
-          {mlReady
+        <span style={{ marginLeft: 'auto', fontSize: '10px', color: mlPlayable ? 'var(--cy-success)' : 'var(--cy-text-dim)' }}>
+          {mlStatus?.state === 'ready'
             ? '4 STEM READY'
+            : mlPlayable
+              ? `PLAYABLE · BUFFER ${Math.round((mlStatus?.progress ?? 0) * 100)}%`
             : mlStatus === undefined
               ? (autoStem.enabled ? 'TRACK BELUM MASUK QUEUE' : 'AKTIFKAN AUTO STEM DI HEADER')
               : mlStatus.state === 'error'

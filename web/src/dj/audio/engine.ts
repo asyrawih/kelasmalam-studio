@@ -93,7 +93,9 @@ function snapshotOf(d: DeckState): DeckSnapshot {
     loopKey: loopKeyOf(d),
     slip: d.slip,
     scrubbing: d.scrubbing,
-    stemKey: audio === undefined || isFullStemMask(mask) ? 'mixture' : autoStemMaskKey(mask),
+    stemKey: audio === undefined || isFullStemMask(mask)
+      ? 'mixture'
+      : `${autoStemMaskKey(mask)}@${audio.revision}`,
   };
 }
 
