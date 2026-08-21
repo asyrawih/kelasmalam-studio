@@ -75,6 +75,7 @@ export const REQUIRED_EXPORTS = [
 export const REQUIRED_METHODS: Readonly<Record<string, readonly string[]>> = {
   OfflineRender: [
     'beginAsset',
+    'finishAsset',
     'render',
     'totalFrames',
     'renderedFrames',
@@ -376,6 +377,8 @@ export interface OfflineRenderHandle {
    * sebelum panggilan ini sudah tidak sah sesudahnya.
    */
   beginAsset(id: number, channels: number, frames: number, sampleRate: number): number;
+  /** Finalisasi ingest PCM dan kembalikan jumlah click yang diperbaiki. */
+  finishAsset(id: number, autoDeclick: boolean): number;
   free(): void;
 }
 

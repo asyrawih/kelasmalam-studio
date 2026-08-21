@@ -208,10 +208,22 @@ pub struct OfflineRender {
     /// Menaruhnya di sini mengikat masa hidup PCM ke masa hidup renderer, yang
     /// persis rentang waktu selama pointer itu dipakai.
     ///
-    /// `Box<[f32]>` (bukan `Vec<Vec<f32>>` yang di-push): menambah elemen ke
+    /// `Box<[f32]>` di dalam [`OwnedAsset`] (bukan `Vec<Vec<f32>>` yang
+    /// di-push): menambah elemen ke
     /// `Vec` luar memindahkan elemen-elemennya, tapi TIDAK memindahkan buffer
     /// yang ditunjuk `Box` — jadi pointer yang sudah didaftarkan tetap sah.
-    assets: Vec<Box<[f32]>>,
+    assets: Vec<OwnedAsset>,
+}
+
+/// PCM beserta metadata yang diperlukan pass offline setelah JS selesai
+/// mengisinya. Metadata tidak dibaca dari `AssetTable`: tabel engine sengaja
+/// hanya menyimpan pointer mentah dan tidak memiliki buffer tersebut.
+struct OwnedAsset {
+    id: u16,
+    channels: usize,
+    frames: usize,
+    sample_rate: u32,
+    pcm: Box<[f32]>,
 }
 
 #[wasm_bindgen]
@@ -308,19 +320,67 @@ impl OfflineRender {
             channels: ch as u8,
             sample_rate,
         };
-        self.assets.push(owned);
+        self.assets.push(OwnedAsset {
+            id: id as u16,
+            channels: ch,
+            frames: n,
+            sample_rate,
+            pcm: owned,
+        });
         let live = LIVE_ASSET_BYTES.fetch_add(bytes, Ordering::Relaxed) + bytes;
         PEAK_ASSET_BYTES.fetch_max(live, Ordering::Relaxed);
         // SAFETY: `owned` baru saja dipindahkan ke `self.assets` dan tidak
-        // pernah dimutasi dari Rust, dibuang, atau direalokasi selama renderer
-        // hidup — `Box<[f32]>` tidak pernah memindahkan buffer-nya, dan
-        // menambah elemen ke `Vec` luar hanya memindahkan `Box`-nya, bukan
-        // buffer yang ditunjuk. Slot juga tidak pernah di-unregister, jadi
-        // pointer valid untuk seluruh masa render.
+        // pernah dibuang atau direalokasi selama renderer hidup — `Box<[f32]>`
+        // tidak pernah memindahkan buffer-nya, dan menambah elemen ke `Vec`
+        // luar hanya memindahkan `Box`-nya, bukan buffer yang ditunjuk. PCM
+        // boleh dimutasi oleh `finishAsset`, tetapi itu wajib terjadi sebelum
+        // frame pertama dirender, jadi tidak pernah bersamaan dengan pembacaan
+        // pointer ini oleh engine. Slot juga tidak pernah di-unregister.
         unsafe {
             self.inner.engine_mut().register_asset(id as u16, asset);
         }
         Ok(ptr as u32)
+    }
+
+    /// Tandai bahwa JS selesai mengisi PCM asset dan jalankan pass offline
+    /// opsional sebelum sample pertama boleh dibaca engine.
+    ///
+    /// Auto de-click hanya dinyalakan untuk PCM hasil pemisahan stem. Asset
+    /// original sengaja tidak disentuh: membersihkan seluruh library secara
+    /// diam-diam akan mengubah transient sah yang tidak berasal dari pipeline
+    /// stem.
+    #[wasm_bindgen(js_name = finishAsset)]
+    pub fn finish_asset(&mut self, id: u32, remove_clicks: bool) -> Result<u32, JsValue> {
+        if self.inner.rendered_frames() != 0 {
+            return Err(JsValue::from_str(
+                "finishAsset harus dipanggil sebelum render dimulai",
+            ));
+        }
+        if id > u16::MAX as u32 {
+            return Err(JsValue::from_str(&format!(
+                "asset id {id} di luar jangkauan"
+            )));
+        }
+        let Some(asset) = self
+            .assets
+            .iter_mut()
+            .rev()
+            .find(|asset| asset.id == id as u16)
+        else {
+            return Err(JsValue::from_str(&format!(
+                "asset {id} belum didaftarkan lewat beginAsset"
+            )));
+        };
+        if !remove_clicks {
+            return Ok(0);
+        }
+        let report = daw_export::auto_declick_planar(
+            &mut asset.pcm,
+            asset.channels,
+            asset.frames,
+            asset.sample_rate,
+        );
+        Ok(report.repaired_clicks)
     }
 
     /// Total frame yang akan dirender.
@@ -375,7 +435,7 @@ impl Drop for OfflineRender {
         let bytes: usize = self
             .assets
             .iter()
-            .map(|a| a.len() * core::mem::size_of::<f32>())
+            .map(|a| a.pcm.len() * core::mem::size_of::<f32>())
             .sum();
         // `saturating_sub`: hitungan yang entah bagaimana sudah nol tidak boleh
         // membungkus jadi 4 GiB dan mengunci export selamanya.

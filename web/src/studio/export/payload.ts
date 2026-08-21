@@ -44,6 +44,8 @@ export interface ExportAssetInfo {
   readonly channels: number;
   readonly frames: number;
   readonly sampleRate: number;
+  /** Jalankan pass Rust auto de-click setelah seluruh PCM selesai disalin. */
+  readonly autoDeclick?: boolean;
 }
 
 /** Satu permintaan potongan PCM: channel `channel`, mulai frame `offset`. */
@@ -283,7 +285,15 @@ export function buildExportPayload(
       const dense = toDense(key);
       if (!assets.has(key)) {
         const info = useScnet
-          ? { assetId: dense, channels: 2, frames: audio.frames, sampleRate: audio.sampleRate }
+          ? {
+              assetId: dense,
+              channels: 2,
+              frames: audio.frames,
+              sampleRate: audio.sampleRate,
+              // SCNet memproses chunk independen; hanya PCM turunannya yang
+              // otomatis dibersihkan. Asset original tetap bit-identik.
+              autoDeclick: true,
+            }
           : {
               assetId: dense,
               channels: Math.max(1, buf.numberOfChannels),

@@ -44,6 +44,8 @@ export interface RenderHandle {
    * memory. Pemanggil WAJIB mengisinya segera — lihat `fillAsset`.
    */
   beginAsset(id: number, channels: number, frames: number, sampleRate: number): number;
+  /** Selesaikan ingest dan jalankan post-process offline yang diminta asset. */
+  finishAsset(id: number, autoDeclick: boolean): number;
   free(): void;
 }
 
@@ -351,6 +353,10 @@ async function fillAsset(
       at += n;
     }
   }
+  // Wajib sesudah SEMUA channel terisi dan sebelum render pertama. Detektor
+  // Rust memakai konteks kiri-kanan penuh serta memperbaiki semua channel pada
+  // batas yang sama supaya image stereo tidak bergeser.
+  render.finishAsset(info.assetId, info.autoDeclick === true);
 }
 
 const MIB = 1024 * 1024;

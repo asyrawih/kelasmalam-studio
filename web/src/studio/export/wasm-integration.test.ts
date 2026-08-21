@@ -670,6 +670,45 @@ describe('export lewat engine WASM sungguhan', () => {
     expect(wav.right[i]!).toBeCloseTo(expected, 4);
   });
 
+  it('auto de-click Rust membersihkan spike SCNet sebelum render', async () => {
+    const clean = sine(FRAMES, 440, 0.1);
+    const clicked = clean.slice();
+    const clickAt = 12_000;
+    clicked[clickAt] = clicked[clickAt]! + 0.8;
+    const silence = new Float32Array(FRAMES);
+    const audio = {
+      sampleRate: SR,
+      frames: FRAMES,
+      bufferedFrames: FRAMES,
+      revision: 1,
+      stems: {
+        vocals: fakeBuffer(silence, 2),
+        drums: fakeBuffer(clicked, 2),
+        bass: fakeBuffer(silence, 2),
+        other: fakeBuffer(silence, 2),
+      },
+    };
+    const st = state([
+      lane({
+        id: 'declick-scnet',
+        clips: [clip({ id: 'c', assetId: 1, start: 0, len: FRAMES })],
+      }),
+    ]);
+    const built = buildExportPayload(st, () => fakeBuffer(silence), {
+      getAudio: () => audio,
+      getMask: () => ({ vocals: false, drums: true, bass: false, other: false }),
+    });
+    expect(built.payload.assets[0]!.autoDeclick).toBe(true);
+
+    const result = await runOne(built, wavEncoder(32));
+    const wav = parseWav(await blobBytes(result.blob));
+
+    // Tanpa finishAsset(..., true), titik ini ~= clean + 0.8. Dengan pass Rust
+    // ia kembali ke interpolasi dua anchor sine dan tetap stereo-linked.
+    expect(wav.left[clickAt]!).toBeCloseTo(clean[clickAt]!, 3);
+    expect(wav.right[clickAt]!).toBeCloseTo(clean[clickAt]!, 3);
+  });
+
   it('pembatalan menghentikan render dan tidak menghasilkan file', async () => {
     const { st, getBuffer } = twoLaneProject();
     const built = buildExportPayload(st, getBuffer);

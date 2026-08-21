@@ -12,11 +12,13 @@
 //! karena `flacenc` pure-Rust dan build untuk wasm32 — jadi ia bisa memakai
 //! sample yang sama persis dari `render_block` tanpa menyeberang ke JS.
 
+pub mod declick;
 pub mod dither;
 pub mod flac;
 pub mod offline;
 pub mod wav;
 
+pub use declick::{auto_declick_planar, DeclickReport};
 pub use flac::{FlacBits, FlacSpec, FlacStreamWriter};
 pub use offline::{OfflineRenderer, DEFAULT_BATCH_BLOCKS};
 pub use wav::{

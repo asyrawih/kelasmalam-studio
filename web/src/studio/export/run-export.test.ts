@@ -79,6 +79,10 @@ function fakeEngine(o: FakeEngineOpts = {}) {
       // jadi buffer tersendiri supaya isinya bisa diperiksa.
       return 100_000 + id * 10_000;
     },
+    finishAsset: (id, autoDeclick) => {
+      calls.push(`finishAsset(${id},${autoDeclick})`);
+      return 0;
+    },
     free: () => {
       calls.push('free');
       freed = true;
@@ -137,7 +141,7 @@ const payload = (endSample = 384): ExportPayload => ({
   json: JSON.stringify({ sampleRate: 48_000, speed: 1, lanes: [] }),
   assets: [
     { assetId: 0, channels: 1, frames: 64, sampleRate: 48_000 },
-    { assetId: 3, channels: 2, frames: 64, sampleRate: 48_000 },
+    { assetId: 3, channels: 2, frames: 64, sampleRate: 48_000, autoDeclick: true },
   ],
   endSample,
 });
@@ -453,6 +457,7 @@ describe('buildExportPayload', () => {
       lanes: { clips: { assetId: number; stem: unknown }[] }[];
     };
     const asset = built.payload.assets[0]!;
+    expect(asset.autoDeclick).toBe(true);
     expect(json.lanes[0]!.clips[0]!.assetId).toBe(asset.assetId);
     expect(json.lanes[0]!.clips[0]!.stem).toBeNull();
     expect(requestedMask).toBe('take~loop-original');
@@ -629,6 +634,10 @@ describe('pengambilan PCM', () => {
       'beginAsset(0)',
       'beginAsset(3)',
     ]);
+    expect(f.calls.filter((c) => c.startsWith('finishAsset'))).toEqual([
+      'finishAsset(0,false)',
+      'finishAsset(3,true)',
+    ]);
   });
 
   it('menyalin tiap channel ke alamat yang diberikan engine', async () => {
@@ -802,6 +811,7 @@ describe('error asli tidak tertimpa free()', () => {
       outLPtr: () => 0,
       outRPtr: () => 0,
       beginAsset: () => 0,
+      finishAsset: () => 0,
       free: () => {
         throw new Error('attempted to take ownership of Rust value while it was borrowed');
       },
@@ -1036,6 +1046,7 @@ describe('pengisian PCM berpotongan', () => {
         outLPtr: () => 0,
         outRPtr: () => 0,
         beginAsset: () => 0,
+        finishAsset: () => 0,
         free: () => undefined,
       }),
       view: (ptr, len) => store.subarray(ptr, ptr + len),

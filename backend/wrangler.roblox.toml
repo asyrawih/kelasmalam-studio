@@ -9,6 +9,7 @@
 name = "dawonweb-roblox"
 main = "src/roblox/worker.ts"
 compatibility_date = "2026-08-20"
+routes = [{ pattern = "robloz.kelasmalam.app", custom_domain = true }]
 
 [vars]
 # Origin yang boleh memanggil. Dipisah koma, TANPA spasi, tanpa slash di ujung.
