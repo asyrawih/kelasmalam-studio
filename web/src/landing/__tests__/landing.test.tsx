@@ -83,6 +83,8 @@ describe('routeOf', () => {
     expect(routeOf('/studio/')).toBe('studio');
     expect(routeOf('/dj')).toBe('dj');
     expect(routeOf('/dj/')).toBe('dj');
+    expect(routeOf('/proof-stem')).toBe('proof-stem');
+    expect(routeOf('/proof-stem/')).toBe('proof-stem');
   });
 
   it('path yang tidak dikenal jatuh ke landing, bukan melempar', () => {
@@ -92,6 +94,14 @@ describe('routeOf', () => {
 });
 
 describe('AppShell', () => {
+  it('membuka proof-stem sebagai halaman eksperimen publik', () => {
+    window.history.pushState(null, '', '/proof-stem');
+    render(<AppShell />);
+    expect(screen.getByText('SOURCE TRACK')).toBeTruthy();
+    expect(screen.getByText('STEM OUTPUTS')).toBeTruthy();
+    expect(screen.queryByTestId('auth-guard')).toBeNull();
+  });
+
   it('menahan protected route saat sesi Google belum ada', async () => {
     window.history.pushState(null, '', '/studio');
     render(

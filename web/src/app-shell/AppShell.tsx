@@ -30,12 +30,13 @@ import { createLibraryApi } from '../library/api';
 import { libraryActions, useLibrary } from '../library/store';
 import type { LibraryUser } from '../library/model';
 import { RobloxRoute } from '../roblox';
+import { ProofStemPage } from '../proof-stem';
 import { Button } from '../ui/cyber';
 import { CommandPalette } from './CommandPalette';
 import { KeymapEditor } from './KeymapEditor';
 import { useCommands } from './useCommands';
 import { useKeyDispatch } from './useKeyDispatch';
-import { DJ_PATH, HOME_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
+import { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
 
 export interface AppShellProps {
   readonly createEngine?: () => Promise<unknown>;
@@ -126,6 +127,13 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
    */
   useCommands(
     [
+      {
+        id: 'shell.goto.proof-stem',
+        title: 'Buka proof stem',
+        group: 'Aplikasi',
+        defaultChord: null,
+        run: () => navigate(PROOF_STEM_PATH),
+      },
       {
         id: 'shell.palette',
         title: 'Buka daftar perintah',
@@ -220,6 +228,8 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onClose={() => navigate(HOME_PATH)}
           onOpenStudio={() => navigate(STUDIO_PATH)}
         />
+      ) : route === 'proof-stem' ? (
+        <ProofStemPage onClose={() => navigate(HOME_PATH)} />
       ) : (
         <LandingPage
           onOpenStudio={() => navigate(STUDIO_PATH)}
