@@ -49,6 +49,8 @@
  */
 
 import { ScrubVoice } from './scrub-voice';
+import type { AutoStemAudio, AutoStemMask } from '../../stem/auto-stem';
+import type { ScnetStem } from '../../proof-stem/scnet-separate';
 
 /** Fade masuk/keluar saat melompat. Cukup untuk membunuh klik, terlalu pendek
  *  untuk terdengar sebagai fade. Sama dengan micro-fade docs/06 §6d. */
@@ -80,7 +82,11 @@ export class DeckPlayer {
 
   private buffer: AudioBuffer | null = null;
   private source: AudioBufferSourceNode | null = null;
+  /** Source ke-2..4 saat stem SCNet aktif; `source` tetap memegang yang pertama. */
+  private extraSources: AudioBufferSourceNode[] = [];
   private gate: GainNode | null = null;
+  private stemAudio: AutoStemAudio | null = null;
+  private stemMask: AutoStemMask | null = null;
 
   private anchor: Anchor = { at: 0, pos: 0, rate: 1 };
   private playing = false;
@@ -129,10 +135,28 @@ export class DeckPlayer {
     this.stopSource(0);
     this.scrub.setBuffer(buffer);
     this.buffer = buffer;
+    this.stemAudio = null;
+    this.stemMask = null;
     this.playing = false;
     this.scrubbing = false;
     this.anchor = { at: this.ctx.currentTime, pos: atSample, rate: this.rate };
     this.slipAnchor = this.anchor;
+  }
+
+  /**
+   * Ganti mixture dengan kumpulan stem yang berjalan pada jam dan offset yang
+   * sama. `null` kembali ke mixture asli. Pergantiannya memakai micro-fade
+   * yang sama dengan seek, jadi mute/solo stem tidak berbunyi klik.
+   */
+  setStemMix(audio: AutoStemAudio | null, mask: AutoStemMask | null): void {
+    const sameMask = this.stemMask !== null && mask !== null &&
+      (Object.keys(mask) as ScnetStem[]).every((stem) => this.stemMask?.[stem] === mask[stem]);
+    if (this.stemAudio === audio && (this.stemMask === mask || sameMask)) return;
+    const now = this.ctx.currentTime;
+    const pos = this.positionAt(now);
+    this.stemAudio = audio;
+    this.stemMask = mask;
+    if (this.playing && !this.scrubbing) this.startSource(pos);
   }
 
   /**
@@ -222,11 +246,11 @@ export class DeckPlayer {
     this.rate = r;
     this.anchor = { at: now, pos, rate: r };
     if (!this.slipArmed) this.slipAnchor = { at: now, pos, rate: r };
-    if (this.source !== null) {
+    for (const source of this.liveSources()) {
       // Ramp pendek, bukan lompatan: perubahan playbackRate yang mendadak
       // terdengar sebagai klik pada materi bernada.
-      this.source.playbackRate.cancelScheduledValues(now);
-      this.source.playbackRate.setTargetAtTime(r, now, 0.01);
+      source.playbackRate.cancelScheduledValues(now);
+      source.playbackRate.setTargetAtTime(r, now, 0.01);
     }
   }
 
@@ -245,7 +269,7 @@ export class DeckPlayer {
     this.anchor = { at: now, pos, rate: this.rate };
 
     if (loop === null) {
-      if (this.source !== null) this.source.loop = false;
+      for (const source of this.liveSources()) source.loop = false;
       return;
     }
 
@@ -271,11 +295,11 @@ export class DeckPlayer {
       return;
     }
 
-    const src = this.source;
-    if (src === null) return;
-    src.loopStart = loop.inAt / this.sampleRate;
-    src.loopEnd = loop.outAt / this.sampleRate;
-    src.loop = true;
+    for (const source of this.liveSources()) {
+      source.loopStart = loop.inAt / this.sampleRate;
+      source.loopEnd = loop.outAt / this.sampleRate;
+      source.loop = true;
+    }
   }
 
   /**
@@ -373,6 +397,8 @@ export class DeckPlayer {
     this.stopSource(0);
     this.scrub.stop();
     this.buffer = null;
+    this.stemAudio = null;
+    this.stemMask = null;
   }
 
   // ── internal ───────────────────────────────────────────────────────────────
@@ -389,36 +415,46 @@ export class DeckPlayer {
     gate.gain.linearRampToValueAtTime(1, now + MICRO_FADE_SEC);
     gate.connect(this.out);
 
-    const src = this.ctx.createBufferSource();
-    src.buffer = buffer;
-    src.playbackRate.setValueAtTime(this.rate, now);
-    if (this.loop !== null) {
-      src.loopStart = this.loop.inAt / this.sampleRate;
-      src.loopEnd = this.loop.outAt / this.sampleRate;
-      src.loop = true;
-    }
-    src.connect(gate);
-    src.start(now, fromSample / this.sampleRate);
+    const activeBuffers = this.stemAudio === null || this.stemMask === null
+      ? [buffer]
+      : (Object.keys(this.stemMask) as ScnetStem[])
+          .filter((stem) => this.stemMask?.[stem] === true)
+          .map((stem) => this.stemAudio!.stems[stem]);
+    const sources = activeBuffers.map((activeBuffer) => {
+      const src = this.ctx.createBufferSource();
+      src.buffer = activeBuffer;
+      src.playbackRate.setValueAtTime(this.rate, now);
+      if (this.loop !== null) {
+        src.loopStart = this.loop.inAt / this.sampleRate;
+        src.loopEnd = this.loop.outAt / this.sampleRate;
+        src.loop = true;
+      }
+      src.connect(gate);
+      src.start(now, fromSample / this.sampleRate);
+      return src;
+    });
 
-    this.source = src;
+    this.source = sources[0] ?? null;
+    this.extraSources = sources.slice(1);
     this.gate = gate;
     this.anchor = { at: now, pos: fromSample, rate: this.rate };
     if (!this.slipArmed) this.slipAnchor = this.anchor;
   }
 
   private stopSource(fadeSec: number): void {
-    const src = this.source;
+    const sources = this.liveSources();
     const gate = this.gate;
     this.source = null;
+    this.extraSources = [];
     this.gate = null;
-    if (src === null || gate === null) return;
+    if (gate === null) return;
     const now = this.ctx.currentTime;
     const end = now + fadeSec;
     try {
       gate.gain.cancelScheduledValues(now);
       gate.gain.setValueAtTime(gate.gain.value, now);
       gate.gain.linearRampToValueAtTime(0, end);
-      src.stop(end);
+      for (const source of sources) source.stop(end);
     } catch {
       // Source yang sudah berhenti sendiri (materi habis) melempar di `stop`.
       // Itu keadaan yang sah, bukan kesalahan.
@@ -428,7 +464,7 @@ export class DeckPlayer {
     // source yang di-stop di masa depan pada semua browser.
     const cleanup = (): void => {
       try {
-        src.disconnect();
+        for (const source of sources) source.disconnect();
         gate.disconnect();
       } catch {
         // sudah terlepas
@@ -439,5 +475,9 @@ export class DeckPlayer {
     } else {
       cleanup();
     }
+  }
+
+  private liveSources(): AudioBufferSourceNode[] {
+    return this.source === null ? [...this.extraSources] : [this.source, ...this.extraSources];
   }
 }

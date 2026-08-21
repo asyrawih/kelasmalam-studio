@@ -33,6 +33,13 @@ import {
   stopScrub,
   updateLaneParams,
 } from './audio-preview';
+import {
+  autoStemMaskKey,
+  getAutoStemAudio,
+  getAutoStemMask,
+  isFullStemMask,
+  subscribeAutoStem,
+} from '../../stem/auto-stem';
 
 /** Sidik jari hal-hal yang mengharuskan penjadwalan ulang saat sedang play.
  *  Diekspor untuk tes — lihat `mix-fingerprint.test.ts`. */
@@ -90,6 +97,14 @@ export function mixFingerprint(): string {
                 // pernah menjadwalkan ulang dan node-nya tidak pernah dirakit.
                 `${chainShape(c.chain)}` +
                 `${isStemBypass(c.stem) ? '' : 'S'}` +
+                // Output model datang asinkron. Saat mask AI tidak penuh,
+                // READY mengubah susunan satu source mixture menjadi empat
+                // source stem dan karena itu wajib masuk sidik jari.
+                (() => {
+                  const mask = getAutoStemMask(`studio:${c.id}`);
+                  if (isFullStemMask(mask)) return '';
+                  return `${getAutoStemAudio(c.assetId) === undefined ? 'Q' : 'M'}${autoStemMaskKey(mask)}`;
+                })() +
                 // Loop clip mengubah SUSUNAN voice (source jadi melingkar,
                 // titik masuknya modulo), jadi ia harus menjadwalkan ulang —
                 // beda dengan gain/EQ yang bisa diubah live.
@@ -228,8 +243,10 @@ export function usePreviewPlayback(): void {
 
     sync();
     const unsub = studioStore.subscribe(sync);
+    const unsubStem = subscribeAutoStem(sync);
     return () => {
       unsub();
+      unsubStem();
       stop();
       stopAudition();
     };

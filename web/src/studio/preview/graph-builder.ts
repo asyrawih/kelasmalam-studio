@@ -38,6 +38,8 @@ import { createFxNode } from './fx-node';
 import { fadeCurveArray, fadeOutGain } from '../timeline/fade';
 import { stemOf } from '../timeline/stem';
 import { buildStemChain, type StemNodes } from './stem-chain';
+import type { ScnetStem } from '../../proof-stem/scnet-separate';
+import type { AutoStemAudio, AutoStemMask } from '../../stem/auto-stem';
 
 /** Ramp pendek supaya perubahan parameter tidak menimbulkan klik. */
 export const PARAM_RAMP_SEC = 0.02;
@@ -71,6 +73,8 @@ export interface BuiltGraph {
    * membangun ulang graf tiap gerakan slider hanya menghasilkan deretan klik.
    */
   readonly clipStems: Map<string, StemNodes>;
+  /** Clip yang memakai output SCNet asli, bukan fallback mid/side. */
+  readonly clipMlStems: Map<string, MlStemNodes>;
   /** Node `daw-fx` master, kalau ada. */
   readonly masterFx: AudioWorkletNode | null;
   /** clipId → node `daw-fx` clip, untuk clip yang punya chain. */
@@ -92,6 +96,11 @@ export interface BuiltGraph {
   readonly nodes: AudioNode[];
 }
 
+export interface MlStemNodes {
+  readonly gains: Readonly<Record<ScnetStem, GainNode>>;
+  readonly all: readonly AudioNode[];
+}
+
 export interface GraphBuildOptions {
   /** Posisi awal di TIMELINE (detik) yang dipetakan ke `startAt`. */
   readonly playheadSec: number;
@@ -99,6 +108,9 @@ export interface GraphBuildOptions {
   readonly startAt: number;
   /** PCM per asset. Clip tanpa buffer dilewati (clip demo tanpa audio nyata). */
   readonly getBuffer: (assetId: number) => AudioBuffer | undefined;
+  /** Output SCNet runtime. Tidak diisi oleh export, jadi compile tetap deterministik. */
+  readonly getSeparated?: (assetId: number) => AutoStemAudio | undefined;
+  readonly getStemMask?: (clipId: string) => AutoStemMask;
   /** Default `audio.destination`. */
   readonly destination?: AudioNode;
   /**
@@ -236,6 +248,7 @@ export function buildProjectGraph(
   const lanesOut = new Map<string, LaneNodes>();
   const features = new Set<string>();
   const clipStems = new Map<string, StemNodes>();
+  const clipMlStems = new Map<string, MlStemNodes>();
   const clipFx = new Map<string, AudioWorkletNode>();
   const voices: AudioBufferSourceNode[] = [];
   const nodes: AudioNode[] = [];
@@ -317,10 +330,10 @@ export function buildProjectGraph(
 
       const whenSec = startAt + Math.max(0, clipStartSec - playheadSec) / speed;
 
-      const src = audio.createBufferSource();
-      src.buffer = buffer;
-      src.playbackRate.value = rate;
-      if (loopLen !== null) {
+      const configureSource = (src: AudioBufferSourceNode, sourceBuffer: AudioBuffer): void => {
+        src.buffer = sourceBuffer;
+        src.playbackRate.value = rate;
+        if (loopLen === null) return;
         // Pengulangan diserahkan ke Web Audio, alasan yang sama dengan pemutar
         // audisi di bawah: `loop` menyambung akurat per-sample, sedangkan
         // menjadwalkan satu voice per putaran menumpuk galat dan terdengar
@@ -331,8 +344,8 @@ export function buildProjectGraph(
         // putaran), jadi angka yang sama tetap berarti "sampai clip habis".
         src.loop = true;
         src.loopStart = clip.sourceStart / sr;
-        src.loopEnd = Math.min(buffer.duration, (clip.sourceStart + loopLen) / sr);
-      }
+        src.loopEnd = Math.min(sourceBuffer.duration, (clip.sourceStart + loopLen) / sr);
+      };
 
       const gain = audio.createGain();
       features.add(`clipGain:${clip.id}`);
@@ -350,8 +363,12 @@ export function buildProjectGraph(
       // gain + fade adalah level akhir clip itu. Menaruh fade di dalam rantai
       // stem berarti kurvanya ikut difilter dan dijumlahkan tiga kali.
       const stem = stemOf(clip);
+      const separated = opts.getSeparated?.(clip.assetId);
+      const mlMask = opts.getStemMask?.(clip.id);
+      const mlActive = separated !== undefined && mlMask !== undefined &&
+        Object.values(mlMask).some((enabled) => !enabled);
       let head: AudioNode = gain;
-      if (!isStemBypass(clip.stem)) {
+      if (!mlActive && !isStemBypass(clip.stem)) {
         features.add(`stem:${clip.id}`);
         const chain = buildStemChain(audio, stem);
         chain.output.connect(gain);
@@ -359,8 +376,6 @@ export function buildProjectGraph(
         nodes.push(...chain.all);
         head = chain.input;
       }
-
-      src.connect(head);
 
       // Insert chain CLIP: sesudah gain + fade, sebelum EQ lane. Urutan yang
       // sama dengan `build_plan` di Rust — chain tidak pernah melihat
@@ -380,17 +395,47 @@ export function buildProjectGraph(
       } else {
         gain.connect(eqInput);
       }
-      try {
-        src.start(whenSec, offsetSec, remainingSec);
-      } catch {
-        continue; // offset di luar buffer — lewati, jangan bunuh yang lain
+      if (mlActive && separated !== undefined && mlMask !== undefined) {
+        const stemIds: readonly ScnetStem[] = ['vocals', 'drums', 'bass', 'other'];
+        const gains = {} as Record<ScnetStem, GainNode>;
+        const mlNodes: AudioNode[] = [];
+        for (const id of stemIds) {
+          const stemGain = audio.createGain();
+          stemGain.gain.value = mlMask[id] ? 1 : 0;
+          stemGain.connect(gain);
+          gains[id] = stemGain;
+          mlNodes.push(stemGain);
+
+          const source = audio.createBufferSource();
+          configureSource(source, separated.stems[id]);
+          source.connect(stemGain);
+          try {
+            source.start(whenSec, offsetSec, remainingSec);
+          } catch {
+            source.disconnect();
+            continue;
+          }
+          voices.push(source);
+        }
+        features.add(`scnet:${clip.id}`);
+        clipMlStems.set(clip.id, { gains, all: mlNodes });
+        nodes.push(...mlNodes);
+      } else {
+        const src = audio.createBufferSource();
+        configureSource(src, buffer);
+        src.connect(head);
+        try {
+          src.start(whenSec, offsetSec, remainingSec);
+        } catch {
+          continue; // offset di luar buffer — lewati, jangan bunuh yang lain
+        }
+        voices.push(src);
       }
       nodes.push(gain);
-      voices.push(src);
     }
   }
 
-  return { lanes: lanesOut, clipStems, clipFx, masterFx, features, voices, nodes };
+  return { lanes: lanesOut, clipStems, clipMlStems, clipFx, masterFx, features, voices, nodes };
 }
 
 // ── Pemutar audisi ───────────────────────────────────────────────────────────

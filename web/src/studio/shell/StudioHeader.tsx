@@ -14,6 +14,7 @@
 import { VersionTag } from '../../app-shell/VersionTag';
 import { Badge, Button } from '../../ui/cyber';
 import { useStudio } from '../store';
+import { AutoStemToggle } from '../../stem/AutoStemToggle';
 
 export interface StudioHeaderProps {
   readonly onClose?: () => void;
@@ -68,6 +69,7 @@ export function StudioHeader({ onClose, onOpenDj }: StudioHeaderProps): JSX.Elem
         {`${laneCount} LANES · ${Math.round(sampleRate / 1000)} kHz · STEREO`}
       </div>
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <AutoStemToggle />
         {/* Design menulis READY tanpa syarat. Kita tidak boleh mengklaim siap
             kalau engine belum ada — badge-nya berubah, bukan berbohong. */}
         <Badge tone={engineReady ? 'success' : 'default'} dot>

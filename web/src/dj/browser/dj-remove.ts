@@ -23,6 +23,7 @@
  */
 
 import { unregisterBuffer } from '../../studio/preview/audio-preview';
+import { removeAutoStem } from '../../stem/auto-stem';
 import { assetUsage, studioActions, studioStore } from '../../studio/store';
 import { DECK_IDS, type DeckId } from '../model';
 import { djActions, djStore } from '../store';
@@ -88,6 +89,7 @@ export async function removeAssetFromLibrary(assetId: number): Promise<RemoveRes
 
   studioActions.removeAsset(assetId);
   unregisterBuffer(assetId);
+  removeAutoStem(assetId);
 
   return { ok: true };
 }

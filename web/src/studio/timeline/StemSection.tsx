@@ -29,6 +29,12 @@ import { getBuffer } from '../preview/audio-preview';
 import { studioActions } from '../store';
 import { STEM_LABELS, stemOf, stemSummary } from './stem';
 import { bakeClipStem } from './stem-bake';
+import type { ScnetStem } from '../../proof-stem/scnet-separate';
+import {
+  getAutoStemMask,
+  setAutoStemPart,
+  useAutoStem,
+} from '../../stem/auto-stem';
 
 const ROW: React.CSSProperties = {
   display: 'flex',
@@ -44,6 +50,7 @@ const LABEL: React.CSSProperties = {
 };
 
 const STEM_ORDER: readonly StemId[] = ['vocal', 'bass', 'other'];
+const ML_STEM_ORDER: readonly ScnetStem[] = ['vocals', 'drums', 'bass', 'other'];
 
 const HINTS: Record<StemId, string> = {
   vocal: 'buang isi TENGAH di pita suara — trik karaoke klasik',
@@ -111,6 +118,11 @@ export function StemSection({
   const [baking, setBaking] = useState(false);
   const stem = stemOf(clip);
   const active = !isStemBypass(clip.stem);
+  const autoStem = useAutoStem();
+  const mlStatus = autoStem.tracks[clip.assetId];
+  const mlReady = mlStatus?.state === 'ready';
+  const mlConsumer = `studio:${clip.id}`;
+  const mlMask = autoStem.masks[mlConsumer] ?? getAutoStemMask(mlConsumer);
 
   // Mono dibaca dari PCM yang benar-benar dipakai playback, bukan ditebak dari
   // nama berkas. `undefined` = clip demo tanpa audio; tidak diklaim apa-apa.
@@ -123,7 +135,36 @@ export function StemSection({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <div style={ROW}>
-        <span style={LABEL}>REMOVE</span>
+        <span style={LABEL}>SCNET BASE</span>
+        {ML_STEM_ORDER.map((id) => (
+          <Button
+            key={id}
+            size="sm"
+            variant={mlReady && mlMask[id] ? 'outline' : 'ghost'}
+            active={mlReady && mlMask[id]}
+            disabled={!mlReady}
+            aria-pressed={mlMask[id]}
+            aria-label={`SCNET ${id.toUpperCase()}`}
+            title={mlReady ? `${mlMask[id] ? 'mute' : 'aktifkan'} ${id}` : 'menunggu separation background selesai'}
+            onClick={() => setAutoStemPart(mlConsumer, id, !mlMask[id])}
+            style={{ padding: '0 9px' }}
+          >
+            {id.toUpperCase()}
+          </Button>
+        ))}
+        <span style={{ marginLeft: 'auto', fontSize: '10px', color: mlReady ? 'var(--cy-success)' : 'var(--cy-text-dim)' }}>
+          {mlReady
+            ? '4 STEM READY'
+            : mlStatus === undefined
+              ? (autoStem.enabled ? 'TRACK BELUM MASUK QUEUE' : 'AKTIFKAN AUTO STEM DI HEADER')
+              : mlStatus.state === 'error'
+                ? 'SEPARATION ERROR'
+                : `${mlStatus.phase.toUpperCase()} ${Math.round(mlStatus.progress * 100)}%`}
+        </span>
+      </div>
+
+      <div style={ROW}>
+        <span style={LABEL}>FALLBACK</span>
         {STEM_ORDER.map((id) => (
           <Button
             key={id}
@@ -235,8 +276,7 @@ export function StemSection({
               {baking ? 'BAKING…' : 'BAKE'}
             </Button>
             <span style={{ fontSize: '10px', color: 'var(--cy-text-dim)' }}>
-              pemisahan mid/side — bukan model AI. vokal ber-reverb lebar tidak duduk di
-              tengah dan tidak ikut terbuang.
+              fallback mid/side dipakai kalau output SCNet belum siap; bukan model AI.
             </span>
           </div>
         </div>

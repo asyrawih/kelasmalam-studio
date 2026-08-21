@@ -32,6 +32,7 @@ import { DeckTempo } from './DeckTempo';
 import { DeckTransport } from './DeckTransport';
 import { Jog } from './Jog';
 import { DeckOverview } from '../wave/DeckOverview';
+import { DeckStems } from './DeckStems';
 
 export interface DeckProps {
   readonly id: DeckId;
@@ -93,6 +94,7 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
       <DeckReadout view={view} id={id} accent={accent} mirrored={mirrored} />
 
       <DeckOverview view={view} cues={cues} id={id} accent={accent} height={compact ? 26 : 34} />
+      <DeckStems id={id} assetId={deck.assetId} />
 
       <div
         style={{
@@ -154,4 +156,3 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
     </div>
   );
 }
-

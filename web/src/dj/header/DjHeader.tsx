@@ -21,6 +21,7 @@ import { QUANTIZE_DIVS, DECK_ACCENT, type QuantizeDiv } from '../model';
 import { djActions, djStore, useDj } from '../store';
 import { deckView } from '../deck-view';
 import { studioStore } from '../../studio/store';
+import { AutoStemToggle } from '../../stem/AutoStemToggle';
 
 export interface DjHeaderProps {
   readonly onClose?: () => void;
@@ -118,6 +119,7 @@ export function DjHeader({ onClose, tooNarrow, tooShort }: DjHeaderProps): JSX.E
         user mengubah binding-nya.
       */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <AutoStemToggle />
         <span style={{ fontSize: '9px', color: 'var(--cy-text-muted)', letterSpacing: '.08em' }}>
           {shortcutHint('shell.keymap', 'PINTASAN')} · {shortcutHint('shell.palette', 'PERINTAH')}
         </span>

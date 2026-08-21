@@ -45,11 +45,13 @@ export interface ScnetModelInfo {
 export async function loadScnetModel(
   modelId: ScnetModelId = 'base',
   onProgress: (progress: ScnetModelDownloadProgress) => void = () => {},
+  options: { readonly maxThreads?: number } = {},
 ): Promise<ScnetModelInfo> {
   const ort = await import('onnxruntime-web/wasm');
   runtime = ort;
   const model = SCNET_MODELS[modelId];
-  const threads = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 2));
+  const threadLimit = options.maxThreads ?? 4;
+  const threads = Math.max(1, Math.min(threadLimit, (navigator.hardwareConcurrency || 2) - 2));
   // Wrapper `.mjs` di-dynamic-import oleh ORT, jadi ia tidak boleh berada di
   // Vite `public/`. `new URL(..., import.meta.url)` membuat Vite menerbitkan
   // keduanya sebagai asset ber-hash dan memberi URL dev/build yang valid.

@@ -41,9 +41,11 @@ import {
   dbToLin,
   type AuditionVoice,
   type LaneNodes,
+  type MlStemNodes,
 } from './graph-builder';
 import { pushFxParams, registerFxWorklet } from './fx-node';
 import { updateStemNodes, type StemNodes } from './stem-chain';
+import { getAutoStemAudio, getAutoStemMask } from '../../stem/auto-stem';
 
 /**
  * Perakitan grafnya sendiri TIDAK ada di sini — lihat `graph-builder.ts`.
@@ -104,6 +106,8 @@ const XFADE_SEC = 0.012;
 const laneNodes = new Map<string, LaneNodes>();
 /** Rantai stem per clip yang sedang berbunyi. Kosong untuk clip tanpa REMOVE. */
 const clipStems = new Map<string, StemNodes>();
+/** Gain empat output SCNet per clip yang sedang berbunyi. */
+const clipMlStems = new Map<string, MlStemNodes>();
 /** clipId → node `daw-fx` clip dari graf yang sedang berbunyi. */
 const clipFxNodes = new Map<string, AudioWorkletNode>();
 
@@ -290,6 +294,7 @@ export function stop(): void {
   stopScrub();
   laneNodes.clear();
   clipStems.clear();
+  clipMlStems.clear();
   clipFxNodes.clear();
   masterFxNode = null;
   anchor = null;
@@ -491,8 +496,14 @@ export function updateLaneParams(state: StudioAppState): void {
       const fx = clipFxNodes.get(clip.id);
       if (fx !== undefined) pushFxParams(fx, clip.chain);
       const chain = clipStems.get(clip.id);
-      if (chain === undefined) continue;
-      updateStemNodes(chain, stemOf(clip), at);
+      if (chain !== undefined) updateStemNodes(chain, stemOf(clip), at);
+      const ml = clipMlStems.get(clip.id);
+      if (ml !== undefined) {
+        const mask = getAutoStemMask(`studio:${clip.id}`);
+        for (const [stem, node] of Object.entries(ml.gains)) {
+          node.gain.setTargetAtTime(mask[stem as keyof typeof mask] ? 1 : 0, at, PARAM_RAMP_SEC);
+        }
+      }
     }
   }
 
@@ -551,6 +562,8 @@ function startGeneration(
     playheadSec: opts.timelineSec,
     startAt: opts.startAt,
     getBuffer: (id) => buffers.get(id),
+    getSeparated: getAutoStemAudio,
+    getStemMask: (clipId) => getAutoStemMask(`studio:${clipId}`),
     destination: bus,
     // Clip yang sedang diaudisi berbunyi dari pemutar audisi, bukan dari sini.
     skipClipId: state.clipLoop?.clipId,
@@ -573,12 +586,14 @@ function startGeneration(
   // melawan ramp yang sedang berjalan.
   laneNodes.clear();
   clipStems.clear();
+  clipMlStems.clear();
   clipFxNodes.clear();
   masterFxNode = null;
   for (const [id, ln] of graph.lanes) laneNodes.set(id, ln);
   for (const [id, n] of graph.clipFx) clipFxNodes.set(id, n);
   masterFxNode = graph.masterFx;
   for (const [id, chain] of graph.clipStems) clipStems.set(id, chain);
+  for (const [id, chain] of graph.clipMlStems) clipMlStems.set(id, chain);
 
   anchor = { ctxTime: opts.startAt, timelineSec: opts.timelineSec, speed: state.speed };
 }

@@ -25,6 +25,7 @@ import { useEffect, type RefObject } from 'react';
 import { DECK_IDS } from '../model';
 import { djActions, djStore } from '../store';
 import { djAudio, djAudioError, ensureDjAudio } from './engine';
+import { subscribeAutoStem } from '../../stem/auto-stem';
 
 /** Sekitar 16 kiriman posisi per detik — sama dengan tick UI lama. */
 const POSITION_INTERVAL_MS = 60;
@@ -59,7 +60,12 @@ export function useDjAudio(rootRef: RefObject<HTMLElement>): void {
       audio.apply(djStore.getState(), audio.cue.isMonitoring);
     };
     apply();
-    return djStore.subscribe(apply);
+    const offDj = djStore.subscribe(apply);
+    const offStem = subscribeAutoStem(apply);
+    return () => {
+      offDj();
+      offStem();
+    };
   }, []);
 
   // — jam → store —

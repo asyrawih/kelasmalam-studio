@@ -40,6 +40,12 @@ import { ensureFxRuntime, fxCatalog } from '../../studio/preview/fx-node';
 import { studioStore } from '../../studio/store';
 import { djStore as djStoreRef } from '../store';
 import {
+  autoStemMaskKey,
+  getAutoStemAudio,
+  getAutoStemMask,
+  isFullStemMask,
+} from '../../stem/auto-stem';
+import {
   DECK_IDS,
   effectiveRate,
   loopLen,
@@ -68,6 +74,7 @@ interface DeckSnapshot {
   readonly loopKey: string;
   readonly slip: boolean;
   readonly scrubbing: boolean;
+  readonly stemKey: string;
 }
 
 function loopKeyOf(d: DeckState): string {
@@ -76,6 +83,8 @@ function loopKeyOf(d: DeckState): string {
 }
 
 function snapshotOf(d: DeckState): DeckSnapshot {
+  const mask = getAutoStemMask(`dj:${d.id}`);
+  const audio = d.assetId === null ? undefined : getAutoStemAudio(d.assetId);
   return {
     assetId: d.assetId,
     playing: d.playing,
@@ -84,6 +93,7 @@ function snapshotOf(d: DeckState): DeckSnapshot {
     loopKey: loopKeyOf(d),
     slip: d.slip,
     scrubbing: d.scrubbing,
+    stemKey: audio === undefined || isFullStemMask(mask) ? 'mixture' : autoStemMaskKey(mask),
   };
 }
 
@@ -95,6 +105,7 @@ const EMPTY_SNAPSHOT: DeckSnapshot = {
   loopKey: '',
   slip: false,
   scrubbing: false,
+  stemKey: 'mixture',
 };
 
 export class DjAudio {
@@ -215,6 +226,15 @@ export class DjAudio {
 
       if (next.assetId !== prev.assetId) {
         player.load(next.assetId === null ? null : (getBuffer(next.assetId) ?? null), deck.playhead);
+      }
+
+      if (next.stemKey !== prev.stemKey || next.assetId !== prev.assetId) {
+        const mask = getAutoStemMask(`dj:${id}`);
+        const separated = next.assetId === null ? undefined : getAutoStemAudio(next.assetId);
+        player.setStemMix(
+          separated === undefined || isFullStemMask(mask) ? null : separated,
+          separated === undefined || isFullStemMask(mask) ? null : mask,
+        );
       }
 
       if (next.rate !== prev.rate) player.setRate(next.rate);
