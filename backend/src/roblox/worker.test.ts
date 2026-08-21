@@ -199,8 +199,16 @@ describe('POST /roblox/uploads', () => {
 });
 
 describe('GET /roblox/operations/:id', () => {
-  it('meneruskan pertanyaan status dan mengembalikan assetId', async () => {
-    const fetchImpl = spyFetch(() => reply({ done: true, response: { assetId: '99' } }));
+  it('meneruskan pertanyaan status, assetId, dan hasil moderasi', async () => {
+    const fetchImpl = spyFetch(() =>
+      reply({
+        done: true,
+        response: {
+          assetId: '99',
+          moderationResult: { moderationState: 'MODERATION_STATE_APPROVED' },
+        },
+      }),
+    );
     const res = await handleRequest(
       new Request('https://worker.test/roblox/operations/op-7', {
         headers: { 'x-roblox-api-key': KEY },
@@ -210,7 +218,11 @@ describe('GET /roblox/operations/:id', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ done: true, assetId: '99' });
+    expect(await res.json()).toMatchObject({
+      done: true,
+      assetId: '99',
+      moderationState: 'approved',
+    });
     expect(fetchImpl.mock.calls[0]?.[0]).toBe(
       'https://apis.example.test/assets/v1/operations/op-7',
     );

@@ -75,6 +75,11 @@ memakai persis permukaan itu: `fileOf(id)` untuk byte, lalu `markUploading` /
 `markProgress` / `markProcessing` / `markDone` / `markFailed`. Tidak ada satu
 pun komponen yang berubah untuk membuatnya bekerja.
 
+Adanya `assetId` saja tidak dihitung sebagai keberhasilan moderasi. Runner
+meneruskan `moderationResult.moderationState` dari Roblox: baris tetap
+`MODERASI` selama `Reviewing`, berubah menjadi `DISETUJUI` hanya saat
+`Approved`, dan menjadi `GAGAL` saat `Rejected`.
+
 Tiga keputusan di runner yang tidak terlihat dari kodenya:
 
 - **Satu berkas pada satu waktu.** Yang membatasi bukan bandwidth kami melainkan

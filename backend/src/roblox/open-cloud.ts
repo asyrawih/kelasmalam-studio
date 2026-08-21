@@ -52,11 +52,15 @@ export interface CreatedOperation {
   readonly done: boolean;
   /** Terisi kalau Roblox kebetulan sudah selesai saat itu juga. */
   readonly assetId: string | null;
+  readonly moderationState: ModerationState | null;
 }
+
+export type ModerationState = 'reviewing' | 'approved' | 'rejected';
 
 export interface OperationState {
   readonly done: boolean;
   readonly assetId: string | null;
+  readonly moderationState: ModerationState | null;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -111,7 +115,12 @@ export async function createAudioAsset(
   }
   return {
     ok: true,
-    value: { operationId, done: body.done === true, assetId: readAssetId(body) },
+    value: {
+      operationId,
+      done: body.done === true,
+      assetId: readAssetId(body),
+      moderationState: readModerationState(body),
+    },
   };
 }
 
@@ -149,7 +158,14 @@ export async function getOperation(
     };
   }
 
-  return { ok: true, value: { done: body.done === true, assetId } };
+  return {
+    ok: true,
+    value: {
+      done: body.done === true,
+      assetId,
+      moderationState: readModerationState(body),
+    },
+  };
 }
 
 // ── Jalur bersama ────────────────────────────────────────────────────────────
@@ -159,7 +175,12 @@ interface LooseBody {
   readonly path?: unknown;
   readonly operationId?: unknown;
   readonly assetId?: unknown;
-  readonly response?: { readonly assetId?: unknown; readonly path?: unknown } | null;
+  readonly response?: {
+    readonly assetId?: unknown;
+    readonly path?: unknown;
+    readonly moderationResult?: { readonly moderationState?: unknown } | null;
+  } | null;
+  readonly moderationResult?: { readonly moderationState?: unknown } | null;
   readonly error?: { readonly code?: unknown; readonly message?: unknown } | null;
   readonly code?: unknown;
   readonly message?: unknown;
@@ -286,5 +307,16 @@ function readAssetId(body: LooseBody): string | null {
     const tail = path.slice('assets/'.length);
     if (tail !== '') return tail;
   }
+  return null;
+}
+
+function readModerationState(body: LooseBody): ModerationState | null {
+  const raw = body.response?.moderationResult?.moderationState ??
+    body.moderationResult?.moderationState;
+  if (typeof raw !== 'string') return null;
+  const normalized = raw.toLowerCase();
+  if (normalized.endsWith('approved')) return 'approved';
+  if (normalized.endsWith('rejected')) return 'rejected';
+  if (normalized.endsWith('reviewing')) return 'reviewing';
   return null;
 }

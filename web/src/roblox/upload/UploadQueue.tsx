@@ -73,7 +73,7 @@ export function UploadQueue({
         ) : null}
         {done > 0 ? (
           <Badge tone="success" height={22}>
-            {done} SELESAI
+            {done} DISETUJUI
           </Badge>
         ) : null}
       </div>

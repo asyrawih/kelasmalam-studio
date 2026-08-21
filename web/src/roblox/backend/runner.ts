@@ -85,7 +85,14 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
           robloxActions.markProgress(item.id, pct);
         });
 
-        if (started.done && started.assetId !== null) {
+        if (started.moderationState === 'rejected') {
+          throw new UploadError('MODERASI_DITOLAK', 'Roblox menolak audio ini saat moderasi');
+        }
+        if (
+          started.done &&
+          started.assetId !== null &&
+          started.moderationState === 'approved'
+        ) {
           robloxActions.markDone(item.id, started.assetId);
           continue;
         }
@@ -106,7 +113,10 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
     for (;;) {
       await sleep(delay);
       const state = await transport.operation(operationId, apiKey);
-      if (state.done) {
+      if (state.moderationState === 'rejected') {
+        throw new UploadError('MODERASI_DITOLAK', 'Roblox menolak audio ini saat moderasi');
+      }
+      if (state.moderationState === 'approved') {
         if (state.assetId === null) {
           throw new UploadError(
             'TANPA_ASSET_ID',
@@ -114,6 +124,12 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
           );
         }
         return state.assetId;
+      }
+      if (state.done && state.moderationState == null) {
+        throw new UploadError(
+          'STATUS_MODERASI_TIDAK_ADA',
+          'Roblox selesai membuat asset tetapi tidak memberikan status moderasi — periksa Creator Hub',
+        );
       }
       if (now() >= deadline) {
         /*

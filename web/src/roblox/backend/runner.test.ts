@@ -34,7 +34,11 @@ function fakeTransport(over: Partial<Transport> = {}): Transport {
       done: false,
       assetId: null,
     }),
-    operation: async (): Promise<OperationState> => ({ done: true, assetId: '111' }),
+    operation: async (): Promise<OperationState> => ({
+      done: true,
+      assetId: '111',
+      moderationState: 'approved',
+    }),
     ...over,
   };
 }
@@ -63,10 +67,19 @@ describe('jalur bahagia', () => {
 
   it('melewati polling kalau Roblox sudah selesai saat itu juga', async () => {
     seed(['a.mp3']);
-    const operation = vi.fn(async () => ({ done: true, assetId: 'x' }));
+    const operation = vi.fn(async () => ({
+      done: true,
+      assetId: 'x',
+      moderationState: 'approved' as const,
+    }));
     const runner = runnerOf(
       fakeTransport({
-        upload: async () => ({ operationId: 'op-9', done: true, assetId: '999' }),
+        upload: async () => ({
+          operationId: 'op-9',
+          done: true,
+          assetId: '999',
+          moderationState: 'approved',
+        }),
         operation,
       }),
     );
@@ -125,9 +138,11 @@ describe('jalur bahagia', () => {
     const answers: OperationState[] = [
       { done: false, assetId: null },
       { done: false, assetId: null },
-      { done: true, assetId: '777' },
+      { done: true, assetId: '777', moderationState: 'approved' },
     ];
-    const operation = vi.fn(async () => answers.shift() ?? { done: true, assetId: '777' });
+    const operation = vi.fn(async () =>
+      answers.shift() ?? { done: true, assetId: '777', moderationState: 'approved' as const },
+    );
     const runner = runnerOf(fakeTransport({ operation }));
 
     runner.run(items());
@@ -139,6 +154,41 @@ describe('jalur bahagia', () => {
 });
 
 describe('kegagalan', () => {
+  it('tetap MODERASI saat reviewing lalu selesai hanya setelah approved', async () => {
+    seed(['a.mp3']);
+    const answers: OperationState[] = [
+      { done: false, assetId: '111', moderationState: 'reviewing' },
+      { done: true, assetId: '111', moderationState: 'approved' },
+    ];
+    const operation = vi.fn(async () => answers.shift()!);
+    const runner = runnerOf(fakeTransport({ operation }));
+
+    runner.run(items());
+    await runner.idle();
+
+    expect(operation).toHaveBeenCalledTimes(2);
+    expect(byName('a.mp3')).toMatchObject({ status: 'done', assetId: '111' });
+  });
+
+  it('menampilkan kegagalan kalau moderasi Roblox menolak audio', async () => {
+    seed(['a.mp3']);
+    const runner = runnerOf(
+      fakeTransport({
+        operation: async () => ({
+          done: true,
+          assetId: '111',
+          moderationState: 'rejected',
+        }),
+      }),
+    );
+
+    runner.run(items());
+    await runner.idle();
+
+    expect(byName('a.mp3')).toMatchObject({ status: 'failed' });
+    expect(byName('a.mp3').error).toMatch(/menolak.*moderasi/i);
+  });
+
   it('galat satu berkas tidak menjatuhkan sisanya', async () => {
     seed(['a.mp3', 'b.mp3']);
     const runner = runnerOf(

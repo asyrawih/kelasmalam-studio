@@ -175,6 +175,31 @@ describe('getOperation', () => {
     expect(res).toMatchObject({ ok: true, value: { done: true, assetId: '556677' } });
   });
 
+  it('meneruskan status moderasi approved, reviewing, dan rejected', async () => {
+    for (const [raw, expected] of [
+      ['MODERATION_STATE_APPROVED', 'approved'],
+      ['MODERATION_STATE_REVIEWING', 'reviewing'],
+      ['MODERATION_STATE_REJECTED', 'rejected'],
+    ] as const) {
+      const res = await getOperation(
+        {
+          base: BASE,
+          apiKey: KEY,
+          fetchImpl: async () =>
+            reply({
+              done: raw !== 'MODERATION_STATE_REVIEWING',
+              response: {
+                assetId: '123',
+                moderationResult: { moderationState: raw },
+              },
+            }),
+        },
+        'op-moderasi',
+      );
+      expect(res).toMatchObject({ ok: true, value: { moderationState: expected } });
+    }
+  });
+
   it('juga menemukannya kalau hanya ada sebagai `assets/{id}`', async () => {
     const res = await getOperation(
       {

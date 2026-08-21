@@ -31,11 +31,15 @@ export interface StartedUpload {
   readonly operationId: string;
   readonly done: boolean;
   readonly assetId: string | null;
+  readonly moderationState?: ModerationState | null;
 }
+
+export type ModerationState = 'reviewing' | 'approved' | 'rejected';
 
 export interface OperationState {
   readonly done: boolean;
   readonly assetId: string | null;
+  readonly moderationState?: ModerationState | null;
 }
 
 export interface Transport {
@@ -104,6 +108,7 @@ export function createHttpTransport(baseUrl: string): Transport {
       return {
         done: body?.done === true,
         assetId: typeof body?.assetId === 'string' ? body.assetId : null,
+        moderationState: moderationStateOf(body?.moderationState),
       };
     },
   };
@@ -117,6 +122,7 @@ interface LooseBody {
   readonly operationId?: unknown;
   readonly code?: unknown;
   readonly message?: unknown;
+  readonly moderationState?: unknown;
 }
 
 async function readJson(res: Response): Promise<LooseBody | null> {
@@ -199,9 +205,14 @@ function xhrPost(
         operationId,
         done: body?.done === true,
         assetId: typeof body?.assetId === 'string' ? body.assetId : null,
+        moderationState: moderationStateOf(body?.moderationState),
       });
     };
 
     xhr.send(form);
   });
+}
+
+function moderationStateOf(value: unknown): ModerationState | null {
+  return value === 'reviewing' || value === 'approved' || value === 'rejected' ? value : null;
 }

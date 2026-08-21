@@ -258,7 +258,7 @@ export const STATUS_LABEL: Readonly<Record<UploadStatus, string>> = {
   queued: 'ANTRE',
   uploading: 'UNGGAH',
   processing: 'MODERASI',
-  done: 'SELESAI',
+  done: 'DISETUJUI',
   failed: 'GAGAL',
 };
 
