@@ -268,7 +268,7 @@ describe('runExport', () => {
     expect([...bytes]).not.toContain(0xff);
   });
 
-  it('meneruskan peringatan dari Rust dan menambah peringatan sample-rate asset', async () => {
+  it('meneruskan peringatan Rust tanpa memperingatkan sample-rate yang sudah di-resample', async () => {
     const f = fakeEngine({ warnings: ['Lane "a" punya 5 band EQ.'] });
     const got: string[][] = [];
     const r = await runToBytes({
@@ -285,9 +285,8 @@ describe('runExport', () => {
       yieldToEventLoop: noYield,
     });
 
-    expect(r.warnings).toHaveLength(2);
+    expect(r.warnings).toHaveLength(1);
     expect(r.warnings[0]).toContain('band EQ');
-    expect(r.warnings[1]).toContain('44100');
     expect(got[0]).toEqual(r.warnings);
   });
 

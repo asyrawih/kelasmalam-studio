@@ -262,6 +262,29 @@ fn snapshot_roundtrip_renders_identically() {
 }
 
 #[test]
+fn asset_sample_rate_is_part_of_the_source_cursor_speed() {
+    let mut engine = Engine::new(48_000, 128);
+    let pcm = [0.0f32; 8];
+    unsafe {
+        engine.register_asset(
+            0,
+            Asset {
+                data: pcm.as_ptr(),
+                frames: 8,
+                channels: 1,
+                sample_rate: 44_100,
+            },
+        );
+    }
+    let speed = engine.source_speed(0, 1.0);
+    assert!(
+        (speed - 44_100.0 / 48_000.0).abs() < 1.0e-12,
+        "speed={speed}"
+    );
+    assert!((engine.source_speed(0, 2.0) - speed * 2.0).abs() < 1.0e-12);
+}
+
+#[test]
 fn loop_wrap_returns_to_loop_start() {
     let mut f = build(1, false, false, 128);
     f.engine.transport.loop_range = Some((0, 5_000));

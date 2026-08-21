@@ -591,6 +591,24 @@ impl Engine {
         self.voices.kill_all();
     }
 
+    /// Source-frame per output-frame. `ClipDesc::speed` hanya menyatakan
+    /// varispeed timeline; sample-rate asset wajib ikut supaya 44,1 kHz pada
+    /// project 48 kHz tidak turun pitch dan memanjang.
+    #[inline]
+    fn source_speed(&self, asset_id: u16, clip_speed: f64) -> f64 {
+        let asset_rate = self
+            .assets
+            .get(asset_id)
+            .map(|a| a.sample_rate)
+            .unwrap_or(0);
+        let ratio = if asset_rate > 0 && self.sample_rate > 0.0 {
+            asset_rate as f64 / self.sample_rate as f64
+        } else {
+            1.0
+        };
+        clip_speed * ratio
+    }
+
     /// Menyetel `sched_cursor` ke clip pertama yang mulai >= playhead, lalu
     /// menyalakan voice untuk clip yang SEDANG berlangsung di posisi itu.
     fn rewind_schedule(&mut self) {
@@ -609,10 +627,11 @@ impl Engine {
             // Clip yang sudah mulai tapi belum selesai → mulai di tengah.
             if now < c.start + c.len {
                 let into = now - c.start;
+                let speed = self.source_speed(c.asset, c.speed);
                 self.voices.trigger(&VoiceStart {
                     track: c.track,
                     asset: c.asset,
-                    source_offset: c.offset + (into as f64 * c.speed) as u64,
+                    source_offset: c.offset + (into as f64 * speed) as u64,
                     remaining: c.len - into,
                     total_len: c.len,
                     played: into,
@@ -621,7 +640,7 @@ impl Engine {
                     fade_out: c.fade_out,
                     fade_curve: c.fade_curve,
                     chain: c.chain_slot,
-                    speed: c.speed,
+                    speed,
                 });
             }
         }
@@ -659,6 +678,7 @@ impl Engine {
             if c.len == 0 {
                 continue;
             }
+            let speed = self.source_speed(c.asset, c.speed);
             self.voices.trigger(&VoiceStart {
                 track: c.track,
                 asset: c.asset,
@@ -671,7 +691,7 @@ impl Engine {
                 fade_out: c.fade_out,
                 fade_curve: c.fade_curve,
                 chain: c.chain_slot,
-                speed: c.speed,
+                speed,
             });
         }
     }
@@ -748,6 +768,7 @@ impl Engine {
             }
             op::TRIGGER_CLIP => {
                 if let Some(c) = self.project.clips.get(cmd.target as usize).copied() {
+                    let speed = self.source_speed(c.asset, c.speed);
                     self.voices.trigger(&VoiceStart {
                         track: c.track,
                         asset: c.asset,
@@ -760,7 +781,7 @@ impl Engine {
                         fade_out: c.fade_out,
                         fade_curve: c.fade_curve,
                         chain: c.chain_slot,
-                        speed: c.speed,
+                        speed,
                     });
                 }
             }

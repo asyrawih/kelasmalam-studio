@@ -158,19 +158,9 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
   const yieldFn = opts.yieldToEventLoop ?? defaultYield;
 
   const snap = engine.snapshot(payload.json);
-  // Engine memutar asset apa adanya — ia tidak me-resample per blok (satu
-  // sample rate untuk seluruh engine, docs/06). Asset di rate lain akan
-  // berbunyi salah pitch, dan itu HARUS dikatakan, bukan didiamkan.
-  const warnings = [
-    ...snap.warnings,
-    ...payload.assets
-      .filter((a) => a.sampleRate !== sampleRate)
-      .map(
-        (a) =>
-          `Asset ${a.assetId} ber-sample-rate ${a.sampleRate} Hz, project ${sampleRate} Hz — ` +
-          'pitch-nya di file akan berbeda dari preview.',
-      ),
-  ];
+  // Cursor engine mengalikan laju clip dengan asset-rate/project-rate, jadi
+  // 44,1 kHz dan 48 kHz boleh hidup dalam project yang sama tanpa pre-resample.
+  const warnings = [...snap.warnings];
   if (warnings.length > 0) opts.onWarnings?.(warnings);
 
   // Sebelum apa pun dialokasi: kalau PCM-nya tidak akan muat, gagal SEKARANG
