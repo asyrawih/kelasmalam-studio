@@ -9,7 +9,7 @@
  */
 
 import { Badge, Button, Card } from '../../ui/cyber';
-import { readyItems, type QueueItem, type RobloxState } from '../model';
+import { isBusy, readyItems, type QueueItem, type RobloxState } from '../model';
 import { QueueRow } from './QueueRow';
 
 export interface UploadQueueProps {
@@ -33,6 +33,7 @@ export function UploadQueue({
   const ready = readyItems(state).length;
   const done = items.filter((it) => it.status === 'done').length;
   const blocked = items.filter((it) => it.status === 'draft').length - ready;
+  const locked = isBusy(state);
 
   return (
     <Card
@@ -41,10 +42,20 @@ export function UploadQueue({
       notched
       actions={
         <div style={{ display: 'flex', gap: '6px' }}>
-          <Button size="sm" variant="ghost" disabled={done === 0} onClick={onClearDone}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={done === 0 || locked}
+            onClick={onClearDone}
+          >
             BERSIHKAN SELESAI
           </Button>
-          <Button size="sm" variant="ghost" disabled={items.length === 0} onClick={onClearAll}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={items.length === 0 || locked}
+            onClick={onClearAll}
+          >
             KOSONGKAN
           </Button>
         </div>
@@ -90,6 +101,7 @@ export function UploadQueue({
               onSelect={onSelect}
               onRemove={onRemove}
               onRetry={onRetry}
+              locked={locked}
             />
           ))}
         </div>

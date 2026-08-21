@@ -109,6 +109,7 @@ export interface RobloxState {
 export type ViolationCode =
   | 'format'
   | 'ukuran'
+  | 'durasi-tidak-diketahui'
   | 'durasi'
   | 'nama-kosong'
   | 'nama-panjang'
@@ -170,8 +171,12 @@ export function violationsOf(item: QueueItem): readonly Violation[] {
       message: `${formatBytes(item.bytes)} melewati batas ${formatBytes(MAX_BYTES)}`,
     });
   }
-  // `null` sengaja LOLOS: durasi yang belum terukur bukan durasi yang salah.
-  if (item.seconds !== null && item.seconds > MAX_SECONDS) {
+  if (item.seconds === null) {
+    out.push({
+      code: 'durasi-tidak-diketahui',
+      message: 'durasi belum dapat diverifikasi — pilih berkas audio yang metadata durasinya terbaca',
+    });
+  } else if (item.seconds > MAX_SECONDS) {
     out.push({
       code: 'durasi',
       message: `${formatDuration(item.seconds)} melewati batas ${formatDuration(MAX_SECONDS)}`,

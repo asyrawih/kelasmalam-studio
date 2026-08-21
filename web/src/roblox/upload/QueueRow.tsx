@@ -25,9 +25,17 @@ export interface QueueRowProps {
   readonly onSelect: (id: number) => void;
   readonly onRemove: (id: number) => void;
   readonly onRetry: (id: number) => void;
+  readonly locked: boolean;
 }
 
-function QueueRowInner({ item, selected, onSelect, onRemove, onRetry }: QueueRowProps): JSX.Element {
+function QueueRowInner({
+  item,
+  selected,
+  onSelect,
+  onRemove,
+  onRetry,
+  locked,
+}: QueueRowProps): JSX.Element {
   const problems = violationsOf(item);
   const tone: BadgeTone =
     item.status === 'failed'
@@ -148,6 +156,7 @@ function QueueRowInner({ item, selected, onSelect, onRemove, onRetry }: QueueRow
           <Button
             size="sm"
             variant="outline"
+            disabled={locked}
             onClick={(e) => {
               e.stopPropagation();
               onRetry(item.id);
@@ -160,6 +169,7 @@ function QueueRowInner({ item, selected, onSelect, onRemove, onRetry }: QueueRow
           size="sm"
           variant="ghost"
           aria-label={`hapus ${item.fileName}`}
+          disabled={locked}
           onClick={(e) => {
             e.stopPropagation();
             onRemove(item.id);

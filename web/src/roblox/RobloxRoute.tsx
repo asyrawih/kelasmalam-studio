@@ -60,9 +60,13 @@ export function RobloxRoute({
     }
     let alive = true;
     const ask = probe ?? ((b: string) => createHttpTransport(b).health());
-    void ask(base).then((ok) => {
-      if (alive) robloxActions.setBackendReady(ok);
-    });
+    void ask(base)
+      .then((ok) => {
+        if (alive) robloxActions.setBackendReady(ok);
+      })
+      .catch(() => {
+        if (alive) robloxActions.setBackendReady(false);
+      });
     return () => {
       alive = false;
       // Ditinggalkan dalam keadaan "belum tersambung": saat halaman ini dibuka

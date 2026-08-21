@@ -41,6 +41,18 @@ describe('dengan URL terisi', () => {
     expect(uploadButton().disabled).toBe(true);
   });
 
+  it('probe yang gagal tidak menghasilkan unhandled rejection dan tetap belum siap', async () => {
+    render(
+      <RobloxRoute
+        apiBase="https://worker.test"
+        makeRunner={fakeRunner}
+        probe={async () => Promise.reject(new Error('offline'))}
+      />,
+    );
+    await waitFor(() => expect(robloxStore.getState().backendReady).toBe(false));
+    expect(uploadButton().disabled).toBe(true);
+  });
+
   it('Worker yang menjawab membuat badge dan tombol hidup', async () => {
     render(
       <RobloxRoute

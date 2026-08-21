@@ -24,6 +24,12 @@ function drop(files: readonly File[]): void {
   fireEvent.change(input);
 }
 
+function verifyDurations(seconds = 60): void {
+  fromUploader(() => {
+    for (const item of robloxStore.getState().items) robloxActions.setDuration(item.id, seconds);
+  });
+}
+
 /**
  * Mutasi store dari LUAR React — persis yang dilakukan lapisan unggah nanti.
  * Dibungkus `act` supaya render yang dipicunya selesai sebelum diperiksa;
@@ -70,6 +76,7 @@ describe('tombol unggah', () => {
     fromUploader(() => robloxActions.setCreatorId('123'));
     fromUploader(() => robloxActions.setApiKey('kunci'));
     drop([mp3('lagu.mp3')]);
+    verifyDurations();
 
     expect(uploadButton().disabled).toBe(false);
     fireEvent.click(uploadButton());
@@ -84,6 +91,7 @@ describe('tombol unggah', () => {
     fromUploader(() => robloxActions.setCreatorId('123'));
     fromUploader(() => robloxActions.setApiKey('kunci'));
     drop([mp3('kecil.mp3'), mp3('raksasa.mp3', MAX_BYTES + 1)]);
+    verifyDurations();
 
     fireEvent.click(uploadButton());
     expect(sentNames(onUpload)).toEqual(['kecil.mp3']);
@@ -132,5 +140,16 @@ describe('kunci saat berjalan', () => {
     fromUploader(() => robloxActions.markUploading(robloxStore.getState().items[0]!.id));
 
     expect((screen.getByLabelText('API key Open Cloud') as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('baris dan antrean tidak bisa dihapus sementara unggahan berjalan', () => {
+    render(<RobloxPage />);
+    drop([mp3('a.mp3')]);
+    fromUploader(() => robloxActions.markUploading(robloxStore.getState().items[0]!.id));
+
+    expect((screen.getByLabelText('hapus a.mp3') as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'KOSONGKAN' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

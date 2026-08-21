@@ -3,7 +3,7 @@
  *
  * Yang dijaga di sini bukan "fungsinya jalan" melainkan tiga keputusan yang
  * mudah sekali dibalik oleh orang berikutnya tanpa sadar merusaknya:
- * durasi `null` LOLOS, pelanggaran dikembalikan SEMUA, dan berkas berformat
+ * durasi `null` DITAHAN, pelanggaran dikembalikan SEMUA, dan berkas berformat
  * salah tidak pernah masuk antrean.
  */
 
@@ -80,8 +80,9 @@ describe('violationsOf', () => {
     expect(isUploadable(item())).toBe(true);
   });
 
-  it('durasi yang BELUM terukur lolos — null bukan pelanggaran', () => {
-    expect(codes(item({ seconds: null }))).toEqual([]);
+  it('durasi yang belum dapat diverifikasi ditahan sebelum menghabiskan kuota', () => {
+    expect(codes(item({ seconds: null }))).toEqual(['durasi-tidak-diketahui']);
+    expect(isUploadable(item({ seconds: null }))).toBe(false);
   });
 
   it('tepat di batas masih lolos; satu lewat sudah tidak', () => {

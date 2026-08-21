@@ -97,7 +97,10 @@ export function RobloxPage({ onClose, onOpenStudio, onUpload }: RobloxPageProps)
         title: 'ROBLOX: bersihkan yang sudah selesai',
         group: 'Roblox',
         defaultChord: null,
-        enabled: () => robloxStore.getState().items.some((it) => it.status === 'done'),
+        enabled: () => {
+          const current = robloxStore.getState();
+          return !isBusy(current) && current.items.some((it) => it.status === 'done');
+        },
         run: () => robloxActions.clearDone(),
       },
       {
@@ -105,7 +108,10 @@ export function RobloxPage({ onClose, onOpenStudio, onUpload }: RobloxPageProps)
         title: 'ROBLOX: kosongkan antrean',
         group: 'Roblox',
         defaultChord: null,
-        enabled: () => robloxStore.getState().items.length > 0,
+        enabled: () => {
+          const current = robloxStore.getState();
+          return !isBusy(current) && current.items.length > 0;
+        },
         run: () => {
           robloxActions.clearAll();
           setRejected([]);

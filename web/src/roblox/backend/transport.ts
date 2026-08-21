@@ -51,6 +51,7 @@ export interface Transport {
 }
 
 const KEY_HEADER = 'x-roblox-api-key';
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 /** Buang slash di ujung supaya `${base}/roblox/...` tidak jadi `//roblox`. */
 export function normalizeBase(base: string): string {
@@ -155,6 +156,7 @@ function xhrPost(
     xhr.open('POST', url);
     xhr.setRequestHeader(KEY_HEADER, apiKey);
     xhr.responseType = 'text';
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
 
     xhr.upload.onprogress = (e: ProgressEvent): void => {
       // `lengthComputable` false terjadi pada sambungan yang tidak menyebut

@@ -460,6 +460,37 @@ describe('buildExportPayload', () => {
     expect([...pcm]).toEqual([6, 6, 6, 6]);
   });
 
+  it('mengubah sourceStart project ke frame asset SCNet 44,1 kHz', () => {
+    const original = buffer(48_000, 2, 48_000);
+    const scnetStem = buffer(44_100, 2, 44_100);
+    const built = buildExportPayload(state({
+      lanes: [{
+        ...state().lanes[0]!,
+        clips: [{
+          ...state().lanes[0]!.clips[0]!,
+          sourceStart: 24_000,
+        }],
+      }],
+    }), () => original, {
+      getAudio: () => ({
+        sampleRate: 44_100,
+        frames: 44_100,
+        bufferedFrames: 44_100,
+        revision: 1,
+        stems: { vocals: scnetStem, drums: scnetStem, bass: scnetStem, other: scnetStem },
+      }),
+      getMask: () => ({ vocals: false, drums: true, bass: false, other: false }),
+    });
+    const json = JSON.parse(built.payload.json) as {
+      lanes: { clips: { sourceStart: number }[] }[];
+    };
+
+    // Preview mulai pada 24000/48000 = 0,5 detik. Di PCM SCNet 44,1 kHz
+    // titik yang sama adalah frame 22050, bukan frame 24000.
+    expect(json.lanes[0]!.clips[0]!.sourceStart).toBe(22_050);
+    expect(built.payload.assets[0]!.sampleRate).toBe(44_100);
+  });
+
   it('SCNet parsial tidak dipakai sebelum seluruh track selesai', async () => {
     const original = buffer(1024);
     const built = buildExportPayload(state(), () => original, {

@@ -147,13 +147,14 @@ function clip(o: {
   fadeInMs?: number;
   fadeOutMs?: number;
   fadeCurve?: FadeCurve;
+  sourceStart?: number;
 }) {
   return {
     id: o.id,
     assetId: o.assetId,
     start: o.start,
     len: o.len,
-    sourceStart: 0,
+    sourceStart: o.sourceStart ?? 0,
     sourceLen: o.len,
     label: o.id,
     gainDb: o.gainDb ?? 0,
@@ -611,6 +612,62 @@ describe('export lewat engine WASM sungguhan', () => {
     expect(wav.frames).toBe(Math.round(FRAMES / 1.5));
     // Dipercepat berarti tetap berbunyi sampai ujung — bukan senyap di ekor.
     expect(rms(wav.left.subarray(wav.frames - SR / 2))).toBeGreaterThan(0.1);
+  });
+
+  it('SCNet 44,1 kHz yang di-trim mulai dari materi yang sama dengan preview', async () => {
+    const stemRate = 44_100;
+    const stemFrames = stemRate * 2;
+    // Ramp linear membuat posisi source bisa dibaca kembali dari amplitudonya.
+    // Cubic Hermite juga mereproduksi ramp linear secara tepat, jadi tes ini
+    // memeriksa OFFSET dan LAJU cursor sekaligus tanpa bergantung FFT/pitch
+    // estimator yang toleransinya bisa menyembunyikan salah beberapa ribu frame.
+    const ramp = Float32Array.from(
+      { length: stemFrames },
+      (_, i) => -0.8 + (1.6 * i) / stemFrames,
+    );
+    const silent = new Float32Array(stemFrames);
+    const stemBuffer = (data: Float32Array): AudioBuffer => ({
+      numberOfChannels: 2,
+      length: data.length,
+      sampleRate: stemRate,
+      duration: data.length / stemRate,
+      getChannelData: () => data,
+    } as unknown as AudioBuffer);
+    const audio = {
+      sampleRate: stemRate,
+      frames: stemFrames,
+      bufferedFrames: stemFrames,
+      revision: 1,
+      stems: {
+        vocals: stemBuffer(silent),
+        drums: stemBuffer(ramp),
+        bass: stemBuffer(silent),
+        other: stemBuffer(silent),
+      },
+    };
+    const sourceStart = SR / 2; // 0,5 detik di koordinat preview/project.
+    const outputFrames = 4_800;
+    const st = state([
+      lane({
+        id: 'trimmed-scnet',
+        clips: [clip({
+          id: 'c', assetId: 1, start: 0, len: outputFrames, sourceStart,
+        })],
+      }),
+    ]);
+    const original = fakeBuffer(new Float32Array(SR * 2));
+    const built = buildExportPayload(st, () => original, {
+      getAudio: () => audio,
+      getMask: () => ({ vocals: false, drums: true, bass: false, other: false }),
+    });
+    const r = await runOne(built, wavEncoder(32));
+    const wav = parseWav(await blobBytes(r.blob));
+
+    const i = 1_000; // lewat micro-fade 3 ms milik engine.
+    const sourcePos = (sourceStart + i) * stemRate / SR;
+    const expected = -0.8 + (1.6 * sourcePos) / stemFrames;
+    expect(wav.left[i]!).toBeCloseTo(expected, 4);
+    expect(wav.right[i]!).toBeCloseTo(expected, 4);
   });
 
   it('pembatalan menghentikan render dan tidak menghasilkan file', async () => {

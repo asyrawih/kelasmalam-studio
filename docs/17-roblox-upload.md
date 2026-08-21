@@ -44,10 +44,9 @@ palette (⌘K).
 
 Dua hal yang mudah dibalik tanpa sadar merusaknya, dan keduanya dijaga tes:
 
-- **Durasi `null` LOLOS.** `null` berarti "belum/tidak bisa diukur", bukan nol.
-  Menebak nol membuat lagu 9 menit lolos lalu ditolak Roblox; menganggapnya
-  melanggar membuat berkas sah tertahan gara-gara browser tidak bisa membaca
-  headernya.
+- **Durasi `null` DITAHAN.** `null` berarti durasi belum dapat diverifikasi.
+  Meloloskannya berisiko mengirim lagu di atas 7 menit dan menghabiskan kuota
+  sebelum Roblox menolaknya.
 - **`violationsOf` mengembalikan SEMUA alasan**, bukan yang pertama. Satu berkas
   bisa sekaligus terlalu besar dan terlalu panjang.
 

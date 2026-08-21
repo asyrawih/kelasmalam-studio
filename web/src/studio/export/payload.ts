@@ -295,7 +295,8 @@ export function buildExportPayload(
           ? { kind: 'scnet', audio, mask }
           : { kind: 'original', assetId: clip.assetId });
       }
-      return [{ clip, dense, useScnet }];
+      const exportAsset = assets.get(key)!;
+      return [{ clip, dense, useScnet, exportSampleRate: exportAsset.sampleRate }];
     });
 
     return {
@@ -320,7 +321,7 @@ export function buildExportPayload(
         enabled: fx.enabled,
         params: { ...fx.params },
       })),
-      clips: clips.map(({ clip: c, dense, useScnet }) => ({
+      clips: clips.map(({ clip: c, dense, useScnet, exportSampleRate }) => ({
         id: c.id,
         // Dikirim walau engine belum bisa memprosesnya. Sebelum ini, stem
         // terdengar di preview dan hilang dari file TANPA satu pun peringatan
@@ -336,7 +337,18 @@ export function buildExportPayload(
         assetId: dense,
         start: c.start,
         len: c.len,
-        sourceStart: c.sourceStart,
+        // `AudioBufferSourceNode.start()` milik preview menerima DETIK. Preview
+        // mengubah koordinat source project menjadi detik lewat
+        // `sourceStart / projectRate`; AudioBuffer lalu membacanya pada rate
+        // milik buffer. Asset export bisa berbeda rate (terutama SCNet yang
+        // selalu 44,1 kHz), sedangkan engine menerima indeks FRAME langsung.
+        // Karena itu offset harus masuk ke ruang frame asset export:
+        //
+        //   sourceStart / projectRate * exportAssetRate
+        //
+        // Tanpa konversi ini laju playback sudah benar, tetapi clip hasil
+        // trim/slip/seek/loop mulai dari materi yang berbeda dari preview.
+        sourceStart: c.sourceStart * (exportSampleRate / Math.max(1, state.sampleRate)),
         gainDb: c.gainDb,
         fadeInMs: c.fadeInMs,
         fadeOutMs: c.fadeOutMs,

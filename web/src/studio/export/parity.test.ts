@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildExportPayload, payloadFeatures } from './payload';
 import { DEFAULT_FADE_CURVE, defaultEq, type StudioLane, type StudioState } from '../model';
+import type { AutoStemAudio } from '../../stem/auto-stem';
 
 vi.mock('../preview/fx-node', () => ({
   ensureFxRuntime: () => Promise.resolve(false),
@@ -53,7 +54,7 @@ function node(extra: Record<string, unknown> = {}): unknown {
   };
 }
 
-function fakeContext(): BaseAudioContext {
+function fakeContext(starts: number[][] = []): BaseAudioContext {
   return {
     sampleRate: 48_000,
     currentTime: 0,
@@ -62,14 +63,16 @@ function fakeContext(): BaseAudioContext {
     createBiquadFilter: () => node({ frequency: param(), Q: param(), gain: param(), type: 'peaking' }),
     createChannelSplitter: () => node(),
     createChannelMerger: () => node(),
-    createBufferSource: () =>
-      node({
+    createBufferSource: () => {
+      const start = vi.fn((...args: number[]) => starts.push(args));
+      return node({
         buffer: null,
         playbackRate: param(),
-        start: vi.fn(),
+        start,
         stop: vi.fn(),
         onended: null,
-      }),
+      });
+    },
   } as unknown as BaseAudioContext;
 }
 
@@ -166,5 +169,61 @@ describe('paritas preview ↔ export', () => {
     expect([...graph.features].some((f) => f.startsWith('stem:'))).toBe(true);
     expect([...graph.features].some((f) => f.startsWith('fx:'))).toBe(true);
     expect([...graph.features].some((f) => f.startsWith('masterFx:'))).toBe(true);
+  });
+
+  it('offset trim SCNet 44,1 kHz menunjuk waktu source yang sama', () => {
+    const state = maximalState();
+    const sourceStart = 24_000;
+    state.lanes = [{
+      ...state.lanes[0]!,
+      clips: [{
+        ...state.lanes[0]!.clips[0]!,
+        sourceStart,
+        len: 4_800,
+        sourceLen: 4_800,
+      }],
+    }];
+    const stemPcm = new Float32Array(44_100);
+    const stemBuffer = {
+      length: stemPcm.length,
+      duration: 1,
+      numberOfChannels: 2,
+      sampleRate: 44_100,
+      getChannelData: () => stemPcm,
+    } as unknown as AudioBuffer;
+    const separated: AutoStemAudio = {
+      sampleRate: 44_100,
+      frames: 44_100,
+      bufferedFrames: 44_100,
+      revision: 1,
+      stems: {
+        vocals: stemBuffer,
+        drums: stemBuffer,
+        bass: stemBuffer,
+        other: stemBuffer,
+      },
+    };
+    const mask = { vocals: false, drums: true, bass: false, other: false } as const;
+    const starts: number[][] = [];
+    buildProjectGraph(fakeContext(starts), state, {
+      playheadSec: 0,
+      startAt: 0,
+      getBuffer: () => buffer(),
+      getSeparated: () => separated,
+      getStemMask: () => mask,
+    });
+    const built = buildExportPayload(state, () => buffer(), {
+      getAudio: () => separated,
+      getMask: () => mask,
+    });
+    const json = JSON.parse(built.payload.json) as {
+      lanes: { clips: { sourceStart: number }[] }[];
+    };
+    const previewOffsetSec = starts[0]![1]!;
+    const exportOffsetFrames = json.lanes[0]!.clips[0]!.sourceStart;
+
+    expect(previewOffsetSec).toBe(0.5);
+    expect(exportOffsetFrames).toBe(22_050);
+    expect(exportOffsetFrames / separated.sampleRate).toBe(previewOffsetSec);
   });
 });

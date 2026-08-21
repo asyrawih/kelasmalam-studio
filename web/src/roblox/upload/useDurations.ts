@@ -20,14 +20,13 @@
  * baris yang sudah pernah dimulai dicatat di `started` dan tidak pernah
  * disentuh lagi.
  *
- * ## Kegagalan bukan kesalahan
+ * ## Kegagalan menahan unggahan
  *
  * Berkas rusak, codec yang tidak dikenal browser, atau `duration` yang
  * `Infinity` (MP3 VBR tanpa header Xing) semuanya berakhir sebagai `null` —
- * sama artinya dengan "belum terukur". Halaman menampilkannya `—`, dan
- * `violationsOf` TIDAK menuduhnya melewati batas 7 menit. Menebak nol berarti
- * berkas 9 menit lolos lalu ditolak Roblox; menuduhnya melanggar berarti
- * berkas sah tertahan gara-gara browser tidak bisa membaca headernya.
+ * sama artinya dengan "belum dapat diverifikasi". Halaman menampilkannya `—`
+ * dan menahan unggahan. Ini sengaja konservatif: meloloskannya dapat mengirim
+ * lagu di atas 7 menit ke Roblox dan menghabiskan kuota sebelum ditolak.
  */
 
 import { useEffect, useRef } from 'react';
