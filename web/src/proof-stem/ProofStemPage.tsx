@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, ProgressBar } from '../ui/cyber';
+import { SCNET_MODELS, type ScnetModelId } from './scnet-model';
 import type { ScnetResult, ScnetStem } from './scnet-separate';
 import './proof-stem.css';
 
@@ -40,8 +41,10 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
   const [position, setPosition] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
+  const [modelId, setModelId] = useState<ScnetModelId>('base');
   const [modelState, setModelState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [modelInfo, setModelInfo] = useState('44.5 MB FP32 · NOT LOADED');
+  const [modelDownloadProgress, setModelDownloadProgress] = useState(0);
   const [separating, setSeparating] = useState(false);
   const [separationProgress, setSeparationProgress] = useState(0);
   const [stemBuffers, setStemBuffers] = useState<Partial<Record<ScnetStem, AudioBuffer>>>({});
@@ -85,6 +88,23 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
     setPlaying(false);
     setActiveStems([]);
   }, [buffer]);
+
+  const selectModel = useCallback((nextModelId: ScnetModelId): void => {
+    if (nextModelId === modelId) return;
+    stop(false);
+    worker.current?.terminate();
+    worker.current = null;
+    progressiveBuffers.current = {};
+    progressiveChunks.current = [];
+    setStemBuffers({});
+    setBufferedFrames(0);
+    setSeparationProgress(0);
+    setModelDownloadProgress(0);
+    setModelState('idle');
+    setModelId(nextModelId);
+    const model = SCNET_MODELS[nextModelId];
+    setModelInfo(`${(model.bytes / 1024 / 1024).toFixed(1)} MIB · DOWNLOAD ON DEMAND`);
+  }, [modelId, stop]);
 
   scheduleProgressive.current = (): void => {
     const active = progressiveSession.current;
@@ -303,15 +323,24 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
     if (worker.current === null) {
       const instance = new Worker(new URL('./separate.worker.ts', import.meta.url), { type: 'module' });
       instance.onmessage = (event: MessageEvent<
-        | { type: 'ready'; loadMs: number; threads: number; inputs: string[]; outputs: string[] }
+        | { type: 'ready'; loadMs: number; threads: number; inputs: string[]; outputs: string[]; modelId: ScnetModelId; modelBytes: number; cacheHit: boolean }
+        | { type: 'model-progress'; loaded: number; total: number; cacheHit: boolean }
         | { type: 'chunk'; start: number; frames: number; done: number; total: number; inferenceMs: number; stems: ScnetResult }
         | { type: 'phase'; phase: 'stft' | 'model' | 'istft'; chunk: number; total: number }
         | { type: 'done' }
         | { type: 'error'; message: string }
       >): void => {
         const message = event.data;
+        if (message.type === 'model-progress') {
+          setModelDownloadProgress(message.total > 0 ? message.loaded / message.total : 0);
+          setModelInfo(message.cacheHit
+            ? `MODEL CACHE HIT · ${(message.total / 1024 / 1024).toFixed(1)} MIB`
+            : `DOWNLOADING ${Math.round(message.loaded / message.total * 100)}% · ${(message.loaded / 1024 / 1024).toFixed(1)} / ${(message.total / 1024 / 1024).toFixed(1)} MIB`);
+          return;
+        }
         if (message.type === 'ready') {
-          setModelInfo(`${(message.loadMs / 1000).toFixed(2)} S · ${message.threads} THREADS · ${message.inputs.join(',')} → ${message.outputs.join(',')}`);
+          setModelDownloadProgress(1);
+          setModelInfo(`${message.modelId.toUpperCase()} · ${message.cacheHit ? 'OPFS CACHE' : 'DOWNLOADED'} · ${(message.loadMs / 1000).toFixed(2)} S · ${message.threads} THREADS`);
           setModelState('ready');
           return;
         }
@@ -360,8 +389,8 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
       };
       worker.current = instance;
     }
-    worker.current.postMessage({ type: 'init' });
-  }, [modelState]);
+    worker.current.postMessage({ type: 'init', modelId });
+  }, [modelId, modelState]);
 
   const runSeparation = useCallback(async (): Promise<void> => {
     if (buffer === null || modelState !== 'ready') return;
@@ -437,13 +466,26 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
         </article>
 
         <article className="ps-panel ps-runtime">
-          <PanelTitle index="02" title="RUNTIME" status={modelState === 'ready' ? 'MODEL READY' : modelState === 'loading' ? 'LOADING MODEL' : modelState === 'error' ? 'LOAD FAILED' : 'MODEL INSTALLED'} />
+          <PanelTitle index="02" title="RUNTIME" status={modelState === 'ready' ? `${modelId.toUpperCase()} READY` : modelState === 'loading' ? 'LOADING MODEL' : modelState === 'error' ? 'LOAD FAILED' : 'MODEL INSTALLED'} />
           <div className="ps-capabilities">
             <Capability name="WEBASSEMBLY" ok={hasWasm} />
             <Capability name="CROSS-ORIGIN ISOLATED" ok={isolated} />
             <Capability name="SHARED ARRAY BUFFER" ok={hasSab} />
-            <Capability name="ONNX SCNET MODEL" ok={modelState === 'ready'} pending={modelState !== 'error'} />
+            <Capability name={`ONNX SCNET ${modelId.toUpperCase()}`} ok={modelState === 'ready'} pending={modelState !== 'error'} />
           </div>
+          <label className="ps-model-picker">
+            <span>MODEL VARIANT</span>
+            <select
+              aria-label="SCNet model variant"
+              value={modelId}
+              disabled={modelState === 'loading' || separating}
+              onChange={(event) => selectModel(event.target.value as ScnetModelId)}
+            >
+              <option value="base">BASE · 42.5 MIB · REALTIME</option>
+              <option value="large">LARGE · 163.0 MIB · QUALITY</option>
+            </select>
+            <small>ON-DEMAND · DISIMPAN DI OPFS BROWSER</small>
+          </label>
           <div className="ps-config">
             <Metric label="CONTEXT" value="11.0 s" />
             <Metric label="STEP" value="3.0 s" accent />
@@ -451,8 +493,9 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
             <Metric label="THREADS" value={String(Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 2)))} />
           </div>
           <Button disabled={!hasWasm || modelState === 'loading'} onClick={() => void loadModel()} style={{ width: '100%' }}>
-            {modelState === 'ready' ? 'MODEL LOADED' : modelState === 'loading' ? 'LOADING 44.5 MB…' : 'LOAD SCNET MODEL'}
+            {modelState === 'ready' ? `${modelId.toUpperCase()} MODEL LOADED` : modelState === 'loading' ? `LOADING ${modelId.toUpperCase()}…` : `LOAD SCNET ${modelId.toUpperCase()}`}
           </Button>
+          {modelState === 'loading' ? <ProgressBar value={modelDownloadProgress} /> : null}
           <Button
             disabled={buffer === null || modelState !== 'ready' || separating}
             onClick={() => void runSeparation()}

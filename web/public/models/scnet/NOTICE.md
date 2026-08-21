@@ -14,6 +14,18 @@ the source-code MIT licenses grant permission to redistribute or commercially
 ship the pretrained weights. Resolve the upstream weight license before a
 production release.
 
+`scnet-large.onnx` was exported from ZFTurbo's SCNet Large v1.0.8 checkpoint
+`model_scnet_sdr_9.3244.ckpt` using its matching
+`config_musdb18_scnet_large.yaml`. The browser core keeps the same fixed input
+shape as Base (`spectrogram` `[1,4,2049,476]`) and emits `separated` in the
+same four-stem order. Internal FFT operations were converted to fixed MatMul
+DFT bases; native ONNX LSTM nodes were retained.
+
+- Upstream checkpoint SHA-256: `fe550315a76e8f4aed8475d7d5952137504a3b6c63b3adcef2443bfe73aac540`
+- Exported ONNX SHA-256: `b604b88207a8b3830b7969c7aef708c56710a39bd1c8b196f105ee7b68c0f939`
+- ONNX/PyTorch random-fixture correlation: `0.99999535`
+- The same unresolved pretrained-weight licensing caveat applies to Large.
+
 Sources:
 
 - https://github.com/starrytong/SCNet
