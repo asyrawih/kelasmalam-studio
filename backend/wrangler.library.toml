@@ -64,6 +64,10 @@ database_name = "dawonweb-library"
 database_id = "b3bc8f21-76cb-4b45-b5ec-247eb14ae523"
 migrations_dir = "migrations"
 
+[[r2_buckets]]
+binding = "TRACKS"
+bucket_name = "pustaka"
+
 # Binding R2 dipakai untuk MEMBACA saja (head + get). Upload tidak lewat sini:
 # ia langsung ke R2 dengan presigned PUT, dan itulah kenapa kredensial S3 di
 # atas tetap dibutuhkan meski binding ini ada. Alasannya di src/library/presign.ts.
