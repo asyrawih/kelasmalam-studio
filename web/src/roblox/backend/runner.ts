@@ -35,6 +35,8 @@ export interface RunnerOptions {
   /** Disuntik di tes supaya tidak ada yang benar-benar menunggu. */
   readonly sleep?: (ms: number) => Promise<void>;
   readonly now?: () => number;
+  /** Dipanggil setelah moderasi approved; kegagalan katalog tidak menggagalkan upload. */
+  readonly onApproved?: (item: QueueItem, assetId: string, target: ReturnType<typeof robloxStore.getState>['target']) => Promise<void> | void;
 }
 
 export interface Runner {
@@ -61,6 +63,15 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
   const now = opts.now ?? (() => Date.now());
 
   let running: Promise<void> | null = null;
+
+  async function approved(item: QueueItem, assetId: string, target: ReturnType<typeof robloxStore.getState>['target']): Promise<void> {
+    robloxActions.markDone(item.id, assetId);
+    try {
+      await opts.onApproved?.(item, assetId, target);
+    } catch {
+      // Upload tetap sukses. Katalog bisa dimuat ulang/diimpor tanpa membakar kuota upload.
+    }
+  }
 
   async function drive(items: readonly QueueItem[]): Promise<void> {
     robloxActions.markQueued(items.map((it) => it.id));
@@ -93,13 +104,13 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
           started.assetId !== null &&
           started.moderationState === 'approved'
         ) {
-          robloxActions.markDone(item.id, started.assetId);
+          await approved(item, started.assetId, target);
           continue;
         }
 
         robloxActions.markProcessing(item.id);
         const assetId = await awaitModeration(started.operationId, target.apiKey);
-        robloxActions.markDone(item.id, assetId);
+        await approved(item, assetId, target);
       } catch (err: unknown) {
         robloxActions.markFailed(item.id, messageOf(err));
       }

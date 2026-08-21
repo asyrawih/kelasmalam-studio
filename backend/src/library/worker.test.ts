@@ -118,6 +118,7 @@ beforeEach(() => {
     R2_BUCKET: 'ember',
     R2_ACCESS_KEY_ID: 'AKIA-TES',
     R2_SECRET_ACCESS_KEY: 'rahasia-r2',
+    CREDENTIAL_ENCRYPTION_KEY: 'test-only-secret-with-at-least-32-characters',
   };
 });
 
@@ -141,6 +142,9 @@ describe('pintu masuk', () => {
       [`/tracks/${HASH_A}`, { method: 'DELETE' }],
       ['/projects', {}],
       ['/projects/abc', {}],
+      ['/roblox/assets', {}],
+      ['/roblox/settings', {}],
+      ['/roblox/grants', { method: 'POST', body: '{}' }],
     ] as const) {
       const res = await call(path, init as RequestInit);
       expect([path, res.status]).toEqual([path, 401]);
@@ -172,6 +176,71 @@ describe('pintu masuk', () => {
   it('balasan sungguhan juga membawa allow-credentials, bukan cuma preflight', async () => {
     const res = await call('/health');
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+  });
+});
+
+describe('Roblox catalog dan grants', () => {
+  it('menyimpan API key terenkripsi dan membukanya lagi untuk user yang sama', async () => {
+    const cookie = await login();
+    const saved = await call('/roblox/settings', {
+      method: 'PUT', cookie,
+      body: JSON.stringify({ creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key' }),
+    });
+    expect(saved.status).toBe(200);
+    const row = await db.prepare('SELECT api_key_cipher FROM roblox_credential').first<{ api_key_cipher: string }>();
+    expect(row?.api_key_cipher).not.toContain('roblox-secret-api-key');
+    const loaded = await call('/roblox/settings', { cookie });
+    expect(await loaded.json()).toEqual({ settings: {
+      creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key',
+    } });
+  });
+
+  it('menyimpan katalog di D1 dan mengisolasinya per user', async () => {
+    const ana = await login({ sub: 'rbx-a', email: 'a@test', name: 'Ana' });
+    const imported = await call('/roblox/assets', {
+      method: 'POST', cookie: ana,
+      body: JSON.stringify({ assets: [{ assetId: '12345', creatorKind: 'group', creatorId: '99', name: 'Lagu Malam' }] }),
+    });
+    expect(await imported.json()).toMatchObject({ imported: 1 });
+    const list = await call('/roblox/assets?q=Malam', { cookie: ana });
+    expect((await list.json()).assets).toMatchObject([{ assetId: '12345', creatorKind: 'group' }]);
+
+    const budi = await login({ sub: 'rbx-b', email: 'b@test', name: 'Budi' });
+    expect((await (await call('/roblox/assets', { cookie: budi })).json()).assets).toEqual([]);
+  });
+
+  it('menerjemahkan daftar experience dan Place ID dari endpoint publik Roblox', async () => {
+    const cookie = await login();
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/games')) return new Response(JSON.stringify({ data: [{ id: 77, name: 'Klub', rootPlace: { id: 88 } }] }));
+      return new Response(JSON.stringify({ universeId: 77 }));
+    });
+    const fetchImpl = fetchSpy as typeof fetch;
+    const games = await call('/roblox/experiences?ownerType=group&ownerId=42', { cookie }, { fetchImpl });
+    expect((await games.json()).experiences).toEqual([{ universeId: '77', placeId: '88', name: 'Klub' }]);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/v2/groups/42/gamesV2');
+    const place = await call('/roblox/resolve-place?placeId=88', { cookie }, { fetchImpl });
+    expect(await place.json()).toEqual({ placeId: '88', universeId: '77' });
+  });
+
+  it('mengirim API key dan batch izin Use ke Asset Permissions API', async () => {
+    const cookie = await login();
+    const fetchSpy = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{}'));
+    const fetchImpl = fetchSpy as typeof fetch;
+    const res = await call('/roblox/grants', {
+      method: 'POST', cookie,
+      headers: { 'x-roblox-api-key': 'secret-key' },
+      body: JSON.stringify({ assetIds: ['123', '456'], subjectType: 'Universe', subjectId: '77' }),
+    }, { fetchImpl });
+    expect(await res.json()).toEqual({ ok: true, granted: 2 });
+    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(String(url)).toBe('https://apis.roblox.com/asset-permissions-api/v1/assets/permissions');
+    expect(new Headers(init?.headers).get('x-api-key')).toBe('secret-key');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      subjectType: 'Universe', subjectId: '77', action: 'Use',
+      requests: [{ assetId: '123' }, { assetId: '456' }],
+    });
   });
 });
 

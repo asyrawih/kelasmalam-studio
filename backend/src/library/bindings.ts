@@ -79,4 +79,6 @@ export interface Env {
   /** Total per user. Kosong = tanpa batas (§8f). */
   readonly MAX_USER_BYTES?: string;
   readonly SESSION_TTL_DAYS?: string;
+  /** Secret Cloudflare untuk mengenkripsi API key Roblox sebelum masuk D1. */
+  readonly CREDENTIAL_ENCRYPTION_KEY?: string;
 }

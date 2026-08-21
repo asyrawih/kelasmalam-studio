@@ -33,6 +33,8 @@ import { useCallback, useState } from 'react';
 import { useCommands } from '../app-shell';
 import { Button } from '../ui/cyber';
 import { RobloxHeader } from './header/RobloxHeader';
+import { GrantAccess } from './grant/GrantAccess';
+import type { GrantApi } from './grant/api';
 import { TargetPanel } from './destination/TargetPanel';
 import { DetailPanel } from './upload/DetailPanel';
 import { DropZone } from './upload/DropZone';
@@ -51,11 +53,13 @@ export interface RobloxPageProps {
    * mati dan halaman mengatakan alasannya.
    */
   readonly onUpload?: (items: readonly QueueItem[]) => void;
+  readonly grantApi?: GrantApi | null;
 }
 
-export function RobloxPage({ onClose, onOpenStudio, onUpload }: RobloxPageProps): JSX.Element {
+export function RobloxPage({ onClose, onOpenStudio, onUpload, grantApi }: RobloxPageProps): JSX.Element {
   const state = useRoblox();
   const [rejected, setRejected] = useState<readonly string[]>([]);
+  const [tab, setTab] = useState<'upload' | 'grant'>('upload');
 
   useDurations();
 
@@ -134,7 +138,12 @@ export function RobloxPage({ onClose, onOpenStudio, onUpload }: RobloxPageProps)
     >
       <RobloxHeader onClose={onClose} onOpenStudio={onOpenStudio} />
 
-      <div
+      <nav className="rbx-tabs" aria-label="Fitur Roblox">
+        <button aria-selected={tab === 'upload'} onClick={() => setTab('upload')}>AUDIO UPLOAD</button>
+        <button aria-selected={tab === 'grant'} onClick={() => setTab('grant')}>GRANT ACCESS</button>
+      </nav>
+
+      {tab === 'upload' ? <><div
         style={{
           flex: 1,
           minHeight: 0,
@@ -233,7 +242,7 @@ export function RobloxPage({ onClose, onOpenStudio, onUpload }: RobloxPageProps)
             UNGGAH {ready.length > 0 ? ready.length : ''}
           </Button>
         </div>
-      </div>
+      </div></> : <GrantAccess api={grantApi ?? null} uploadTarget={state.target} uploadItems={state.items} />}
     </div>
   );
 }

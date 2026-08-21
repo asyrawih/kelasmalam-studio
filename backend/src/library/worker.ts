@@ -61,6 +61,28 @@ const UPLOAD_URL_TTL_SECONDS = 15 * 60;
 const MAX_MARKS_BYTES = 256 * 1024;
 const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
 
+async function credentialKey(secret: string | undefined): Promise<CryptoKey> {
+  if ((secret ?? '').length < 32) throw new Error('CREDENTIAL_ENCRYPTION_KEY belum dipasang atau terlalu pendek');
+  const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+async function encryptCredential(value: string, secret: string | undefined): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, await credentialKey(secret), new TextEncoder().encode(value),
+  ));
+  return btoa(String.fromCharCode(...iv, ...cipher));
+}
+
+async function decryptCredential(value: string, secret: string | undefined): Promise<string> {
+  const packed = Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: packed.slice(0, 12) }, await credentialKey(secret), packed.slice(12),
+  );
+  return new TextDecoder().decode(plain);
+}
+
 function json(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -257,6 +279,160 @@ async function route(
       : json({ id: user.id, email: user.email, name: user.name });
   }
   if (user === null) return fail(401, 'BELUM_LOGIN', 'belum login');
+
+  // ── Roblox catalog, experience lookup, dan grants ────────────────────────
+
+  if (path === '/roblox/settings') {
+    if (method === 'GET') {
+      const saved = await store.getRobloxCredential(user.id);
+      if (saved === null) return json({ settings: null });
+      return json({ settings: {
+        creatorKind: saved.creator_kind,
+        creatorId: saved.creator_id,
+        apiKey: await decryptCredential(saved.api_key_cipher, env.CREDENTIAL_ENCRYPTION_KEY),
+      } });
+    }
+    if (method === 'PUT') {
+      const body = await readJson<Record<string, unknown>>(request);
+      const creatorKind = body?.creatorKind === 'group' ? 'group' : 'user';
+      const creatorId = String(body?.creatorId ?? '').trim();
+      const apiKey = String(body?.apiKey ?? '').trim();
+      if (!/^\d+$/.test(creatorId)) return fail(400, 'PEMILIK', 'Creator ID harus angka');
+      if (apiKey.length < 10) return fail(400, 'KUNCI', 'API key Roblox tidak sah');
+      const cipher = await encryptCredential(apiKey, env.CREDENTIAL_ENCRYPTION_KEY);
+      await store.putRobloxCredential(user.id, creatorKind, creatorId, cipher);
+      return json({ ok: true });
+    }
+    return fail(405, 'METODE', 'pakai GET atau PUT');
+  }
+
+  if (path === '/roblox/assets') {
+    if (method === 'GET') {
+      const rows = await store.listRobloxAssets(user.id, url.searchParams.get('q') ?? '');
+      return json({
+        assets: rows.map((row) => ({
+          assetId: row.asset_id,
+          creatorKind: row.creator_kind,
+          creatorId: row.creator_id,
+          name: row.name,
+          moderationState: row.moderation_state,
+          source: row.source,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        })),
+      });
+    }
+    if (method === 'POST') {
+      const body = await readJson<{ assets?: unknown }>(request);
+      if (body === null || !Array.isArray(body.assets)) {
+        return fail(400, 'ASSET', 'field assets wajib berupa daftar');
+      }
+      if (body.assets.length > 1_000) return fail(413, 'TERLALU_BANYAK', 'maksimum 1000 asset sekali import');
+      let imported = 0;
+      for (const raw of body.assets) {
+        if (typeof raw !== 'object' || raw === null) continue;
+        const item = raw as Record<string, unknown>;
+        const assetId = String(item.assetId ?? '').trim();
+        const creatorId = String(item.creatorId ?? '').trim();
+        const creatorKind = item.creatorKind === 'group' ? 'group' : 'user';
+        if (!/^\d+$/.test(assetId) || !/^\d+$/.test(creatorId)) continue;
+        await store.putRobloxAsset(user.id, {
+          assetId,
+          creatorKind,
+          creatorId,
+          name: String(item.name ?? `Asset ${assetId}`).slice(0, 200),
+          moderationState: typeof item.moderationState === 'string' ? item.moderationState : null,
+          source: item.source === 'upload' ? 'upload' : 'import',
+          createdAt: Number.isFinite(Number(item.createdAt)) ? Number(item.createdAt) : null,
+        });
+        imported += 1;
+      }
+      return json({ ok: true, imported });
+    }
+    return fail(405, 'METODE', 'pakai GET atau POST');
+  }
+
+  if (path === '/roblox/experiences') {
+    if (method !== 'GET') return fail(405, 'METODE', 'pakai GET');
+    const ownerId = (url.searchParams.get('ownerId') ?? '').trim();
+    const ownerType = url.searchParams.get('ownerType') === 'group' ? 'group' : 'user';
+    if (!/^\d+$/.test(ownerId)) return fail(400, 'PEMILIK', 'ownerId harus angka');
+    const endpoint = ownerType === 'group'
+      ? `https://games.roblox.com/v2/groups/${ownerId}/gamesV2?accessFilter=2&limit=50&sortOrder=Desc`
+      : `https://games.roblox.com/v2/users/${ownerId}/games?accessFilter=2&limit=50&sortOrder=Desc`;
+    const upstream = await (deps.fetchImpl ?? fetch)(endpoint, { signal: AbortSignal.timeout(15_000) });
+    if (!upstream.ok) return fail(502, 'ROBLOX', `Roblox gagal mengambil experience (HTTP ${upstream.status})`);
+    const body = await upstream.json() as { data?: readonly Record<string, unknown>[] };
+    return json({
+      experiences: (body.data ?? []).map((game) => {
+        const root = typeof game.rootPlace === 'object' && game.rootPlace !== null
+          ? game.rootPlace as Record<string, unknown>
+          : {};
+        return {
+          universeId: String(game.id ?? game.universeId ?? ''),
+          placeId: String(root.id ?? game.rootPlaceId ?? ''),
+          name: String(game.name ?? 'Tanpa nama'),
+        };
+      }).filter((game) => /^\d+$/.test(game.universeId)),
+    });
+  }
+
+  if (path === '/roblox/resolve-place') {
+    if (method !== 'GET') return fail(405, 'METODE', 'pakai GET');
+    const placeId = (url.searchParams.get('placeId') ?? '').trim();
+    if (!/^\d+$/.test(placeId)) return fail(400, 'PLACE', 'Place ID harus angka');
+    const upstream = await (deps.fetchImpl ?? fetch)(
+      `https://apis.roblox.com/universes/v1/places/${placeId}/universe`,
+      { signal: AbortSignal.timeout(15_000) },
+    );
+    if (!upstream.ok) return fail(502, 'ROBLOX', `Roblox gagal mencari Universe ID (HTTP ${upstream.status})`);
+    const body = await upstream.json() as { universeId?: unknown };
+    const universeId = String(body.universeId ?? '');
+    if (!/^\d+$/.test(universeId)) return fail(404, 'TIDAK_ADA', 'Universe ID tidak ditemukan');
+    return json({ placeId, universeId });
+  }
+
+  if (path === '/roblox/grants') {
+    if (method !== 'POST') return fail(405, 'METODE', 'pakai POST');
+    const apiKey = request.headers.get('x-roblox-api-key')?.trim() ?? '';
+    if (apiKey === '') return fail(401, 'KUNCI_HILANG', 'API key Roblox wajib diisi');
+    const body = await readJson<Record<string, unknown>>(request);
+    const assetIds = Array.isArray(body?.assetIds)
+      ? [...new Set(body.assetIds.map(String).filter((id) => /^\d+$/.test(id)))]
+      : [];
+    const subjectType = ['Universe', 'Group', 'User'].includes(String(body?.subjectType))
+      ? String(body?.subjectType)
+      : '';
+    const subjectId = String(body?.subjectId ?? '').trim();
+    if (assetIds.length === 0 || assetIds.length > 100) return fail(400, 'ASSET', 'pilih 1 sampai 100 asset');
+    if (subjectType === '' || !/^\d+$/.test(subjectId)) return fail(400, 'TARGET', 'target grant tidak sah');
+
+    const upstream = await (deps.fetchImpl ?? fetch)(
+      'https://apis.roblox.com/asset-permissions-api/v1/assets/permissions',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify({
+          subjectType,
+          subjectId,
+          action: 'Use',
+          requests: assetIds.map((assetId) => ({ assetId })),
+        }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    const text = await upstream.text();
+    if (!upstream.ok) {
+      for (const assetId of assetIds) {
+        await store.recordRobloxGrant(user.id, assetId, subjectType, subjectId, 'failed', text.slice(0, 500));
+      }
+      return fail(upstream.status === 403 ? 403 : 502, 'GRANT_GAGAL', text.slice(0, 500) || `Roblox menjawab ${upstream.status}`);
+    }
+    for (const assetId of assetIds) {
+      await store.recordRobloxGrant(user.id, assetId, subjectType, subjectId, 'granted', null);
+    }
+    return json({ ok: true, granted: assetIds.length });
+  }
 
   // ── Tracks ────────────────────────────────────────────────────────────────
 

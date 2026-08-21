@@ -48,6 +48,33 @@ export interface TrackInput {
   readonly sampleRate: number;
 }
 
+export interface RobloxAssetInput {
+  readonly assetId: string;
+  readonly creatorKind: 'user' | 'group';
+  readonly creatorId: string;
+  readonly name: string;
+  readonly moderationState?: string | null;
+  readonly source: 'upload' | 'import';
+  readonly createdAt?: number | null;
+}
+
+export interface RobloxAssetRow {
+  readonly asset_id: string;
+  readonly creator_kind: 'user' | 'group';
+  readonly creator_id: string;
+  readonly name: string;
+  readonly moderation_state: string | null;
+  readonly source: string;
+  readonly created_at: number | null;
+  readonly updated_at: number;
+}
+
+export interface RobloxCredentialRow {
+  readonly creator_kind: 'user' | 'group';
+  readonly creator_id: string;
+  readonly api_key_cipher: string;
+}
+
 export class Store {
   constructor(
     private readonly db: D1Database,
@@ -115,6 +142,89 @@ export class Store {
 
   async revokeSession(tokenHash: string): Promise<void> {
     await this.db.prepare('DELETE FROM session WHERE token_hash = ?').bind(tokenHash).run();
+  }
+
+  // ── Roblox asset catalog & grant history ─────────────────────────────────
+
+  async putRobloxAsset(userId: string, asset: RobloxAssetInput): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO roblox_asset
+          (user_id, asset_id, creator_kind, creator_id, name, moderation_state, source, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, asset_id) DO UPDATE SET
+           creator_kind = excluded.creator_kind,
+           creator_id = excluded.creator_id,
+           name = excluded.name,
+           moderation_state = COALESCE(excluded.moderation_state, roblox_asset.moderation_state),
+           source = excluded.source,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        userId,
+        asset.assetId,
+        asset.creatorKind,
+        asset.creatorId,
+        asset.name,
+        asset.moderationState ?? null,
+        asset.source,
+        asset.createdAt ?? null,
+        this.now(),
+      )
+      .run();
+  }
+
+  async listRobloxAssets(userId: string, query: string): Promise<readonly RobloxAssetRow[]> {
+    const like = `%${query.replace(/[%_]/g, '\\$&')}%`;
+    const { results } = await this.db
+      .prepare(
+        `SELECT asset_id, creator_kind, creator_id, name, moderation_state, source, created_at, updated_at
+           FROM roblox_asset
+          WHERE user_id = ? AND (name LIKE ? ESCAPE '\\' OR asset_id LIKE ? ESCAPE '\\')
+          ORDER BY updated_at DESC LIMIT 500`,
+      )
+      .bind(userId, like, like)
+      .all<RobloxAssetRow>();
+    return results;
+  }
+
+  async recordRobloxGrant(
+    userId: string,
+    assetId: string,
+    subjectType: string,
+    subjectId: string,
+    status: 'granted' | 'failed',
+    error: string | null,
+  ): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO roblox_grant
+          (id, user_id, asset_id, subject_type, subject_id, status, error, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(crypto.randomUUID(), userId, assetId, subjectType, subjectId, status, error, this.now())
+      .run();
+  }
+
+  async getRobloxCredential(userId: string): Promise<RobloxCredentialRow | null> {
+    return this.db.prepare(
+      'SELECT creator_kind, creator_id, api_key_cipher FROM roblox_credential WHERE user_id = ?',
+    ).bind(userId).first<RobloxCredentialRow>();
+  }
+
+  async putRobloxCredential(
+    userId: string,
+    creatorKind: 'user' | 'group',
+    creatorId: string,
+    apiKeyCipher: string,
+  ): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO roblox_credential (user_id, creator_kind, creator_id, api_key_cipher, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET creator_kind = excluded.creator_kind,
+         creator_id = excluded.creator_id, api_key_cipher = excluded.api_key_cipher,
+         updated_at = excluded.updated_at`,
+    ).bind(userId, creatorKind, creatorId, apiKeyCipher, this.now()).run();
   }
 
   // ── Tracks ────────────────────────────────────────────────────────────────

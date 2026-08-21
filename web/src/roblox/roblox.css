@@ -29,3 +29,26 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+.rbx-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px 0;
+  border-bottom: 1px solid var(--cy-border);
+}
+
+.rbx-tabs button {
+  border: 1px solid var(--cy-border);
+  border-bottom: 0;
+  padding: 9px 14px;
+  background: var(--cy-surface-1);
+  color: var(--cy-text-dim);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: .12em;
+  cursor: pointer;
+}
+
+.rbx-tabs button[aria-selected='true'] {
+  background: var(--cy-bg);
+  color: var(--cy-accent);
+}

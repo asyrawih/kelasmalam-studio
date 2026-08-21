@@ -49,6 +49,7 @@ SESSION_TTL_DAYS = "30"
 #   npx wrangler secret put GOOGLE_CLIENT_SECRET  --config wrangler.library.toml
 #   npx wrangler secret put R2_ACCESS_KEY_ID      --config wrangler.library.toml
 #   npx wrangler secret put R2_SECRET_ACCESS_KEY  --config wrangler.library.toml
+#   npx wrangler secret put CREDENTIAL_ENCRYPTION_KEY --config wrangler.library.toml
 
 [[d1_databases]]
 # `DB`, bukan nama databasenya. Dashboard Cloudflare menyarankan nama yang

@@ -21,6 +21,7 @@ import { RobloxPage } from './RobloxPage';
 import { createRunner, type Runner } from './backend/runner';
 import { createHttpTransport } from './backend/transport';
 import { robloxActions } from './store';
+import { createGrantApi, type GrantApi } from './grant/api';
 
 export interface RobloxRouteProps {
   readonly onClose?: () => void;
@@ -31,6 +32,9 @@ export interface RobloxRouteProps {
   readonly makeRunner?: (base: string) => Runner;
   /** Ditimpa di tes. Default: probe `/health` lewat transport. */
   readonly probe?: (base: string) => Promise<boolean>;
+  /** Default: `VITE_LIBRARY_API`; Worker ini menyimpan katalog dan grant di D1. */
+  readonly libraryBase?: string;
+  readonly makeGrantApi?: (base: string) => GrantApi;
 }
 
 export function RobloxRoute({
@@ -39,13 +43,32 @@ export function RobloxRoute({
   apiBase,
   makeRunner,
   probe,
+  libraryBase,
+  makeGrantApi,
 }: RobloxRouteProps): JSX.Element {
   const base = (apiBase ?? import.meta.env.VITE_ROBLOX_API ?? '').trim();
+  const catalogBase = (libraryBase ?? import.meta.env.VITE_LIBRARY_API ?? '').trim();
+  const grantApi = useMemo<GrantApi | null>(() => {
+    if (catalogBase === '') return null;
+    return makeGrantApi?.(catalogBase) ?? createGrantApi(catalogBase);
+  }, [catalogBase, makeGrantApi]);
 
   const runner = useMemo<Runner | null>(() => {
     if (base === '') return null;
-    return makeRunner === undefined ? createRunner(createHttpTransport(base)) : makeRunner(base);
-  }, [base, makeRunner]);
+    return makeRunner === undefined
+      ? createRunner(createHttpTransport(base), {
+          onApproved: async (item, assetId, target) => {
+            await grantApi?.recordAsset({
+              assetId,
+              creatorKind: target.creatorKind,
+              creatorId: target.creatorId.trim(),
+              name: item.name,
+              moderationState: 'approved',
+            });
+          },
+        })
+      : makeRunner(base);
+  }, [base, grantApi, makeRunner]);
 
   /*
    * Kesiapan diperiksa, bukan diasumsikan dari adanya konfigurasi. URL yang
@@ -80,6 +103,7 @@ export function RobloxRoute({
     <RobloxPage
       onClose={onClose}
       onOpenStudio={onOpenStudio}
+      grantApi={grantApi}
       {...(runner === null ? null : { onUpload: runner.run })}
     />
   );
