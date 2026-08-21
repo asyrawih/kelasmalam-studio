@@ -9,6 +9,8 @@
 name = "dawonweb-library"
 main = "src/library/worker.ts"
 compatibility_date = "2026-08-20"
+workers_dev = false
+preview_urls = false
 
 # Domain ditulis DI SINI, bukan dipasang lewat dashboard: yang di dashboard
 # hilang dari pandangan orang berikutnya yang men-deploy dari mesin lain.
@@ -65,6 +67,17 @@ migrations_dir = "migrations"
 # Binding R2 dipakai untuk MEMBACA saja (head + get). Upload tidak lewat sini:
 # ia langsung ke R2 dengan presigned PUT, dan itulah kenapa kredensial S3 di
 # atas tetap dibutuhkan meski binding ini ada. Alasannya di src/library/presign.ts.
-[[r2_buckets]]
-binding = "TRACKS"
-bucket_name = "pustaka"
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1

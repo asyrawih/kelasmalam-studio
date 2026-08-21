@@ -9,6 +9,8 @@
 name = "dawonweb-roblox"
 main = "src/roblox/worker.ts"
 compatibility_date = "2026-08-20"
+workers_dev = false
+preview_urls = false
 routes = [{ pattern = "robloz.kelasmalam.app", custom_domain = true }]
 
 [vars]
@@ -22,3 +24,18 @@ ROBLOX_API_BASE = "https://apis.roblox.com"
 
 # Tidak ada `[secrets]` di sini: API key datang dari user lewat header tiap
 # permintaan dan tidak pernah menetap di Worker. Alasannya di README §Kunci.
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1

@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:roblox": "npx --yes wrangler@3.114.14 dev --config wrangler.roblox.toml",
-    "dev:library": "npx --yes wrangler@3.114.14 dev --config wrangler.library.toml",
-    "deploy:roblox": "npx --yes wrangler@3.114.14 deploy --config wrangler.roblox.toml",
-    "deploy:library": "npx --yes wrangler@3.114.14 deploy --config wrangler.library.toml",
-    "migrate:library": "npx --yes wrangler@3.114.14 d1 migrations apply dawonweb-library --config wrangler.library.toml --remote",
+    "dev:roblox": "npx --yes wrangler@4.125.0 dev --config wrangler.roblox.toml",
+    "dev:library": "npx --yes wrangler@4.125.0 dev --config wrangler.library.toml",
+    "deploy:roblox": "npx --yes wrangler@4.125.0 deploy --config wrangler.roblox.toml",
+    "deploy:library": "npx --yes wrangler@4.125.0 deploy --config wrangler.library.toml",
+    "migrate:library": "npx --yes wrangler@4.125.0 d1 migrations apply dawonweb-library --config wrangler.library.toml --remote",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
