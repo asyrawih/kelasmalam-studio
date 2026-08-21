@@ -191,8 +191,25 @@ describe('Roblox catalog dan grants', () => {
     expect(row?.api_key_cipher).not.toContain('roblox-secret-api-key');
     const loaded = await call('/roblox/settings', { cookie });
     expect(await loaded.json()).toEqual({ settings: {
-      creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key',
+      creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key', hasRobloxCookie: false,
     } });
+  });
+
+  it('menyinkronkan seluruh halaman audio Roblox ke katalog D1 memakai cookie tersimpan', async () => {
+    const cookie = await login();
+    await call('/roblox/settings', {
+      method: 'PUT', cookie,
+      body: JSON.stringify({ creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key', robloxCookie: 'cookie-rahasia-roblox' }),
+    });
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get('cookie')).toBe('.ROBLOSECURITY=cookie-rahasia-roblox');
+      if (String(input).includes('/authenticated')) return new Response(JSON.stringify({ id: 2468 }));
+      return new Response(JSON.stringify({ data: [{ assetId: 9876, name: 'Audio Lama' }], nextPageCursor: null }));
+    });
+    const synced = await call('/roblox/assets/sync', { method: 'POST', cookie }, { fetchImpl: fetchSpy as typeof fetch });
+    expect(await synced.json()).toEqual({ ok: true, synced: 1 });
+    const list = await call('/roblox/assets', { cookie });
+    expect((await list.json()).assets).toMatchObject([{ assetId: '9876', name: 'Audio Lama' }]);
   });
 
   it('menyimpan katalog di D1 dan mengisolasinya per user', async () => {

@@ -73,6 +73,7 @@ export interface RobloxCredentialRow {
   readonly creator_kind: 'user' | 'group';
   readonly creator_id: string;
   readonly api_key_cipher: string;
+  readonly roblox_cookie_cipher: string | null;
 }
 
 export class Store {
@@ -208,8 +209,14 @@ export class Store {
 
   async getRobloxCredential(userId: string): Promise<RobloxCredentialRow | null> {
     return this.db.prepare(
-      'SELECT creator_kind, creator_id, api_key_cipher FROM roblox_credential WHERE user_id = ?',
+      'SELECT creator_kind, creator_id, api_key_cipher, roblox_cookie_cipher FROM roblox_credential WHERE user_id = ?',
     ).bind(userId).first<RobloxCredentialRow>();
+  }
+
+  async putRobloxCookie(userId: string, cipher: string): Promise<void> {
+    await this.db.prepare(
+      'UPDATE roblox_credential SET roblox_cookie_cipher = ?, updated_at = ? WHERE user_id = ?',
+    ).bind(cipher, this.now(), userId).run();
   }
 
   async putRobloxCredential(

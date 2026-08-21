@@ -290,6 +290,7 @@ async function route(
         creatorKind: saved.creator_kind,
         creatorId: saved.creator_id,
         apiKey: await decryptCredential(saved.api_key_cipher, env.CREDENTIAL_ENCRYPTION_KEY),
+        hasRobloxCookie: saved.roblox_cookie_cipher !== null,
       } });
     }
     if (method === 'PUT') {
@@ -297,13 +298,63 @@ async function route(
       const creatorKind = body?.creatorKind === 'group' ? 'group' : 'user';
       const creatorId = String(body?.creatorId ?? '').trim();
       const apiKey = String(body?.apiKey ?? '').trim();
+      const robloxCookie = String(body?.robloxCookie ?? '').trim();
       if (!/^\d+$/.test(creatorId)) return fail(400, 'PEMILIK', 'Creator ID harus angka');
       if (apiKey.length < 10) return fail(400, 'KUNCI', 'API key Roblox tidak sah');
       const cipher = await encryptCredential(apiKey, env.CREDENTIAL_ENCRYPTION_KEY);
       await store.putRobloxCredential(user.id, creatorKind, creatorId, cipher);
+      if (robloxCookie !== '') {
+        await store.putRobloxCookie(user.id, await encryptCredential(robloxCookie, env.CREDENTIAL_ENCRYPTION_KEY));
+      }
       return json({ ok: true });
     }
     return fail(405, 'METODE', 'pakai GET atau PUT');
+  }
+
+  if (path === '/roblox/assets/sync') {
+    if (method !== 'POST') return fail(405, 'METODE', 'pakai POST');
+    const saved = await store.getRobloxCredential(user.id);
+    if (saved?.roblox_cookie_cipher == null) {
+      return fail(409, 'COOKIE_HILANG', 'Simpan cookie .ROBLOSECURITY untuk mengambil asset lama');
+    }
+    const cookie = await decryptCredential(saved.roblox_cookie_cipher, env.CREDENTIAL_ENCRYPTION_KEY);
+    const fetchRoblox = deps.fetchImpl ?? fetch;
+    const auth = await fetchRoblox('https://users.roblox.com/v1/users/authenticated', {
+      headers: { cookie: `.ROBLOSECURITY=${cookie}` }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!auth.ok) return fail(401, 'COOKIE_TIDAK_VALID', 'Cookie Roblox tidak valid atau kedaluwarsa');
+    const profile = await auth.json() as { id?: unknown };
+    if (saved.creator_kind === 'user' && String(profile.id ?? '') !== saved.creator_id) {
+      return fail(409, 'USER_BEDA', `Cookie Roblox bukan milik User ID ${saved.creator_id}`);
+    }
+
+    let cursor = '';
+    let synced = 0;
+    for (let page = 0; page < 100; page += 1) {
+      const params = new URLSearchParams({ assetType: 'Audio', isArchived: 'false', limit: '50' });
+      if (cursor !== '') params.set('cursor', cursor);
+      if (saved.creator_kind === 'group') params.set('groupId', saved.creator_id);
+      const upstream = await fetchRoblox(
+        `https://itemconfiguration.roblox.com/v1/creations/get-assets?${params}`,
+        { headers: { cookie: `.ROBLOSECURITY=${cookie}` }, signal: AbortSignal.timeout(30_000) },
+      );
+      if (!upstream.ok) return fail(502, 'SYNC_GAGAL', `Roblox gagal mengambil audio (HTTP ${upstream.status})`);
+      const body = await upstream.json() as { data?: readonly Record<string, unknown>[]; nextPageCursor?: unknown };
+      for (const raw of body.data ?? []) {
+        const assetId = String(raw.assetId ?? raw.id ?? raw.targetId ?? '');
+        if (!/^\d+$/.test(assetId)) continue;
+        const created = Date.parse(String(raw.created ?? raw.createdUtc ?? ''));
+        await store.putRobloxAsset(user.id, {
+          assetId, creatorKind: saved.creator_kind, creatorId: saved.creator_id,
+          name: String(raw.name ?? `Asset ${assetId}`).slice(0, 200), source: 'import',
+          createdAt: Number.isFinite(created) ? created : null,
+        });
+        synced += 1;
+      }
+      cursor = typeof body.nextPageCursor === 'string' ? body.nextPageCursor : '';
+      if (cursor === '') break;
+    }
+    return json({ ok: true, synced });
   }
 
   if (path === '/roblox/assets') {

@@ -14,8 +14,9 @@ export interface RobloxExperience {
 }
 
 export interface GrantApi {
-  settings(): Promise<{ creatorKind: 'user' | 'group'; creatorId: string; apiKey: string } | null>;
-  saveSettings(settings: { creatorKind: 'user' | 'group'; creatorId: string; apiKey: string }): Promise<void>;
+  settings(): Promise<{ creatorKind: 'user' | 'group'; creatorId: string; apiKey: string; hasRobloxCookie: boolean } | null>;
+  saveSettings(settings: { creatorKind: 'user' | 'group'; creatorId: string; apiKey: string; robloxCookie?: string }): Promise<void>;
+  syncAssets(): Promise<number>;
   assets(query?: string): Promise<readonly RobloxCatalogAsset[]>;
   importAssets(assets: readonly Omit<RobloxCatalogAsset, 'moderationState' | 'source'>[]): Promise<number>;
   recordAsset(asset: Omit<RobloxCatalogAsset, 'source'>): Promise<void>;
@@ -46,10 +47,14 @@ export function createGrantApi(baseUrl: string, fetchImpl: typeof fetch = fetch)
   return {
     async settings() {
       const res = await call('/roblox/settings');
-      return ((await res.json()) as { settings?: { creatorKind: 'user' | 'group'; creatorId: string; apiKey: string } | null }).settings ?? null;
+      return ((await res.json()) as { settings?: { creatorKind: 'user' | 'group'; creatorId: string; apiKey: string; hasRobloxCookie: boolean } | null }).settings ?? null;
     },
     async saveSettings(settings) {
       await call('/roblox/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) });
+    },
+    async syncAssets() {
+      const res = await jsonPost('/roblox/assets/sync', {});
+      return ((await res.json()) as { synced?: number }).synced ?? 0;
     },
     async assets(query = '') {
       const res = await call(`/roblox/assets?q=${encodeURIComponent(query)}`);

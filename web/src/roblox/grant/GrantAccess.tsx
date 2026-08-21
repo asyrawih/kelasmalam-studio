@@ -29,6 +29,8 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
   const [targetId, setTargetId] = useState('');
   const [placeId, setPlaceId] = useState('');
   const [apiKey, setApiKey] = useState(uploadTarget.apiKey);
+  const [robloxCookie, setRobloxCookie] = useState('');
+  const [hasRobloxCookie, setHasRobloxCookie] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -38,7 +40,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
   };
   const saveCredentials = async (): Promise<void> => {
     if (api === null) return;
-    await api.saveSettings({ creatorKind: ownerType, creatorId: ownerId, apiKey });
+    await api.saveSettings({ creatorKind: ownerType, creatorId: ownerId, apiKey, ...(robloxCookie === '' ? {} : { robloxCookie }) });
     robloxActions.setCreatorKind(ownerType);
     robloxActions.setCreatorId(ownerId);
     robloxActions.setApiKey(apiKey);
@@ -57,6 +59,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
       setOwnerType(saved.creatorKind);
       setOwnerId(saved.creatorId);
       setApiKey(saved.apiKey);
+      setHasRobloxCookie(saved.hasRobloxCookie);
       robloxActions.setCreatorKind(saved.creatorKind);
       robloxActions.setCreatorId(saved.creatorId);
       robloxActions.setApiKey(saved.apiKey);
@@ -111,7 +114,11 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
         <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr auto', gap: '8px', marginBottom: '10px' }}>
           <select value={ownerType} onChange={(e) => setOwnerType(e.target.value as 'user' | 'group')} style={fieldStyle}><option value="user">AKUN</option><option value="group">GRUP</option></select>
           <input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="Creator ID untuk import" style={fieldStyle} />
-          <Button variant="outline" onClick={() => void load().catch((x: unknown) => setMessage(String(x)))}>MUAT</Button>
+          <Button variant="outline" onClick={async () => {
+            setBusy(true);
+            try { const n = await api.syncAssets(); await load(); setMessage(`${n} audio disinkronkan dari Roblox ke D1`); }
+            catch (x) { setMessage(String(x)); } finally { setBusy(false); }
+          }}>SYNC ROBLOX</Button>
         </div>
         <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} placeholder="Cari nama atau asset ID" style={{ ...fieldStyle, marginBottom: '10px' }} />
         <div style={{ display: 'grid', gap: '6px', maxHeight: '52vh', overflow: 'auto' }}>
@@ -138,6 +145,8 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
             <select value={targetType} onChange={(e) => setTargetType(e.target.value as typeof targetType)} style={fieldStyle}><option>Universe</option><option>Group</option><option>User</option></select>
             <input value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder={`${targetType} ID`} style={fieldStyle} />
             <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" autoComplete="off" placeholder="API key dengan asset-permissions:write" style={fieldStyle} />
+            <input value={robloxCookie} onChange={(e) => setRobloxCookie(e.target.value)} type="password" autoComplete="off" placeholder={hasRobloxCookie ? '.ROBLOSECURITY sudah tersimpan — isi untuk mengganti' : '.ROBLOSECURITY untuk sync audio lama'} style={fieldStyle} />
+            <small style={{ color: 'var(--cy-text-muted)' }}>Cookie hanya dipakai oleh Worker untuk legacy asset-list API dan disimpan terenkripsi di D1.</small>
             <Button variant="outline" disabled={!/^\d+$/.test(ownerId) || apiKey.trim().length < 10} onClick={() => void saveCredentials().catch((e: unknown) => setMessage(String(e)))}>SIMPAN USER + API KEY</Button>
             <Button disabled={busy || selected.size === 0 || !/^\d+$/.test(targetId) || apiKey.trim() === ''} onClick={async () => { setBusy(true); try { const n = await api.grant([...selected], targetType, targetId, apiKey); setMessage(`${n} audio berhasil diberi izin Use ke ${targetType} ${targetId}`); } catch (e) { setMessage(String(e)); } finally { setBusy(false); } }}>GRANT {selected.size}</Button>
             {message ? <p role="status" style={{ margin: 0, color: 'var(--cy-warning)', fontSize: '10px', lineHeight: 1.6 }}>{message}</p> : null}
