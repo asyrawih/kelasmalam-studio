@@ -48,6 +48,7 @@ pub mod pitch;
 pub mod registry;
 pub mod reverb;
 pub mod spiral;
+pub mod stem;
 
 pub use arena::{FxArena, MemHandle, FX_ARENA_FLOATS};
 pub use clip_pool::ClipFxPool;

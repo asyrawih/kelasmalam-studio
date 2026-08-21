@@ -154,6 +154,7 @@ fx_registry! {
     5 => Flanger : super::flanger::FlangerFx;
     6 => Reverb : super::reverb::ReverbFx, boxed;
     7 => Pitch : super::pitch::PitchFx;
+    8 => Stem : super::stem::StemFx;
 }
 
 // Diskriminan ikut ke snapshot: menggesernya menafsirkan ulang project lama.
@@ -165,6 +166,7 @@ const _: () = assert!(FxKind::Spiral as u16 == 4);
 const _: () = assert!(FxKind::Flanger as u16 == 5);
 const _: () = assert!(FxKind::Reverb as u16 == 6);
 const _: () = assert!(FxKind::Pitch as u16 == 7);
+const _: () = assert!(FxKind::Stem as u16 == 8);
 
 // Ukuran enum bagian dari kontrak, bukan kebetulan: rak bisa berisi ratusan
 // node, jadi tiap byte dikali ratusan. Kalau assert ini pecah, kandidat

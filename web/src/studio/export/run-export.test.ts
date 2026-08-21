@@ -409,6 +409,57 @@ describe('buildExportPayload', () => {
     for (const r of referenced) expect(ids).toContain(r);
   });
 
+  it('mengganti PCM mix dengan jumlah stem SCNet yang aktif', async () => {
+    const stemBuffer = (value: number): AudioBuffer => {
+      const data = [new Float32Array(1024).fill(value), new Float32Array(1024).fill(value)];
+      return {
+        length: 1024,
+        numberOfChannels: 2,
+        sampleRate: 48_000,
+        duration: 1024 / 48_000,
+        getChannelData: (channel: number) => data[channel]!,
+      } as unknown as AudioBuffer;
+    };
+    const audio = {
+      sampleRate: 48_000,
+      frames: 1024,
+      bufferedFrames: 1024,
+      revision: 1,
+      stems: {
+        vocals: stemBuffer(1),
+        drums: stemBuffer(2),
+        bass: stemBuffer(4),
+        other: stemBuffer(8),
+      },
+    };
+    const built = buildExportPayload(state(), lookup, {
+      getAudio: () => audio,
+      getMask: () => ({ vocals: false, drums: true, bass: true, other: false }),
+    });
+    const json = JSON.parse(built.payload.json) as { lanes: { clips: { assetId: number }[] }[] };
+    const asset = built.payload.assets[0]!;
+    expect(json.lanes[0]!.clips[0]!.assetId).toBe(asset.assetId);
+    const pcm = await built.pcm({ asset, channel: 0, offset: 10, maxFrames: 4 });
+    expect([...pcm]).toEqual([6, 6, 6, 6]);
+  });
+
+  it('SCNet parsial tidak dipakai sebelum seluruh track selesai', async () => {
+    const original = buffer(1024);
+    const built = buildExportPayload(state(), () => original, {
+      getAudio: () => ({
+        sampleRate: 48_000,
+        frames: 1024,
+        bufferedFrames: 512,
+        revision: 1,
+        stems: { vocals: original, drums: original, bass: original, other: original },
+      }),
+      getMask: () => ({ vocals: false, drums: true, bass: true, other: true }),
+    });
+    const asset = built.payload.assets[0]!;
+    const pcm = await built.pcm({ asset, channel: 0, offset: 0, maxFrames: 2 });
+    expect([...pcm]).toEqual([0, 1 / 1024]);
+  });
+
   it('panjang output mengerut mengikuti RENDER speed', () => {
     expect(buildExportPayload(state(), lookup).payload.endSample).toBe(52_800);
     expect(buildExportPayload(state({ renderSpeed: 2 }), lookup).payload.endSample).toBe(26_400);

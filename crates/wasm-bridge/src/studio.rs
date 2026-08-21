@@ -143,9 +143,8 @@ fn true_bool() -> bool {
 
 /// Pemisahan stem per clip.
 ///
-/// Engine BELUM memprosesnya; field ini ada supaya `map_project` bisa
-/// memperingatkan alih-alih membuangnya diam-diam. Nilai 1 di ketiganya berarti
-/// tidak ada yang dibuang.
+/// Nilai 1 di ketiganya berarti tidak ada yang dibuang. Mapping mengubahnya
+/// menjadi node `StemFx` pertama di chain clip agar preview dan export sama.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StemJson {
@@ -155,6 +154,17 @@ pub struct StemJson {
     pub bass: f32,
     #[serde(default = "one_f32")]
     pub other: f32,
+    #[serde(default = "default_bass_split")]
+    pub bass_split_hz: f32,
+    #[serde(default = "default_voice_top")]
+    pub voice_top_hz: f32,
+}
+
+fn default_bass_split() -> f32 {
+    180.0
+}
+fn default_voice_top() -> f32 {
+    6000.0
 }
 
 fn one_f32() -> f32 {
@@ -212,7 +222,7 @@ pub struct ClipJson {
     /// `linear` | `equalPower`.
     #[serde(default)]
     pub fade_curve: String,
-    /// Pemisahan stem. Belum diproses engine — lihat `StemJson`.
+    /// Pemisahan stem per clip.
     #[serde(default)]
     pub stem: Option<StemJson>,
     /// Insert chain khusus clip ini.
@@ -402,23 +412,6 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
             eq[i] = clamp_band(b);
         }
 
-        // Stem terdengar di preview tapi TIDAK diproses engine. Sebelum ini ia
-        // hilang tanpa jejak dari file hasil export — persis kelas kegagalan
-        // yang seluruh lapisan peringatan di berkas ini ada untuk mencegahnya.
-        // Yang benar bukan mendiamkannya, melainkan mengatakannya.
-        let stemmed = lane
-            .clips
-            .iter()
-            .filter(|c| c.stem.map(|s| s.removes_anything()).unwrap_or(false))
-            .count();
-        if stemmed > 0 {
-            warnings.push(format!(
-                "Lane \"{}\": {stemmed} clip memakai REMOVE (stem), yang belum diproses engine — \
-                 hasilnya terdengar di preview tapi TIDAK akan ada di berkas. Pakai BAKE dulu.",
-                lane.id
-            ));
-        }
-
         tracks.push(TrackDesc {
             gain_db: if lane.gain_db.is_finite() {
                 lane.gain_db + CENTER_PAN_COMPENSATION_DB
@@ -500,11 +493,28 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
                 fade_in = fade_in.saturating_sub(over - cut);
             }
 
-            let chain_slot = if clip.chain.is_empty() {
+            let has_stem = clip.stem.map(|s| s.removes_anything()).unwrap_or(false);
+            let chain_slot = if clip.chain.is_empty() && !has_stem {
                 None
             } else if clip_chains.len() < MAX_CLIP_CHAINS {
-                let mapped =
+                let mut mapped =
                     map_chain(&format!("Clip \"{}\"", clip.id), &clip.chain, &mut warnings);
+                if let Some(stem) = clip.stem.filter(|s| s.removes_anything()) {
+                    mapped.insert(
+                        0,
+                        FxSlotDesc {
+                            kind: 8,
+                            bypass: false,
+                            params: vec![
+                                stem.vocal,
+                                stem.bass,
+                                stem.other,
+                                stem.bass_split_hz,
+                                stem.voice_top_hz,
+                            ],
+                        },
+                    );
+                }
                 clip_chains.push(mapped);
                 Some((clip_chains.len() - 1) as u8)
             } else {
@@ -1084,23 +1094,82 @@ mod tests {
         );
     }
 
-    // ── Stem: peringatan, bukan kehilangan diam-diam ──────────────────────
+    // ── Stem ikut snapshot/export ─────────────────────────────────────────
 
-    /// Ini regresi yang jadi contoh berulang di seluruh kerjaan FX: `clip.stem`
-    /// diterapkan di graf preview tapi tidak punya padanan di sisi engine, jadi
-    /// hasil export terdengar berbeda dari yang barusan didengar — dan tidak
-    /// ada satu pun peringatan yang menyebutkannya.
+    /// Regresi: `clip.stem` dulu diterapkan di preview tetapi dibuang saat
+    /// mapping export. Sekarang ia wajib menjadi node pertama chain clip.
     #[test]
-    fn stem_removal_is_reported_not_dropped_silently() {
+    fn stem_removal_becomes_a_clip_fx_node() {
         let json = r#"{ "sampleRate": 48000, "speed": 1,
             "lanes": [{ "id": "L1", "gainDb": 0, "speedRatio": 1,
                 "clips": [{ "id": "c", "assetId": 0, "start": 0, "len": 1000,
                             "stem": { "vocal": 0, "bass": 1, "other": 1 } }] }] }"#;
         let m = mapping_from_json(json).unwrap();
         assert!(
-            m.warnings.iter().any(|w| w.contains("REMOVE")),
-            "stem hilang tanpa peringatan: {:?}",
+            m.warnings.is_empty(),
+            "stem yang didukung masih diperingatkan: {:?}",
             m.warnings
+        );
+        assert_eq!(m.project.clips[0].chain_slot, Some(0));
+        assert_eq!(m.project.clip_chains[0][0].kind, 8);
+        assert_eq!(
+            m.project.clip_chains[0][0].params,
+            vec![0.0, 1.0, 1.0, 180.0, 6000.0]
+        );
+    }
+
+    #[test]
+    fn stem_removal_changes_the_exported_audio() {
+        use daw_engine::voice::Asset;
+        use daw_engine::Engine;
+        use daw_export::OfflineRenderer;
+        use daw_timeline::TimelineSample;
+
+        fn render(vocal: f32) -> f32 {
+            let json = format!(
+                r#"{{ "sampleRate": 48000, "speed": 1,
+              "lanes": [{{ "id": "l", "clips": [{{ "id": "c", "assetId": 0,
+                "start": 0, "len": 24000, "stem": {{ "vocal": {vocal},
+                "bass": 1, "other": 1, "bassSplitHz": 180, "voiceTopHz": 6000 }} }}] }}] }}"#
+            );
+            let bytes = mapping_from_json(&json)
+                .unwrap()
+                .project
+                .to_bytes()
+                .unwrap();
+            let mut engine = Engine::from_snapshot(&bytes, 48_000).unwrap();
+            let frames = 24_000usize;
+            let mono: Vec<f32> = (0..frames)
+                .map(|i| (core::f32::consts::TAU * 1_000.0 * i as f32 / 48_000.0).sin() * 0.5)
+                .collect();
+            let mut pcm = Vec::with_capacity(frames * 2);
+            pcm.extend_from_slice(&mono);
+            pcm.extend_from_slice(&mono);
+            unsafe {
+                engine.register_asset(
+                    0,
+                    Asset {
+                        data: pcm.as_ptr(),
+                        frames,
+                        channels: 2,
+                        sample_rate: 48_000,
+                    },
+                );
+            }
+            let mut renderer =
+                OfflineRenderer::new(engine, TimelineSample(0), TimelineSample(frames as u64));
+            let mut l = vec![0.0; frames];
+            let mut r = vec![0.0; frames];
+            assert_eq!(renderer.render_batch(1000, &mut l, &mut r), frames);
+            let tail = &l[4_000..20_000];
+            (tail.iter().map(|x| x * x).sum::<f32>() / tail.len() as f32).sqrt()
+        }
+
+        let kept = render(1.0);
+        let removed = render(0.0);
+        assert!(
+            removed < kept * 0.25,
+            "REMOVE vocal tidak masuk export: kept={kept}, removed={removed}"
         );
     }
 

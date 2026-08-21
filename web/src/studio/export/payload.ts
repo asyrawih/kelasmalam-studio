@@ -16,6 +16,13 @@
 
 import type { StudioState } from '../model';
 import { expandLoopClip } from '../timeline/clip-loop';
+import {
+  getAutoStemAudio,
+  getAutoStemMask,
+  isFullStemMask,
+  type AutoStemAudio,
+  type AutoStemMask,
+} from '../../stem/auto-stem';
 
 /**
  * Keterangan satu asset — TANPA PCM-nya.
@@ -203,16 +210,31 @@ export interface BuiltExportPayload {
   readonly pcm: ExportAssetSource;
 }
 
+export interface ScnetExportLookup {
+  readonly getAudio: (assetId: number) => AutoStemAudio | undefined;
+  readonly getMask: (clipId: string) => AutoStemMask;
+}
+
+const DEFAULT_SCNET_EXPORT: ScnetExportLookup = {
+  getAudio: getAutoStemAudio,
+  getMask: (clipId) => getAutoStemMask(`studio:${clipId}`),
+};
+
 export function buildExportPayload(
   state: StudioState,
   getBuffer: BufferLookup,
+  scnet: ScnetExportLookup = DEFAULT_SCNET_EXPORT,
 ): BuiltExportPayload {
   // Kecepatan RENDER, bukan kecepatan transport: mengubah kecepatan saat
   // mendengarkan tidak boleh diam-diam mengubah kecepatan file yang dihasilkan.
   // Keduanya sengaja jadi dua angka terpisah di store.
   const speed = state.renderSpeed > 0 ? state.renderSpeed : 1;
   /** Kunci = id UI; `assetId` di dalamnya id padat untuk engine. */
-  const assets = new Map<number, ExportAssetInfo>();
+  const assets = new Map<string, ExportAssetInfo>();
+  type Source =
+    | { readonly kind: 'original'; readonly assetId: number }
+    | { readonly kind: 'scnet'; readonly audio: AutoStemAudio; readonly mask: AutoStemMask };
+  const sources = new Map<number, Source>();
 
   /**
    * PENOMORAN ULANG ASSET: id UI → 0,1,2,… untuk engine.
@@ -226,12 +248,12 @@ export function buildExportPayload(
    * Rapat juga lebih baik untuk engine: tabel asetnya di-index langsung, bukan
    * di-hash.
    */
-  const denseId = new Map<number, number>();
-  const toDense = (uiId: number): number => {
-    let d = denseId.get(uiId);
+  const denseId = new Map<string, number>();
+  const toDense = (key: string): number => {
+    let d = denseId.get(key);
     if (d === undefined) {
       d = denseId.size;
-      denseId.set(uiId, d);
+      denseId.set(key, d);
     }
     return d;
   };
@@ -247,19 +269,33 @@ export function buildExportPayload(
     const flat = lane.clips.flatMap((c) =>
       expandLoopClip(c, lane.speedRatio, state.sampleRate, (i) => `${c.id}~loop${i}`),
     );
-    const clips = flat.filter((clip) => {
+    const clips = flat.flatMap((clip) => {
       const buf = getBuffer(clip.assetId);
-      if (buf === undefined) return false;
-      if (!assets.has(clip.assetId)) {
-        // Hanya keterangannya. PCM-nya tidak disentuh sampai `pcm()` dipanggil.
-        assets.set(clip.assetId, {
-          assetId: toDense(clip.assetId),
-          channels: Math.max(1, buf.numberOfChannels),
-          frames: buf.length,
-          sampleRate: buf.sampleRate,
-        });
+      if (buf === undefined) return [];
+      const originalId = clip.id.includes('~loop') ? clip.id.slice(0, clip.id.lastIndexOf('~loop')) : clip.id;
+      const audio = scnet.getAudio(clip.assetId);
+      const mask = scnet.getMask(originalId);
+      const useScnet = audio !== undefined && audio.bufferedFrames >= audio.frames && !isFullStemMask(mask);
+      const maskKey = useScnet
+        ? `${Number(mask.vocals)}${Number(mask.drums)}${Number(mask.bass)}${Number(mask.other)}`
+        : '';
+      const key = useScnet ? `scnet:${clip.assetId}:${maskKey}` : `asset:${clip.assetId}`;
+      const dense = toDense(key);
+      if (!assets.has(key)) {
+        const info = useScnet
+          ? { assetId: dense, channels: 2, frames: audio.frames, sampleRate: audio.sampleRate }
+          : {
+              assetId: dense,
+              channels: Math.max(1, buf.numberOfChannels),
+              frames: buf.length,
+              sampleRate: buf.sampleRate,
+            };
+        assets.set(key, info);
+        sources.set(dense, useScnet
+          ? { kind: 'scnet', audio, mask }
+          : { kind: 'original', assetId: clip.assetId });
       }
-      return true;
+      return [{ clip, dense }];
     });
 
     return {
@@ -284,7 +320,7 @@ export function buildExportPayload(
         enabled: fx.enabled,
         params: { ...fx.params },
       })),
-      clips: clips.map((c) => ({
+      clips: clips.map(({ clip: c, dense }) => ({
         id: c.id,
         // Dikirim walau engine belum bisa memprosesnya. Sebelum ini, stem
         // terdengar di preview dan hilang dari file TANPA satu pun peringatan
@@ -295,7 +331,7 @@ export function buildExportPayload(
           enabled: fx.enabled,
           params: { ...fx.params },
         })),
-        assetId: toDense(c.assetId),
+        assetId: dense,
         start: c.start,
         len: c.len,
         sourceStart: c.sourceStart,
@@ -319,12 +355,27 @@ export function buildExportPayload(
     for (const c of lane.clips) endTimeline = Math.max(endTimeline, c.start + c.len);
   }
 
-  // Balik arah pemetaannya: pemanggil `pcm()` hanya memegang id padat, dan
-  // `getBuffer` hanya mengenal id UI.
-  const uiIdByDense = new Map<number, number>();
-  for (const [uiId, info] of assets) uiIdByDense.set(info.assetId, uiId);
-
-  const pcm = audioBufferPcmSource(getBuffer, (dense) => uiIdByDense.get(dense));
+  const originalPcm = audioBufferPcmSource(getBuffer, (dense) => {
+    const source = sources.get(dense);
+    return source?.kind === 'original' ? source.assetId : undefined;
+  });
+  let scnetStaging = new Float32Array(PCM_CHUNK_FRAMES);
+  const pcm: ExportAssetSource = (req) => {
+    const source = sources.get(req.asset.assetId);
+    if (source?.kind !== 'scnet') return originalPcm(req);
+    const n = Math.min(req.maxFrames, Math.max(0, source.audio.frames - req.offset));
+    if (n <= 0) return EMPTY_PCM;
+    if (scnetStaging.length < n) scnetStaging = new Float32Array(n);
+    const out = scnetStaging.subarray(0, n);
+    out.fill(0);
+    for (const stem of ['vocals', 'drums', 'bass', 'other'] as const) {
+      if (!source.mask[stem]) continue;
+      const channel = source.audio.stems[stem].getChannelData(req.channel);
+      const part = channel.subarray(req.offset, req.offset + n);
+      for (let i = 0; i < part.length; i += 1) out[i] = (out[i] ?? 0) + (part[i] ?? 0);
+    }
+    return out;
+  };
 
   const payload: ExportPayload = {
     json: JSON.stringify({
