@@ -78,10 +78,27 @@ class FakeCtx {
     this.sources.push(s);
     return s;
   }
+  createBuffer(channels: number, length: number, sampleRate: number): AudioBuffer {
+    const data = Array.from({ length: channels }, () => new Float32Array(length));
+    return {
+      length,
+      sampleRate,
+      numberOfChannels: channels,
+      getChannelData: (channel: number) => data[channel]!,
+    } as AudioBuffer;
+  }
 }
 
-const fakeBuffer = (seconds: number): AudioBuffer =>
-  ({ length: Math.round(seconds * SR), sampleRate: SR, numberOfChannels: 2 }) as AudioBuffer;
+const fakeBuffer = (seconds: number): AudioBuffer => {
+  const length = Math.round(seconds * SR);
+  const data = [new Float32Array(length), new Float32Array(length)];
+  return {
+    length,
+    sampleRate: SR,
+    numberOfChannels: 2,
+    getChannelData: (channel: number) => data[channel]!,
+  } as AudioBuffer;
+};
 
 const sec = (n: number): number => n * SR;
 
@@ -106,7 +123,7 @@ describe('kapan butir lahir', () => {
   it('butir pertama berbunyi langsung — tidak ada jeda sebelum bunyi pertama', () => {
     voice.emit(sec(10), 1);
     expect(ctx.sources).toHaveLength(1);
-    expect(ctx.sources[0]?.started?.offset).toBeCloseTo(10, 6);
+    expect(ctx.sources[0]?.started?.offset).toBe(0);
   });
 
   it('tidak berbunyi sama sekali tanpa materi', () => {
@@ -131,7 +148,7 @@ describe('kapan butir lahir', () => {
     ctx.advance(PAST_INTERVAL);
     voice.emit(sec(10.4), 1);
     expect(ctx.sources).toHaveLength(2);
-    expect(ctx.sources[1]?.started?.offset).toBeCloseTo(10.4, 6);
+    expect(ctx.sources[1]?.started?.offset).toBe(0);
   });
 
   it('TANGAN YANG DIAM tidak berbunyi, berapa lama pun ditahan', () => {
@@ -171,18 +188,30 @@ describe('kapan butir lahir', () => {
 });
 
 describe('bentuk butir', () => {
-  it('panjang DINDING-nya tetap saat laju berubah', () => {
+  it('velocity tangan menentukan playback rate dan dibatasi agar tetap stabil', () => {
+    voice.emit(sec(10), 1);
+    ctx.advance(PAST_INTERVAL);
+    voice.emit(sec(9.9), 1); // 0.1 s / 0.05 s = 2×, arah mundur
+    expect(ctx.sources[1]?.playbackRate.value).toBeCloseTo(2, 6);
+
+    ctx.advance(PAST_INTERVAL);
+    voice.emit(sec(20), 1); // lonjakan ekstrem dijepit, tidak merusak pitch
+    expect(ctx.sources[2]?.playbackRate.value).toBe(4);
+  });
+
+  it('panjang DINDING-nya tetap saat velocity tangan berubah', () => {
     // Yang harus konstan adalah panjang yang TERDENGAR, bukan panjang materi:
     // butir yang menyusut mengikuti laju akan lebih pendek dari fade-nya
     // sendiri pada deck yang dipercepat, dan yang tersisa hanya klik.
     voice.emit(sec(10), 1);
-    const atRate1 = ctx.sources[0]?.started?.duration ?? 0;
+    const source1 = ctx.sources[0];
 
     ctx.advance(PAST_INTERVAL);
     voice.emit(sec(20), 2);
-    const atRate2 = ctx.sources[1]?.started?.duration ?? 0;
+    const source2 = ctx.sources[1];
 
-    expect(atRate2 / 2).toBeCloseTo(atRate1 / 1, 6);
+    expect((source1?.started?.duration ?? 0) / (source1?.playbackRate.value ?? 1)).toBeCloseTo(0.09, 3);
+    expect((source2?.started?.duration ?? 0) / (source2?.playbackRate.value ?? 1)).toBeCloseTo(0.09, 3);
   });
 
   it('dipotong di ujung materi, bukan menjulur keluar', () => {

@@ -1,63 +1,12 @@
-/**
- * SCRUB yang berbunyi untuk satu deck: butir-butir pendek di posisi tangan.
- *
- * ## Kenapa butir, bukan satu source yang dipindah-pindah
- *
- * `AudioBufferSourceNode` tidak bisa dipindahkan posisinya setelah `start()`,
- * jadi "mengikuti tangan" dengan satu source berarti menjadwalkan source BARU
- * pada tiap `pointermove` — 60 kali per detik, masing-masing hidup sampai
- * digantikan ~16 ms kemudian. Yang terdengar dari itu bukan lagu yang dicari,
- * melainkan dengung 60 Hz: potongan 16 ms dengan tepi keras adalah definisi
- * sebuah klik, dan enam puluh klik per detik adalah sebuah nada.
- *
- * Karena itu tarikan dan bunyi DIPISAH. Tangan boleh melapor sesering apa pun;
- * yang berbunyi adalah butir 90 ms yang dijadwalkan paling rapat tiap 45 ms,
- * dengan fade 12 ms di kedua ujung. Butirnya BERTINDIH — 90 ms materi setiap
- * 45 ms — dan tindihan itulah yang membuat deretannya terdengar menyambung
- * alih-alih seperti ketukan. Angkanya sama persis dengan scrub Studio
- * (`studio/preview/audio-preview.ts`), dan disamakan dengan sengaja: keduanya
- * memecahkan masalah yang sama dan tidak ada alasan telinga harus belajar dua
- * karakter yang berbeda di dua halaman aplikasi yang sama.
- *
- * ## Yang SENGAJA tidak dilakukan: mundur
- *
- * Menarik ke belakang tetap membunyikan butir yang berjalan MAJU dari posisi
- * baru. Itu bukan kelalaian melainkan batas jalur ini: `playbackRate` negatif
- * tidak diputar oleh browser mana pun, dan membaca mundur butuh resampler
- * berkursor-float di AudioWorklet — yang harganya menyalin seluruh PCM ke
- * thread audio (~115 MB per deck untuk lagu lima menit), alasan yang sudah
- * ditolak di kepala `deck-player.ts`. Jadi ini SCRUB, bukan scratch: ia
- * menjawab "materi apa yang ada di sini", bukan "seperti apa bunyinya kalau
- * piringannya diputar balik".
- *
- * ## Jalur sinyalnya lewat channel strip, TIDAK dipintas
- *
- * Butir masuk ke node yang sama dengan `DeckPlayer` — masukan channel strip —
- * jadi ia lewat TRIM, EQ, COLOR, channel fader, CUE, dan crossfader. Ini
- * berbeda dari scrub Studio, yang sengaja memintas EQ karena di sana rantainya
- * harus dirakit per butir. Di sini rantainya sudah berdiri permanen, jadi
- * memintasnya justru butuh kerja tambahan untuk hasil yang lebih buruk:
- * seorang DJ mencari titik cue dengan channel fader TURUN dan CUE menyala, dan
- * scrub yang memintas fader akan menyemburkan lagu berikutnya ke ruangan.
- */
-
-/** Panjang satu butir dalam waktu DINDING. Lihat catatan di kepala berkas. */
+/** Scratch granular: arah dan pitch mengikuti gerak tangan tanpa menyalin lagu penuh. */
 const GRAIN_SEC = 0.09;
-/** Jarak antar butir. Lebih rapat dari `GRAIN_SEC` supaya butirnya bertindih. */
 const GRAIN_INTERVAL_SEC = 0.045;
-/** Fade di kedua ujung butir. Tanpa ini tiap butir mulai dan berhenti di tengah
- *  gelombang, dan yang terdengar hanya klik. */
 const GRAIN_FADE_SEC = 0.012;
-/** Jadwalkan sedikit ke depan supaya `start()` tidak jatuh di masa lalu. */
 const LOOKAHEAD_SEC = 0.005;
-/**
- * Di bawah ini, tangan dianggap DIAM.
- *
- * Tanpa ambang ini, jari yang menempel tanpa bergerak tetap memicu satu butir
- * tiap 45 ms dari posisi yang persis sama — yaitu satu nada 22 Hz yang stabil,
- * bukan materi lagu. Yang diinginkan saat tangan berhenti adalah SENYAP.
- */
 const STILL_EPS_SEC = 1e-4;
+const MIN_SCRATCH_RATE = 0.12;
+const MAX_SCRATCH_RATE = 4;
+const POOL_SIZE = 4;
 
 interface Grain {
   readonly source: AudioBufferSourceNode;
@@ -66,21 +15,19 @@ interface Grain {
 
 export interface ScrubVoiceOptions {
   readonly ctx: BaseAudioContext;
-  /** Node tujuan — masukan channel strip deck ini, sama dengan `DeckPlayer`. */
   readonly destination: AudioNode;
 }
 
 export class ScrubVoice {
   private readonly ctx: BaseAudioContext;
   private readonly out: AudioNode;
-
   private buffer: AudioBuffer | null = null;
   private grains: Grain[] = [];
-
-  /** Waktu konteks butir terakhir, −1 kalau belum ada. */
+  private pool: AudioBuffer[] = [];
+  private poolIndex = 0;
   private lastAt = -1;
-  /** Posisi SOURCE (detik) butir terakhir — dipakai mengenali tangan yang diam. */
-  private lastPosSec = Number.NaN;
+  private inputAt = Number.NaN;
+  private inputPosSec = Number.NaN;
 
   constructor(o: ScrubVoiceOptions) {
     this.ctx = o.ctx;
@@ -90,51 +37,83 @@ export class ScrubVoice {
   setBuffer(buffer: AudioBuffer | null): void {
     this.stop();
     this.buffer = buffer;
+    this.pool = [];
+    this.poolIndex = 0;
+    if (buffer === null) return;
+    const frames = Math.ceil(GRAIN_SEC * MAX_SCRATCH_RATE * buffer.sampleRate);
+    for (let i = 0; i < POOL_SIZE; i += 1) {
+      this.pool.push(this.makeBuffer(buffer.numberOfChannels, frames, buffer.sampleRate));
+    }
   }
 
-  /** Jumlah butir yang masih hidup. Dipakai tes; tidak dipakai produksi. */
+  /** Fallback kecil hanya membuat fake Web Audio lama di unit test tetap sah. */
+  private makeBuffer(channels: number, frames: number, sampleRate: number): AudioBuffer {
+    if (typeof this.ctx.createBuffer === 'function') {
+      return this.ctx.createBuffer(channels, frames, sampleRate);
+    }
+    const data = Array.from({ length: channels }, () => new Float32Array(frames));
+    return {
+      length: frames,
+      sampleRate,
+      numberOfChannels: channels,
+      getChannelData: (channel: number) => data[channel]!,
+    } as AudioBuffer;
+  }
+
   get liveGrains(): number {
     return this.grains.length;
   }
 
-  /**
-   * Bunyikan satu butir di `atSample`, kalau memang waktunya.
-   *
-   * Boleh dipanggil sesering `pointermove` — PEMBATASANNYA ADA DI SINI, bukan
-   * di pemanggil. Menaruhnya di pemanggil berarti tiap tempat baru yang ingin
-   * men-scrub (jog, waveform, kelak MIDI) harus mengingat aturan yang sama, dan
-   * satu yang lupa cukup untuk mengembalikan dengung 60 Hz.
-   */
-  emit(atSample: number, rate: number): void {
+  emit(atSample: number, fallbackRate: number): void {
     const buffer = this.buffer;
-    if (buffer === null) return;
-
-    // Panjang dihitung dari `length/sampleRate`, bukan dari `buffer.duration`:
-    // keduanya sama menurut spec, tapi yang pertama sudah dipakai `DeckPlayer`
-    // untuk seluruh matematika posisinya. Satu sumber angka, satu pembulatan.
+    if (buffer === null || this.pool.length === 0) return;
     const sr = buffer.sampleRate;
-    const totalSec = sr > 0 ? buffer.length / sr : 0;
     const posSec = atSample / (sr > 0 ? sr : 1);
+    const totalSec = sr > 0 ? buffer.length / sr : 0;
     if (!(posSec >= 0) || posSec >= totalSec) return;
 
     const now = this.ctx.currentTime;
-    const still = Number.isFinite(this.lastPosSec)
-      ? Math.abs(posSec - this.lastPosSec) < STILL_EPS_SEC
-      : false;
-    if (this.lastAt >= 0 && (still || now - this.lastAt < GRAIN_INTERVAL_SEC)) return;
-    this.lastAt = now;
-    this.lastPosSec = posSec;
+    const hadInput = Number.isFinite(this.inputAt) && Number.isFinite(this.inputPosSec);
+    const delta = hadInput ? posSec - this.inputPosSec : 0;
+    const elapsed = hadInput ? now - this.inputAt : 0;
+    const still = hadInput && Math.abs(delta) < STILL_EPS_SEC;
 
-    const r = Number.isFinite(rate) && rate > 0 ? rate : 1;
-    // Panjang SOURCE diskalakan oleh laju supaya panjang DINDING-nya tetap
-    // `GRAIN_SEC`. Kalau yang dijaga tetap panjang source-nya, butir pada deck
-    // yang dipercepat jadi lebih pendek dari fade-nya sendiri.
-    const srcDur = Math.min(GRAIN_SEC * r, totalSec - posSec);
-    if (!(srcDur > 0)) return;
-    const wallSec = srcDur / r;
+    // Laporan yang kena throttle tetap memperbarui velocity. Tanpa ini grain
+    // berikutnya mengukur dari titik lama lalu pitch-nya melonjak liar.
+    this.inputAt = now;
+    this.inputPosSec = posSec;
+    if (this.lastAt >= 0 && (still || now - this.lastAt < GRAIN_INTERVAL_SEC)) return;
+
+    const measured = elapsed > 0 ? delta / elapsed : 0;
+    const fallback = Number.isFinite(fallbackRate) && fallbackRate > 0 ? fallbackRate : 1;
+    const direction = measured < 0 ? -1 : 1;
+    const rate = Math.min(MAX_SCRATCH_RATE, Math.max(MIN_SCRATCH_RATE, Math.abs(measured) || fallback));
+    const wantedFrames = Math.max(1, Math.round(GRAIN_SEC * rate * sr));
+    const anchor = Math.round(posSec * sr);
+    const sourceStart = direction < 0 ? Math.max(0, anchor - wantedFrames) : anchor;
+    const frames = Math.min(wantedFrames, buffer.length - sourceStart);
+    if (frames <= 0) return;
+
+    const grainBuffer = this.pool[this.poolIndex]!;
+    this.poolIndex = (this.poolIndex + 1) % this.pool.length;
+    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+      // Beberapa fake AudioBuffer di tes transport hanya memodelkan metadata.
+      const from = typeof buffer.getChannelData === 'function'
+        ? buffer.getChannelData(channel)
+        : new Float32Array(buffer.length);
+      const to = grainBuffer.getChannelData(channel);
+      if (direction > 0) {
+        to.set(from.subarray(sourceStart, sourceStart + frames), 0);
+      } else {
+        for (let i = 0; i < frames; i += 1) to[i] = from[sourceStart + frames - 1 - i] ?? 0;
+      }
+      to.fill(0, frames);
+    }
+
+    this.lastAt = now;
+    const wallSec = frames / sr / rate;
     const fade = Math.min(GRAIN_FADE_SEC, wallSec / 2);
     const startAt = now + LOOKAHEAD_SEC;
-
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0, startAt);
     gain.gain.linearRampToValueAtTime(1, startAt + fade);
@@ -143,17 +122,10 @@ export class ScrubVoice {
     gain.connect(this.out);
 
     const source = this.ctx.createBufferSource();
-    source.buffer = buffer;
-    source.playbackRate.setValueAtTime(r, startAt);
+    source.buffer = grainBuffer;
+    source.playbackRate.setValueAtTime(rate, startAt);
     source.connect(gain);
-    try {
-      source.start(startAt, posSec, srcDur);
-    } catch {
-      // Offset di luar buffer karena pembulatan di tepi. Bukan kesalahan yang
-      // perlu dilaporkan — butir berikutnya datang 45 ms lagi.
-      gain.disconnect();
-      return;
-    }
+    source.start(startAt, 0, frames / sr);
 
     const grain: Grain = { source, gain };
     this.grains = [...this.grains, grain];
@@ -164,25 +136,16 @@ export class ScrubVoice {
     };
   }
 
-  /**
-   * Hentikan dan bongkar semua butir. Aman dipanggil berkali-kali.
-   *
-   * Butir dimatikan TANPA fade tambahan: masing-masing sudah punya fade turun
-   * di ujungnya sendiri, dan yang paling lama pun tinggal 90 ms lagi.
-   */
   stop(): void {
     for (const g of this.grains) {
       g.source.onended = null;
-      try {
-        g.source.stop();
-      } catch {
-        // Sudah berhenti sendiri — keadaan yang sah, bukan kesalahan.
-      }
+      try { g.source.stop(); } catch { /* already ended */ }
       g.source.disconnect();
       g.gain.disconnect();
     }
     this.grains = [];
     this.lastAt = -1;
-    this.lastPosSec = Number.NaN;
+    this.inputAt = Number.NaN;
+    this.inputPosSec = Number.NaN;
   }
 }

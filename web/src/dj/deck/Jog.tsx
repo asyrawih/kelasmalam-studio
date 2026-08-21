@@ -7,12 +7,9 @@
  * digambar dengan satu `arc`.
  *
  * Menyeretnya menggeser posisi DAN membunyikan materi di bawah tangan — butir
- * pendek yang bertindih, lihat `audio/scrub-voice.ts`. Yang masih belum ada
- * adalah SCRATCH: butir selalu berjalan maju, jadi menarik mundur terdengar
- * seperti mencari posisi, bukan seperti piringan yang diputar balik. Membaca
- * mundur butuh resampler AudioWorklet berkursor-float, dan `AudioBufferSourceNode`
- * tidak bisa. Karena itu tarikan di sini adalah SCRUB, dan `title`-nya
- * mengatakan begitu.
+ * pendek yang bertindih, lihat `audio/scrub-voice.ts`. Voice membaca velocity
+ * tangan dan membalik sampel grain saat ditarik mundur, sehingga arah serta
+ * pitch mengikuti gerakan platter.
  */
 
 import { useRef } from 'react';
@@ -114,7 +111,7 @@ export function Jog({ view, id, accent, size }: JogProps): JSX.Element {
   return (
     <div
       {...drag}
-      title="tarik mendatar untuk mencari posisi — terdengar saat ditarik; scratch (putar balik) belum ada"
+      title="tarik mendatar untuk scratch — arah dan kecepatan mengikuti tangan"
       style={{
         position: 'relative',
         width: `${size}px`,

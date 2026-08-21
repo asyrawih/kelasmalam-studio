@@ -34,7 +34,8 @@
  * ## SCRUB: source utama DIAM, butir yang berbunyi
  *
  * Selama tangan menarik (jog atau waveform), source utama dimatikan dan yang
- * terdengar datang dari `ScrubVoice`. Itu keputusan, bukan penyederhanaan:
+ * terdengar datang dari `ScrubVoice`. Grain-nya mengikuti arah dan velocity
+ * tangan (termasuk reverse). Itu keputusan, bukan penyederhanaan:
  * kalau source utama dibiarkan hidup, tiap `pointermove` menjadwalkannya ulang
  * di posisi baru — enam puluh potongan 16 ms per detik, yang terdengar sebagai
  * dengung, bukan sebagai lagu (alasan lengkapnya di kepala `scrub-voice.ts`).

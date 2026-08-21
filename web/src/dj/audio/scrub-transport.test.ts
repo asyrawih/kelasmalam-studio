@@ -154,7 +154,9 @@ describe('deck yang DIAM', () => {
     expect(pos()).toBeCloseTo(30 * SR, 3);
     expect(mainSources()).toHaveLength(0);
     expect(grains()).toHaveLength(1);
-    expect(grains()[0]?.started?.offset).toBeCloseTo(30, 6);
+    // Grain memakai buffer scratch lokal; posisi deck sudah tercermin pada
+    // materi yang disalin, jadi source selalu mulai dari offset nol.
+    expect(grains()[0]?.started?.offset).toBe(0);
   });
 
   it('tetap diam setelah tangan diangkat', () => {
@@ -346,7 +348,7 @@ describe('loop yang aktif', () => {
 
     expect(pos()).toBeCloseTo(2 * SR, 3);
     expect(grains()).toHaveLength(1);
-    expect(grains()[0]?.started?.offset).toBeCloseTo(2, 6);
+    expect(grains()[0]?.started?.offset).toBe(0);
   });
 });
 
