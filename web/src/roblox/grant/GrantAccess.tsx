@@ -60,6 +60,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
       setOwnerId(saved.creatorId);
       setApiKey(saved.apiKey);
       setHasRobloxCookie(saved.hasRobloxCookie);
+      setRobloxCookie(saved.robloxCookie);
       robloxActions.setCreatorKind(saved.creatorKind);
       robloxActions.setCreatorId(saved.creatorId);
       robloxActions.setApiKey(saved.apiKey);
@@ -84,6 +85,19 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
     const q = experienceQuery.toLowerCase();
     return experiences.filter((x) => x.name.toLowerCase().includes(q));
   }, [experiences, experienceQuery]);
+  const allShownSelected = assets.length > 0 && assets.every((asset) => selected.has(asset.assetId));
+
+  const toggleAllShown = (): void => {
+    setSelected((old) => {
+      const next = new Set(old);
+      if (allShownSelected) {
+        for (const asset of assets) next.delete(asset.assetId);
+      } else {
+        for (const asset of assets) next.add(asset.assetId);
+      }
+      return next;
+    });
+  };
 
   const importCsv = async (file: File): Promise<void> => {
     if (api === null || !/^\d+$/.test(ownerId)) return;
@@ -121,6 +135,11 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
           }}>SYNC ROBLOX</Button>
         </div>
         <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} placeholder="Cari nama atau asset ID" style={{ ...fieldStyle, marginBottom: '10px' }} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '8px', padding: '7px 9px', border: '1px solid var(--cy-border)', color: 'var(--cy-accent)', fontSize: '10px', letterSpacing: '.12em', cursor: assets.length === 0 ? 'not-allowed' : 'pointer' }}>
+          <input type="checkbox" aria-label="centang semua audio yang tampil" checked={allShownSelected} disabled={assets.length === 0} onChange={toggleAllShown} />
+          CENTANG SEMUA YANG TAMPIL ({assets.length})
+          <span style={{ marginLeft: 'auto', color: 'var(--cy-text-muted)' }}>{selected.size} DIPILIH</span>
+        </label>
         <div style={{ display: 'grid', gap: '6px', maxHeight: '52vh', overflow: 'auto' }}>
           {assets.map((asset) => <label key={asset.assetId} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '10px', padding: '9px', border: '1px solid var(--cy-border)' }}>
             <input type="checkbox" checked={selected.has(asset.assetId)} onChange={() => setSelected((old) => { const n = new Set(old); n.has(asset.assetId) ? n.delete(asset.assetId) : n.add(asset.assetId); return n; })} />

@@ -291,6 +291,9 @@ async function route(
         creatorId: saved.creator_id,
         apiKey: await decryptCredential(saved.api_key_cipher, env.CREDENTIAL_ENCRYPTION_KEY),
         hasRobloxCookie: saved.roblox_cookie_cipher !== null,
+        robloxCookie: saved.roblox_cookie_cipher === null
+          ? ''
+          : await decryptCredential(saved.roblox_cookie_cipher, env.CREDENTIAL_ENCRYPTION_KEY),
       } });
     }
     if (method === 'PUT') {

@@ -191,7 +191,7 @@ describe('Roblox catalog dan grants', () => {
     expect(row?.api_key_cipher).not.toContain('roblox-secret-api-key');
     const loaded = await call('/roblox/settings', { cookie });
     expect(await loaded.json()).toEqual({ settings: {
-      creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key', hasRobloxCookie: false,
+      creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key', hasRobloxCookie: false, robloxCookie: '',
     } });
   });
 
@@ -200,6 +200,9 @@ describe('Roblox catalog dan grants', () => {
     await call('/roblox/settings', {
       method: 'PUT', cookie,
       body: JSON.stringify({ creatorKind: 'user', creatorId: '2468', apiKey: 'roblox-secret-api-key', robloxCookie: 'cookie-rahasia-roblox' }),
+    });
+    expect(await (await call('/roblox/settings', { cookie })).json()).toMatchObject({
+      settings: { hasRobloxCookie: true, robloxCookie: 'cookie-rahasia-roblox' },
     });
     const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(new Headers(init?.headers).get('cookie')).toBe('.ROBLOSECURITY=cookie-rahasia-roblox');
