@@ -266,13 +266,13 @@ export function buildExportPayload(
     // terdengar di file hasil export. Deretan clip lurus adalah hal yang SUDAH
     // dimengerti kedua sisi — lihat `timeline/clip-loop.ts` untuk satu selisih
     // yang diakui (fade-out lebih panjang dari satu putaran).
-    const flat = lane.clips.flatMap((c) =>
-      expandLoopClip(c, lane.speedRatio, state.sampleRate, (i) => `${c.id}~loop${i}`),
+    const flat = lane.clips.flatMap((original) =>
+      expandLoopClip(original, lane.speedRatio, state.sampleRate, (i) => `${original.id}~loop${i}`)
+        .map((clip) => ({ clip, originalId: original.id })),
     );
-    const clips = flat.flatMap((clip) => {
+    const clips = flat.flatMap(({ clip, originalId }) => {
       const buf = getBuffer(clip.assetId);
       if (buf === undefined) return [];
-      const originalId = clip.id.includes('~loop') ? clip.id.slice(0, clip.id.lastIndexOf('~loop')) : clip.id;
       const audio = scnet.getAudio(clip.assetId);
       const mask = scnet.getMask(originalId);
       const useScnet = audio !== undefined && audio.bufferedFrames >= audio.frames && !isFullStemMask(mask);
@@ -295,7 +295,7 @@ export function buildExportPayload(
           ? { kind: 'scnet', audio, mask }
           : { kind: 'original', assetId: clip.assetId });
       }
-      return [{ clip, dense }];
+      return [{ clip, dense, useScnet }];
     });
 
     return {
@@ -320,12 +320,14 @@ export function buildExportPayload(
         enabled: fx.enabled,
         params: { ...fx.params },
       })),
-      clips: clips.map(({ clip: c, dense }) => ({
+      clips: clips.map(({ clip: c, dense, useScnet }) => ({
         id: c.id,
         // Dikirim walau engine belum bisa memprosesnya. Sebelum ini, stem
         // terdengar di preview dan hilang dari file TANPA satu pun peringatan
         // — `map_project` sekarang bisa mengatakannya karena datanya sampai.
-        stem: c.stem === undefined ? null : { ...c.stem },
+        // Preview memilih SCNet ATAU stem mid/side, bukan keduanya. Jangan
+        // menerapkan REMOVE klasik lagi di atas PCM SCNet yang sudah dipisah.
+        stem: useScnet || c.stem === undefined ? null : { ...c.stem },
         chain: c.chain.map((fx) => ({
           kind: fx.kind,
           enabled: fx.enabled,
@@ -360,6 +362,7 @@ export function buildExportPayload(
     return source?.kind === 'original' ? source.assetId : undefined;
   });
   let scnetStaging = new Float32Array(PCM_CHUNK_FRAMES);
+  let stemStaging = new Float32Array(PCM_CHUNK_FRAMES);
   const pcm: ExportAssetSource = (req) => {
     const source = sources.get(req.asset.assetId);
     if (source?.kind !== 'scnet') return originalPcm(req);
@@ -370,9 +373,15 @@ export function buildExportPayload(
     out.fill(0);
     for (const stem of ['vocals', 'drums', 'bass', 'other'] as const) {
       if (!source.mask[stem]) continue;
-      const channel = source.audio.stems[stem].getChannelData(req.channel);
-      const part = channel.subarray(req.offset, req.offset + n);
-      for (let i = 0; i < part.length; i += 1) out[i] = (out[i] ?? 0) + (part[i] ?? 0);
+      const buffer = source.audio.stems[stem];
+      if (stemStaging.length < n) stemStaging = new Float32Array(n);
+      const part = stemStaging.subarray(0, n);
+      if (typeof buffer.copyFromChannel === 'function') {
+        buffer.copyFromChannel(part, req.channel, req.offset);
+      } else {
+        part.set(buffer.getChannelData(req.channel).subarray(req.offset, req.offset + n));
+      }
+      for (let i = 0; i < n; i += 1) out[i] = (out[i] ?? 0) + (part[i] ?? 0);
     }
     return out;
   };

@@ -68,6 +68,9 @@ const CENTER_PAN_COMPENSATION_DB: f32 = 3.010_3;
 /// termahal yang bisa kita kirim.
 const MIN_MASTER_GAIN_DB: f32 = -24.0;
 const MAX_MASTER_GAIN_DB: f32 = 12.0;
+/// FX user tetap dibatasi delapan; slot tambahan sampai `MAX_CLIP_CHAINS`
+/// khusus memberi ruang bagi stem ringan tanpa membuka pintu untuk 64 reverb.
+const MAX_USER_CLIP_CHAINS: usize = 8;
 
 // ---------------------------------------------------------------------------
 // Bentuk JSON — cerminan `web/src/studio/model.ts`
@@ -385,6 +388,10 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
     // Chain per-clip dialokasikan slot di sini, sekali per project. Batasnya
     // keras dan disebutkan ke user — lihat `MAX_CLIP_CHAINS`.
     let mut clip_chains: Vec<Vec<FxSlotDesc>> = Vec::new();
+    let mut user_clip_chains = 0usize;
+    // Stem-only bersifat linear, jadi clip satu track dengan setelan identik
+    // aman berbagi rack. Ini terutama mencegah LOOP clip menghabiskan pool.
+    let mut shared_stems: Vec<(u16, [u32; 5], u8)> = Vec::new();
 
     // Solo global: kalau ADA lane yang solo, lane tanpa solo terhitung mute.
     // Ini `isAudible()` di model.ts, ditulis ulang di sini karena engine tidak
@@ -493,34 +500,70 @@ pub fn map_project(src: &StudioProjectJson) -> Result<Mapping, String> {
                 fade_in = fade_in.saturating_sub(over - cut);
             }
 
-            let has_stem = clip.stem.map(|s| s.removes_anything()).unwrap_or(false);
-            let chain_slot = if clip.chain.is_empty() && !has_stem {
+            let stem = clip.stem.filter(|s| s.removes_anything());
+            let mapped_user = if clip.chain.is_empty() {
+                Vec::new()
+            } else if user_clip_chains < MAX_USER_CLIP_CHAINS {
+                user_clip_chains += 1;
+                map_chain(&format!("Clip \"{}\"", clip.id), &clip.chain, &mut warnings)
+            } else {
+                warnings.push(format!(
+                    "Clip \"{}\" melewati batas {MAX_USER_CLIP_CHAINS} chain FX user; \
+                     audionya tetap berbunyi dan stem tetap diproses, tetapi FX clip dilewati.",
+                    clip.id
+                ));
+                Vec::new()
+            };
+
+            let stem_key = stem.map(|s| {
+                [
+                    s.vocal.to_bits(),
+                    s.bass.to_bits(),
+                    s.other.to_bits(),
+                    s.bass_split_hz.to_bits(),
+                    s.voice_top_hz.to_bits(),
+                ]
+            });
+            let stem_only = mapped_user.is_empty();
+            let shared = if stem_only {
+                stem_key.and_then(|key| {
+                    shared_stems
+                        .iter()
+                        .find(|(track, saved, _)| *track == track_index && *saved == key)
+                        .map(|(_, _, slot)| *slot)
+                })
+            } else {
+                None
+            };
+
+            let chain_slot = if let Some(slot) = shared {
+                Some(slot)
+            } else if stem.is_none() && mapped_user.is_empty() {
                 None
             } else if clip_chains.len() < MAX_CLIP_CHAINS {
-                let mut mapped =
-                    map_chain(&format!("Clip \"{}\"", clip.id), &clip.chain, &mut warnings);
-                if let Some(stem) = clip.stem.filter(|s| s.removes_anything()) {
+                let mut mapped = mapped_user;
+                if let Some(s) = stem {
                     mapped.insert(
                         0,
                         FxSlotDesc {
                             kind: 8,
                             bypass: false,
-                            params: vec![
-                                stem.vocal,
-                                stem.bass,
-                                stem.other,
-                                stem.bass_split_hz,
-                                stem.voice_top_hz,
-                            ],
+                            params: vec![s.vocal, s.bass, s.other, s.bass_split_hz, s.voice_top_hz],
                         },
                     );
                 }
+                let slot = clip_chains.len() as u8;
                 clip_chains.push(mapped);
-                Some((clip_chains.len() - 1) as u8)
+                if stem_only {
+                    if let Some(key) = stem_key {
+                        shared_stems.push((track_index, key, slot));
+                    }
+                }
+                Some(slot)
             } else {
                 warnings.push(format!(
-                    "Clip \"{}\" punya efek, tapi engine hanya menyediakan {MAX_CLIP_CHAINS} \
-                     chain per-clip dalam satu project — clip ini berbunyi tanpa efek.",
+                    "Clip \"{}\" melewati batas {MAX_CLIP_CHAINS} slot stem/FX; \
+                     clip tetap berbunyi tanpa pemrosesan per-clip.",
                     clip.id
                 ));
                 None
@@ -1173,6 +1216,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn identical_stem_only_clips_share_one_lightweight_slot() {
+        let clips: Vec<String> = (0..20)
+            .map(|i| {
+                format!(
+                    r#"{{ "id": "s{i}", "assetId": 0, "start": {}, "len": 1000,
+                "stem": {{ "vocal": 0, "bass": 1, "other": 1 }} }}"#,
+                    i * 1000
+                )
+            })
+            .collect();
+        let json = format!(
+            r#"{{ "sampleRate": 48000, "lanes": [{{ "id": "l",
+            "clips": [{}] }}] }}"#,
+            clips.join(",")
+        );
+        let m = mapping_from_json(&json).unwrap();
+        assert_eq!(m.project.clip_chains.len(), 1);
+        assert!(m.project.clips.iter().all(|c| c.chain_slot == Some(0)));
+        assert!(m.warnings.is_empty());
+    }
+
     /// Stem yang TIDAK membuang apa pun tidak boleh memicu peringatan —
     /// peringatan yang selalu muncul akan berhenti dibaca.
     #[test]
@@ -1243,13 +1308,13 @@ mod tests {
     /// — kehilangan efeknya jauh lebih baik daripada kehilangan audionya.
     #[test]
     fn clips_beyond_the_pool_cap_are_reported_and_still_play() {
-        let n = MAX_CLIP_CHAINS + 3;
+        let n = MAX_USER_CLIP_CHAINS + 3;
         let m = project_with_clip_chains(n);
-        assert_eq!(m.project.clip_chains.len(), MAX_CLIP_CHAINS);
+        assert_eq!(m.project.clip_chains.len(), MAX_USER_CLIP_CHAINS);
         assert_eq!(m.project.clips.len(), n, "clip kelebihan ikut hilang");
-        assert_eq!(m.project.clips[MAX_CLIP_CHAINS].chain_slot, None);
+        assert_eq!(m.project.clips[MAX_USER_CLIP_CHAINS].chain_slot, None);
         assert!(
-            m.warnings.iter().any(|w| w.contains("chain per-clip")),
+            m.warnings.iter().any(|w| w.contains("chain FX user")),
             "batas pool dilewati tanpa peringatan: {:?}",
             m.warnings
         );

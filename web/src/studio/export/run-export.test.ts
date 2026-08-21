@@ -432,13 +432,31 @@ describe('buildExportPayload', () => {
         other: stemBuffer(8),
       },
     };
-    const built = buildExportPayload(state(), lookup, {
-      getAudio: () => audio,
-      getMask: () => ({ vocals: false, drums: true, bass: true, other: false }),
+    const withClassicStem = state({
+      lanes: [{
+        ...state().lanes[0]!,
+        clips: [{
+          ...state().lanes[0]!.clips[0]!,
+          id: 'take~loop-original',
+          stem: { vocal: 0, bass: 1, other: 1, bassSplitHz: 180, voiceTopHz: 6000 },
+        }],
+      }],
     });
-    const json = JSON.parse(built.payload.json) as { lanes: { clips: { assetId: number }[] }[] };
+    let requestedMask = '';
+    const built = buildExportPayload(withClassicStem, lookup, {
+      getAudio: () => audio,
+      getMask: (id) => {
+        requestedMask = id;
+        return { vocals: false, drums: true, bass: true, other: false };
+      },
+    });
+    const json = JSON.parse(built.payload.json) as {
+      lanes: { clips: { assetId: number; stem: unknown }[] }[];
+    };
     const asset = built.payload.assets[0]!;
     expect(json.lanes[0]!.clips[0]!.assetId).toBe(asset.assetId);
+    expect(json.lanes[0]!.clips[0]!.stem).toBeNull();
+    expect(requestedMask).toBe('take~loop-original');
     const pcm = await built.pcm({ asset, channel: 0, offset: 10, maxFrames: 4 });
     expect([...pcm]).toEqual([6, 6, 6, 6]);
   });

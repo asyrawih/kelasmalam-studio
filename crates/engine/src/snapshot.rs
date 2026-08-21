@@ -94,12 +94,10 @@ pub const MAX_CHAIN_LEN: usize = 4;
 /// dialokasikan per CLIP saat project dimuat, sekali, bukan diperebutkan
 /// voice saat berbunyi.
 ///
-/// Konsekuensinya jujur dan disebutkan ke user lewat peringatan: sebuah
-/// project boleh punya paling banyak delapan clip ber-efek. Sebagai gantinya
-/// tidak ada satu pun alokasi, pencurian slot, atau kondisi balapan di jalur
-/// render — dan ekornya tidak pernah terpotong, karena rak-nya memang tidak
-/// pernah dilepas.
-pub const MAX_CLIP_CHAINS: usize = 8;
+/// Mapping membatasi FX user berat ke delapan chain. Pool lebih besar karena
+/// stem per-clip jauh lebih murah dan stem identik dapat berbagi slot; batas 64
+/// tetap menjaga indeks `u8` dan biaya scratch tetap terukur.
+pub const MAX_CLIP_CHAINS: usize = 64;
 
 /// Satu efek terpasang di insert chain.
 ///
