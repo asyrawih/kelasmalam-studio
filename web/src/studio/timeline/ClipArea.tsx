@@ -29,7 +29,7 @@ import { runFileImport, runUrlImport } from './lane-import';
 import { LIBRARY_TRACK_MIME, notifyLibraryDrop } from './library-drop';
 import { LaneImportOverlay } from './LaneImportOverlay';
 import { activeLoopLen } from './clip-loop';
-import { drawClipWave, drawLoopedClipWave } from './waveform';
+import { BAND_COLORS, drawClipWave, drawLoopedClipWave } from './waveform';
 import { visibleWindow, type WaveWindow } from './wave-window';
 import { fadeOverlayGradient } from './fade';
 import { useCanvasDraw } from '../../ui/lib/canvas';
@@ -287,6 +287,7 @@ function ClipWave({
         outlineAlpha: 0.5,
         bodyAlpha: 0.85,
         centerLine: null,
+        bands: BAND_COLORS,
       };
       // Clip yang loop menggambar PUTARANNYA, diulang — bukan materi sepanjang
       // `sourceLen`, yang sebagian besarnya tidak pernah berbunyi.

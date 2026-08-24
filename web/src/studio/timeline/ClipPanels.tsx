@@ -43,7 +43,7 @@ import { activeLoopLen } from './clip-loop';
 import { drawFadeCurves, fadeSourceLen, type FadeRegions } from './fade-draw';
 import { computeNormalizeGain, NORMALIZE_TARGET_DB } from './normalize';
 import { ScrollingWave } from './ScrollingWave';
-import { clipDetailGradient, drawClipWave, drawLoopedClipWave } from './waveform';
+import { BAND_COLORS, clipDetailGradient, drawClipWave, drawLoopedClipWave } from './waveform';
 
 /** Tinggi kotak waveform; handle diletakkan relatif terhadap ini. */
 const WAVE_HEIGHT = 150;
@@ -127,6 +127,7 @@ function DetailWave({
         outlineAlpha: 0.55,
         bodyAlpha: 0.9,
         centerLine: '#ffd40024',
+        bands: BAND_COLORS,
       };
       if (loopLen !== null) {
         drawLoopedClipWave(
@@ -792,6 +793,7 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
           playing={playing}
           auditioning={beat.looping}
           center={dragCenter}
+          bands={BAND_COLORS}
           // Region SELALU digambar, bukan hanya saat berbunyi: seluruh gunanya
           // menarik waveform adalah melihat di mana loop-nya akan jatuh SEBELUM
           // menekan LOOP PLAY.

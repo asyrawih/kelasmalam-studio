@@ -12,7 +12,7 @@
 import { useRef } from 'react';
 import { useStudio } from '../store';
 import { useCanvasDraw } from '../../ui/lib/canvas';
-import { drawClipWave } from './waveform';
+import { BAND_COLORS, drawClipWave } from './waveform';
 
 export interface OverviewStripProps {
   /** Posisi kiri viewport dalam persen. */
@@ -52,12 +52,14 @@ export function OverviewStrip({ viewLeftPct, viewWidthPct }: OverviewStripProps)
             size.height,
             size.dpr,
             {
-              // Warna & opacity strip lama dipertahankan: kuning aksen, redup.
+              // Sama dengan overview deck DJ: tiga pita frekuensi dengan
+              // opacity badan yang cukup kuat untuk membaca struktur lagu.
               outline: '#ffd400',
               body: '#ffd400',
-              outlineAlpha: 0.35,
-              bodyAlpha: 0.6,
+              outlineAlpha: 0.3,
+              bodyAlpha: 0.92,
               centerLine: null,
+              bands: BAND_COLORS,
             },
           );
           ctx.restore();
