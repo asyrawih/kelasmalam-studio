@@ -246,8 +246,11 @@ const WAVE_INSET = 2;
  * sample→pixel dihitung terhadap clip UTUH — kalau tidak, waveform akan
  * meregang mengikuti jendela setiap kali user menggulir.
  *
- * `win === null` berarti belum terukur (jsdom, atau sebelum layout pertama) dan
- * canvas kembali memakai lebar penuh clip — bukan menyembunyikan waveform.
+ * Komponen ini hanya dipasang setelah track terukur. Itu penting: fallback
+ * canvas selebar clip pada render pertama bisa membekukan main thread sebelum
+ * efek pengukuran sempat berjalan (10 menit pada zoom tinggi sudah puluhan
+ * ribu piksel). `win` karena itu selalu merupakan irisan yang dibatasi
+ * viewport, bukan sinyal untuk menggambar clip penuh.
  */
 function ClipWave({
   asset,
@@ -275,7 +278,6 @@ function ClipWave({
   useCanvasDraw(
     ref,
     (ctx, size) => {
-      // Tanpa jendela, lebar canvas MEMANG lebar clip — itu kasus lama.
       const width = win === null ? size.width : fullWidth;
       const wave = {
         outline: color,
@@ -383,10 +385,12 @@ function ClipView({
         view.width,
       )
     : null;
-  // Clip yang seluruhnya di luar layar tidak memasang canvas sama sekali. Ini
-  // yang membuat project dengan puluhan clip panjang tetap murah: yang tidak
-  // terlihat tidak punya backing store, bukan sekadar tidak digambar.
-  const waveVisible = !measured || win !== null;
+  // Jangan memasang canvas sebelum ukuran track tersedia. Render awal terjadi
+  // sebelum `useTrackView` sempat mengukur DOM; memakai lebar penuh pada saat
+  // itu membuat clip panjang mengalokasikan backing store raksasa dan dapat
+  // menghentikan UI persis ketika import selesai. Clip di luar layar juga tidak
+  // punya backing store sama sekali.
+  const waveVisible = measured && win !== null;
 
   return (
     <div

@@ -1166,6 +1166,7 @@ export const studioActions = {
         clips: [...l.clips, clip].sort((a, b) => a.start - b.start),
       })),
       selectedClipId: clip.id,
+      selectedClipIds: [clip.id],
       selectedLaneId: laneId,
     }));
   },

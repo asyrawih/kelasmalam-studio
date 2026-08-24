@@ -55,6 +55,18 @@ beforeEach(() => {
 });
 
 describe('himpunan seleksi', () => {
+  it('clip yang baru ditambahkan menjadi satu-satunya seleksi yang konsisten', () => {
+    studioActions.selectClip('a');
+    studioActions.toggleClipSelection('b');
+    const lane = laneIds()[1]!;
+    studioActions.addClip(lane, clip('baru', 20, 11 * 60));
+
+    const s = studioStore.getState();
+    expect(s.selectedClipId).toBe('baru');
+    expect(s.selectedClipIds).toEqual(['baru']);
+    expect(s.selectedLaneId).toBe(lane);
+  });
+
   it('klik biasa memilih satu dan membuang sisanya', () => {
     studioActions.setSelectedClips(['a', 'b', 'c']);
     studioActions.selectClip('b');
