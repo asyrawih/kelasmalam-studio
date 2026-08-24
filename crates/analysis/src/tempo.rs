@@ -188,7 +188,10 @@ fn track_beats(odf: &[f32], period: f32, rate: f32) -> Vec<f32> {
         at = p;
     }
     frames.reverse();
-    frames.into_iter().map(|frame| frame as f32 / rate).collect()
+    frames
+        .into_iter()
+        .map(|frame| frame as f32 / rate)
+        .collect()
 }
 
 /// Kurangi tren lambat lalu buang bagian negatifnya.
@@ -479,11 +482,19 @@ mod beat_track_tests {
     fn marker_mengikuti_onset_yang_sedikit_bergeser() {
         let mut odf = vec![0.0_f32; 1_000];
         let expected = [100_usize, 202, 299, 401, 500, 603, 700, 802, 899];
-        for at in expected { odf[at] = 1.0; }
-        let beats = track_beats(&odf, 100.0, 200.0);
-        let frames: Vec<usize> = beats.iter().map(|sec| (sec * 200.0).round() as usize).collect();
         for at in expected {
-            assert!(frames.iter().any(|got| got.abs_diff(at) <= 1), "onset {at} hilang: {frames:?}");
+            odf[at] = 1.0;
+        }
+        let beats = track_beats(&odf, 100.0, 200.0);
+        let frames: Vec<usize> = beats
+            .iter()
+            .map(|sec| (sec * 200.0).round() as usize)
+            .collect();
+        for at in expected {
+            assert!(
+                frames.iter().any(|got| got.abs_diff(at) <= 1),
+                "onset {at} hilang: {frames:?}"
+            );
         }
     }
 }
