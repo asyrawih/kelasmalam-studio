@@ -103,7 +103,7 @@ const PEAK_SKIRT: f32 = 0.08;
 /// (~150 ms di 200 BPM 1/8), jadi tidak ada onset yang menyatu.
 const ODF_SMOOTH_SIGMA: f32 = 1.5;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BpmEstimate {
     /// Tempo dalam ketukan per menit.
     pub bpm: f32,
@@ -123,6 +123,72 @@ pub struct BpmEstimate {
     /// Detik dari awal materi ke ketukan pertama yang terdeteksi. Berguna untuk
     /// beatgrid; belum dipakai UI.
     pub beat_offset_sec: f32,
+    /// Posisi beat individual hasil tracking, dalam detik dari awal asset.
+    pub beat_times_sec: Vec<f32>,
+}
+
+/**
+ * Pilih rangkaian beat individual yang menyeimbangkan onset lokal dan
+ * kontinuitas tempo. Bentuknya mengikuti dynamic-programming Ellis (2007):
+ * setiap frame memilih pendahulu terbaik di sekitar satu periode sebelumnya,
+ * dengan penalti log-ratio untuk jarak yang terlalu pendek/panjang.
+ */
+fn track_beats(odf: &[f32], period: f32, rate: f32) -> Vec<f32> {
+    if odf.is_empty() || !(period > 1.0) || !(rate > 0.0) {
+        return Vec::new();
+    }
+    let peak = odf.iter().copied().fold(0.0_f32, f32::max);
+    if !(peak > 0.0) {
+        return Vec::new();
+    }
+    let n = odf.len();
+    let min_step = libm::floorf(period * 0.5).max(1.0) as usize;
+    let max_step = libm::ceilf(period * 1.5) as usize;
+    let mut score = vec![0.0_f32; n];
+    let mut prev = vec![usize::MAX; n];
+
+    for i in 0..n {
+        let local = odf[i] / peak;
+        let lo = i.saturating_sub(max_step);
+        let hi = i.saturating_sub(min_step);
+        let mut best = 0.0_f32;
+        let mut best_j = usize::MAX;
+        if i >= min_step {
+            for (j, prior_score) in score.iter().enumerate().take(hi + 1).skip(lo) {
+                let ratio = (i - j) as f32 / period;
+                let log_ratio = libm::logf(ratio);
+                let candidate = *prior_score - 4.0 * log_ratio * log_ratio;
+                if candidate > best {
+                    best = candidate;
+                    best_j = j;
+                }
+            }
+        }
+        score[i] = local + best;
+        prev[i] = best_j;
+    }
+
+    // Akhiri di dua periode terakhir agar jalur meliputi materi, bukan berhenti
+    // pada chorus keras di tengah lagu.
+    let tail = (period * 2.0) as usize;
+    let start = n.saturating_sub(tail.max(1));
+    let mut at = start;
+    for i in start..n {
+        if score[i] > score[at] {
+            at = i;
+        }
+    }
+    let mut frames = Vec::new();
+    loop {
+        frames.push(at);
+        let p = prev[at];
+        if p == usize::MAX || p >= at {
+            break;
+        }
+        at = p;
+    }
+    frames.reverse();
+    frames.into_iter().map(|frame| frame as f32 / rate).collect()
 }
 
 /// Kurangi tren lambat lalu buang bagian negatifnya.
@@ -395,10 +461,29 @@ pub fn estimate(odf: &Odf) -> Option<BpmEstimate> {
 
     let confidence = libm::sqrtf(periodicity * salience).clamp(0.0, 1.0);
     let beat_offset_sec = beat_phase(&d, period) as f32 / rate;
+    let beat_times_sec = track_beats(&d, period, rate);
 
     Some(BpmEstimate {
         bpm,
         confidence,
         beat_offset_sec,
+        beat_times_sec,
     })
+}
+
+#[cfg(test)]
+mod beat_track_tests {
+    use super::track_beats;
+
+    #[test]
+    fn marker_mengikuti_onset_yang_sedikit_bergeser() {
+        let mut odf = vec![0.0_f32; 1_000];
+        let expected = [100_usize, 202, 299, 401, 500, 603, 700, 802, 899];
+        for at in expected { odf[at] = 1.0; }
+        let beats = track_beats(&odf, 100.0, 200.0);
+        let frames: Vec<usize> = beats.iter().map(|sec| (sec * 200.0).round() as usize).collect();
+        for at in expected {
+            assert!(frames.iter().any(|got| got.abs_diff(at) <= 1), "onset {at} hilang: {frames:?}");
+        }
+    }
 }

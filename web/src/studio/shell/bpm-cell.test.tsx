@@ -183,7 +183,7 @@ describe('sel BPM', () => {
     expect(screen.getByText('96.0?')).toBeTruthy();
   });
 
-  it('sync membuat lane selected clip mengikuti BPM lane lain', () => {
+  it('MATCH membuat lane selected clip mengikuti BPM lane lain', () => {
     const [lane1, lane2] = studioStore.getState().lanes;
     studioActions.registerAsset(asset(9, 128, 0.8));
     studioActions.registerAsset(asset(10, 120, 0.8));
@@ -193,10 +193,30 @@ describe('sel BPM', () => {
     studioActions.setPlayhead(5 * SR);
 
     render(<BpmCell />);
-    fireEvent.click(screen.getByRole('button', { name: `sync BPM ${lane2!.name}` }));
+    fireEvent.click(screen.getByRole('button', { name: `MATCH sync ${lane2!.name}` }));
 
     const target = studioStore.getState().lanes.find((lane) => lane.id === lane2!.id)!;
     expect(target.speedRatio).toBeCloseTo(128 / 120);
     expect(target.clips[0]!.len).toBe(Math.round((30 * SR) / (128 / 120)));
+  });
+
+  it('BEAT menyamakan tempo sekaligus menggeser fase selected clip', () => {
+    const [lane1, lane2] = studioStore.getState().lanes;
+    studioActions.registerAsset(asset(11, 128, 0.8));
+    studioActions.registerAsset({
+      ...asset(12, 120, 0.8),
+      tempo: { bpm: 120, confidence: 0.8, beatOffsetSec: 0.25 },
+    });
+    studioActions.addClip(lane1!.id, clip('master-beat', 11));
+    studioActions.addClip(lane2!.id, clip('target-beat', 12));
+    studioActions.selectClip('target-beat');
+    studioActions.setPlayhead(5 * SR);
+
+    render(<BpmCell />);
+    fireEvent.click(screen.getByRole('button', { name: `BEAT sync ${lane2!.name}` }));
+
+    const target = studioStore.getState().lanes.find((lane) => lane.id === lane2!.id)!;
+    expect(target.speedRatio).toBeCloseTo(128 / 120);
+    expect(target.clips[0]!.start).not.toBe(0);
   });
 });

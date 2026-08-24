@@ -33,6 +33,7 @@ import { BAND_COLORS, drawClipWave, drawLoopedClipWave } from './waveform';
 import { visibleWindow, type WaveWindow } from './wave-window';
 import { fadeOverlayGradient } from './fade';
 import { useCanvasDraw } from '../../ui/lib/canvas';
+import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
 
 export interface ClipAreaProps {
   readonly scrollerRef: RefObject<HTMLDivElement>;
@@ -257,6 +258,7 @@ function ClipWave({
   sourceStart,
   sourceLen,
   loopLen,
+  sampleRate,
   color,
   style,
   win,
@@ -267,6 +269,7 @@ function ClipWave({
   sourceLen: number;
   /** Panjang putaran (SOURCE) kalau clip ini loop; null = diputar lurus. */
   loopLen: number | null;
+  sampleRate: number;
   color: string;
   style: CSSProperties;
   /** Irisan yang punya canvas; null = gambar lebar penuh. */
@@ -304,14 +307,24 @@ function ClipWave({
           wave,
           win,
         );
-        return;
+      } else {
+        drawClipWave(ctx, asset, sourceStart, sourceLen, width, size.height, size.dpr, wave, win);
       }
-      drawClipWave(ctx, asset, sourceStart, sourceLen, width, size.height, size.dpr, wave, win);
+      const lines = arrangementGridLines(
+        asset,
+        sourceStart,
+        sourceLen,
+        loopLen,
+        sampleRate,
+        width,
+        win,
+      );
+      drawArrangementBeatGrid(ctx, lines, size.height);
     },
     // Jendela masuk sebagai dua angka, bukan sebagai objek: `visibleWindow`
     // membuat objek baru tiap render, jadi identitasnya tidak pernah sama dan
     // canvas akan menggambar ulang tiap frame guliran walau isinya sama.
-    [asset, sourceStart, sourceLen, loopLen, color, win?.x ?? -1, win?.w ?? -1, fullWidth],
+    [asset, sourceStart, sourceLen, loopLen, sampleRate, color, win?.x ?? -1, win?.w ?? -1, fullWidth],
   );
   // Canvas dibungkus div, dan ukurannya dipaksa 100% — JANGAN mengandalkan
   // `left`/`right` untuk meregangkannya.
@@ -510,6 +523,7 @@ function ClipView({
           sourceStart={clip.sourceStart}
           sourceLen={clip.sourceLen}
           loopLen={activeLoopLen(clip)}
+          sampleRate={sampleRate}
           color={lane.color}
           win={win}
           fullWidth={(width / 100) * view.track - 2 * WAVE_INSET}

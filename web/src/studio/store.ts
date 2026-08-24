@@ -20,6 +20,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { clampGridBpm, MAX_BEAT_ANCHORS, type BeatAnchor } from './analysis/beat-grid';
+import { computeClipSync, type SyncAlignment } from './analysis/beat-sync';
 import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SPEED, type EqMode, timelineLenFor, MAX_LANE_SPEED, MIN_LANE_SPEED,
   EQ_PRESETS,
   cloneEq,
@@ -67,6 +68,8 @@ export interface AssetTempo {
   /** 0..1. Di bawah `TEMPO_UNCERTAIN` angka BPM tidak layak dipajang polos. */
   readonly confidence: number;
   readonly beatOffsetSec: number;
+  /** Posisi beat individual hasil tracker. Opsional untuk asset/project lama. */
+  readonly beatTimesSec?: readonly number[];
 }
 
 /**
@@ -1534,6 +1537,50 @@ export const studioActions = {
               }
             : l,
         ),
+      };
+    });
+  },
+
+  /**
+   * Samakan tempo selected/target clip dengan reference. Untuk beat/bar,
+   * clip target juga digeser agar marker grid terdekat bertemu. Seluruh
+   * perubahan dilakukan dalam satu `set`, sehingga Undo juga satu langkah.
+   */
+  syncClipTo(targetClipId: string, referenceClipId: string, alignment: SyncAlignment): void {
+    set((s) => {
+      const target = findClip(s.lanes, targetClipId);
+      const reference = findClip(s.lanes, referenceClipId);
+      if (target === null || reference === null || target.lane.id === reference.lane.id) return null;
+      const targetAsset = s.assets[target.clip.assetId];
+      const referenceAsset = s.assets[reference.clip.assetId];
+      if (targetAsset === undefined || referenceAsset === undefined) return null;
+
+      const result = computeClipSync({
+        targetClip: target.clip,
+        targetLane: target.lane,
+        targetAsset,
+        referenceClip: reference.clip,
+        referenceLane: reference.lane,
+        referenceAsset,
+        playhead: s.playhead,
+        sampleRate: s.sampleRate,
+        alignment,
+      });
+      if (result === null) return null;
+      const speed = Math.max(MIN_LANE_SPEED, Math.min(MAX_LANE_SPEED, result.laneSpeedRatio));
+
+      return {
+        lanes: s.lanes.map((lane) => {
+          if (lane.id !== target.lane.id) return lane;
+          const clips = lane.clips
+            .map((clip) => ({
+              ...clip,
+              start: clip.id === targetClipId ? result.targetStart : clip.start,
+              len: timelineLenFor(clip.sourceLen, speed),
+            }))
+            .sort((a, b) => a.start - b.start);
+          return { ...lane, speedRatio: speed, clips };
+        }),
       };
     });
   },

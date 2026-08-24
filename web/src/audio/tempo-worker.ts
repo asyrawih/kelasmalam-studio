@@ -38,7 +38,7 @@ export interface TempoResult {
   type: 'tempo-result';
   id: number;
   /** `null` = materi terlalu pendek / senyap. Itu jawaban yang sah, bukan error. */
-  tempo: { bpm: number; confidence: number; beatOffsetSec: number } | null;
+  tempo: { bpm: number; confidence: number; beatOffsetSec: number; beatTimesSec?: number[] } | null;
 }
 
 export interface TempoError {
@@ -54,7 +54,13 @@ interface TempoGlue {
     left: Float32Array,
     right: Float32Array,
     sampleRate: number,
-  ) => { bpm: number; confidence: number; beatOffsetSec: number; free: () => void } | undefined;
+  ) => {
+    bpm: number;
+    confidence: number;
+    beatOffsetSec: number;
+    beatTimesSec?: Float32Array;
+    free: () => void;
+  } | undefined;
 }
 
 let gluePromise: Promise<TempoGlue> | null = null;
@@ -109,7 +115,12 @@ async function handle(m: TempoRequest): Promise<void> {
   const tempo =
     est === undefined
       ? null
-      : { bpm: est.bpm, confidence: est.confidence, beatOffsetSec: est.beatOffsetSec };
+      : {
+          bpm: est.bpm,
+          confidence: est.confidence,
+          beatOffsetSec: est.beatOffsetSec,
+          beatTimesSec: Array.from(est.beatTimesSec ?? []),
+        };
   // Handle bindgen memiliki memori di sisi WASM; tanpa `free()` ia bocor satu
   // objek per import — kecil, tapi bocor yang tidak ada alasannya.
   est?.free();

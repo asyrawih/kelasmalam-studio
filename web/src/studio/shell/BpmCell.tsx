@@ -71,6 +71,24 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
   const assets = useStudio((s) => s.assets);
   const selectedClipId = useStudio((s) => s.selectedClipId);
   const sync = bpmSyncPlan(tempo, selectedClipId);
+  const barSyncReady = useStudio((s) => {
+    if (sync === null) return false;
+    const assetFor = (clipId: string) => {
+      for (const lane of s.lanes) {
+        const clip = lane.clips.find((entry) => entry.id === clipId);
+        if (clip !== undefined) return s.assets[clip.assetId];
+      }
+      return undefined;
+    };
+    const targetAsset = assetFor(sync.target.clipId);
+    const referenceAsset = assetFor(sync.reference.clipId);
+    return (
+      targetAsset !== undefined &&
+      referenceAsset !== undefined &&
+      targetAsset.beatOffsetOverride !== null &&
+      referenceAsset.beatOffsetOverride !== null
+    );
+  });
 
   // Oktaf dipakai pada ASSET dari clip yang sedang ditampilkan; tanpa clip
   // aktif tidak ada yang bisa digandakan.
@@ -178,25 +196,37 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
           </span>
         ) : null}
         {sync !== null ? (
-          <button
-            type="button"
-            aria-label={`sync BPM ${sync.target.laneName}`}
-            title={`${sync.target.laneName} mengikuti ${sync.reference.laneName} (${sync.reference.bpm.toFixed(1)} BPM). Tempo saja; posisi beat tidak digeser. Varispeed: pitch ikut berubah.`}
-            onClick={() => studioActions.setLaneSpeed(sync.target.laneId, sync.laneSpeedRatio)}
-            style={{
-              fontFamily: 'var(--cy-font-mono)',
-              fontSize: '9px',
-              lineHeight: 1,
-              padding: '3px 5px',
-              background: 'var(--cy-accent)',
-              color: 'var(--cy-text-on-accent)',
-              border: '1px solid var(--cy-accent)',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            SYNC {sync.target.laneName.toUpperCase()}
-          </button>
+          <span style={{ display: 'flex', gap: '2px' }}>
+            {([
+              ['tempo', 'MATCH', 'Samakan BPM saja'],
+              ['beat', 'BEAT', 'Samakan BPM dan posisi beat terdekat'],
+              ['bar', 'BAR', 'Samakan BPM dan awal bar 4/4 terdekat'],
+            ] as const).map(([mode, label, explanation]) => (
+              <button
+                key={mode}
+                type="button"
+                aria-label={`${label} sync ${sync.target.laneName}`}
+                disabled={mode === 'bar' && !barSyncReady}
+                title={
+                  mode === 'bar' && !barSyncReady
+                    ? 'BAR membutuhkan downbeat kedua clip yang sudah dikunci manual lewat SET 1/offset.'
+                    : `${explanation}: ${sync.target.laneName} mengikuti ${sync.reference.laneName}. Varispeed: pitch ikut berubah.`
+                }
+                onClick={() => studioActions.syncClipTo(sync.target.clipId, sync.reference.clipId, mode)}
+                style={{
+                  fontFamily: 'var(--cy-font-mono)', fontSize: '8px', lineHeight: 1,
+                  padding: '3px 4px', background: mode === 'tempo' ? 'transparent' : 'var(--cy-accent)',
+                  color: mode === 'tempo' ? 'var(--cy-text-muted)' : 'var(--cy-text-on-accent)',
+                  border: `1px solid ${mode === 'tempo' ? 'var(--cy-border)' : 'var(--cy-accent)'}`,
+                  cursor: mode === 'bar' && !barSyncReady ? 'not-allowed' : 'pointer',
+                  opacity: mode === 'bar' && !barSyncReady ? 0.4 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
         ) : null}
       </div>
       {/* Baris nota SELALU ada, walau kosong. Ini yang membuat timeline berhenti

@@ -78,6 +78,7 @@ export function bpmSyncPlan(t: PlayheadTempo, selectedClipId: string | null): Bp
 
 /** BPM sumber setelah koreksi oktaf user (×2 / ÷2). */
 export function correctedBpm(asset: StudioAsset): number | null {
+  if (asset.bpmOverride !== null) return asset.bpmOverride;
   if (asset.tempo === null) return null;
   return asset.tempo.bpm * 2 ** asset.tempoOctave;
 }

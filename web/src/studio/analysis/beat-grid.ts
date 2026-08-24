@@ -209,6 +209,40 @@ export function sourceAtBeat(beat: number, grid: BeatGrid, sr: number): Samples 
 }
 
 /**
+ * Marker hasil tracker hanya sah selama grid deteksi belum diubah manual.
+ * Mengganti BPM/offset atau menambah anchor membuat marker lama menunjuk model
+ * tempo yang berbeda, jadi pada keadaan itu caller harus memakai grid periodik.
+ */
+export function trackedBeatSamples(asset: StudioAsset | undefined, sr: number): readonly Samples[] {
+  if (
+    asset === undefined ||
+    asset.bpmOverride !== null ||
+    asset.beatOffsetOverride !== null ||
+    asset.tempoOctave !== 0 ||
+    (asset.beatAnchors ?? null) !== null
+  ) return [];
+  return (asset.tempo?.beatTimesSec ?? [])
+    .filter((sec) => Number.isFinite(sec) && sec >= 0)
+    .map((sec) => Math.round(sec * sr));
+}
+
+/** Marker beat aktual terdekat, atau null bila asset hanya punya grid periodik. */
+export function nearestTrackedBeat(asset: StudioAsset | undefined, at: Samples, sr: number): Samples | null {
+  const beats = trackedBeatSamples(asset, sr);
+  if (beats.length === 0) return null;
+  let lo = 0;
+  let hi = beats.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (beats[mid]! < at) lo = mid + 1;
+    else hi = mid;
+  }
+  const right = beats[Math.min(lo, beats.length - 1)]!;
+  const left = beats[Math.max(0, lo - 1)]!;
+  return Math.abs(at - left) <= Math.abs(right - at) ? left : right;
+}
+
+/**
  * Semua garis grid di dalam region `[from, from + len)`.
  *
  * Setengah-terbuka di ujung kanan, alasannya sama dengan `computePlayheadTempo`:

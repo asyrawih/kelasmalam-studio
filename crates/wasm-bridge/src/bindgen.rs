@@ -794,6 +794,7 @@ pub struct TempoEstimate {
     bpm: f32,
     confidence: f32,
     beat_offset_sec: f32,
+    beat_times_sec: Box<[f32]>,
 }
 
 #[wasm_bindgen]
@@ -817,6 +818,13 @@ impl TempoEstimate {
     pub fn beat_offset_sec(&self) -> f32 {
         self.beat_offset_sec
     }
+
+    /// Marker beat individual. Salinan kecil (ratusan float per lagu), hanya
+    /// dibaca sekali oleh worker sebelum handle ini dibebaskan.
+    #[wasm_bindgen(getter, js_name = beatTimesSec)]
+    pub fn beat_times_sec(&self) -> Box<[f32]> {
+        self.beat_times_sec.clone()
+    }
 }
 
 /// Deteksi tempo dari PCM planar.
@@ -835,5 +843,6 @@ pub fn detect_tempo(left: &[f32], right: &[f32], sample_rate: f32) -> Option<Tem
         bpm: e.bpm,
         confidence: e.confidence,
         beat_offset_sec: e.beat_offset_sec,
+        beat_times_sec: e.beat_times_sec.into_boxed_slice(),
     })
 }
