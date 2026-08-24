@@ -87,6 +87,8 @@ export interface QueueItem {
   readonly error: string | null;
   /** Terisi saat `done`: id asset dari Roblox, supaya bisa disalin user. */
   readonly assetId: string | null;
+  /** Operasi Open Cloud yang dipoll selama moderasi; dipersist agar bisa resume. */
+  readonly operationId?: string | null;
 }
 
 export interface RobloxState {

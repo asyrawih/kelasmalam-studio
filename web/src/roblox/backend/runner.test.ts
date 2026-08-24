@@ -55,6 +55,25 @@ function seed(names: readonly string[]): void {
 beforeEach(() => robloxActions.__resetForTest());
 
 describe('jalur bahagia', () => {
+  it('melanjutkan polling moderasi dari operationId yang dipulihkan setelah refresh', async () => {
+    seed(['a.mp3']);
+    const item = byName('a.mp3');
+    robloxActions.markProcessing(item.id, 'op-persisted');
+    const operation = vi.fn(async (operationId: string) => ({
+      done: true,
+      assetId: '909',
+      moderationState: 'approved' as const,
+      operationId,
+    }));
+    const runner = runnerOf(fakeTransport({ operation }));
+
+    runner.resume?.(items());
+    await runner.idle();
+
+    expect(operation).toHaveBeenCalledWith('op-persisted', 'kunci');
+    expect(byName('a.mp3')).toMatchObject({ status: 'done', assetId: '909', operationId: null });
+  });
+
   it('mengunggah, menunggu moderasi, lalu menyimpan asset id', async () => {
     seed(['a.mp3']);
     const runner = runnerOf(fakeTransport());

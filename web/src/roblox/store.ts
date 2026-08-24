@@ -39,6 +39,7 @@ import {
   type RobloxState,
   type UploadStatus,
 } from './model';
+import { clearRobloxQueue, loadRobloxQueue, saveRobloxQueue } from './persistence';
 
 // ── Inti store ───────────────────────────────────────────────────────────────
 
@@ -60,10 +61,20 @@ function getState(): RobloxState {
 
 /** `patch` boleh mengembalikan `null` untuk "tidak ada yang berubah". */
 function set(patch: (s: RobloxState) => Partial<RobloxState> | null): void {
+  const before = state;
   const next = patch(state);
   if (next === null) return;
   state = { ...state, ...next };
   for (const fn of [...listeners]) fn();
+  // Status koneksi, kuota, dan API key tidak termasuk dokumen antrean. Selain
+  // menjaga kredensial agar tidak tersimpan, ini mencegah probe `/health`
+  // menimpa snapshot IndexedDB dengan state kosong saat hydration masih jalan.
+  if (
+    state.items !== before.items ||
+    state.selected !== before.selected ||
+    state.target.creatorKind !== before.target.creatorKind ||
+    state.target.creatorId !== before.target.creatorId
+  ) persist();
 }
 
 export const robloxStore = { getState, subscribe };
@@ -82,6 +93,50 @@ export function useRoblox<T>(selector?: (s: RobloxState) => T): T | RobloxState 
 
 const files = new Map<number, File>();
 let nextId = 1;
+
+let persistChain = Promise.resolve();
+function persist(): void {
+  const snapshot = state;
+  const value = {
+    items: snapshot.items,
+    selected: snapshot.selected,
+    target: {
+      creatorKind: snapshot.target.creatorKind,
+      creatorId: snapshot.target.creatorId,
+    },
+    files: snapshot.items.flatMap((it) => {
+      const file = files.get(it.id);
+      return file === undefined ? [] : [{ id: it.id, file }];
+    }),
+  };
+  persistChain = persistChain.then(() => saveRobloxQueue(value)).catch(() => {});
+}
+
+/** Pulihkan antrean sebelum route mulai melanjutkan polling moderasi. */
+export async function restoreRobloxQueue(): Promise<void> {
+  const saved = await loadRobloxQueue().catch(() => null);
+  if (saved === null) return;
+  files.clear();
+  for (const entry of saved.files) files.set(entry.id, entry.file);
+  const items = saved.items.map((it) => {
+    // Request yang putus sebelum operationId diterima tidak aman diteruskan
+    // otomatis. Biarkan user melihat penjelasannya dan memutuskan sendiri.
+    if (it.status === 'queued' || it.status === 'uploading') {
+      return withStatus(it, 'failed', {
+        error: 'Halaman dimuat ulang saat unggah berjalan — periksa Creator Hub sebelum mengulang',
+      });
+    }
+    return it;
+  });
+  nextId = Math.max(1, ...items.map((it) => it.id + 1));
+  state = {
+    ...state,
+    items,
+    selected: items.some((it) => it.id === saved.selected) ? saved.selected : (items[0]?.id ?? null),
+    target: { ...state.target, ...saved.target },
+  };
+  for (const fn of [...listeners]) fn();
+}
 
 /** Byte berkas satu baris. `undefined` kalau barisnya sudah dihapus. */
 export function fileOf(id: number): File | undefined {
@@ -149,6 +204,7 @@ export const robloxActions = {
         progress: 0,
         error: null,
         assetId: null,
+        operationId: null,
       });
     }
 
@@ -186,6 +242,7 @@ export const robloxActions = {
   clearAll(): void {
     files.clear();
     set((s) => (s.items.length === 0 ? null : { items: [], selected: null }));
+    persistChain = persistChain.then(() => clearRobloxQueue()).catch(() => {});
   },
 
   select(id: number | null): void {
@@ -262,17 +319,17 @@ export const robloxActions = {
   },
 
   /** Byte-nya sudah sampai; Roblox masih memoderasinya. */
-  markProcessing(id: number): void {
-    set((s) => patchItem(s, id, (it) => withStatus(it, 'processing', { progress: 100 })));
+  markProcessing(id: number, operationId: string | null = null): void {
+    set((s) => patchItem(s, id, (it) => withStatus(it, 'processing', { progress: 100, operationId })));
   },
 
   markDone(id: number, assetId: string): void {
-    set((s) => patchItem(s, id, (it) => withStatus(it, 'done', { progress: 100, assetId })));
+    set((s) => patchItem(s, id, (it) => withStatus(it, 'done', { progress: 100, assetId, operationId: null })));
   },
 
   /** Baris gagal kembali bisa dikirim ulang — `readyItems` ikut menerimanya. */
   markFailed(id: number, error: string): void {
-    set((s) => patchItem(s, id, (it) => withStatus(it, 'failed', { error })));
+    set((s) => patchItem(s, id, (it) => withStatus(it, 'failed', { error, operationId: null })));
   },
 
   /** Kembalikan baris gagal ke draft supaya bisa disunting lalu dikirim lagi. */

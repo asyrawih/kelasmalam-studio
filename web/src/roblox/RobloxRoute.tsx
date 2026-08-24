@@ -20,7 +20,7 @@ import { useEffect, useMemo } from 'react';
 import { RobloxPage } from './RobloxPage';
 import { createRunner, type Runner } from './backend/runner';
 import { createHttpTransport } from './backend/transport';
-import { robloxActions } from './store';
+import { restoreRobloxQueue, robloxActions, robloxStore } from './store';
 import { createGrantApi, type GrantApi } from './grant/api';
 
 export interface RobloxRouteProps {
@@ -69,6 +69,26 @@ export function RobloxRoute({
         })
       : makeRunner(base);
   }, [base, grantApi, makeRunner]);
+
+  useEffect(() => {
+    let alive = true;
+    void restoreRobloxQueue().then(async () => {
+      if (!alive || runner === null) return;
+      // Settings membawa API key kembali dari penyimpanan akun; jangan mulai
+      // polling dengan kredensial kosong bila keduanya sedang dimuat bersamaan.
+      if (grantApi !== null) {
+        const saved = await grantApi.settings().catch(() => null);
+        if (!alive) return;
+        if (saved !== null) {
+          robloxActions.setCreatorKind(saved.creatorKind);
+          robloxActions.setCreatorId(saved.creatorId);
+          robloxActions.setApiKey(saved.apiKey);
+        }
+      }
+      runner.resume?.(robloxStore.getState().items);
+    });
+    return () => { alive = false; };
+  }, [grantApi, runner]);
 
   // Kredensial milik akun Google dimuat sejak route dibuka, bukan menunggu
   // user masuk ke subtab Grant Access.

@@ -43,6 +43,8 @@ export interface Runner {
   /** Kirim baris-baris ini. Aman dipanggil dua kali: yang kedua diabaikan
    *  selama yang pertama belum selesai. */
   run(items: readonly QueueItem[]): void;
+  /** Lanjutkan polling item yang byte-nya sudah diterima Roblox. */
+  resume?(items: readonly QueueItem[]): void;
   /** Untuk tes: janji yang selesai saat antrean berhenti berjalan. */
   readonly idle: () => Promise<void>;
 }
@@ -108,8 +110,21 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
           continue;
         }
 
-        robloxActions.markProcessing(item.id);
+        robloxActions.markProcessing(item.id, started.operationId);
         const assetId = await awaitModeration(started.operationId, target.apiKey);
+        await approved(item, assetId, target);
+      } catch (err: unknown) {
+        robloxActions.markFailed(item.id, messageOf(err));
+      }
+    }
+  }
+
+  async function resumeModeration(items: readonly QueueItem[]): Promise<void> {
+    for (const item of items) {
+      if (item.status !== 'processing' || typeof item.operationId !== 'string') continue;
+      try {
+        const target = robloxStore.getState().target;
+        const assetId = await awaitModeration(item.operationId, target.apiKey);
         await approved(item, assetId, target);
       } catch (err: unknown) {
         robloxActions.markFailed(item.id, messageOf(err));
@@ -165,6 +180,10 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
       running = drive(items).finally(() => {
         running = null;
       });
+    },
+    resume(items) {
+      if (running !== null || items.length === 0) return;
+      running = resumeModeration(items).finally(() => { running = null; });
     },
     idle: async () => {
       await running;

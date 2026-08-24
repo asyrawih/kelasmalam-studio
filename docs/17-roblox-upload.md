@@ -80,6 +80,20 @@ meneruskan `moderationResult.moderationState` dari Roblox: baris tetap
 `MODERASI` selama `Reviewing`, berubah menjadi `DISETUJUI` hanya saat
 `Approved`, dan menjadi `GAGAL` saat `Rejected`.
 
+### Bertahan setelah refresh
+
+Antrean disimpan di IndexedDB (`web/src/roblox/persistence.ts`), termasuk byte
+MP3/OGG untuk baris draft dan `operationId` untuk baris yang sudah masuk fase
+moderasi. Saat `/roblox` dibuka kembali, metadata dan berkas dipulihkan; polling
+baris `MODERASI` dilanjutkan setelah kredensial akun selesai dimuat. API key
+tetap tidak masuk IndexedDB.
+
+Refresh tepat saat request upload masih berjalan adalah keadaan ambigu: browser
+belum tentu sempat menerima `operationId`, sementara Roblox mungkin sudah
+menerima byte. Baris itu dipulihkan sebagai `GAGAL` dengan pesan agar user
+memeriksa Creator Hub sebelum mengulang, bukan dikirim ulang otomatis dan
+berisiko memakan kuota dua kali.
+
 Tiga keputusan di runner yang tidak terlihat dari kodenya:
 
 - **Satu berkas pada satu waktu.** Yang membatasi bukan bandwidth kami melainkan
@@ -99,10 +113,10 @@ Tiga keputusan di runner yang tidak terlihat dari kodenya:
 
 ## Keputusan yang jangan dibalik tanpa alasan
 
-- **API key tidak disimpan.** Tidak ke localStorage, tidak ke IndexedDB. Ia
-  hidup di memori tab dan hilang saat refresh. Repo ini memang sudah membuang
-  penyimpanan lokal seluruhnya (`docs/16-kepustakaan.md`), dan kredensial Open
-  Cloud adalah kandidat terburuk untuk jadi pengecualian.
+- **API key tidak disimpan di browser.** Tidak ke localStorage maupun IndexedDB;
+  saat refresh ia dimuat lagi dari penyimpanan akun yang terenkripsi di Worker.
+  Antrean dan byte audio boleh persisten, tetapi kredensial Open Cloud tidak
+  ikut di dalam snapshot tersebut.
 - **Tombol UNGGAH mati selama backend belum ada, dengan alasan tertulis.**
   Tombol yang menyala lalu diam membuat user mengira lagunya sudah terkirim —
   kegagalan yang paling mahal untuk ditemukan di halaman ini.
