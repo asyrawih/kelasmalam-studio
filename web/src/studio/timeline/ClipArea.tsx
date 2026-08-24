@@ -319,7 +319,7 @@ function ClipWave({
         width,
         win,
       );
-      drawArrangementBeatGrid(ctx, lines, size.height);
+      drawArrangementBeatGrid(ctx, lines, size.width, size.height);
     },
     // Jendela masuk sebagai dua angka, bukan sebagai objek: `visibleWindow`
     // membuat objek baru tiap render, jadi identitasnya tidak pernah sama dan
@@ -536,6 +536,7 @@ function ClipView({
             // jendela — kalau keduanya berdiri sendiri, canvas akan melenceng
             // dari area waveform begitu salah satunya diubah.
             inset: `${WAVE_INSET}px`,
+            background: '#020302',
             // Overlay fade & drag clip harus tetap menerima pointer.
             pointerEvents: 'none',
           }}

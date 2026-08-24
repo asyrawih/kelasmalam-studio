@@ -16,11 +16,12 @@ describe('arrangement beat grid', () => {
     const lines = arrangementGridLines(asset(), 0, 4 * SR, null, SR, 400, null);
     expect(lines.map((line) => Math.round(line.x))).toEqual([0, 50, 100, 150, 200, 250, 300, 350]);
     expect(lines.filter((line) => line.downbeat).map((line) => Math.round(line.x))).toEqual([0, 200]);
+    expect(lines.filter((line) => line.downbeat).map((line) => line.bar)).toEqual([0, 1]);
   });
 
   it('virtual window mengembalikan koordinat relatif terhadap canvas terlihat', () => {
     const lines = arrangementGridLines(asset(), 0, 4 * SR, null, SR, 400, { x: 100, w: 100 });
-    expect(lines.map((line) => Math.round(line.x))).toEqual([0, 50]);
+    expect(lines.filter((line) => line.x >= 0).map((line) => Math.round(line.x))).toEqual([0, 50]);
   });
 
   it('loop mengulang grid pada setiap tile', () => {
@@ -41,5 +42,6 @@ describe('arrangement beat grid', () => {
     const lines = arrangementGridLines(tracked, 0, 2 * SR, null, SR, 200, null);
     expect(lines.map((line) => Math.round(line.x))).toEqual([0, 51, 101, 152]);
     expect(lines.every((line) => !line.downbeat)).toBe(true);
+    expect(lines.filter((line) => line.barStart).map((line) => Math.round(line.x))).toEqual([0]);
   });
 });
