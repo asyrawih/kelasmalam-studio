@@ -441,6 +441,32 @@ let state: StudioAppState = withDerived({
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
+const MAX_UNDO_HISTORY = 100;
+const undoStack: StudioAppState[] = [];
+const redoStack: StudioAppState[] = [];
+let restoringHistory = false;
+let dragHistoryRecorded = false;
+
+/** Field yang benar-benar mengubah karya. State transport/seleksi/UI tidak
+ * masuk riwayat, jadi Undo tidak meloncatkan playhead atau membuka popup lama. */
+const EDIT_KEYS: readonly (keyof StudioAppState)[] = [
+  'lanes', 'assets', 'masterGainDb', 'masterChain', 'renderSpeed',
+  'exportFileName', 'minDurationSec', 'maxDurationSec',
+];
+
+function hasProjectEdit(before: StudioAppState, after: StudioAppState): boolean {
+  return EDIT_KEYS.some((key) => before[key] !== after[key]);
+}
+
+function notify(): void {
+  for (const fn of [...listeners]) fn();
+}
+
+function restoreProject(snapshot: StudioAppState): void {
+  const patch = Object.fromEntries(EDIT_KEYS.map((key) => [key, snapshot[key]])) as Partial<StudioAppState>;
+  state = withDerived({ ...state, ...patch, draggingClip: false });
+  notify();
+}
 
 function subscribe(fn: Listener): () => void {
   listeners.add(fn);
@@ -459,8 +485,18 @@ function set(patch: (s: StudioAppState) => Partial<StudioAppState> | null): void
   if (next === null) return;
   const merged = withDerived({ ...state, ...next });
   if (merged === state) return;
+  if (!restoringHistory && hasProjectEdit(state, merged)) {
+    // Pointermove bisa memanggil store puluhan kali. Selama drag aktif hanya
+    // keadaan sebelum gerakan pertama yang disimpan.
+    if (!state.draggingClip || !dragHistoryRecorded) {
+      undoStack.push(state);
+      if (undoStack.length > MAX_UNDO_HISTORY) undoStack.shift();
+      redoStack.length = 0;
+    }
+    if (state.draggingClip) dragHistoryRecorded = true;
+  }
   state = merged;
-  for (const fn of [...listeners]) fn();
+  notify();
 }
 
 /**
@@ -643,6 +679,32 @@ function editFxChain(
 }
 
 export const studioActions = {
+  undo(): boolean {
+    const previous = undoStack.pop();
+    if (previous === undefined) return false;
+    redoStack.push(state);
+    restoringHistory = true;
+    restoreProject(previous);
+    restoringHistory = false;
+    dragHistoryRecorded = false;
+    return true;
+  },
+  redo(): boolean {
+    const next = redoStack.pop();
+    if (next === undefined) return false;
+    undoStack.push(state);
+    restoringHistory = true;
+    restoreProject(next);
+    restoringHistory = false;
+    dragHistoryRecorded = false;
+    return true;
+  },
+  canUndo(): boolean {
+    return undoStack.length > 0;
+  },
+  canRedo(): boolean {
+    return redoStack.length > 0;
+  },
   // — seleksi —
   selectLane(laneId: string): void {
     set(() => ({ selectedLaneId: laneId }));
@@ -1377,6 +1439,9 @@ export const studioActions = {
     const clean = Object.fromEntries(
       Object.entries(data).filter(([, v]) => v !== undefined),
     ) as Partial<StudioAppState>;
+    undoStack.length = 0;
+    redoStack.length = 0;
+    restoringHistory = true;
     set(() => ({
       ...clean,
       playing: false,
@@ -1386,6 +1451,7 @@ export const studioActions = {
       importJobs: [],
       seekEpoch: 0,
     }));
+    restoringHistory = false;
   },
 
   /**
@@ -1473,7 +1539,9 @@ export const studioActions = {
   },
 
   setClipDragging(dragging: boolean): void {
+    if (dragging) dragHistoryRecorded = false;
     set((s) => (s.draggingClip === dragging ? null : { draggingClip: dragging }));
+    if (!dragging) dragHistoryRecorded = false;
   },
 
   /**
@@ -1761,6 +1829,9 @@ export const studioActions = {
    * yang sebenarnya — satu lane kosong.
    */
   __resetForTest(seed: 'demo' | 'empty' = 'demo'): void {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    dragHistoryRecorded = false;
     state = withDerived({
       ...(seed === 'empty' ? createInitialStudio() : createDemoStudio()),
       assets: {},

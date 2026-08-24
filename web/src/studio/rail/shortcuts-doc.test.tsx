@@ -34,6 +34,8 @@ const KEY_MAP: Record<string, string | null> = {
   X: 'x',
   C: 'c',
   V: 'v',
+  Z: 'z',
+  'Cmd/Ctrl': null,
   Shift: null, // modifier, bukan tombol yang berdiri sendiri
 };
 
@@ -55,7 +57,8 @@ describe('kartu Shortcut tidak boleh basi', () => {
         }
         if (key === null) continue;
         const shift = doc.keys.includes('Shift');
-        if (!handled(key, { shiftKey: shift })) {
+        const ctrl = doc.keys.includes('Cmd/Ctrl');
+        if (!handled(key, { shiftKey: shift, ctrlKey: ctrl })) {
           notHandled.push(`${label} → ${doc.label}`);
         }
       }

@@ -13,7 +13,7 @@
 // seluruh aplikasi hanya untuk menampilkan nomor versi.
 import { VersionTag } from '../../app-shell/VersionTag';
 import { Badge, Button } from '../../ui/cyber';
-import { useStudio } from '../store';
+import { studioActions, useStudio } from '../store';
 import { AutoStemToggle } from '../../stem/AutoStemToggle';
 
 export interface StudioHeaderProps {
@@ -69,6 +69,12 @@ export function StudioHeader({ onClose, onOpenDj }: StudioHeaderProps): JSX.Elem
         {`${laneCount} LANES · ${Math.round(sampleRate / 1000)} kHz · STEREO`}
       </div>
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <Button size="sm" variant="ghost" onClick={() => studioActions.undo()} title="Undo (Cmd/Ctrl+Z)">
+          ↶ UNDO
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => studioActions.redo()} title="Redo (Cmd/Ctrl+Shift+Z)">
+          ↷ REDO
+        </Button>
         <AutoStemToggle />
         {/* Design menulis READY tanpa syarat. Kita tidak boleh mengklaim siap
             kalau engine belum ada — badge-nya berubah, bukan berbohong. */}

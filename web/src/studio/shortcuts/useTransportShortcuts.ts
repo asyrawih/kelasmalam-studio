@@ -28,6 +28,20 @@ export function useTransportShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (isTextEntry(e.target)) return;
+      if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) studioActions.redo();
+          else studioActions.undo();
+          return;
+        }
+        if (key === 'y' && !e.shiftKey) {
+          e.preventDefault();
+          studioActions.redo();
+          return;
+        }
+      }
       // Biarkan shortcut browser/OS (Cmd-R, Ctrl-S, dsb) lewat.
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 

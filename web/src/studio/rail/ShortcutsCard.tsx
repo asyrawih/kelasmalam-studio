@@ -28,6 +28,8 @@ export interface ShortcutDoc {
 }
 
 export const SHORTCUTS: readonly ShortcutDoc[] = [
+  { keys: ['Cmd/Ctrl', 'Z'], label: 'Undo edit terakhir', group: 'edit' },
+  { keys: ['Cmd/Ctrl', 'Shift', 'Z'], label: 'Redo edit', group: 'edit' },
   { keys: ['Space'], label: 'Play / pause', group: 'transport' },
   { keys: ['Backspace'], label: 'Kembali ke awal', group: 'transport' },
   { keys: ['Home'], label: 'Ke awal', group: 'transport' },
