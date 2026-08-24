@@ -134,11 +134,11 @@ pub struct BpmEstimate {
  * dengan penalti log-ratio untuk jarak yang terlalu pendek/panjang.
  */
 fn track_beats(odf: &[f32], period: f32, rate: f32) -> Vec<f32> {
-    if odf.is_empty() || !(period > 1.0) || !(rate > 0.0) {
+    if odf.is_empty() || !period.is_finite() || period <= 1.0 || !rate.is_finite() || rate <= 0.0 {
         return Vec::new();
     }
     let peak = odf.iter().copied().fold(0.0_f32, f32::max);
-    if !(peak > 0.0) {
+    if !peak.is_finite() || peak <= 0.0 {
         return Vec::new();
     }
     let n = odf.len();
