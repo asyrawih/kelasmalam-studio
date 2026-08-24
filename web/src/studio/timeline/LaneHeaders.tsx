@@ -60,6 +60,7 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
         : `${lane.clips.length} CLIP · ${formatTime(samplesToSec(laneTotalSamples(lane), sampleRate))}`;
 
   const laneH = laneHeightPx(useStudio((st) => st.laneHeight));
+  const hasPresetSpeed = (LANE_SPEEDS as readonly number[]).includes(lane.speedRatio);
 
   return (
     <>
@@ -236,6 +237,9 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
                 cursor: 'pointer',
               }}
             >
+              {!hasPresetSpeed ? (
+                <option value={lane.speedRatio}>{lane.speedRatio.toFixed(3)}x · SYNC</option>
+              ) : null}
               {LANE_SPEEDS.map((r) => (
                 <option key={r} value={r}>
                   {r}x

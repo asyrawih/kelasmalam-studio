@@ -44,6 +44,38 @@ export interface PlayheadTempo {
   readonly idle: boolean;
 }
 
+export interface BpmSyncPlan {
+  readonly target: ActiveTempo;
+  readonly reference: ActiveTempo;
+  /** Nilai baru untuk `lane.speedRatio`. */
+  readonly laneSpeedRatio: number;
+}
+
+/**
+ * Rencana BPM-sync untuk materi yang sedang bertumpuk di playhead.
+ *
+ * Clip terpilih menjadi target bila ia sedang aktif. Tanpa pilihan aktif,
+ * lane kedua mengikuti lane pertama. Hanya tempo yang disamakan; fase atau
+ * posisi downbeat tidak digeser.
+ */
+export function bpmSyncPlan(t: PlayheadTempo, selectedClipId: string | null): BpmSyncPlan | null {
+  if (t.primary === null) return null;
+  const active = [t.primary, ...t.others];
+  const selected = active.find((entry) => entry.clipId === selectedClipId);
+  const target = selected ?? t.others.find((entry) => entry.laneId !== t.primary?.laneId);
+  if (target === undefined) return null;
+  const reference = active.find((entry) => entry.laneId !== target.laneId);
+  if (reference === undefined || !(target.bpm > 0)) return null;
+
+  // speedFactor = lane.speedRatio × transport speed. Transport sama untuk
+  // kedua lane, jadi ia gugur dari rasio dan tidak perlu dibaca terpisah.
+  return {
+    target,
+    reference,
+    laneSpeedRatio: (target.speedFactor * reference.bpm) / target.bpm,
+  };
+}
+
 /** BPM sumber setelah koreksi oktaf user (×2 / ÷2). */
 export function correctedBpm(asset: StudioAsset): number | null {
   if (asset.tempo === null) return null;

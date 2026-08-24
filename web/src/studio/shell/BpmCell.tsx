@@ -18,7 +18,12 @@
 
 import { memo } from 'react';
 
-import { correctedBpm, selectPlayheadTempo, type PlayheadTempo } from '../analysis/playhead-tempo';
+import {
+  bpmSyncPlan,
+  correctedBpm,
+  selectPlayheadTempo,
+  type PlayheadTempo,
+} from '../analysis/playhead-tempo';
 import { TEMPO_UNCERTAIN, studioActions, useStudio } from '../store';
 
 /** Selisih BPM di bawah ini dianggap "sudah match" dan tidak dilaporkan. */
@@ -64,6 +69,8 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
   // memindahkan penggabungannya ke tempat lain tanpa mengurangi render.
   const tempo = useStudio(selectPlayheadTempo);
   const assets = useStudio((s) => s.assets);
+  const selectedClipId = useStudio((s) => s.selectedClipId);
+  const sync = bpmSyncPlan(tempo, selectedClipId);
 
   // Oktaf dipakai pada ASSET dari clip yang sedang ditampilkan; tanpa clip
   // aktif tidak ada yang bisa digandakan.
@@ -169,6 +176,27 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
               </button>
             ))}
           </span>
+        ) : null}
+        {sync !== null ? (
+          <button
+            type="button"
+            aria-label={`sync BPM ${sync.target.laneName}`}
+            title={`${sync.target.laneName} mengikuti ${sync.reference.laneName} (${sync.reference.bpm.toFixed(1)} BPM). Tempo saja; posisi beat tidak digeser. Varispeed: pitch ikut berubah.`}
+            onClick={() => studioActions.setLaneSpeed(sync.target.laneId, sync.laneSpeedRatio)}
+            style={{
+              fontFamily: 'var(--cy-font-mono)',
+              fontSize: '9px',
+              lineHeight: 1,
+              padding: '3px 5px',
+              background: 'var(--cy-accent)',
+              color: 'var(--cy-text-on-accent)',
+              border: '1px solid var(--cy-accent)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            SYNC {sync.target.laneName.toUpperCase()}
+          </button>
         ) : null}
       </div>
       {/* Baris nota SELALU ada, walau kosong. Ini yang membuat timeline berhenti

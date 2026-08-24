@@ -1,8 +1,8 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BpmCell, tempoNote } from './BpmCell';
-import type { PlayheadTempo } from '../analysis/playhead-tempo';
+import { bpmSyncPlan, type PlayheadTempo } from '../analysis/playhead-tempo';
 import { studioActions, studioStore, type StudioAsset } from '../store';
 import { DEFAULT_FADE_CURVE, type StudioClip } from '../model';
 
@@ -73,6 +73,29 @@ describe('nota BPM', () => {
       primary: entry({ confidence: 0.05 }),
     };
     expect(tempoNote(t)).toBe('TIDAK YAKIN');
+  });
+});
+
+describe('rencana BPM sync', () => {
+  const twoLanes: PlayheadTempo = {
+    ...base,
+    idle: false,
+    primary: entry({ laneId: 'l1', clipId: 'c1', bpm: 128, sourceBpm: 128, speedFactor: 1 }),
+    others: [entry({ laneId: 'l2', laneName: 'Lane 2', clipId: 'c2', bpm: 120, sourceBpm: 120, speedFactor: 1 })],
+  };
+
+  it('tanpa pilihan, lane kedua mengikuti lane pertama', () => {
+    const plan = bpmSyncPlan(twoLanes, null)!;
+    expect(plan.target.laneId).toBe('l2');
+    expect(plan.reference.laneId).toBe('l1');
+    expect(plan.laneSpeedRatio).toBeCloseTo(128 / 120);
+  });
+
+  it('selected clip menentukan lane target', () => {
+    const plan = bpmSyncPlan(twoLanes, 'c1')!;
+    expect(plan.target.laneId).toBe('l1');
+    expect(plan.reference.laneId).toBe('l2');
+    expect(plan.laneSpeedRatio).toBeCloseTo(120 / 128);
   });
 });
 
@@ -158,5 +181,22 @@ describe('sel BPM', () => {
 
     render(<BpmCell />);
     expect(screen.getByText('96.0?')).toBeTruthy();
+  });
+
+  it('sync membuat lane selected clip mengikuti BPM lane lain', () => {
+    const [lane1, lane2] = studioStore.getState().lanes;
+    studioActions.registerAsset(asset(9, 128, 0.8));
+    studioActions.registerAsset(asset(10, 120, 0.8));
+    studioActions.addClip(lane1!.id, clip('master', 9));
+    studioActions.addClip(lane2!.id, clip('target', 10));
+    studioActions.selectClip('target');
+    studioActions.setPlayhead(5 * SR);
+
+    render(<BpmCell />);
+    fireEvent.click(screen.getByRole('button', { name: `sync BPM ${lane2!.name}` }));
+
+    const target = studioStore.getState().lanes.find((lane) => lane.id === lane2!.id)!;
+    expect(target.speedRatio).toBeCloseTo(128 / 120);
+    expect(target.clips[0]!.len).toBe(Math.round((30 * SR) / (128 / 120)));
   });
 });
