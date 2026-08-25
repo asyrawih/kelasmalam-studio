@@ -12,7 +12,7 @@
  * alih "READY" — tapi playhead tetap berjalan supaya timeline bisa diuji.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ReadoutStrip, StudioHeader, StudioLayout } from './studio/shell';
 import { MenuBar } from './studio/shell/MenuBar';
 import { STUDIO_MENUS } from './studio/shell/StudioMenus';
@@ -25,6 +25,7 @@ import { BeatProvider, TimelinePanel } from './studio/timeline';
 import { LibraryDock } from './library';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
+import { SoundCloudDialog } from './soundcloud/SoundCloudDialog';
 
 export interface AppProps {
   /**
@@ -46,6 +47,7 @@ export interface AppProps {
 const TICK_MS = 60;
 
 export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element {
+  const [soundCloudOpen, setSoundCloudOpen] = useState(false);
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
   // Sambungkan rail ke project + cache PCM. Cache-nya SAMA dengan yang dipakai
@@ -95,8 +97,9 @@ export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element 
 
   return (
     <BeatProvider>
+      {soundCloudOpen ? <SoundCloudDialog onClose={() => setSoundCloudOpen(false)} /> : null}
       <StudioLayout
-        header={<StudioHeader onClose={onClose} onOpenDj={onOpenDj} />}
+        header={<StudioHeader onClose={onClose} onOpenDj={onOpenDj} onOpenSoundCloud={() => setSoundCloudOpen(true)} />}
         readouts={<ReadoutStrip />}
         menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} />}
         /*

@@ -20,9 +20,10 @@ export interface StudioHeaderProps {
   readonly onClose?: () => void;
   /** Buka mixer DJ. Opsional supaya pemanggil lama (dan tes) tidak perlu ikut berubah. */
   readonly onOpenDj?: () => void;
+  readonly onOpenSoundCloud?: () => void;
 }
 
-export function StudioHeader({ onClose, onOpenDj }: StudioHeaderProps): JSX.Element {
+export function StudioHeader({ onClose, onOpenDj, onOpenSoundCloud }: StudioHeaderProps): JSX.Element {
   const laneCount = useStudio((s) => s.lanes.length);
   const sampleRate = useStudio((s) => s.sampleRate);
   const engineReady = useStudio((s) => s.engineReady);
@@ -76,6 +77,7 @@ export function StudioHeader({ onClose, onOpenDj }: StudioHeaderProps): JSX.Elem
           ↷ REDO
         </Button>
         <AutoStemToggle />
+        {onOpenSoundCloud !== undefined && <Button size="sm" variant="outline" onClick={onOpenSoundCloud}>SOUNDCLOUD</Button>}
         {/* Design menulis READY tanpa syarat. Kita tidak boleh mengklaim siap
             kalau engine belum ada — badge-nya berubah, bukan berbohong. */}
         <Badge tone={engineReady ? 'success' : 'default'} dot>

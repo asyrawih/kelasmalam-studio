@@ -29,4 +29,6 @@ interface ImportMetaEnv {
    * seluruh aplikasi berjalan penuh tanpa akun (docs/16 §6).
    */
   readonly VITE_LIBRARY_API?: string;
+  /** Basis URL soundclaude-server. Default pengembangan: http://localhost:8080. */
+  readonly VITE_SOUNDCLAUDE_API?: string;
 }
