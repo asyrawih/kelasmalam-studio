@@ -141,11 +141,11 @@ export function drawArrangementBeatGrid(
     // Halo gelap dulu: garis tetap terbaca di puncak waveform putih/kuning.
     path(downbeat);
     ctx.strokeStyle = '#000000c7';
-    ctx.lineWidth = downbeat ? 5 : 3.5;
+    ctx.lineWidth = downbeat ? 3 : 2.25;
     ctx.stroke();
     path(downbeat);
     ctx.strokeStyle = downbeat ? '#ff202b' : '#17c9ee';
-    ctx.lineWidth = downbeat ? 2.25 : 1.5;
+    ctx.lineWidth = downbeat ? 1.5 : 1;
     ctx.stroke();
   };
   draw(false);
@@ -158,13 +158,13 @@ export function drawArrangementBeatGrid(
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
     ctx.strokeStyle = '#000000d9';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 3;
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
     ctx.strokeStyle = '#ff202b';
-    ctx.lineWidth = 2.25;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
   }
 
