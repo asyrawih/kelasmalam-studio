@@ -44,7 +44,7 @@ function fakeTransport(over: Partial<Transport> = {}): Transport {
 }
 
 const runnerOf = (t: Transport) =>
-  createRunner(t, { firstPollMs: 0, maxPollMs: 0, sleep: async () => {} });
+  createRunner(t, { firstPollMs: 0, maxPollMs: 0, uploadRetryMs: 0, sleep: async () => {} });
 
 function seed(names: readonly string[]): void {
   robloxActions.addFiles(names.map(mp3));
@@ -173,6 +173,35 @@ describe('jalur bahagia', () => {
 });
 
 describe('kegagalan', () => {
+  it('mencoba ulang gangguan jaringan yang terjadi sebelum byte selesai terkirim', async () => {
+    seed(['a.mp3']);
+    const upload = vi
+      .fn<Transport['upload']>()
+      .mockRejectedValueOnce(new UploadError('JARINGAN_SEBELUM_TERKIRIM', 'koneksi putus', true))
+      .mockResolvedValue({ operationId: 'op-2', done: false, assetId: null });
+    const runner = runnerOf(fakeTransport({ upload }));
+
+    runner.run(items());
+    await runner.idle();
+
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(byName('a.mp3')).toMatchObject({ status: 'done', assetId: '111' });
+  });
+
+  it('tidak retry bila status pengiriman tidak pasti agar asset tidak duplikat', async () => {
+    seed(['a.mp3']);
+    const upload = vi.fn(async () => {
+      throw new UploadError('JARINGAN_STATUS_TIDAK_PASTI', 'periksa Creator Hub');
+    });
+    const runner = runnerOf(fakeTransport({ upload }));
+
+    runner.run(items());
+    await runner.idle();
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(byName('a.mp3')).toMatchObject({ status: 'failed', error: 'periksa Creator Hub' });
+  });
+
   it('tetap MODERASI saat reviewing lalu selesai hanya setelah approved', async () => {
     seed(['a.mp3']);
     const answers: OperationState[] = [

@@ -20,10 +20,13 @@ import type { QueueItem, RobloxTarget } from '../model';
 /** Kegagalan yang sudah punya kalimat untuk user. */
 export class UploadError extends Error {
   readonly code: string;
-  constructor(code: string, message: string) {
+  /** Aman dicoba ulang tanpa risiko membuat asset Roblox duplikat. */
+  readonly retryable: boolean;
+  constructor(code: string, message: string, retryable = false) {
     super(message);
     this.name = 'UploadError';
     this.code = code;
+    this.retryable = retryable;
   }
 }
 
@@ -159,6 +162,8 @@ function xhrPost(
 ): Promise<StartedUpload> {
   return new Promise<StartedUpload>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let uploadedBytes = 0;
+    let totalBytes: number | null = null;
     xhr.open('POST', url);
     xhr.setRequestHeader(KEY_HEADER, apiKey);
     xhr.responseType = 'text';
@@ -169,11 +174,25 @@ function xhrPost(
       // total. Membagi dengan nol menghasilkan NaN, dan NaN di lebar bar
       // membuat elemennya hilang sama sekali.
       if (!e.lengthComputable || e.total === 0) return;
+      uploadedBytes = e.loaded;
+      totalBytes = e.total;
       onProgress(Math.round((e.loaded / e.total) * 100));
     };
 
     xhr.onerror = (): void => {
-      reject(new UploadError('JARINGAN', 'tidak bisa menghubungi server unggah'));
+      const definitelyIncomplete = totalBytes !== null && uploadedBytes < totalBytes;
+      reject(
+        definitelyIncomplete
+          ? new UploadError(
+              'JARINGAN_SEBELUM_TERKIRIM',
+              'koneksi terputus sebelum berkas selesai dikirim',
+              true,
+            )
+          : new UploadError(
+              'JARINGAN_STATUS_TIDAK_PASTI',
+              'koneksi terputus setelah pengiriman — periksa Creator Hub sebelum mengulang agar asset tidak duplikat',
+            ),
+      );
     };
     xhr.ontimeout = (): void => {
       reject(new UploadError('WAKTU_HABIS', 'server unggah tidak menjawab'));

@@ -35,6 +35,10 @@ export interface RunnerOptions {
   /** Disuntik di tes supaya tidak ada yang benar-benar menunggu. */
   readonly sleep?: (ms: number) => Promise<void>;
   readonly now?: () => number;
+  /** Percobaan maksimum untuk kegagalan yang dipastikan terjadi sebelum seluruh byte terkirim. */
+  readonly uploadAttempts?: number;
+  /** Jeda awal retry upload; percobaan berikutnya memakai backoff 2x. */
+  readonly uploadRetryMs?: number;
   /** Dipanggil setelah moderasi approved; kegagalan katalog tidak menggagalkan upload. */
   readonly onApproved?: (item: QueueItem, assetId: string, target: ReturnType<typeof robloxStore.getState>['target']) => Promise<void> | void;
 }
@@ -53,6 +57,8 @@ const DEFAULTS = {
   firstPollMs: 1_000,
   maxPollMs: 8_000,
   moderationTimeoutMs: 5 * 60_000,
+  uploadAttempts: 3,
+  uploadRetryMs: 750,
 };
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -61,6 +67,8 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
   const firstPollMs = opts.firstPollMs ?? DEFAULTS.firstPollMs;
   const maxPollMs = opts.maxPollMs ?? DEFAULTS.maxPollMs;
   const moderationTimeoutMs = opts.moderationTimeoutMs ?? DEFAULTS.moderationTimeoutMs;
+  const uploadAttempts = Math.max(1, opts.uploadAttempts ?? DEFAULTS.uploadAttempts);
+  const uploadRetryMs = Math.max(0, opts.uploadRetryMs ?? DEFAULTS.uploadRetryMs);
   const sleep = opts.sleep ?? wait;
   const now = opts.now ?? (() => Date.now());
 
@@ -94,9 +102,7 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
       robloxActions.markUploading(item.id);
 
       try {
-        const started = await transport.upload(item, file, target, (pct) => {
-          robloxActions.markProgress(item.id, pct);
-        });
+        const started = await uploadWithSafeRetry(item, file, target);
 
         if (started.moderationState === 'rejected') {
           throw new UploadError('MODERASI_DITOLAK', 'Roblox menolak audio ini saat moderasi');
@@ -115,6 +121,25 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
         await approved(item, assetId, target);
       } catch (err: unknown) {
         robloxActions.markFailed(item.id, messageOf(err));
+      }
+    }
+  }
+
+  async function uploadWithSafeRetry(
+    item: QueueItem,
+    file: File,
+    target: ReturnType<typeof robloxStore.getState>['target'],
+  ) {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await transport.upload(item, file, target, (pct) => {
+          robloxActions.markProgress(item.id, pct);
+        });
+      } catch (err: unknown) {
+        const canRetry = err instanceof UploadError && err.retryable && attempt < uploadAttempts;
+        if (!canRetry) throw err;
+        await sleep(uploadRetryMs * 2 ** (attempt - 1));
+        robloxActions.markUploading(item.id);
       }
     }
   }
