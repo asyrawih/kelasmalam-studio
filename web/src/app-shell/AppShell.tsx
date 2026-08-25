@@ -63,9 +63,11 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
     () => injectedAuthApi ?? (apiBase === '' ? null : createLibraryApi(apiBase)),
     [apiBase, injectedAuthApi],
   );
-  // Tes shell lama memang menguji audio/routing secara terisolasi. Saat API
-  // disuntikkan, guard tetap aktif agar perilakunya bisa dites tanpa jaringan.
-  const authRequired = import.meta.env.MODE !== 'test' || injectedAuthApi !== undefined;
+  // Development lokal sengaja melewati login supaya Studio, DJ, dan integrasi
+  // backend bisa diuji tanpa sesi OAuth. Production tetap terkunci. Saat API
+  // disuntikkan di tes, guard tetap aktif agar perilakunya bisa diverifikasi
+  // tanpa jaringan sungguhan.
+  const authRequired = !import.meta.env.DEV || injectedAuthApi !== undefined;
 
   useEffect(() => {
     if (!authRequired) return undefined;
