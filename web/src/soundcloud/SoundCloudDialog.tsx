@@ -3,7 +3,7 @@ import { studioActions, studioStore, useStudio } from '../studio/store';
 import { ensureContext } from '../studio/preview/audio-preview';
 import { importBytesToLane } from '../studio/timeline/audio-import';
 import { Button } from '../ui/cyber';
-import { createSoundCloudApi, type SoundCloudProfile, type SoundCloudTrack } from './api';
+import { SoundCloudApi, soundCloudApiBase, type SoundCloudProfile, type SoundCloudTrack } from './api';
 
 export interface SoundCloudDialogProps { readonly onClose: () => void }
 type Mode = 'search' | 'url' | 'likes';
@@ -21,7 +21,9 @@ function TrackThumbnail({ track }: { readonly track: SoundCloudTrack }): JSX.Ele
 }
 
 export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Element {
-  const api = useMemo(() => createSoundCloudApi(), []);
+  const apiBase = useMemo(() => soundCloudApiBase(), []);
+  const api = useMemo(() => new SoundCloudApi(apiBase ?? 'https://soundcloud-api.invalid'), [apiBase]);
+  const configured = apiBase !== null;
   const lanes = useStudio((s) => s.lanes); const selectedLaneId = useStudio((s) => s.selectedLaneId);
   const [laneId, setLaneId] = useState(selectedLaneId ?? lanes[0]?.id ?? '');
   const [mode, setMode] = useState<Mode>('search'); const [query, setQuery] = useState('');
@@ -33,14 +35,16 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
   const previewSource = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController(); void api.health(controller.signal).then(setOnline).catch(() => setOnline(false));
+    const controller = new AbortController();
+    if (configured) void api.health(controller.signal).then(setOnline).catch(() => setOnline(false));
+    else setOnline(false);
     const close = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', close); return () => {
       controller.abort(); window.removeEventListener('keydown', close); active.current?.abort();
       const source = previewSource.current; previewSource.current = null;
       if (source !== null) { try { source.stop(); } catch { /* sudah selesai */ } source.disconnect(); }
     };
-  }, [api, onClose]);
+  }, [api, configured, onClose]);
 
   function stopPreview(): void {
     const source = previewSource.current;
@@ -53,7 +57,9 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
   function done(controller: AbortController): void { if (!controller.signal.aborted) setBusy(null); }
 
   async function submit(event: FormEvent): Promise<void> {
-    event.preventDefault(); const value = query.trim(); if (value === '') return; const controller = task('load');
+    event.preventDefault(); const value = query.trim();
+    if (!configured) { setError('VITE_SOUNDCLAUDE_API belum dikonfigurasi pada production build.'); return; }
+    if (value === '') return; const controller = task('load');
     try {
       const soundCloudUrl = /^https?:\/\/(?:www\.)?soundcloud\.com\//i.test(value);
       if (mode === 'search' && !soundCloudUrl) {
@@ -74,7 +80,7 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
   }
 
   async function changeSearchPage(nextOffset: number): Promise<void> {
-    if (searchTerm === '') return;
+    if (!configured || searchTerm === '') return;
     const controller = task('page');
     try {
       const page = await api.search(searchTerm, Math.max(0, nextOffset), controller.signal);
@@ -85,6 +91,7 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
 
   async function showRelated(track: SoundCloudTrack): Promise<void> { const controller = task('related'); try { setResults(await api.related(track.id, controller.signal)); setSearchTerm(''); setSearchTotal(null); setSearchHasNext(false); setHeading(`RELATED · ${track.title}`); } catch (cause) { failed(cause, controller); } finally { done(controller); } }
   async function togglePreview(track: SoundCloudTrack): Promise<void> {
+    if (!configured) { setError('VITE_SOUNDCLAUDE_API belum dikonfigurasi pada production build.'); return; }
     if (preview?.id === track.id) { active.current?.abort(); setBusy(null); stopPreview(); return; }
     active.current?.abort();
     stopPreview();
@@ -121,6 +128,7 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
     } finally { if (!controller.signal.aborted) setBusy(null); }
   }
   async function add(track: SoundCloudTrack): Promise<void> {
+    if (!configured) { setError('VITE_SOUNDCLAUDE_API belum dikonfigurasi pada production build.'); return; }
     if (laneId === '') { setError('Pilih Lane tujuan terlebih dahulu.'); return; } const controller = task(`add-${track.id}`);
     try { const bytes = await api.audio(track.permalinkUrl, controller.signal); const state = studioStore.getState(); const result = await importBytesToLane(bytes, `${track.title}.mp3`, laneId, state.playhead, state.sampleRate); if (!result.ok) throw new Error(result.reason ?? 'Gagal membuat clip'); studioActions.selectLane(laneId); onClose(); }
     catch (cause) { failed(cause, controller); } finally { done(controller); }
@@ -129,7 +137,7 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
   const placeholder = mode === 'search' ? 'Cari judul, artist, genre…' : mode === 'likes' ? 'URL profil SoundCloud…' : 'URL track, playlist, atau profil…';
   return <div role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ position:'fixed', inset:0, zIndex:1000, display:'grid', placeItems:'center', padding:20, background:'#05090de8' }}>
     <section role="dialog" aria-modal="true" aria-labelledby="soundcloud-title" style={{ width:'min(900px, 100%)', maxHeight:'min(820px, 92vh)', overflow:'auto', border:'1px solid var(--cy-accent)', background:'var(--cy-surface-1)', boxShadow:'0 24px 80px #000', padding:20 }}>
-      <header style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}><div><h2 id="soundcloud-title" style={{ margin:0, color:'var(--cy-text)', fontSize:18 }}>SOUNDCLOUD DISCOVERY</h2><div style={{ color:'var(--cy-text-dim)', fontSize:10, marginTop:5 }}>SEARCH · SETS · LIKES · RELATED · INSERT TO LANE</div></div><span style={{ marginLeft:'auto', color:online === true ? '#00ffc2' : online === false ? '#ff708d' : 'var(--cy-text-dim)', fontSize:10 }}>● {online === true ? 'API ONLINE' : online === false ? 'API OFFLINE' : 'CHECKING API'}</span><Button variant="ghost" onClick={onClose}>✕ CLOSE</Button></header>
+      <header style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}><div><h2 id="soundcloud-title" style={{ margin:0, color:'var(--cy-text)', fontSize:18 }}>SOUNDCLOUD DISCOVERY</h2><div style={{ color:'var(--cy-text-dim)', fontSize:10, marginTop:5 }}>SEARCH · SETS · LIKES · RELATED · INSERT TO LANE</div></div><span style={{ marginLeft:'auto', color:online === true ? '#00ffc2' : online === false ? '#ff708d' : 'var(--cy-text-dim)', fontSize:10 }}>● {!configured ? 'API NOT CONFIGURED' : online === true ? 'API ONLINE' : online === false ? 'API OFFLINE' : 'CHECKING API'}</span><Button variant="ghost" onClick={onClose}>✕ CLOSE</Button></header>
       <nav aria-label="Discovery mode" style={{ display:'flex', gap:8, marginBottom:10 }}>{(['search','url','likes'] as const).map((item) => <Button key={item} variant="ghost" active={mode === item} onClick={() => { setMode(item); setQuery(''); if (item !== 'search') setSearchTerm(''); }}>{item === 'search' ? 'SEARCH' : item === 'url' ? 'OPEN URL / SET' : 'PROFILE LIKES'}</Button>)}</nav>
       <form onSubmit={(e) => void submit(e)} style={{ display:'grid', gridTemplateColumns:'1fr minmax(150px,220px) auto', gap:10 }}>
         <input autoFocus aria-label="SoundCloud query" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={placeholder} style={inputStyle} />

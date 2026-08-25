@@ -151,6 +151,14 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   catch { return `${fallback} (${response.status})`; }
 }
 
-export function createSoundCloudApi(base = import.meta.env.VITE_SOUNDCLAUDE_API): SoundCloudApi {
-  return new SoundCloudApi((base ?? 'http://localhost:8080').replace(/\/$/, ''));
+export function soundCloudApiBase(configured = import.meta.env.VITE_SOUNDCLAUDE_API): string | null {
+  const value = configured?.trim() ?? '';
+  if (value !== '') return value.replace(/\/$/, '');
+  // Jangan bake localhost ke production: di sana localhost adalah komputer user.
+  return import.meta.env.DEV ? 'http://localhost:8080' : 'https://soundcloud.kelasmalam.app';
+}
+
+export function createSoundCloudApi(base = soundCloudApiBase()): SoundCloudApi {
+  if (base === null) throw new Error('VITE_SOUNDCLAUDE_API belum dikonfigurasi untuk build production');
+  return new SoundCloudApi(base);
 }
