@@ -77,16 +77,14 @@ export interface BandColors {
 /**
  * Palet pita bawaan.
  *
- * Biru untuk bawah dan putih untuk atas mengikuti konvensi yang sudah dibaca
- * ribuan DJ di Rekordbox/Serato — melawan konvensi itu berarti setiap orang
- * yang membuka halaman ini harus belajar ulang arti warnanya. Pita tengah
- * memakai amber `#ffb020` milik tema ini, bukan oranye Rekordbox, karena
- * pita itulah yang mendominasi layar dan warnanya jadi warna halaman.
+ * Biru untuk bawah, amber untuk tengah, dan hijau untuk atas. Hijau membuat
+ * hi-hat/transien tetap terang di background hitam tanpa berubah jadi bidang
+ * putih yang bertabrakan dengan grid dan playhead.
  */
 export const BAND_COLORS: BandColors = {
   low: '#2f6fe0',
   mid: '#ffb020',
-  high: '#eef4ff',
+  high: '#35e36f',
 };
 
 /**

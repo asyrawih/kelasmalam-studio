@@ -28,8 +28,8 @@ const MIN_BAR_LABEL_PX = 28;
  * terang di atasnya.
  *
  * Alasannya ada di palet waveform-nya sendiri (`waveform.ts`): badan gelombang
- * memakai gradien amber `#ffb020`→`#ffd400` dan pita `high` nyaris putih
- * (`#eef4ff`). Putih transparan di atas itu hilang TEPAT di bagian yang paling
+ * memakai gradien amber `#ffb020`→`#ffd400` dan pita `high` hijau terang.
+ * Putih transparan di atas warna terang hilang TEPAT di bagian yang paling
  * ramai — grid terbaca jelas di ruang kosong lalu lenyap begitu ada materi,
  * yaitu kebalikan dari gunanya.
  *
