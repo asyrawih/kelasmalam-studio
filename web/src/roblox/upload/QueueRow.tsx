@@ -169,7 +169,11 @@ function QueueRowInner({
           size="sm"
           variant="ghost"
           aria-label={`hapus ${item.fileName}`}
-          disabled={locked}
+          // Kesibukan baris lain tidak mengunci seluruh antrean. Baris yang
+          // masih ANTRE aman dihapus; runner akan melihat File-nya sudah tidak
+          // ada lalu melewatinya. Hanya request/polling milik baris ini sendiri
+          // yang tidak boleh diputus dari UI.
+          disabled={item.status === 'uploading' || item.status === 'processing'}
           onClick={(e) => {
             e.stopPropagation();
             onRemove(item.id);

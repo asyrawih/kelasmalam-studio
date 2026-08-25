@@ -130,16 +130,18 @@ describe('jalur bahagia', () => {
     expect(seen).toEqual([50]);
   });
 
-  it('mengirim BERURUTAN, bukan serempak', async () => {
-    seed(['a.mp3', 'b.mp3', 'c.mp3']);
+  it('mengirim paralel dengan batas maksimum 10', async () => {
+    seed(Array.from({ length: 12 }, (_, i) => `${i}.mp3`));
     let inFlight = 0;
     let peak = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
     const runner = runnerOf(
       fakeTransport({
         upload: async () => {
           inFlight += 1;
           peak = Math.max(peak, inFlight);
-          await Promise.resolve();
+          await gate;
           inFlight -= 1;
           return { operationId: 'op', done: false, assetId: null };
         },
@@ -147,8 +149,11 @@ describe('jalur bahagia', () => {
     );
 
     runner.run(items());
+    await vi.waitFor(() => expect(peak).toBe(10));
+    expect(inFlight).toBe(10);
+    release();
     await runner.idle();
-    expect(peak).toBe(1);
+    expect(peak).toBe(10);
     expect(items().every((it) => it.status === 'done')).toBe(true);
   });
 

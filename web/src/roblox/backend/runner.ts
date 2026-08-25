@@ -1,19 +1,17 @@
 /**
- * Penggerak antrean: mengambil baris yang siap, mengirimnya satu per satu, dan
+ * Penggerak antrean: mengambil baris yang siap, mengirim maksimal sepuluh
+ * secara paralel, dan
  * menuliskan hasilnya ke store lewat `robloxActions`.
  *
  * Ini "pemasang backend" yang dijanjikan `RobloxPage`: seluruh permukaan yang
  * dipakainya adalah `fileOf` + enam aksi lapor-balik. Tidak ada satu pun
  * komponen yang berubah untuk membuat ini bekerja.
  *
- * ## Satu per satu, bukan paralel
+ * ## Paralel terbatas, bukan tanpa batas
  *
- * Roblox membatasi unggahan audio per akun (10/bulan tanpa verifikasi ID,
- * 100/bulan dengan). Mengirim sepuluh berkas serempak tidak membuatnya lebih
- * cepat — yang dibatasi bukan bandwidth kami — tapi membuat 429 datang untuk
- * SEMUANYA sekaligus alih-alih untuk satu berkas yang bisa diulang. Berurutan
- * juga membuat progres berarti: satu bar yang bergerak, bukan sepuluh bar yang
- * masing-masing sepersepuluh kecepatan.
+ * Sepuluh adalah batas konkurensi, bukan jumlah total antrean. Slot hanya
+ * ditempati selama byte dikirim. Begitu Roblox memberi operationId, polling
+ * moderasi berjalan sendiri dan slot upload langsung dipakai berkas berikutnya.
  *
  * ## Moderasi ditunggu dengan jeda yang MELEBAR
  *
@@ -39,6 +37,8 @@ export interface RunnerOptions {
   readonly uploadAttempts?: number;
   /** Jeda awal retry upload; percobaan berikutnya memakai backoff 2x. */
   readonly uploadRetryMs?: number;
+  /** Jumlah pengiriman byte yang boleh aktif bersamaan. */
+  readonly maxConcurrentUploads?: number;
   /** Dipanggil setelah moderasi approved; kegagalan katalog tidak menggagalkan upload. */
   readonly onApproved?: (item: QueueItem, assetId: string, target: ReturnType<typeof robloxStore.getState>['target']) => Promise<void> | void;
 }
@@ -59,6 +59,7 @@ const DEFAULTS = {
   moderationTimeoutMs: 5 * 60_000,
   uploadAttempts: 3,
   uploadRetryMs: 750,
+  maxConcurrentUploads: 10,
 };
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -69,6 +70,10 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
   const moderationTimeoutMs = opts.moderationTimeoutMs ?? DEFAULTS.moderationTimeoutMs;
   const uploadAttempts = Math.max(1, opts.uploadAttempts ?? DEFAULTS.uploadAttempts);
   const uploadRetryMs = Math.max(0, opts.uploadRetryMs ?? DEFAULTS.uploadRetryMs);
+  const maxConcurrentUploads = Math.max(
+    1,
+    Math.floor(opts.maxConcurrentUploads ?? DEFAULTS.maxConcurrentUploads),
+  );
   const sleep = opts.sleep ?? wait;
   const now = opts.now ?? (() => Date.now());
 
@@ -85,8 +90,13 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
 
   async function drive(items: readonly QueueItem[]): Promise<void> {
     robloxActions.markQueued(items.map((it) => it.id));
+    const moderationJobs: Promise<void>[] = [];
+    let cursor = 0;
 
-    for (const item of items) {
+    async function uploadWorker(): Promise<void> {
+      for (;;) {
+        const item = items[cursor++];
+        if (item === undefined) return;
       // Target dibaca ULANG per berkas dari store, bukan ditangkap sekali di
       // awal: antrean panjang berjalan menit-menitan, dan kunci yang diganti
       // di tengah jalan harus berlaku untuk sisanya.
@@ -117,12 +127,23 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
         }
 
         robloxActions.markProcessing(item.id, started.operationId);
-        const assetId = await awaitModeration(started.operationId, target.apiKey);
-        await approved(item, assetId, target);
+        moderationJobs.push(
+          awaitModeration(started.operationId, target.apiKey)
+            .then((assetId) => approved(item, assetId, target))
+            .catch((err: unknown) => robloxActions.markFailed(item.id, messageOf(err))),
+        );
       } catch (err: unknown) {
         robloxActions.markFailed(item.id, messageOf(err));
       }
+      }
     }
+
+    const workers = Array.from(
+      { length: Math.min(maxConcurrentUploads, items.length) },
+      () => uploadWorker(),
+    );
+    await Promise.all(workers);
+    await Promise.all(moderationJobs);
   }
 
   async function uploadWithSafeRetry(

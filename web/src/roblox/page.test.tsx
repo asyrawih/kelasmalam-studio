@@ -142,7 +142,7 @@ describe('kunci saat berjalan', () => {
     expect((screen.getByLabelText('API key Open Cloud') as HTMLInputElement).disabled).toBe(true);
   });
 
-  it('baris dan antrean tidak bisa dihapus sementara unggahan berjalan', () => {
+  it('baris aktif tidak bisa dihapus sementara unggahan berjalan', () => {
     render(<RobloxPage />);
     drop([mp3('a.mp3')]);
     fromUploader(() => robloxActions.markUploading(robloxStore.getState().items[0]!.id));
@@ -151,5 +151,21 @@ describe('kunci saat berjalan', () => {
     expect(
       (screen.getByRole('button', { name: 'KOSONGKAN' }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it('baris yang masih ANTRE bisa dihapus saat baris lain sedang dimoderasi', () => {
+    render(<RobloxPage />);
+    drop([mp3('aktif.mp3'), mp3('menunggu.mp3')]);
+    const [aktif, menunggu] = robloxStore.getState().items;
+    fromUploader(() => {
+      robloxActions.markQueued([aktif!.id, menunggu!.id]);
+      robloxActions.markProcessing(aktif!.id, 'op-aktif');
+    });
+
+    expect((screen.getByLabelText('hapus aktif.mp3') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('hapus menunggu.mp3') as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByLabelText('hapus menunggu.mp3'));
+    expect(robloxStore.getState().items.map((it) => it.fileName)).toEqual(['aktif.mp3']);
   });
 });
