@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   isAudible,
@@ -54,13 +55,15 @@ function LaneSpeedControl({ lane }: { readonly lane: StudioLane }): JSX.Element 
   const [open, setOpen] = useState(false);
   const [manual, setManual] = useState(() => String(lane.speedRatio));
   const rootRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setManual(String(Number(lane.speedRatio.toFixed(3)))), [lane.speedRatio]);
 
   useEffect(() => {
     if (!open) return;
     const closeOutside = (e: PointerEvent): void => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!rootRef.current?.contains(target) && !dialogRef.current?.contains(target)) setOpen(false);
     };
     const closeEscape = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setOpen(false);
@@ -103,17 +106,20 @@ function LaneSpeedControl({ lane }: { readonly lane: StudioLane }): JSX.Element 
         {formatLaneSpeed(lane.speedRatio)}
       </button>
 
-      {open ? (
+      {open ? createPortal(
         <div
+          ref={dialogRef}
           role="dialog"
           aria-label={`atur kecepatan ${lane.name}`}
           onPointerDown={(e) => e.stopPropagation()}
           style={{
-            position: 'absolute',
-            zIndex: 30,
-            left: 0,
-            top: '24px',
+            position: 'fixed',
+            zIndex: 100,
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
             width: '246px',
+            maxWidth: 'calc(100vw - 32px)',
             padding: '14px',
             border: '1px solid var(--cy-accent)',
             background: 'var(--cy-surface-1)',
@@ -166,7 +172,8 @@ function LaneSpeedControl({ lane }: { readonly lane: StudioLane }): JSX.Element 
           <p style={{ margin: '10px 0 0', fontSize: '8px', lineHeight: 1.5, color: 'var(--cy-text-muted)' }}>
             VARISPEED — SPEED DAN PITCH BERUBAH BERSAMA.
           </p>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

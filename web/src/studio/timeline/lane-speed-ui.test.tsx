@@ -13,7 +13,11 @@ describe('popup speed lane', () => {
     const lane = studioStore.getState().lanes[0]!;
     fireEvent.click(screen.getByRole('button', { name: `kecepatan lane ${lane.name}` }));
 
-    expect(screen.getByRole('dialog', { name: `atur kecepatan ${lane.name}` })).toBeTruthy();
+    const dialog = screen.getByRole('dialog', { name: `atur kecepatan ${lane.name}` });
+    expect(dialog).toBeTruthy();
+    expect(dialog.style.position).toBe('fixed');
+    expect(dialog.style.left).toBe('50%');
+    expect(dialog.style.top).toBe('50%');
     expect(screen.getByRole('textbox', { name: `speed manual ${lane.name}` })).toBeTruthy();
     expect(screen.getByRole('slider', { name: `slider speed ${lane.name}` })).toBeTruthy();
   });
