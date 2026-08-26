@@ -408,6 +408,8 @@ function ClipView({
   return (
     <div
       data-clip={clip.id}
+      data-selected={selected ? 'true' : 'false'}
+      data-primary={primary ? 'true' : 'false'}
       title={clip.label}
       onPointerDown={(e) => onPointerDown(e, clip)}
       style={{
@@ -420,11 +422,14 @@ function ClipView({
         // Tiga keadaan, bukan dua: tidak terpilih, ikut terpilih, dan PRIMER.
         // Tanpa pembedaan itu, user tidak bisa tahu clip mana yang sedang
         // diedit Clip Detail saat empat clip tersorot serentak.
-        border: `1px solid ${primary ? '#ffffff' : selected ? 'var(--cy-accent)' : lane.color}`,
+        // Semua anggota selection harus terbaca sebagai satu kelompok. Warna
+        // aksen sebelumnya menyatu dengan lane kuning sehingga yang tampak
+        // terpilih hanya clip primer yang putih.
+        border: `1px solid ${selected ? '#ffffff' : lane.color}`,
         boxShadow: primary
           ? '0 0 12px #ffd40080'
           : selected
-            ? 'inset 0 0 0 1px #ffd40040'
+            ? 'inset 0 0 0 1px #ffffff55'
             : 'none',
         cursor: 'grab',
         overflow: 'hidden',

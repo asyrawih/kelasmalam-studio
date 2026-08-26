@@ -110,6 +110,20 @@ describe('kotak seleksi', () => {
     expect(document.querySelector('[data-marquee]')).toBeNull();
   });
 
+  it('semua clip hasil kotak seleksi mendapat border putih', () => {
+    render(<Harness />);
+    const el = scroller();
+    fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: pxAt(5), clientY: laneH() * 2 - 4 });
+
+    const selected = document.querySelectorAll('[data-selected="true"]');
+    expect(selected).toHaveLength(2);
+    for (const item of selected) {
+      expect((item as HTMLElement).style.border).toContain('rgb(255, 255, 255)');
+    }
+    expect(document.querySelectorAll('[data-primary="true"]')).toHaveLength(1);
+  });
+
   it('kotak hanya menyentuh lane pertama tidak ikut memilih lane kedua', () => {
     render(<Harness />);
     const el = scroller();
