@@ -21,8 +21,14 @@ import {
   type ExportAssetSource,
   type ExportPayload,
 } from '../export/payload';
-import { ExportCancelled, runExport, type ExportEncoder } from '../export/run-export';
+import {
+  ExportCancelled,
+  runExport,
+  type ExportEncoder,
+  type ExportResult,
+} from '../export/run-export';
 import { BlobSink, FileSystemSink, type ExportSink } from '../export/sinks';
+import type { LoudnessAnalysis } from '../export/loudness-analyzer';
 import {
   ExportWorkerUnavailable,
   canRunExportInWorker,
@@ -238,6 +244,45 @@ export interface CompileParams {
   onWarnings?: (warnings: readonly string[]) => void;
   /** Dicek sekali per batch. */
   isCancelled?: () => boolean;
+  /** Hasil master sesudah gain koreksi, sebelum encode. */
+  onAnalysis?: (analysis: LoudnessAnalysis) => void;
+  /** Gain hasil tombol FIX & EXPORT. */
+  gainDb?: number;
+}
+
+export interface AnalyzeCompileParams {
+  onProgress?: (fraction01: number | null) => void;
+  onWarnings?: (warnings: readonly string[]) => void;
+  isCancelled?: () => boolean;
+}
+
+/**
+ * Render analysis pass tanpa membuat file. Hasilnya dipakai dialog keputusan,
+ * sehingga file picker dan encoder baru berjalan setelah user memilih.
+ */
+export async function analyzeCompile(p: AnalyzeCompileParams = {}): Promise<LoudnessAnalysis> {
+  if (!host) throw new Error(NO_HOST);
+  const state = host.state();
+  const { payload, pcm } = buildExportPayload(state, host.getBuffer);
+  if (payload.endSample <= 0 || payload.assets.length === 0) {
+    throw new Error('Tidak ada clip dengan audio untuk dianalisis.');
+  }
+
+  p.onProgress?.(0);
+  try {
+    const result = await renderAnalysis({
+      payload,
+      pcm,
+      sampleRate: state.sampleRate,
+      onProgress: p.onProgress,
+      onWarnings: p.onWarnings,
+      isCancelled: p.isCancelled,
+    });
+    if (result.analysis === null) throw new Error('Analyzer tidak menghasilkan laporan.');
+    return result.analysis;
+  } finally {
+    p.onProgress?.(null);
+  }
 }
 
 /**
@@ -276,7 +321,7 @@ export async function runCompile(p: CompileParams): Promise<void> {
   const sink: ExportSink = blobSink ?? (await FileSystemSink.create(fileHandle!));
 
   try {
-    await render({
+    const result = await render({
       payload,
       pcm,
       sink,
@@ -287,7 +332,10 @@ export async function runCompile(p: CompileParams): Promise<void> {
       onProgress: p.onProgress,
       onWarnings: p.onWarnings,
       isCancelled: p.isCancelled,
+      analyze: true,
+      gainDb: p.gainDb,
     });
+    if (result.analysis !== null) p.onAnalysis?.(result.analysis);
     // Jalur mana pun sudah memanggil `sink.abort()` kalau gagal/dibatalkan,
     // jadi di sini kita hanya sampai kalau berkasnya memang lengkap.
     if (blobSink) downloadBlob(blobSink.takeBlob(mime), fileName);
@@ -311,6 +359,8 @@ interface RenderParams {
   onProgress?: (fraction01: number | null) => void;
   onWarnings?: (warnings: readonly string[]) => void;
   isCancelled?: () => boolean;
+  analyze?: boolean;
+  gainDb?: number;
 }
 
 /**
@@ -327,10 +377,10 @@ interface RenderParams {
  * tidak bisa hidup di worker). Sesudah byte pertama, mengulang berarti berkas
  * berisi dua export yang disambung.
  */
-async function render(r: RenderParams): Promise<void> {
+async function render(r: RenderParams): Promise<ExportResult> {
   if (canRunExportInWorker()) {
     try {
-      await runExportInWorker({
+      return await runExportInWorker({
         payload: r.payload,
         pcm: r.pcm,
         sink: r.sink,
@@ -341,8 +391,9 @@ async function render(r: RenderParams): Promise<void> {
         onProgress: r.onProgress,
         onWarnings: r.onWarnings,
         isCancelled: r.isCancelled,
+        analyze: r.analyze,
+        gainDb: r.gainDb,
       });
-      return;
     } catch (e: unknown) {
       if (!(e instanceof ExportWorkerUnavailable)) throw e;
       // Jangan ditelan: jalur cadangan bekerja, tapi ia meninggalkan memori
@@ -351,7 +402,7 @@ async function render(r: RenderParams): Promise<void> {
       console.warn('[export] worker export tidak bisa dipakai, jatuh ke main thread:', e);
     }
   }
-  await renderOnMainThread(r);
+  return renderOnMainThread(r);
 }
 
 /**
@@ -359,7 +410,7 @@ async function render(r: RenderParams): Promise<void> {
  * dipakai sisa aplikasi. Berfungsi penuh — hanya saja memori yang ditumbuhkan
  * export tidak pernah kembali sampai tab di-reload.
  */
-async function renderOnMainThread(r: RenderParams): Promise<void> {
+async function renderOnMainThread(r: RenderParams): Promise<ExportResult> {
   const wasm = wasmCache ?? (await loadWasm());
   wasmCache = wasm;
 
@@ -382,13 +433,81 @@ async function renderOnMainThread(r: RenderParams): Promise<void> {
     throw e;
   }
 
-  await runExport({
+  return runExport({
     payload: r.payload,
     sampleRate: r.sampleRate,
     engine: createWasmExportEngine(wasm),
     encoder,
     sink: r.sink,
     pcm: r.pcm,
+    onProgress: r.onProgress,
+    onWarnings: r.onWarnings,
+    isCancelled: r.isCancelled,
+    analyze: r.analyze,
+    gainDb: r.gainDb,
+  });
+}
+
+interface AnalysisRenderParams {
+  payload: ExportPayload;
+  pcm: ExportAssetSource;
+  sampleRate: number;
+  onProgress?: (fraction01: number | null) => void;
+  onWarnings?: (warnings: readonly string[]) => void;
+  isCancelled?: () => boolean;
+}
+
+const nullSink: ExportSink = {
+  header() {},
+  chunk() {},
+  patchHeader() {},
+  close() {},
+  abort() {},
+};
+
+const analysisEncoder = (): ExportEncoder => ({
+  mime: 'application/x-analysis',
+  async init(): Promise<void> {},
+  encode(): Uint8Array {
+    return new Uint8Array(0);
+  },
+  finish(): Uint8Array {
+    return new Uint8Array(0);
+  },
+});
+
+async function renderAnalysis(r: AnalysisRenderParams): Promise<ExportResult> {
+  if (canRunExportInWorker()) {
+    try {
+      return await runExportInWorker({
+        payload: r.payload,
+        pcm: r.pcm,
+        sink: nullSink,
+        sampleRate: r.sampleRate,
+        format: 'wav',
+        bitDepth: 16,
+        analyze: true,
+        analysisOnly: true,
+        onProgress: r.onProgress,
+        onWarnings: r.onWarnings,
+        isCancelled: r.isCancelled,
+      });
+    } catch (e: unknown) {
+      if (!(e instanceof ExportWorkerUnavailable)) throw e;
+      console.warn('[analysis] worker tidak bisa dipakai, jatuh ke main thread:', e);
+    }
+  }
+
+  const wasm = wasmCache ?? (await loadWasm());
+  wasmCache = wasm;
+  return runExport({
+    payload: r.payload,
+    pcm: r.pcm,
+    sink: nullSink,
+    sampleRate: r.sampleRate,
+    engine: createWasmExportEngine(wasm),
+    encoder: analysisEncoder(),
+    analyze: true,
     onProgress: r.onProgress,
     onWarnings: r.onWarnings,
     isCancelled: r.isCancelled,

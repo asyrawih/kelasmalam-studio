@@ -187,7 +187,25 @@ describe('sel BPM', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(studioStore.getState().assets[70]!.bpmOverride).toBe(126.5);
+    expect(studioStore.getState().assets[70]!.analysisLock).toBe(true);
     expect(screen.getByText('126.5')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Buka kunci BPM' })).toBeTruthy();
+  });
+
+  it('BPM yang sudah dikunci tidak bisa diedit sampai kuncinya dibuka', () => {
+    const laneId = studioStore.getState().lanes[0]!.id;
+    studioActions.registerAsset({ ...asset(74, 111, 0.8), bpmOverride: 126, analysisLock: true });
+    studioActions.addClip(laneId, clip('locked-bpm', 74));
+    studioActions.setPlayhead(5 * SR);
+
+    render(<BpmCell />);
+    fireEvent.doubleClick(screen.getByText('126.0'));
+    expect(screen.queryByRole('textbox', { name: 'BPM clip' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buka kunci BPM' }));
+    expect(studioStore.getState().assets[74]!.analysisLock).toBe(false);
+    fireEvent.doubleClick(screen.getByText('126.0'));
+    expect(screen.getByRole('textbox', { name: 'BPM clip' })).toBeTruthy();
   });
 
   it('Escape membatalkan edit BPM', () => {

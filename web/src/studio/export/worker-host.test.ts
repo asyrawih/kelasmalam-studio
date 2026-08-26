@@ -108,7 +108,7 @@ describe('runExportInWorker', () => {
     const result = await done;
     await settle();
 
-    expect(result).toEqual({ warnings: [], frames: 8 });
+    expect(result).toEqual({ warnings: [], frames: 8, analysis: null });
     expect([...sink.bytes()]).toEqual([9, 9, 9, 9, 2, 2, 3, 3]);
     expect(w.terminated).toBe(1);
   });

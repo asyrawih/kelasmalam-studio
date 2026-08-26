@@ -27,6 +27,7 @@
 import type { ExportAssetInfo, ExportAssetSource, ExportPayload } from './payload';
 import { ExportCancelled, type ExportResult } from './run-export';
 import type { ExportSink } from './sinks';
+import type { LoudnessAnalysis } from './loudness-analyzer';
 
 /**
  * Worker tidak bisa dipakai — dan **belum satu byte pun ditulis** ke sink.
@@ -51,6 +52,9 @@ export interface WorkerExportOptions {
   readonly format: 'wav' | 'flac' | 'mp3' | 'ogg';
   readonly bitDepth: 16 | 24 | 32;
   readonly quality?: number;
+  readonly analyze?: boolean;
+  readonly analysisOnly?: boolean;
+  readonly gainDb?: number;
   /** Tujuan byte-nya. Main thread yang memilikinya, bukan worker. */
   readonly sink: ExportSink;
   readonly onProgress?: (fraction01: number) => void;
@@ -80,7 +84,7 @@ type FromWorker =
   | { type: 'patch-header'; buffer: ArrayBuffer }
   | { type: 'progress'; fraction01: number }
   | { type: 'warnings'; warnings: string[] }
-  | { type: 'done'; mime: string; frames: number; warnings: string[] }
+  | { type: 'done'; mime: string; frames: number; warnings: string[]; analysis?: LoudnessAnalysis | null }
   | { type: 'cancelled' }
   | { type: 'error'; message: string };
 
@@ -195,7 +199,7 @@ export async function runExportInWorker(o: WorkerExportOptions): Promise<ExportR
               await enqueue(() => o.sink.close());
               if (!settled) {
                 settled = true;
-                resolve({ warnings: m.warnings, frames: m.frames });
+                resolve({ warnings: m.warnings, frames: m.frames, analysis: m.analysis ?? null });
               }
               return;
             case 'cancelled':
@@ -229,6 +233,9 @@ export async function runExportInWorker(o: WorkerExportOptions): Promise<ExportR
         format: o.format,
         bitDepth: o.bitDepth,
         quality: o.quality,
+        analyze: o.analyze,
+        analysisOnly: o.analysisOnly,
+        gainDb: o.gainDb,
       });
     });
   } finally {

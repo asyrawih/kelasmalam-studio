@@ -117,6 +117,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
         : '—';
 
   const asset = activeAssetId === null ? undefined : assets[activeAssetId];
+  const locked = asset?.analysisLock === true;
   const shifted = asset !== undefined && asset.tempoOctave !== 0;
   const title =
     tempo.primary === null
@@ -134,7 +135,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
   useEffect(() => setEditing(false), [activeAssetId]);
 
   const beginEdit = (): void => {
-    if (activeAssetId === null || tempo.primary === null) return;
+    if (activeAssetId === null || tempo.primary === null || locked) return;
     setDraft(tempo.primary.sourceBpm.toFixed(2).replace(/\.00$/, ''));
     setEditing(true);
   };
@@ -142,7 +143,13 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
   const commitEdit = (): void => {
     if (!editing || activeAssetId === null) return;
     const bpm = Number(draft.replace(',', '.'));
-    if (Number.isFinite(bpm)) studioActions.setAssetBeatGrid(activeAssetId, { bpm });
+    if (Number.isFinite(bpm)) {
+      // Angka yang diketik adalah keputusan manual. Simpan override dahulu,
+      // baru kunci asset; urutan sebaliknya akan membuat setter grid menolak
+      // angka tersebut karena analysisLock memang melindungi semua edit grid.
+      studioActions.setAssetBeatGrid(activeAssetId, { bpm });
+      studioActions.setAnalysisLock(activeAssetId, true);
+    }
     setEditing(false);
   };
 
@@ -208,13 +215,19 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
         ) : (
           <span
             onDoubleClick={beginEdit}
-            title={activeAssetId === null ? undefined : 'Double-click untuk mengubah BPM clip'}
+            title={
+              activeAssetId === null
+                ? undefined
+                : locked
+                  ? 'BPM terkunci — buka kunci sebelum mengubahnya'
+                  : 'Double-click untuk mengubah BPM clip'
+            }
             style={{
               fontFamily: 'var(--cy-font-sans)',
               fontSize: '19px',
               fontWeight: 600,
               color: uncertain ? 'var(--cy-text-dim)' : 'var(--cy-accent)',
-              cursor: activeAssetId === null ? 'default' : 'text',
+              cursor: activeAssetId === null ? 'default' : locked ? 'not-allowed' : 'text',
               userSelect: 'none',
             }}
           >
@@ -227,6 +240,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
               <button
                 key={d}
                 type="button"
+                disabled={locked}
                 title={
                   d > 0
                     ? 'Gandakan BPM — oktaf tempo memang ambigu; 85 dan 170 sama sahnya.'
@@ -241,13 +255,39 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
                   background: 'transparent',
                   color: 'var(--cy-text-muted)',
                   border: '1px solid var(--cy-border)',
-                  cursor: 'pointer',
+                  cursor: locked ? 'not-allowed' : 'pointer',
+                  opacity: locked ? 0.4 : 1,
                 }}
               >
                 {d > 0 ? '×2' : '÷2'}
               </button>
             ))}
           </span>
+        ) : null}
+        {activeAssetId !== null && tempo.primary !== null ? (
+          <button
+            type="button"
+            aria-label={locked ? 'Buka kunci BPM' : 'Kunci BPM'}
+            aria-pressed={locked}
+            title={
+              locked
+                ? 'BPM terkunci: buka kunci untuk mengedit atau memakai ×2/÷2'
+                : 'Kunci BPM agar koreksi manual terlindungi dari perubahan grid'
+            }
+            onClick={() => studioActions.setAnalysisLock(activeAssetId, !locked)}
+            style={{
+              fontFamily: 'var(--cy-font-mono)',
+              fontSize: '10px',
+              lineHeight: 1,
+              padding: '3px 4px',
+              background: locked ? 'var(--cy-accent)' : 'transparent',
+              color: locked ? 'var(--cy-text-on-accent)' : 'var(--cy-text-muted)',
+              border: `1px solid ${locked ? 'var(--cy-accent)' : 'var(--cy-border)'}`,
+              cursor: 'pointer',
+            }}
+          >
+            {locked ? '🔒' : '🔓'}
+          </button>
         ) : null}
         {sync !== null ? (
           <span style={{ display: 'flex', gap: '2px' }}>

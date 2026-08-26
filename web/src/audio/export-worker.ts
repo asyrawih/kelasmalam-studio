@@ -59,6 +59,9 @@ export interface ExportWorkerStart {
   format: 'wav' | 'flac' | 'mp3' | 'ogg';
   bitDepth: 16 | 24 | 32;
   quality?: number;
+  analyze?: boolean;
+  analysisOnly?: boolean;
+  gainDb?: number;
 }
 
 /** Jawaban main thread atas satu `pcm-request`. */
@@ -167,7 +170,9 @@ async function run(m: ExportWorkerStart): Promise<void> {
     controlPtr: 0,
   } as LoadedWasm;
 
-  const encoder = createEncoder(m.format, glue) as unknown as ExportEncoder;
+  const encoder = m.analysisOnly === true
+    ? analysisEncoder()
+    : (createEncoder(m.format, glue) as unknown as ExportEncoder);
   await encoder.init?.({
     sampleRate: m.sampleRate,
     channels: 2,
@@ -204,6 +209,8 @@ async function run(m: ExportWorkerStart): Promise<void> {
     isCancelled: () => cancelled,
     onWarnings: (warnings) => post({ type: 'warnings', warnings: [...warnings] }),
     onProgress: (fraction01) => post({ type: 'progress', fraction01 }),
+    analyze: m.analyze,
+    gainDb: m.gainDb,
   });
 
   // Byte-nya sudah di sisi main thread; yang tersisa hanya kabar bahwa aliran
@@ -213,7 +220,22 @@ async function run(m: ExportWorkerStart): Promise<void> {
     mime: encoder.mime,
     frames: result.frames,
     warnings: [...result.warnings],
+    analysis: result.analysis,
   });
+}
+
+/** Encoder kosong untuk analysis pass: render berjalan identik tanpa byte file. */
+function analysisEncoder(): ExportEncoder {
+  return {
+    mime: 'application/x-analysis',
+    async init(): Promise<void> {},
+    encode(): Uint8Array {
+      return new Uint8Array(0);
+    },
+    finish(): Uint8Array {
+      return new Uint8Array(0);
+    },
+  };
 }
 
 function post(msg: unknown): void {

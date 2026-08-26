@@ -17,6 +17,7 @@ import {
   runExport,
   type ExportEncoder,
   type ExportEngine,
+  type ExportResult,
   type RenderHandle,
 } from './run-export';
 import { BlobSink } from './sinks';
@@ -30,7 +31,7 @@ import type { StudioState } from '../model';
  */
 async function runToBytes(
   opts: Omit<Parameters<typeof runExport>[0], 'sink' | 'pcm'> & { pcm?: ExportAssetSource },
-): Promise<{ warnings: readonly string[]; frames: number; bytes: Uint8Array; blob: Blob }> {
+): Promise<ExportResult & { bytes: Uint8Array; blob: Blob }> {
   const sink = new BlobSink();
   const r = await runExport({ pcm: fakePcm(), ...opts, sink });
   return { ...r, bytes: sink.bytes(), blob: sink.blob(opts.encoder.mime) };
@@ -307,6 +308,25 @@ describe('runExport', () => {
     });
     expect(r.warnings).toEqual([]);
     expect(onWarnings).not.toHaveBeenCalled();
+  });
+
+  it('analyzer membaca master sesudah gain koreksi dan sebelum encoder', async () => {
+    const f = fakeEngine({ batches: 4 });
+    const enc = fakeEncoder();
+    const r = await runToBytes({
+      payload: payload(),
+      sampleRate: 48_000,
+      engine: f.engine,
+      encoder: enc,
+      analyze: true,
+      gainDb: -6.020599913,
+      yieldToEventLoop: noYield,
+    });
+
+    expect(r.analysis).not.toBeNull();
+    expect(r.analysis!.frames).toBe(r.frames);
+    // Fake engine mengisi 1000; sesudah -6.02 dB encoder harus melihat 500.
+    expect(enc.seen[0]![0]![0]).toBeCloseTo(500, 3);
   });
 });
 

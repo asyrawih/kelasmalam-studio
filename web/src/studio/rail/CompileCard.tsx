@@ -6,10 +6,23 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
+import { createPortal } from 'react-dom';
 import { Card, ProgressBar } from '../../ui/cyber';
 import { formatTime, isAudible, type ExportFormat, type StudioState } from '../model';
 import { hasRenderableAudio } from '../preview/audio-preview';
-import { resolveExportName, runCompile, useExportAvailability } from './export-bridge';
+import {
+  assessRobloxSafe,
+  ROBLOX_SAFE_MAX_TRUE_PEAK_DBTP,
+  ROBLOX_SAFE_TARGET_LUFS,
+  type LoudnessAnalysis,
+  type RobloxSafeStatus,
+} from '../export/loudness-analyzer';
+import {
+  analyzeCompile,
+  resolveExportName,
+  runCompile,
+  useExportAvailability,
+} from './export-bridge';
 import { studioActions, useStudio } from './store-adapter';
 
 const FORMATS: readonly ExportFormat[] = ['AUTO', 'WAV', 'FLAC', 'MP3', 'OGG'];
@@ -286,6 +299,157 @@ function StatRow({ k, v, accent }: { k: string; v: string; accent?: boolean }): 
   );
 }
 
+const STATUS_COLOR: Record<RobloxSafeStatus, string> = {
+  pass: '#54e38e',
+  warning: '#ffb020',
+  fail: '#ff4d4d',
+};
+
+const metric = (n: number | null, suffix: string): string =>
+  n === null ? '—' : `${n.toFixed(1)} ${suffix}`;
+
+function AnalysisRows({ analysis }: { analysis: LoudnessAnalysis }): JSX.Element {
+  const assessment = assessRobloxSafe(analysis);
+  const rows: readonly [string, string, RobloxSafeStatus][] = [
+    ['Integrated', metric(analysis.integratedLufs, 'LUFS'), assessment.loudness],
+    ['True peak', metric(analysis.truePeakDbtp, 'dBTP'), assessment.truePeak],
+    ['Sample clipping', `${analysis.clippedSamples} sample`, assessment.clipping],
+    ['Crest factor', metric(analysis.crestFactorDb, 'dB'), assessment.dynamics],
+  ];
+  return (
+    <div style={{ display: 'grid', borderTop: '1px solid var(--cy-border)' }}>
+      {rows.map(([label, value, status]) => (
+        <div
+          key={label}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr auto auto',
+            alignItems: 'center',
+            gap: '12px',
+            minHeight: '34px',
+            borderBottom: '1px solid var(--cy-border)',
+            fontFamily: 'var(--cy-font-mono)',
+            fontSize: '10px',
+          }}
+        >
+          <span style={{ color: 'var(--cy-text-dim)' }}>{label}</span>
+          <span style={{ color: 'var(--cy-text)' }}>{value}</span>
+          <span style={{ color: STATUS_COLOR[status], minWidth: '52px', textAlign: 'right' }}>
+            {status.toUpperCase()}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function AnalyzerDialog({
+  analysis,
+  onFix,
+  onAnyway,
+  onCancel,
+}: {
+  analysis: LoudnessAnalysis;
+  onFix: (gainDb: number) => void;
+  onAnyway: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const assessment = assessRobloxSafe(analysis);
+  const gain = assessment.recommendedGainDb;
+  const adjustment = Math.abs(gain) < 0.05 ? 'tanpa perubahan gain' : `${gain > 0 ? '+' : ''}${gain.toFixed(1)} dB`;
+
+  return createPortal(
+    <div
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        display: 'grid',
+        placeItems: 'center',
+        padding: '20px',
+        background: 'rgba(0,0,0,.72)',
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Roblox Safe Audio Analyzer"
+        style={{
+          width: 'min(520px, calc(100vw - 32px))',
+          border: '1px solid var(--cy-accent)',
+          background: 'var(--cy-surface-1)',
+          boxShadow: '0 18px 80px rgba(0,0,0,.65)',
+          padding: '18px',
+          clipPath:
+            'polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)',
+        }}
+      >
+        <div style={{ fontSize: '10px', letterSpacing: '.2em', color: 'var(--cy-accent)' }}>
+          ROBLOX SAFE AUDIO ANALYZER
+        </div>
+        <div style={{ marginTop: '7px', fontSize: '18px', color: 'var(--cy-text)' }}>
+          {assessment.safe ? 'MASTER SUDAH AMAN' : 'MASTER PERLU DISESUAIKAN'}
+        </div>
+        <div style={{ margin: '8px 0 14px', fontSize: '10px', lineHeight: 1.6, color: 'var(--cy-text-dim)' }}>
+          Target produk: {ROBLOX_SAFE_TARGET_LUFS} LUFS integrated, true peak maksimal{' '}
+          {ROBLOX_SAFE_MAX_TRUE_PEAK_DBTP} dBTP, dan nol sample clipping. Ini preset konservatif,
+          bukan batas moderasi resmi Roblox.
+        </div>
+
+        <AnalysisRows analysis={analysis} />
+
+        <div
+          style={{
+            marginTop: '12px',
+            padding: '9px',
+            border: '1px solid var(--cy-border)',
+            fontFamily: 'var(--cy-font-mono)',
+            fontSize: '10px',
+            lineHeight: 1.55,
+            color: 'var(--cy-text-dim)',
+          }}
+        >
+          FIX memakai {adjustment}. Gain dibatasi oleh headroom true peak; audio tidak dipaksa ke
+          −16 LUFS kalau itu akan melewati −2 dBTP. Distorsi yang sudah tercetak tidak bisa dipulihkan
+          hanya dengan menurunkan volume.
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '7px', marginTop: '16px', flexWrap: 'wrap' }}>
+          <button type="button" className="cy-btn-reset" onClick={onCancel} style={dialogButton(false)}>
+            CANCEL
+          </button>
+          {!assessment.safe ? (
+            <button type="button" className="cy-btn-reset" onClick={onAnyway} style={dialogButton(false)}>
+              EXPORT ANYWAY
+            </button>
+          ) : null}
+          <button type="button" className="cy-btn-reset" onClick={() => onFix(gain)} style={dialogButton(true)}>
+            {assessment.safe ? 'EXPORT' : 'FIX & EXPORT'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function dialogButton(primary: boolean): React.CSSProperties {
+  return {
+    height: '32px',
+    padding: '0 13px',
+    border: `1px solid ${primary ? 'var(--cy-accent)' : 'var(--cy-border)'}`,
+    background: primary ? 'var(--cy-accent)' : 'transparent',
+    color: primary ? 'var(--cy-text-on-accent)' : 'var(--cy-text-dim)',
+    fontFamily: 'var(--cy-font-mono)',
+    fontSize: '10px',
+    cursor: 'pointer',
+  };
+}
+
 export function CompileCard(): JSX.Element {
   // Stats butuh banyak irisan sekaligus; berlangganan seluruh state di SATU
   // tempat (referensinya stabil — store menyimpan objek itu sendiri).
@@ -307,6 +471,9 @@ export function CompileCard(): JSX.Element {
   // SELALU kalau ada — export yang diam-diam berbeda dari preview adalah bug
   // yang paling mahal untuk ditemukan user sendiri (docs/03).
   const [warnings, setWarnings] = useState<readonly string[]>([]);
+  const [analysis, setAnalysis] = useState<LoudnessAnalysis | null>(null);
+  const [finalAnalysis, setFinalAnalysis] = useState<LoudnessAnalysis | null>(null);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
   // Ref, bukan state: pembatalan dibaca dari dalam loop render yang sedang
   // berjalan, dan nilai dari closure state akan selamanya `false` di sana.
   const cancelRef = useRef(false);
@@ -329,6 +496,50 @@ export function CompileCard(): JSX.Element {
         : exporting
           ? 'Export sedang berjalan.'
           : 'Render semua lane jadi satu file dan unduh.';
+
+  const exportWithGain = (gainDb: number): void => {
+    setAnalysisOpen(false);
+    setError(null);
+    setFinalAnalysis(null);
+    cancelRef.current = false;
+    studioActions.setExportProgress(0);
+    void runCompile({
+      format: fmt.toLowerCase() as 'wav' | 'flac' | 'mp3' | 'ogg',
+      fileName: state.exportFileName,
+      bitDepth: wavBits,
+      quality: lossyQuality,
+      gainDb,
+      onProgress: studioActions.setExportProgress,
+      onWarnings: setWarnings,
+      onAnalysis: setFinalAnalysis,
+      isCancelled: () => cancelRef.current,
+    }).catch((e: unknown) => {
+      studioActions.setExportProgress(null);
+      setError(e instanceof Error ? e.message : String(e));
+    });
+  };
+
+  const startAnalysis = (): void => {
+    setError(null);
+    setWarnings([]);
+    setAnalysis(null);
+    setFinalAnalysis(null);
+    cancelRef.current = false;
+    studioActions.setExportProgress(0);
+    void analyzeCompile({
+      onProgress: studioActions.setExportProgress,
+      onWarnings: setWarnings,
+      isCancelled: () => cancelRef.current,
+    })
+      .then((report) => {
+        setAnalysis(report);
+        setAnalysisOpen(true);
+      })
+      .catch((e: unknown) => {
+        studioActions.setExportProgress(null);
+        setError(e instanceof Error ? e.message : String(e));
+      });
+  };
 
   return (
     <Card title="Compile" subtitle="semua lane → satu file" notched>
@@ -422,27 +633,7 @@ export function CompileCard(): JSX.Element {
           className="cy-btn-reset cy-hover-accent-bg"
           disabled={disabled}
           title={reason}
-          onClick={() => {
-            setError(null);
-            setWarnings([]);
-            cancelRef.current = false;
-            studioActions.setExportProgress(0);
-            void runCompile({
-              format: fmt.toLowerCase() as 'wav' | 'flac' | 'mp3' | 'ogg',
-              // Mentah: pembersihan dan fallback ke nama project dikerjakan
-              // `runCompile` supaya nama yang ditawarkan picker sama persis
-              // dengan yang ditampilkan kartu ini.
-              fileName: state.exportFileName,
-              bitDepth: wavBits,
-              quality: lossyQuality,
-              onProgress: studioActions.setExportProgress,
-              onWarnings: setWarnings,
-              isCancelled: () => cancelRef.current,
-            }).catch((e: unknown) => {
-              studioActions.setExportProgress(null);
-              setError(e instanceof Error ? e.message : String(e));
-            });
-          }}
+          onClick={startAnalysis}
           style={{
             width: '100%',
             height: '40px',
@@ -458,8 +649,17 @@ export function CompileCard(): JSX.Element {
               'polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)',
           }}
         >
-          ↓ COMPILE + DOWNLOAD
+          ↓ ANALYZE + EXPORT
         </button>
+
+        {analysisOpen && analysis !== null ? (
+          <AnalyzerDialog
+            analysis={analysis}
+            onFix={exportWithGain}
+            onAnyway={() => exportWithGain(0)}
+            onCancel={() => setAnalysisOpen(false)}
+          />
+        ) : null}
 
         {exporting ? (
           <button
@@ -501,6 +701,19 @@ export function CompileCard(): JSX.Element {
             {warnings.map((w) => (
               <div key={w}>· {w}</div>
             ))}
+          </div>
+        ) : null}
+
+        {finalAnalysis !== null ? (
+          <div
+            role="status"
+            aria-label="Hasil final Roblox Safe"
+            style={{ border: '1px solid var(--cy-border)', padding: '8px' }}
+          >
+            <div style={{ marginBottom: '7px', fontSize: '9px', letterSpacing: '.14em', color: 'var(--cy-accent)' }}>
+              MASTER FINAL · POST-GAIN / PRE-ENCODE
+            </div>
+            <AnalysisRows analysis={finalAnalysis} />
           </div>
         ) : null}
 

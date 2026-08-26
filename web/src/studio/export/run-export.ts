@@ -21,6 +21,11 @@ import {
   type ExportPayload,
 } from './payload';
 import type { ExportSink } from './sinks';
+import {
+  LoudnessAnalyzer,
+  applyGain,
+  type LoudnessAnalysis,
+} from './loudness-analyzer';
 
 /** 100 blok × 128 frame ≈ 267 ms audio @48k (docs/03 §3a). */
 export const BLOCKS_PER_BATCH = 100;
@@ -120,11 +125,16 @@ export interface RunExportOptions {
   readonly isCancelled?: () => boolean;
   /** Beri napas ke event loop supaya UI dan tombol batal tetap hidup. */
   readonly yieldToEventLoop?: () => Promise<void>;
+  /** Analisis master POST-gain, PRE-encode. Streaming; tidak menahan PCM penuh. */
+  readonly analyze?: boolean;
+  /** Gain koreksi Roblox Safe yang diterapkan sebelum analyzer dan encoder. */
+  readonly gainDb?: number;
 }
 
 export interface ExportResult {
   readonly warnings: readonly string[];
   readonly frames: number;
+  readonly analysis: LoudnessAnalysis | null;
 }
 
 /** Dilempar saat user membatalkan — dibedakan supaya UI tidak menampilkannya
@@ -158,6 +168,7 @@ export function defaultYield(): Promise<void> {
 export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
   const { payload, engine, encoder, sampleRate, sink, pcm } = opts;
   const yieldFn = opts.yieldToEventLoop ?? defaultYield;
+  const analyzer = opts.analyze === true ? new LoudnessAnalyzer(sampleRate) : null;
 
   const snap = engine.snapshot(payload.json);
   // Cursor engine mengalikan laju clip dengan asset-rate/project-rate, jadi
@@ -221,6 +232,11 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
       const l = engine.view(render.outLPtr(), n);
       const r = engine.view(render.outRPtr(), n);
 
+      // Koreksi dikerjakan pada MASTER hasil render, bukan pada asset sumber:
+      // yang diukur dan yang masuk encoder adalah sinyal yang sama persis.
+      applyGain([l, r], opts.gainDb ?? 0);
+      analyzer?.push(l, r);
+
       const bytes = encoder.encode([l, r]);
       // Tidak ada `slice()` di sini. Glue wasm-bindgen SUDAH menyalin keluar
       // dari linear memory saat mengembalikan `Vec<u8>` (lihat
@@ -276,7 +292,7 @@ export async function runExport(opts: RunExportOptions): Promise<ExportResult> {
   }
 
   opts.onProgress?.(1);
-  return { warnings, frames };
+  return { warnings, frames, analysis: analyzer?.finish() ?? null };
 }
 
 /**
