@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { App } from '../App';
 import { DjPage } from '../dj';
-import { LandingPage } from '../landing';
+import { LandingPage, LegalPage } from '../landing';
 import { createLibraryApi } from '../library/api';
 import { libraryActions, useLibrary } from '../library/store';
 import type { LibraryUser } from '../library/model';
@@ -232,6 +232,8 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
         />
       ) : route === 'proof-stem' ? (
         <ProofStemPage onClose={() => navigate(HOME_PATH)} />
+      ) : route === 'privacy-policy' || route === 'terms-of-service' ? (
+        <LegalPage kind={route} />
       ) : (
         <LandingPage
           onOpenStudio={() => navigate(STUDIO_PATH)}

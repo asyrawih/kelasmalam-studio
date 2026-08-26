@@ -73,6 +73,12 @@ describe('LandingPage', () => {
     expect(card).not.toBeNull();
     expect(card?.getAttribute('style')).toContain('rgb(15, 13, 5)');
   });
+
+  it('menautkan privacy policy dan terms of service dari footer', () => {
+    render(<LandingPage onOpenStudio={() => {}} />);
+    expect(screen.getByRole('link', { name: 'PRIVACY POLICY' }).getAttribute('href')).toBe('/privacy-policy');
+    expect(screen.getByRole('link', { name: 'TERMS OF SERVICE' }).getAttribute('href')).toBe('/terms-of-service');
+  });
 });
 
 describe('routeOf', () => {
@@ -85,6 +91,8 @@ describe('routeOf', () => {
     expect(routeOf('/dj/')).toBe('dj');
     expect(routeOf('/proof-stem')).toBe('proof-stem');
     expect(routeOf('/proof-stem/')).toBe('proof-stem');
+    expect(routeOf('/privacy-policy')).toBe('privacy-policy');
+    expect(routeOf('/terms-of-service')).toBe('terms-of-service');
   });
 
   it('path yang tidak dikenal jatuh ke landing, bukan melempar', () => {
@@ -139,6 +147,13 @@ describe('AppShell', () => {
     expect(screen.getByRole('button', { name: 'MULAI MIXING GRATIS' })).toBeTruthy();
     // Header studio hanya ada di halaman studio.
     expect(screen.queryByRole('button', { name: /CLOSE/ })).toBeNull();
+  });
+
+  it('menampilkan halaman legal publik tanpa login', () => {
+    window.history.pushState(null, '', '/privacy-policy');
+    render(<AppShell />);
+    expect(screen.getByRole('heading', { name: 'PRIVACY POLICY' })).toBeTruthy();
+    expect(screen.queryByTestId('auth-guard')).toBeNull();
   });
 
   it('membuka halaman DJ lewat CTA, TANPA me-mount studio', () => {

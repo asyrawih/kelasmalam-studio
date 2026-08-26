@@ -204,6 +204,74 @@
   margin-left: auto;
 }
 
+.km-legal-root {
+  min-height: 100vh;
+  background: var(--cy-bg);
+  color: var(--cy-text);
+  font-family: var(--cy-font-mono);
+}
+
+.km-root .km-legal-wrap {
+  max-width: 820px;
+  padding-top: 64px;
+  padding-bottom: 64px;
+}
+
+.km-legal-back,
+.km-legal-eyebrow,
+.km-legal-updated {
+  font-size: 10px;
+  letter-spacing: .16em;
+}
+
+.km-legal-eyebrow {
+  margin: 64px 0 14px;
+  color: var(--cy-accent);
+}
+
+.km-legal-root h1 {
+  margin: 0;
+  font-family: var(--cy-font-sans);
+  font-size: clamp(36px, 7vw, 64px);
+  letter-spacing: .03em;
+}
+
+.km-legal-updated {
+  margin: 14px 0 52px;
+  color: var(--cy-text-muted);
+}
+
+.km-legal-section {
+  padding: 26px 0;
+  border-top: 1px solid var(--cy-border);
+}
+
+.km-legal-section h2 {
+  margin: 0 0 12px;
+  font-family: var(--cy-font-sans);
+  font-size: 18px;
+  letter-spacing: .04em;
+}
+
+.km-legal-section p {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--cy-text-dim);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.km-legal-footer {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-top: 32px;
+  padding-top: 26px;
+  border-top: 1px solid var(--cy-border);
+  font-size: 10px;
+  letter-spacing: .16em;
+}
+
 /*
  * Ukuran yang PUNYA override di media query di bawah harus datang dari class,
  * bukan dari atribut style: inline style menang atas rule class mana pun, jadi

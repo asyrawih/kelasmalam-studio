@@ -995,6 +995,12 @@ export function LandingPage({
             <a href="#spek" style={{ fontSize: '10px', letterSpacing: '.16em' }}>
               SPEK
             </a>
+            <a href="/privacy-policy" style={{ fontSize: '10px', letterSpacing: '.16em' }}>
+              PRIVACY POLICY
+            </a>
+            <a href="/terms-of-service" style={{ fontSize: '10px', letterSpacing: '.16em' }}>
+              TERMS OF SERVICE
+            </a>
           </div>
         </div>
       </div>
