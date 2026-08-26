@@ -348,11 +348,19 @@ export function AnalyzerDialog({
   onFix,
   onAnyway,
   onCancel,
+  phase = 'review',
+  progress = null,
+  finalAnalysis = null,
+  onAbort,
 }: {
   analysis: LoudnessAnalysis;
   onFix: (gainDb: number) => void;
   onAnyway: () => void;
   onCancel: () => void;
+  phase?: 'review' | 'exporting' | 'done';
+  progress?: number | null;
+  finalAnalysis?: LoudnessAnalysis | null;
+  onAbort?: () => void;
 }): JSX.Element {
   const assessment = assessRobloxSafe(analysis);
   const gain = assessment.recommendedGainDb;
@@ -362,7 +370,7 @@ export function AnalyzerDialog({
     <div
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onCancel();
+        if (e.target === e.currentTarget && phase !== 'exporting') onCancel();
       }}
       style={{
         position: 'fixed',
@@ -392,7 +400,13 @@ export function AnalyzerDialog({
           ROBLOX SAFE AUDIO ANALYZER
         </div>
         <div style={{ marginTop: '7px', fontSize: '18px', color: 'var(--cy-text)' }}>
-          {assessment.safe ? 'MASTER SUDAH AMAN' : 'MASTER PERLU DISESUAIKAN'}
+          {phase === 'exporting'
+            ? 'MEMBUAT FILE FINAL…'
+            : phase === 'done'
+              ? 'EXPORT SELESAI'
+              : assessment.safe
+                ? 'MASTER SUDAH AMAN'
+                : 'MASTER PERLU DISESUAIKAN'}
         </div>
         <div style={{ margin: '8px 0 14px', fontSize: '10px', lineHeight: 1.6, color: 'var(--cy-text-dim)' }}>
           Target produk: {ROBLOX_SAFE_TARGET_LUFS} LUFS integrated, true peak maksimal{' '}
@@ -400,9 +414,19 @@ export function AnalyzerDialog({
           bukan batas moderasi resmi Roblox.
         </div>
 
-        <AnalysisRows analysis={analysis} />
+        {phase === 'done' && finalAnalysis !== null ? (
+          <>
+            <div style={{ marginBottom: '7px', fontSize: '9px', letterSpacing: '.14em', color: 'var(--cy-accent)' }}>
+              MASTER FINAL · POST-GAIN / PRE-ENCODE
+            </div>
+            <AnalysisRows analysis={finalAnalysis} />
+          </>
+        ) : (
+          <AnalysisRows analysis={analysis} />
+        )}
 
-        <div
+        {phase === 'review' ? (
+          <div
           style={{
             marginTop: '12px',
             padding: '9px',
@@ -416,20 +440,45 @@ export function AnalyzerDialog({
           FIX memakai {adjustment}. Gain dibatasi oleh headroom true peak; audio tidak dipaksa ke
           −16 LUFS kalau itu akan melewati −2 dBTP. Distorsi yang sudah tercetak tidak bisa dipulihkan
           hanya dengan menurunkan volume.
-        </div>
+          </div>
+        ) : null}
+
+        {phase === 'exporting' ? (
+          <div style={{ marginTop: '16px', display: 'grid', gap: '7px' }}>
+            <div style={{ fontFamily: 'var(--cy-font-mono)', fontSize: '9px', color: 'var(--cy-text-dim)' }}>
+              RENDER FINAL {Math.round((progress ?? 0) * 100)}%
+            </div>
+            <ProgressBar label="Export final" value={(progress ?? 0) * 100} showValue />
+            <div style={{ fontSize: '9px', lineHeight: 1.5, color: 'var(--cy-text-dim)' }}>
+              Popup tetap terbuka sampai encoder dan penulisan file selesai.
+            </div>
+          </div>
+        ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '7px', marginTop: '16px', flexWrap: 'wrap' }}>
-          <button type="button" className="cy-btn-reset" onClick={onCancel} style={dialogButton(false)}>
-            CANCEL
-          </button>
-          {!assessment.safe ? (
-            <button type="button" className="cy-btn-reset" onClick={onAnyway} style={dialogButton(false)}>
-              EXPORT ANYWAY
+          {phase === 'review' ? (
+            <>
+              <button type="button" className="cy-btn-reset" onClick={onCancel} style={dialogButton(false)}>
+                CANCEL
+              </button>
+              {!assessment.safe ? (
+                <button type="button" className="cy-btn-reset" onClick={onAnyway} style={dialogButton(false)}>
+                  EXPORT ANYWAY
+                </button>
+              ) : null}
+              <button type="button" className="cy-btn-reset" onClick={() => onFix(gain)} style={dialogButton(true)}>
+                {assessment.safe ? 'EXPORT' : 'FIX & EXPORT'}
+              </button>
+            </>
+          ) : phase === 'exporting' ? (
+            <button type="button" className="cy-btn-reset" onClick={onAbort} style={dialogButton(false)}>
+              BATALKAN EXPORT
             </button>
-          ) : null}
-          <button type="button" className="cy-btn-reset" onClick={() => onFix(gain)} style={dialogButton(true)}>
-            {assessment.safe ? 'EXPORT' : 'FIX & EXPORT'}
-          </button>
+          ) : (
+            <button type="button" className="cy-btn-reset" onClick={onCancel} style={dialogButton(true)}>
+              CLOSE
+            </button>
+          )}
         </div>
       </div>
     </div>,
@@ -474,6 +523,7 @@ export function CompileCard(): JSX.Element {
   const [analysis, setAnalysis] = useState<LoudnessAnalysis | null>(null);
   const [finalAnalysis, setFinalAnalysis] = useState<LoudnessAnalysis | null>(null);
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [analysisPhase, setAnalysisPhase] = useState<'review' | 'exporting' | 'done'>('review');
   // Ref, bukan state: pembatalan dibaca dari dalam loop render yang sedang
   // berjalan, dan nilai dari closure state akan selamanya `false` di sana.
   const cancelRef = useRef(false);
@@ -498,7 +548,7 @@ export function CompileCard(): JSX.Element {
           : 'Render semua lane jadi satu file dan unduh.';
 
   const exportWithGain = (gainDb: number): void => {
-    setAnalysisOpen(false);
+    setAnalysisPhase('exporting');
     setError(null);
     setFinalAnalysis(null);
     cancelRef.current = false;
@@ -513,10 +563,15 @@ export function CompileCard(): JSX.Element {
       onWarnings: setWarnings,
       onAnalysis: setFinalAnalysis,
       isCancelled: () => cancelRef.current,
-    }).catch((e: unknown) => {
-      studioActions.setExportProgress(null);
-      setError(e instanceof Error ? e.message : String(e));
-    });
+    })
+      .then(() => {
+        setAnalysisPhase(cancelRef.current ? 'review' : 'done');
+      })
+      .catch((e: unknown) => {
+        studioActions.setExportProgress(null);
+        setAnalysisPhase('review');
+        setError(e instanceof Error ? e.message : String(e));
+      });
   };
 
   const startAnalysis = (): void => {
@@ -533,6 +588,7 @@ export function CompileCard(): JSX.Element {
     })
       .then((report) => {
         setAnalysis(report);
+        setAnalysisPhase('review');
         setAnalysisOpen(true);
       })
       .catch((e: unknown) => {
@@ -658,6 +714,12 @@ export function CompileCard(): JSX.Element {
             onFix={exportWithGain}
             onAnyway={() => exportWithGain(0)}
             onCancel={() => setAnalysisOpen(false)}
+            phase={analysisPhase}
+            progress={progress}
+            finalAnalysis={finalAnalysis}
+            onAbort={() => {
+              cancelRef.current = true;
+            }}
           />
         ) : null}
 

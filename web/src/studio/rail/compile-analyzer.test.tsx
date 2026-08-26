@@ -48,4 +48,43 @@ describe('dialog Roblox Safe', () => {
     expect(screen.getByRole('button', { name: 'EXPORT' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'EXPORT ANYWAY' })).toBeNull();
   });
+
+  it('FIX tidak menutup popup: fase export tetap menampilkan dialog dan progress', () => {
+    const abort = vi.fn();
+    render(
+      <AnalyzerDialog
+        analysis={report()}
+        phase="exporting"
+        progress={0.42}
+        onFix={() => undefined}
+        onAnyway={() => undefined}
+        onCancel={() => undefined}
+        onAbort={abort}
+      />,
+    );
+    expect(screen.getByRole('dialog', { name: 'Roblox Safe Audio Analyzer' })).toBeTruthy();
+    expect(screen.getByText('MEMBUAT FILE FINAL…')).toBeTruthy();
+    expect(screen.getByText('RENDER FINAL 42%')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'BATALKAN EXPORT' }));
+    expect(abort).toHaveBeenCalledOnce();
+  });
+
+  it('sesudah export popup menampilkan hasil final dan baru bisa ditutup', () => {
+    const close = vi.fn();
+    const final = report({ integratedLufs: -16, truePeakDbtp: -2.4, clippedSamples: 0 });
+    render(
+      <AnalyzerDialog
+        analysis={report()}
+        phase="done"
+        finalAnalysis={final}
+        onFix={() => undefined}
+        onAnyway={() => undefined}
+        onCancel={close}
+      />,
+    );
+    expect(screen.getByText('EXPORT SELESAI')).toBeTruthy();
+    expect(screen.getByText('-16.0 LUFS')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'CLOSE' }));
+    expect(close).toHaveBeenCalledOnce();
+  });
 });
