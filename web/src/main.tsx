@@ -17,6 +17,7 @@
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Analytics } from '@vercel/analytics/react';
 import { AppShell } from './app-shell';
 import type { UiEngine } from './state';
 import './index.css';
@@ -42,5 +43,6 @@ if (container === null) throw new Error('#root tidak ditemukan di index.html');
 createRoot(container).render(
   <StrictMode>
     <AppShell createEngine={createEngine} />
+    <Analytics />
   </StrictMode>,
 );
