@@ -103,6 +103,15 @@ describe('App', () => {
     expect(screen.getByRole('group', { name: 'STATUS' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'PAGES' })).toBeTruthy();
   });
+
+  it('tombol SNAP di toolbar men-toggle magnetic snapping', () => {
+    render(<App />);
+    const button = screen.getByRole('button', { name: 'SNAP' });
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(button);
+    expect(studioStore.getState().snapEnabled).toBe(false);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
 });
 
 describe('panel sendiri-sendiri', () => {

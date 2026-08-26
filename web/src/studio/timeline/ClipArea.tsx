@@ -33,6 +33,7 @@ import { fadeOverlayGradient } from './fade';
 import { useCanvasDraw } from '../../ui/lib/canvas';
 import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
 import { clearTimelineCursor, setTimelineCursor } from './timeline-cursor';
+import { snapClipMove } from './clip-snap';
 
 export interface ClipAreaProps {
   readonly scrollerRef: RefObject<HTMLDivElement>;
@@ -565,6 +566,7 @@ export function ClipArea({
   const sampleRate = useStudio((s) => s.sampleRate);
   const selectedClipId = useStudio((s) => s.selectedClipId);
   const selectedClipIds = useStudio((s) => s.selectedClipIds);
+  const snapEnabled = useStudio((s) => s.snapEnabled);
   const laneH = laneHeightPx(useStudio((s) => s.laneHeight));
   const gesture = useRef<Gesture | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -586,6 +588,7 @@ export function ClipArea({
    */
   const importJobs = useStudio((s) => s.importJobs);
   const [marquee, setMarquee] = useState<MarqueeBox | null>(null);
+  const [snapGuide, setSnapGuide] = useState<number | null>(null);
   /** Ketukan terakhir pada sebuah clip; dipakai mendeteksi double-click. */
   const lastTap = useRef<{ id: string; t: number; x: number; y: number } | null>(null);
 
@@ -873,7 +876,15 @@ export function ClipArea({
       return;
     }
     const rows = Math.round((e.clientY - g.y0) / laneH);
-    studioActions.moveClips(g.origins, (e.clientX - g.x0) * g.samplesPerPx, rows);
+    const rawDelta = (e.clientX - g.x0) * g.samplesPerPx;
+    if (snapEnabled) {
+      const snapped = snapClipMove(lanes, g.origins, rawDelta, rows, g.samplesPerPx);
+      setSnapGuide(snapped.guideSample);
+      studioActions.moveClips(g.origins, snapped.deltaSamples, rows);
+    } else {
+      setSnapGuide(null);
+      studioActions.moveClips(g.origins, rawDelta, rows);
+    }
   };
 
   /**
@@ -944,6 +955,7 @@ export function ClipArea({
       }
     }
     setMarquee(null);
+    setSnapGuide(null);
     onDraggingChange(false);
     // Dilepas → posisi/lane baru langsung berlaku ke audio yang sedang jalan.
     studioActions.setClipDragging(false);
@@ -1095,6 +1107,23 @@ export function ClipArea({
               background: '#ffd4001a',
               pointerEvents: 'none',
               zIndex: 3,
+            }}
+          />
+        )}
+        {snapGuide === null ? null : (
+          <div
+            data-snap-guide
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              zIndex: 5,
+              top: 0,
+              bottom: 0,
+              left: `${(snapGuide / span) * 100}%`,
+              width: '1px',
+              background: 'var(--cy-accent)',
+              boxShadow: '0 0 8px var(--cy-accent)',
+              pointerEvents: 'none',
             }}
           />
         )}

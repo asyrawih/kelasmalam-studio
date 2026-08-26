@@ -26,6 +26,7 @@ import { LibraryDock } from './library';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
 import { SoundCloudDialog } from './soundcloud/SoundCloudDialog';
+import { SnapToggle } from './studio/shell/SnapToggle';
 
 export interface AppProps {
   /**
@@ -110,7 +111,7 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps)
           />
         }
         readouts={<ReadoutStrip />}
-        menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} />}
+        menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} trailing={<SnapToggle />} />}
         /*
          * Kepustakaan duduk di DASAR layar, menempel, dan terlipat sampai
          * diminta. Alasannya di kepala `LibraryDock`: ia tempat mengambil

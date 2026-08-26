@@ -302,3 +302,24 @@ describe('pan', () => {
     expect(ids()).toEqual([]);
   });
 });
+
+describe('magnetic snap saat drag', () => {
+  it('menempelkan edge clip dan menampilkan garis panduan', () => {
+    render(<Harness />);
+    const moving = clipEl('a'); // 0–4 detik; clip b mulai di detik 20
+    fireEvent.pointerDown(moving, { pointerId: 1, button: 0, clientX: 0, clientY: 10 });
+    fireEvent.pointerMove(moving, { pointerId: 1, clientX: pxAt(15.5), clientY: 10 });
+    expect(clipStart('a')).toBe(16 * SR);
+    expect(document.querySelector('[data-snap-guide]')).not.toBeNull();
+  });
+
+  it('toggle OFF membiarkan posisi bebas dan tidak menampilkan guide', () => {
+    studioActions.toggleSnap();
+    render(<Harness />);
+    const moving = clipEl('a');
+    fireEvent.pointerDown(moving, { pointerId: 1, button: 0, clientX: 0, clientY: 10 });
+    fireEvent.pointerMove(moving, { pointerId: 1, clientX: pxAt(15.5), clientY: 10 });
+    expect(clipStart('a')).toBeCloseTo(15.5 * SR, -2);
+    expect(document.querySelector('[data-snap-guide]')).toBeNull();
+  });
+});

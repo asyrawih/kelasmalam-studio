@@ -182,7 +182,12 @@ export function MenuBar({
             }}
           />
         ))}
-        {trailing === undefined ? null : <span style={{ marginLeft: 'auto' }}>{trailing}</span>}
+        {trailing === undefined ? null : (
+          <>
+            <span style={{ width: '1px', height: '26px', background: 'var(--cy-border)', margin: '0 6px' }} />
+            {trailing}
+          </>
+        )}
       </div>
 
       {active === null ? null : (

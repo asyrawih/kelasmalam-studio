@@ -357,6 +357,8 @@ export interface StudioAppState extends StudioState {
    * sekaligus akan menutupi permukaan kerja yang justru sedang dilihat.
    */
   readonly openMenu: MenuId | null;
+  /** Magnetic snap saat clip digeser. Preferensi sesi/proyek. */
+  readonly snapEnabled: boolean;
   /** Batas bawah panjang timeline (detik), diatur manual. */
   readonly minDurationSec: number;
   /** Batas atas panjang timeline (detik). null = ikut konten (otomatis). */
@@ -437,6 +439,7 @@ let state: StudioAppState = withDerived({
   eqMode: 'curve',
   laneHeight: DEFAULT_LANE_HEIGHT,
   openMenu: null,
+  snapEnabled: true,
   minDurationSec: MIN_DURATION_SEC,
   maxDurationSec: null,
   engineError: null,
@@ -1863,6 +1866,9 @@ export const studioActions = {
   closeMenu(): void {
     set((s) => (s.openMenu === null ? null : { openMenu: null }));
   },
+  toggleSnap(): void {
+    set((s) => ({ snapEnabled: !s.snapEnabled }));
+  },
   setLaneHeight(id: LaneHeightId): void {
     set((s) => (s.laneHeight === id ? null : { laneHeight: id }));
   },
@@ -1899,6 +1905,7 @@ export const studioActions = {
       eqMode: 'curve',
           laneHeight: DEFAULT_LANE_HEIGHT,
       openMenu: null,
+      snapEnabled: true,
       minDurationSec: MIN_DURATION_SEC,
       maxDurationSec: null,
     });
