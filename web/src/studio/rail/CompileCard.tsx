@@ -369,6 +369,7 @@ export function AnalyzerDialog({
   return createPortal(
     <div
       role="presentation"
+      data-menu-owned-overlay
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && phase !== 'exporting') onCancel();
       }}

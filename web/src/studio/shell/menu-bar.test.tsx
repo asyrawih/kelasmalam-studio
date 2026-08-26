@@ -81,6 +81,23 @@ describe('toolbar menu', () => {
     expect(popover()).not.toBeNull();
   });
 
+  it('klik dialog portal milik menu tidak meng-unmount popup induknya', () => {
+    render(<Bar />);
+    fireEvent.click(icon('export'));
+    expect(document.querySelector('[data-menu-popover="export"]')).not.toBeNull();
+
+    const portal = document.createElement('div');
+    portal.setAttribute('data-menu-owned-overlay', '');
+    const action = document.createElement('button');
+    portal.appendChild(action);
+    document.body.appendChild(portal);
+    fireEvent.pointerDown(action);
+
+    expect(document.querySelector('[data-menu-popover="export"]')).not.toBeNull();
+    expect(studioStore.getState().openMenu).toBe('export');
+    portal.remove();
+  });
+
   it('Esc menutup', () => {
     render(<Bar />);
     fireEvent.click(icon('help'));

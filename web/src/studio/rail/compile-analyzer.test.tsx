@@ -21,6 +21,7 @@ describe('dialog Roblox Safe', () => {
   it('muncul di tengah sebagai dialog dan menunjukkan empat metrik', () => {
     render(<AnalyzerDialog analysis={report()} onFix={() => undefined} onAnyway={() => undefined} onCancel={() => undefined} />);
     expect(screen.getByRole('dialog', { name: 'Roblox Safe Audio Analyzer' })).toBeTruthy();
+    expect(document.querySelector('[data-menu-owned-overlay]')).not.toBeNull();
     expect(screen.getByText('-11.5 LUFS')).toBeTruthy();
     expect(screen.getByText('-0.4 dBTP')).toBeTruthy();
     expect(screen.getByText('12 sample')).toBeTruthy();

@@ -116,6 +116,14 @@ export function MenuBar({
     const onDown = (e: PointerEvent): void => {
       const bar = barRef.current;
       if (bar !== null && e.target instanceof Node && bar.contains(e.target)) return;
+      // Dialog milik sebuah menu boleh dirender lewat portal ke document.body
+      // agar tidak terpotong overflow popup. Secara DOM ia memang "di luar"
+      // bar, tetapi secara interaksi masih anak menu itu. Tanpa pengecualian
+      // ini, pointerdown tombol FIX & EXPORT menutup menu EXPORT pada capture
+      // phase, meng-unmount CompileCard, lalu ikut melenyapkan dialognya.
+      if (e.target instanceof Element && e.target.closest('[data-menu-owned-overlay]') !== null) {
+        return;
+      }
       studioActions.closeMenu();
     };
     const onKey = (e: KeyboardEvent): void => {
