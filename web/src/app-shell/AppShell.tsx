@@ -240,6 +240,13 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
           showAppLinks={!authRequired || authenticated}
+          onLogin={
+            authApi === null
+              ? () => navigate(STUDIO_PATH)
+              : () => {
+                  window.location.href = authApi.loginUrl(STUDIO_PATH);
+                }
+          }
         />
       )}
 

@@ -120,6 +120,21 @@ export const FEATURES: readonly Feature[] = [
     title: 'COMPILE SATU FILE',
     body: 'Semua lane dijumlahkan jadi satu WAV 24-bit atau MP3. Tanpa limiter tersembunyi — apa yang kamu dengar itu yang keluar.',
   },
+  {
+    tag: 'DJ',
+    title: 'MODE DJ PERFORMANCE',
+    body: 'Mainkan dua deck untuk performance langsung dengan waveform, jog, hot cue, loop, beat sync, stem, mixer, dan Beat FX.',
+  },
+  {
+    tag: 'ROBLOX',
+    title: 'UPLOAD AUDIO KE ROBLOX',
+    body: 'Siapkan metadata, validasi file, lalu unggah audio langsung ke akun atau grup Roblox dan pantau proses moderasinya.',
+  },
+  {
+    tag: 'ACCESS',
+    title: 'GRANT ACCESS ROBLOX',
+    body: 'Pilih audio dari katalog lalu berikan izin penggunaan secara massal ke grup, user, atau experience Roblox yang dituju.',
+  },
 ];
 
 export const STEPS: readonly Step[] = [

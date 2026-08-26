@@ -43,6 +43,8 @@ export interface LandingPageProps {
   readonly onOpenRoblox?: () => void;
   /** Tombol menuju aplikasi hanya tampil setelah sesi login terverifikasi. */
   readonly showAppLinks?: boolean;
+  /** Dipanggil oleh tombol login saat sesi belum tersedia. */
+  readonly onLogin?: () => void;
 }
 
 /** Label bernomor di atas tiap judul section ("01 / FITUR"). */
@@ -97,6 +99,7 @@ export function LandingPage({
   onOpenDj,
   onOpenRoblox,
   showAppLinks = true,
+  onLogin,
 }: LandingPageProps): JSX.Element {
   // Paket yang sedang disorot. Belum ada checkout — memilih hanya mengubah
   // sorotan kartunya, sama seperti di design.
@@ -186,6 +189,10 @@ export function LandingPage({
             {showAppLinks ? (
               <Button size="sm" style={{ height: '34px' }} onClick={onOpenStudio}>
                 BUKA STUDIO
+              </Button>
+            ) : onLogin !== undefined ? (
+              <Button size="sm" style={{ height: '34px' }} onClick={onLogin}>
+                MASUK
               </Button>
             ) : null}
           </div>

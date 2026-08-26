@@ -41,18 +41,22 @@ describe('LandingPage', () => {
   });
 
   it('menyembunyikan tombol aplikasi di header sebelum login', () => {
+    const login = vi.fn();
     render(
       <LandingPage
         onOpenStudio={() => {}}
         onOpenDj={() => {}}
         onOpenRoblox={() => {}}
         showAppLinks={false}
+        onLogin={login}
       />,
     );
     expect(screen.queryByRole('button', { name: 'MODE DJ' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'ROBLOX' })).toBeNull();
     // CTA bawah tetap menjelaskan produk; yang hilang hanya tombol akses pada header.
     expect(screen.getAllByRole('button', { name: 'BUKA STUDIO' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'MASUK' }));
+    expect(login).toHaveBeenCalledOnce();
   });
 
   it('FAQ membuka dan menutup jawabannya', () => {
@@ -78,6 +82,13 @@ describe('LandingPage', () => {
     render(<LandingPage onOpenStudio={() => {}} />);
     expect(screen.getByRole('link', { name: 'PRIVACY POLICY' }).getAttribute('href')).toBe('/privacy-policy');
     expect(screen.getByRole('link', { name: 'TERMS OF SERVICE' }).getAttribute('href')).toBe('/terms-of-service');
+  });
+
+  it('menampilkan fitur DJ dan integrasi Roblox', () => {
+    render(<LandingPage onOpenStudio={() => {}} />);
+    expect(screen.getByText('MODE DJ PERFORMANCE')).toBeTruthy();
+    expect(screen.getByText('UPLOAD AUDIO KE ROBLOX')).toBeTruthy();
+    expect(screen.getByText('GRANT ACCESS ROBLOX')).toBeTruthy();
   });
 });
 
