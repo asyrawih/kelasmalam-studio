@@ -95,6 +95,14 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ROBLOX' }));
     expect(openRoblox).toHaveBeenCalledOnce();
   });
+
+  it('toolbar header memisahkan aksi berdasarkan konteks', () => {
+    render(<App onOpenDj={() => {}} onOpenRoblox={() => {}} />);
+    expect(screen.getByRole('group', { name: 'EDIT' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'TOOLS' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'STATUS' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'PAGES' })).toBeTruthy();
+  });
 });
 
 describe('panel sendiri-sendiri', () => {

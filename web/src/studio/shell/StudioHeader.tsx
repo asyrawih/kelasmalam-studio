@@ -15,6 +15,7 @@ import { VersionTag } from '../../app-shell/VersionTag';
 import { Badge, Button } from '../../ui/cyber';
 import { studioActions, useStudio } from '../store';
 import { AutoStemToggle } from '../../stem/AutoStemToggle';
+import type { ReactNode } from 'react';
 
 export interface StudioHeaderProps {
   readonly onClose?: () => void;
@@ -23,6 +24,28 @@ export interface StudioHeaderProps {
   /** Buka halaman upload dan grant access Roblox. */
   readonly onOpenRoblox?: () => void;
   readonly onOpenSoundCloud?: () => void;
+}
+
+function HeaderDivider(): JSX.Element {
+  return <span aria-hidden="true" style={{ width: '1px', height: '28px', background: 'var(--cy-border-strong)', flexShrink: 0 }} />;
+}
+
+function HeaderGroup({ label, children }: { readonly label: string; readonly children: ReactNode }): JSX.Element {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}
+    >
+      <span
+        aria-hidden="true"
+        style={{ fontSize: '8px', letterSpacing: '.16em', color: 'var(--cy-text-muted)', whiteSpace: 'nowrap' }}
+      >
+        {label}
+      </span>
+      {children}
+    </div>
+  );
 }
 
 export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud }: StudioHeaderProps): JSX.Element {
@@ -71,30 +94,41 @@ export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud
       >
         {`${laneCount} LANES · ${Math.round(sampleRate / 1000)} kHz · STEREO`}
       </div>
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <Button size="sm" variant="ghost" onClick={() => studioActions.undo()} title="Undo (Cmd/Ctrl+Z)">
-          ↶ UNDO
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => studioActions.redo()} title="Redo (Cmd/Ctrl+Shift+Z)">
-          ↷ REDO
-        </Button>
-        <AutoStemToggle />
-        {onOpenSoundCloud !== undefined && <Button size="sm" variant="outline" onClick={onOpenSoundCloud}>SOUNDCLOUD</Button>}
-        {/* Design menulis READY tanpa syarat. Kita tidak boleh mengklaim siap
-            kalau engine belum ada — badge-nya berubah, bukan berbohong. */}
-        <Badge tone={engineReady ? 'success' : 'default'} dot>
-          {engineReady ? 'READY' : 'UI ONLY'}
-        </Badge>
-        {onOpenDj !== undefined && (
-          <Button size="sm" variant="outline" onClick={onOpenDj}>
-            MODE DJ
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <HeaderDivider />
+        <HeaderGroup label="EDIT">
+          <Button size="sm" variant="ghost" onClick={() => studioActions.undo()} title="Undo (Cmd/Ctrl+Z)">
+            ↶ UNDO
           </Button>
-        )}
-        {onOpenRoblox !== undefined && (
-          <Button size="sm" variant="outline" onClick={onOpenRoblox}>
-            ROBLOX
+          <Button size="sm" variant="ghost" onClick={() => studioActions.redo()} title="Redo (Cmd/Ctrl+Shift+Z)">
+            ↷ REDO
           </Button>
+        </HeaderGroup>
+        <HeaderDivider />
+        <HeaderGroup label="TOOLS">
+          <AutoStemToggle />
+          {onOpenSoundCloud !== undefined && <Button size="sm" variant="outline" onClick={onOpenSoundCloud}>SOUNDCLOUD</Button>}
+        </HeaderGroup>
+        <HeaderDivider />
+        <HeaderGroup label="STATUS">
+          {/* Design menulis READY tanpa syarat. Kita tidak boleh mengklaim siap
+              kalau engine belum ada — badge-nya berubah, bukan berbohong. */}
+          <Badge tone={engineReady ? 'success' : 'default'} dot>
+            {engineReady ? 'READY' : 'UI ONLY'}
+          </Badge>
+        </HeaderGroup>
+        {(onOpenDj !== undefined || onOpenRoblox !== undefined) && <HeaderDivider />}
+        {(onOpenDj !== undefined || onOpenRoblox !== undefined) && (
+          <HeaderGroup label="PAGES">
+            {onOpenDj !== undefined && (
+              <Button size="sm" variant="outline" onClick={onOpenDj}>MODE DJ</Button>
+            )}
+            {onOpenRoblox !== undefined && (
+              <Button size="sm" variant="outline" onClick={onOpenRoblox}>ROBLOX</Button>
+            )}
+          </HeaderGroup>
         )}
+        <HeaderDivider />
         <Button size="sm" variant="ghost" onClick={onClose}>
           ✕ CLOSE
         </Button>
