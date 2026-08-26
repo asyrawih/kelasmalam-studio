@@ -5,7 +5,7 @@
  * pembagian nol, dan crash saat elemen belum di-layout (ukuran 0).
  */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
@@ -87,6 +87,13 @@ describe('App', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('tombol ROBLOX di header memanggil navigasi Roblox', () => {
+    const openRoblox = vi.fn();
+    render(<App onOpenRoblox={openRoblox} />);
+    fireEvent.click(screen.getByRole('button', { name: 'ROBLOX' }));
+    expect(openRoblox).toHaveBeenCalledOnce();
   });
 });
 
@@ -215,5 +222,3 @@ describe('aksi store', () => {
     expect(samplesToSec(after.duration, after.sampleRate)).toBeGreaterThanOrEqual(210);
   });
 });
-
-

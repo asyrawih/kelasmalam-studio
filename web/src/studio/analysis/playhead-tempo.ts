@@ -118,6 +118,61 @@ export function selectPlayheadTempo(s: StudioAppState): PlayheadTempo {
   return value;
 }
 
+/**
+ * Tempo untuk readout/editor: clip terpilih menang atas posisi playhead.
+ * Tanpa pilihan, perilakunya kembali persis ke pelacak playhead lama.
+ */
+let displayedMemoKey: StudioAppState | null = null;
+let displayedMemoValue: PlayheadTempo | null = null;
+
+export function selectDisplayedTempo(s: StudioAppState): PlayheadTempo {
+  if (displayedMemoKey === s && displayedMemoValue !== null) return displayedMemoValue;
+
+  let next: PlayheadTempo | null = null;
+  if (s.selectedClipId !== null) {
+    for (const lane of s.lanes) {
+      const clip = lane.clips.find((entry) => entry.id === s.selectedClipId);
+      if (clip === undefined) continue;
+      const asset = s.assets[clip.assetId];
+      if (asset === undefined) break;
+      if (asset.tempoPending) {
+        next = { primary: null, others: [], pending: true, unknown: false, idle: false };
+        break;
+      }
+      const source = correctedBpm(asset);
+      if (source === null) {
+        next = { primary: null, others: [], pending: false, unknown: true, idle: false };
+        break;
+      }
+      const speedFactor = effectiveSpeed(lane, s.speed);
+      next = {
+        primary: {
+          laneId: lane.id,
+          laneName: lane.name,
+          clipId: clip.id,
+          bpm: source * speedFactor,
+          sourceBpm: source,
+          confidence: asset.tempo?.confidence ?? 1,
+          speedFactor,
+        },
+        others: [],
+        pending: false,
+        unknown: false,
+        idle: false,
+      };
+      break;
+    }
+  }
+  next ??= selectPlayheadTempo(s);
+
+  const value = displayedMemoValue !== null && sameTempo(displayedMemoValue, next)
+    ? displayedMemoValue
+    : next;
+  displayedMemoKey = s;
+  displayedMemoValue = value;
+  return value;
+}
+
 function sameEntry(a: ActiveTempo, b: ActiveTempo): boolean {
   return (
     a.laneId === b.laneId &&

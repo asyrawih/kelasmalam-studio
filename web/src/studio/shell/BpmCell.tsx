@@ -16,11 +16,12 @@
  * akan membuat user menunggu angka yang tidak akan pernah datang.
  */
 
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 
 import {
   bpmSyncPlan,
   correctedBpm,
+  selectDisplayedTempo,
   selectPlayheadTempo,
   type PlayheadTempo,
 } from '../analysis/playhead-tempo';
@@ -67,10 +68,15 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
   // Berlangganan ke seluruh state: sel ini memang bergantung pada playhead,
   // lanes, assets, dan speed sekaligus. Selector sempit di sini hanya akan
   // memindahkan penggabungannya ke tempat lain tanpa mengurangi render.
-  const tempo = useStudio(selectPlayheadTempo);
+  const tempo = useStudio(selectDisplayedTempo);
+  // Tombol sync tetap membandingkan clip yang benar-benar bertumpuk di
+  // playhead; readout boleh mengikuti pilihan yang berada di tempat lain.
+  const playheadTempo = useStudio(selectPlayheadTempo);
   const assets = useStudio((s) => s.assets);
   const selectedClipId = useStudio((s) => s.selectedClipId);
-  const sync = bpmSyncPlan(tempo, selectedClipId);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const sync = bpmSyncPlan(playheadTempo, selectedClipId);
   const barSyncReady = useStudio((s) => {
     if (sync === null) return false;
     const assetFor = (clipId: string) => {
@@ -93,7 +99,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
   // Oktaf dipakai pada ASSET dari clip yang sedang ditampilkan; tanpa clip
   // aktif tidak ada yang bisa digandakan.
   const activeAssetId = useStudio((s) => {
-    const t = selectPlayheadTempo(s);
+    const t = selectDisplayedTempo(s);
     if (t.primary === null) return null;
     for (const lane of s.lanes) {
       const clip = lane.clips.find((c) => c.id === t.primary?.clipId);
@@ -121,6 +127,24 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
         `${shifted ? ` (dikoreksi ${asset.tempoOctave > 0 ? '×' : '÷'}${2 ** Math.abs(asset.tempoOctave)})` : ''}` +
         `, kecepatan ${tempo.primary.speedFactor.toFixed(3)}×.` +
         (uncertain ? ' Keyakinan deteksi rendah — periksa dengan telinga.' : '');
+
+  // Kalau playhead berpindah ke clip lain saat editor terbuka, tutup editor.
+  // Menyimpan draft ke asset yang baru akan terasa seperti BPM clip A berubah
+  // padahal angka tadi dibuka ketika clip B yang aktif.
+  useEffect(() => setEditing(false), [activeAssetId]);
+
+  const beginEdit = (): void => {
+    if (activeAssetId === null || tempo.primary === null) return;
+    setDraft(tempo.primary.sourceBpm.toFixed(2).replace(/\.00$/, ''));
+    setEditing(true);
+  };
+
+  const commitEdit = (): void => {
+    if (!editing || activeAssetId === null) return;
+    const bpm = Number(draft.replace(',', '.'));
+    if (Number.isFinite(bpm)) studioActions.setAssetBeatGrid(activeAssetId, { bpm });
+    setEditing(false);
+  };
 
   return (
     <div
@@ -155,18 +179,48 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
           height: VALUE_LINE_HEIGHT,
         }}
       >
-        <span
-          style={{
-            fontFamily: 'var(--cy-font-sans)',
-            fontSize: '19px',
-            fontWeight: 600,
-            // Angka yang tidak diyakini TIDAK boleh sama menyalanya dengan yang
-            // diyakini — warnanya yang membedakan, bukan hanya tanda "?".
-            color: uncertain ? 'var(--cy-text-dim)' : 'var(--cy-accent)',
-          }}
-        >
-          {value}
-        </span>
+        {editing ? (
+          <input
+            aria-label="BPM clip"
+            autoFocus
+            inputMode="decimal"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') commitEdit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            style={{
+              width: '72px',
+              height: '22px',
+              padding: '0 5px',
+              border: '1px solid var(--cy-accent)',
+              outline: 'none',
+              background: 'var(--cy-surface-1)',
+              color: 'var(--cy-accent)',
+              fontFamily: 'var(--cy-font-sans)',
+              fontSize: '17px',
+              fontWeight: 600,
+            }}
+          />
+        ) : (
+          <span
+            onDoubleClick={beginEdit}
+            title={activeAssetId === null ? undefined : 'Double-click untuk mengubah BPM clip'}
+            style={{
+              fontFamily: 'var(--cy-font-sans)',
+              fontSize: '19px',
+              fontWeight: 600,
+              color: uncertain ? 'var(--cy-text-dim)' : 'var(--cy-accent)',
+              cursor: activeAssetId === null ? 'default' : 'text',
+              userSelect: 'none',
+            }}
+          >
+            {value}
+          </span>
+        )}
         {activeAssetId !== null && tempo.primary !== null ? (
           <span style={{ display: 'flex', gap: '2px' }}>
             {([-1, 1] as const).map((d) => (

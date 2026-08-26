@@ -20,10 +20,12 @@ export interface StudioHeaderProps {
   readonly onClose?: () => void;
   /** Buka mixer DJ. Opsional supaya pemanggil lama (dan tes) tidak perlu ikut berubah. */
   readonly onOpenDj?: () => void;
+  /** Buka halaman upload dan grant access Roblox. */
+  readonly onOpenRoblox?: () => void;
   readonly onOpenSoundCloud?: () => void;
 }
 
-export function StudioHeader({ onClose, onOpenDj, onOpenSoundCloud }: StudioHeaderProps): JSX.Element {
+export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud }: StudioHeaderProps): JSX.Element {
   const laneCount = useStudio((s) => s.lanes.length);
   const sampleRate = useStudio((s) => s.sampleRate);
   const engineReady = useStudio((s) => s.engineReady);
@@ -86,6 +88,11 @@ export function StudioHeader({ onClose, onOpenDj, onOpenSoundCloud }: StudioHead
         {onOpenDj !== undefined && (
           <Button size="sm" variant="outline" onClick={onOpenDj}>
             MODE DJ
+          </Button>
+        )}
+        {onOpenRoblox !== undefined && (
+          <Button size="sm" variant="outline" onClick={onOpenRoblox}>
+            ROBLOX
           </Button>
         )}
         <Button size="sm" variant="ghost" onClick={onClose}>

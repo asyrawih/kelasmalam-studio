@@ -75,4 +75,15 @@ describe('kartu Shortcut tidak boleh basi', () => {
       expect(handled(k), k).toBe(false);
     }
   });
+
+  it('mendokumentasikan gesture timeline yang aktif', () => {
+    expect(SHORTCUTS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ keys: ['Cmd/Ctrl', 'Klik'], label: 'Tambah/buang dari seleksi' }),
+        expect.objectContaining({ keys: ['Shift', 'Drag'], label: 'Pan tampilan timeline' }),
+        expect.objectContaining({ keys: ['Shift', 'Scroll'], label: 'Gulir timeline horizontal' }),
+        expect.objectContaining({ keys: ['Scroll'], label: 'Zoom timeline' }),
+      ]),
+    );
+  });
 });

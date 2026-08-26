@@ -160,6 +160,52 @@ describe('sel BPM', () => {
     expect(screen.getByText('×2')).toBeTruthy();
   });
 
+  it('clip terpilih menentukan BPM walau playhead berada di clip lain', () => {
+    const [lane1, lane2] = studioStore.getState().lanes;
+    studioActions.registerAsset(asset(72, 111, 0.8));
+    studioActions.registerAsset(asset(73, 128, 0.8));
+    studioActions.addClip(lane1!.id, clip('under-playhead', 72));
+    studioActions.addClip(lane2!.id, clip('selected-clip', 73));
+    studioActions.setPlayhead(5 * SR);
+    studioActions.selectClip('selected-clip');
+
+    render(<BpmCell />);
+    expect(screen.getByText('128.0')).toBeTruthy();
+    expect(screen.queryByText('111.0')).toBeNull();
+  });
+
+  it('double-click angka BPM mengedit BPM clip aktif', () => {
+    const laneId = studioStore.getState().lanes[0]!.id;
+    studioActions.registerAsset(asset(70, 111, 0.8));
+    studioActions.addClip(laneId, clip('editable', 70));
+    studioActions.setPlayhead(5 * SR);
+
+    render(<BpmCell />);
+    fireEvent.doubleClick(screen.getByText('111.0'));
+    const input = screen.getByRole('textbox', { name: 'BPM clip' });
+    fireEvent.change(input, { target: { value: '126.5' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(studioStore.getState().assets[70]!.bpmOverride).toBe(126.5);
+    expect(screen.getByText('126.5')).toBeTruthy();
+  });
+
+  it('Escape membatalkan edit BPM', () => {
+    const laneId = studioStore.getState().lanes[0]!.id;
+    studioActions.registerAsset(asset(71, 120, 0.8));
+    studioActions.addClip(laneId, clip('cancel-bpm', 71));
+    studioActions.setPlayhead(5 * SR);
+
+    render(<BpmCell />);
+    fireEvent.doubleClick(screen.getByText('120.0'));
+    const input = screen.getByRole('textbox', { name: 'BPM clip' });
+    fireEvent.change(input, { target: { value: '140' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(studioStore.getState().assets[71]!.bpmOverride).toBeNull();
+    expect(screen.getByText('120.0')).toBeTruthy();
+  });
+
   /**
    * Tinggi sel tidak boleh bergantung pada isinya. Baris nota BpmCell
    * muncul-hilang tiap kali playhead melewati sambungan clip, dan strip ini

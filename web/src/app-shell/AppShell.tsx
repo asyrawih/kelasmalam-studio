@@ -222,6 +222,7 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           createEngine={createEngine}
           onClose={() => navigate(HOME_PATH)}
           onOpenDj={() => navigate(DJ_PATH)}
+          onOpenRoblox={() => navigate(ROBLOX_PATH)}
         />
       ) : route === 'dj' ? (
         <DjPage onClose={() => navigate(HOME_PATH)} />

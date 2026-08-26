@@ -38,6 +38,8 @@ export interface AppProps {
   readonly onClose?: () => void;
   /** Buka halaman `/dj`. Diteruskan apa adanya ke header. */
   readonly onOpenDj?: () => void;
+  /** Buka halaman `/roblox`. Diteruskan apa adanya ke header. */
+  readonly onOpenRoblox?: () => void;
   /** Tidak dipakai lagi — rail kanan sudah tidak ada. Dipertahankan supaya
    *  pemanggil lama tidak perlu ikut diubah. */
   readonly railWidth?: number;
@@ -46,7 +48,7 @@ export interface AppProps {
 /** Periode tick playhead. 60 ms = angka yang sama dengan interval di design. */
 const TICK_MS = 60;
 
-export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element {
+export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps): JSX.Element {
   const [soundCloudOpen, setSoundCloudOpen] = useState(false);
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
@@ -99,7 +101,14 @@ export function App({ createEngine, onClose, onOpenDj }: AppProps): JSX.Element 
     <BeatProvider>
       {soundCloudOpen ? <SoundCloudDialog onClose={() => setSoundCloudOpen(false)} /> : null}
       <StudioLayout
-        header={<StudioHeader onClose={onClose} onOpenDj={onOpenDj} onOpenSoundCloud={() => setSoundCloudOpen(true)} />}
+        header={
+          <StudioHeader
+            onClose={onClose}
+            onOpenDj={onOpenDj}
+            onOpenRoblox={onOpenRoblox}
+            onOpenSoundCloud={() => setSoundCloudOpen(true)}
+          />
+        }
         readouts={<ReadoutStrip />}
         menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} />}
         /*

@@ -30,7 +30,7 @@ export interface ShortcutDoc {
 export const SHORTCUTS: readonly ShortcutDoc[] = [
   { keys: ['Cmd/Ctrl', 'Z'], label: 'Undo edit terakhir', group: 'edit' },
   { keys: ['Cmd/Ctrl', 'Shift', 'Z'], label: 'Redo edit', group: 'edit' },
-  { keys: ['Space'], label: 'Play / pause', group: 'transport' },
+  { keys: ['Space'], label: 'Play 3 dtk sebelum cursor / pause', group: 'transport' },
   { keys: ['Backspace'], label: 'Kembali ke awal', group: 'transport' },
   { keys: ['Home'], label: 'Ke awal', group: 'transport' },
   { keys: ['End'], label: 'Ke akhir', group: 'transport' },
@@ -41,8 +41,10 @@ export const SHORTCUTS: readonly ShortcutDoc[] = [
   { keys: ['C'], label: 'Copy clip', group: 'edit' },
   { keys: ['V'], label: 'Paste clip di playhead', group: 'edit' },
   { keys: ['Drag'], label: 'Kotak seleksi di area kosong', group: 'pointer' },
-  { keys: ['Shift', 'Klik'], label: 'Tambah/buang dari seleksi', group: 'pointer' },
-  { keys: ['Space', 'Drag'], label: 'Geser tampilan timeline', group: 'pointer' },
+  { keys: ['Cmd/Ctrl', 'Klik'], label: 'Tambah/buang dari seleksi', group: 'pointer' },
+  { keys: ['Shift', 'Drag'], label: 'Pan tampilan timeline', group: 'pointer' },
+  { keys: ['Shift', 'Scroll'], label: 'Gulir timeline horizontal', group: 'pointer' },
+  { keys: ['Scroll'], label: 'Zoom timeline', group: 'pointer' },
 ];
 
 function Key({ children }: { readonly children: string }): JSX.Element {
