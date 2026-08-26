@@ -39,7 +39,12 @@ import {
   type RobloxState,
   type UploadStatus,
 } from './model';
-import { clearRobloxQueue, loadRobloxQueue, saveRobloxQueue } from './persistence';
+import {
+  clearRobloxQueue,
+  loadRobloxQueue,
+  saveRobloxQueue,
+  type PersistedRobloxQueue,
+} from './persistence';
 
 // ── Inti store ───────────────────────────────────────────────────────────────
 
@@ -94,10 +99,77 @@ export function useRoblox<T>(selector?: (s: RobloxState) => T): T | RobloxState 
 const files = new Map<number, File>();
 let nextId = 1;
 
-let persistChain = Promise.resolve();
-function persist(): void {
-  const snapshot = state;
-  const value = {
+/**
+ * Persistence coalescing: progress XHR bisa melapor puluhan kali per detik.
+ * Menulis snapshot lengkap (termasuk Blob audio) untuk SETIAP persen membuat
+ * status `done + assetId` mengantre di belakang puluhan transaksi besar. Kalau
+ * halaman direfresh setelah UI berkata sukses, IndexedDB masih bisa berisi
+ * snapshot `uploading` lama.
+ *
+ * Di sini hanya satu transaksi aktif dan satu snapshot TERBARU yang menunggu.
+ * Snapshot tengah dibuang; status akhir tidak pernah harus mengejar backlog.
+ */
+type PersistJob = () => Promise<void>;
+interface CriticalPersist {
+  readonly job: PersistJob;
+  readonly done: () => void;
+}
+interface PersistenceAdapter {
+  save(value: PersistedRobloxQueue): Promise<void>;
+  clear(): Promise<void>;
+}
+const defaultPersistence: PersistenceAdapter = {
+  save: saveRobloxQueue,
+  clear: clearRobloxQueue,
+};
+let persistence: PersistenceAdapter = defaultPersistence;
+let pendingPersist: PersistJob | null = null;
+const criticalPersists: CriticalPersist[] = [];
+let activePersist: Promise<void> | null = null;
+
+function enqueuePersist(job: PersistJob): Promise<void> {
+  pendingPersist = job;
+  if (activePersist !== null) return activePersist;
+  activePersist = (async () => {
+    while (pendingPersist !== null || criticalPersists.length > 0) {
+      const critical = criticalPersists.shift();
+      if (critical !== undefined) {
+        // Snapshot progress yang lebih tua tidak boleh menimpa commit status
+        // penting. Update yang datang SAAT transaksi berjalan juga dibuang;
+        // publish state sesudah commit akan menjadwalkan snapshot gabungan baru.
+        pendingPersist = null;
+        await critical.job().catch(() => {});
+        pendingPersist = null;
+        critical.done();
+        continue;
+      }
+      const latest = pendingPersist;
+      pendingPersist = null;
+      // Storage yang tidak tersedia tidak boleh menggagalkan upload Roblox.
+      if (latest !== null) await latest().catch(() => {});
+    }
+  })().finally(() => {
+    activePersist = null;
+    // Tidak ada `await` di antara pengecekan terakhir dan finally, tetapi jaga
+    // juga pemanggil yang datang dari callback penyelesaian Promise.
+    if (pendingPersist !== null || criticalPersists.length > 0) {
+      void enqueuePersist(pendingPersist ?? (async () => {}));
+    }
+  });
+  return activePersist;
+}
+
+/** Commit yang tidak boleh di-coalesce atau ditimpa snapshot progress. */
+function persistCritical(job: PersistJob): Promise<void> {
+  return new Promise<void>((resolve) => {
+    criticalPersists.push({ job, done: resolve });
+    // Menyalakan loop tanpa mengganti pending snapshot yang sudah ada.
+    if (activePersist === null) void enqueuePersist(async () => {});
+  });
+}
+
+function persistedValue(snapshot: RobloxState): PersistedRobloxQueue {
+  return {
     items: snapshot.items,
     selected: snapshot.selected,
     target: {
@@ -109,7 +181,11 @@ function persist(): void {
       return file === undefined ? [] : [{ id: it.id, file }];
     }),
   };
-  persistChain = persistChain.then(() => saveRobloxQueue(value)).catch(() => {});
+}
+
+function persist(): Promise<void> {
+  const value = persistedValue(state);
+  return enqueuePersist(() => persistence.save(value));
 }
 
 /** Pulihkan antrean sebelum route mulai melanjutkan polling moderasi. */
@@ -122,6 +198,12 @@ export async function restoreRobloxQueue(): Promise<void> {
     // Request yang putus sebelum operationId diterima tidak aman diteruskan
     // otomatis. Biarkan user melihat penjelasannya dan memutuskan sendiri.
     if (it.status === 'queued' || it.status === 'uploading') {
+      // Versi baru menyimpan assetId provisional segera setelah server upload
+      // menjawab. Kalau snapshot lama punya cukup konteks untuk polling, pulih
+      // sebagai processing alih-alih menyuruh user mengunggah duplikat.
+      if (it.assetId !== null && it.operationId !== null) {
+        return withStatus(it, 'processing', { progress: 100, error: null });
+      }
       return withStatus(it, 'failed', {
         error: 'Halaman dimuat ulang saat unggah berjalan — periksa Creator Hub sebelum mengulang',
       });
@@ -242,7 +324,7 @@ export const robloxActions = {
   clearAll(): void {
     files.clear();
     set((s) => (s.items.length === 0 ? null : { items: [], selected: null }));
-    persistChain = persistChain.then(() => clearRobloxQueue()).catch(() => {});
+    void enqueuePersist(() => persistence.clear());
   },
 
   select(id: number | null): void {
@@ -319,12 +401,41 @@ export const robloxActions = {
   },
 
   /** Byte-nya sudah sampai; Roblox masih memoderasinya. */
-  markProcessing(id: number, operationId: string | null = null): void {
-    set((s) => patchItem(s, id, (it) => withStatus(it, 'processing', { progress: 100, operationId })));
+  async markProcessing(
+    id: number,
+    operationId: string | null = null,
+    assetId: string | null = null,
+  ): Promise<void> {
+    const update = (s: RobloxState): Partial<RobloxState> | null =>
+      patchItem(s, id, (it) =>
+        withStatus(it, 'processing', {
+          progress: 100,
+          operationId,
+          // Jangan membuang ID yang sudah diberikan Roblox hanya karena
+          // moderasinya belum approved.
+          assetId: assetId ?? it.assetId,
+        }),
+      );
+    // Persist bentuk akhirnya SEBELUM status terlihat di UI.
+    await persistCritical(async () => {
+      const patch = update(state);
+      if (patch !== null) await persistence.save(persistedValue({ ...state, ...patch }));
+    });
+    set(update);
   },
 
-  markDone(id: number, assetId: string): void {
-    set((s) => patchItem(s, id, (it) => withStatus(it, 'done', { progress: 100, assetId, operationId: null })));
+  async markDone(id: number, assetId: string): Promise<void> {
+    const update = (s: RobloxState): Partial<RobloxState> | null =>
+      patchItem(s, id, (it) =>
+        withStatus(it, 'done', { progress: 100, assetId, operationId: null }),
+      );
+    // UI boleh berkata sukses hanya setelah assetId durable. Ini menutup celah
+    // refresh tepat sesudah response approved tetapi sebelum transaksi IDB.
+    await persistCritical(async () => {
+      const patch = update(state);
+      if (patch !== null) await persistence.save(persistedValue({ ...state, ...patch }));
+    });
+    set(update);
   },
 
   /** Baris gagal kembali bisa dikirim ulang — `readyItems` ikut menerimanya. */
@@ -344,7 +455,15 @@ export const robloxActions = {
   __resetForTest(): void {
     files.clear();
     nextId = 1;
+    persistence = defaultPersistence;
+    pendingPersist = null;
+    criticalPersists.length = 0;
     state = createInitialRoblox();
     for (const fn of [...listeners]) fn();
+  },
+
+  /** Suntikan storage lambat untuk menguji refresh-race tanpa IndexedDB nyata. */
+  __setPersistenceForTest(adapter: PersistenceAdapter): void {
+    persistence = adapter;
   },
 };

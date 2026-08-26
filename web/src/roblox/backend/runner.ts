@@ -80,7 +80,7 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
   let running: Promise<void> | null = null;
 
   async function approved(item: QueueItem, assetId: string, target: ReturnType<typeof robloxStore.getState>['target']): Promise<void> {
-    robloxActions.markDone(item.id, assetId);
+    await robloxActions.markDone(item.id, assetId);
     try {
       await opts.onApproved?.(item, assetId, target);
     } catch {
@@ -126,7 +126,10 @@ export function createRunner(transport: Transport, opts: RunnerOptions = {}): Ru
           continue;
         }
 
-        robloxActions.markProcessing(item.id, started.operationId);
+        // OperationId DAN assetId provisional disimpan durable sebelum polling
+        // dimulai. Refresh setelah response upload sekarang bisa melanjutkan
+        // operasi yang sama tanpa kehilangan konteks atau mengunggah duplikat.
+        await robloxActions.markProcessing(item.id, started.operationId, started.assetId);
         moderationJobs.push(
           awaitModeration(started.operationId, target.apiKey)
             .then((assetId) => approved(item, assetId, target))

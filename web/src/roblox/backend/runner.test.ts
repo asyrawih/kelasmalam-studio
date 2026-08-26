@@ -58,7 +58,7 @@ describe('jalur bahagia', () => {
   it('melanjutkan polling moderasi dari operationId yang dipulihkan setelah refresh', async () => {
     seed(['a.mp3']);
     const item = byName('a.mp3');
-    robloxActions.markProcessing(item.id, 'op-persisted');
+    await robloxActions.markProcessing(item.id, 'op-persisted');
     const operation = vi.fn(async (operationId: string) => ({
       done: true,
       assetId: '909',
@@ -108,6 +108,38 @@ describe('jalur bahagia', () => {
 
     expect(byName('a.mp3')).toMatchObject({ status: 'done', assetId: '999' });
     expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('menyimpan assetId dari response upload walau moderasi masih berjalan', async () => {
+    seed(['a.mp3']);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const operation = vi.fn(async () => {
+      await gate;
+      return { done: true, assetId: '555', moderationState: 'approved' as const };
+    });
+    const runner = runnerOf(
+      fakeTransport({
+        upload: async () => ({
+          operationId: 'op-555',
+          done: false,
+          assetId: '555',
+          moderationState: 'reviewing',
+        }),
+        operation,
+      }),
+    );
+
+    runner.run(items());
+    await vi.waitFor(() =>
+      expect(byName('a.mp3')).toMatchObject({
+        status: 'processing',
+        operationId: 'op-555',
+        assetId: '555',
+      }),
+    );
+    release();
+    await runner.idle();
   });
 
   it('progres unggah mendarat di baris yang benar', async () => {

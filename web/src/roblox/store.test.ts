@@ -91,7 +91,7 @@ describe('stabilitas referensi', () => {
 });
 
 describe('siklus hidup unggah', () => {
-  it('berjalan dari antre sampai selesai, dan menyimpan asset id-nya', () => {
+  it('berjalan dari antre sampai selesai, dan menyimpan asset id-nya', async () => {
     robloxActions.addFiles([mp3('a.mp3')]);
     const id = state().items[0]!.id;
 
@@ -102,11 +102,53 @@ describe('siklus hidup unggah', () => {
     robloxActions.markProgress(id, 42);
     expect(state().items[0]!).toMatchObject({ status: 'uploading', progress: 42 });
 
-    robloxActions.markProcessing(id);
+    await robloxActions.markProcessing(id);
     expect(state().items[0]!).toMatchObject({ status: 'processing', progress: 100 });
 
-    robloxActions.markDone(id, '9876');
+    await robloxActions.markDone(id, '9876');
     expect(state().items[0]!).toMatchObject({ status: 'done', assetId: '9876' });
+  });
+
+  it('menyimpan asset id provisional selama moderasi', async () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    const id = state().items[0]!.id;
+    await robloxActions.markProcessing(id, 'op-123', '4567');
+    expect(state().items[0]!).toMatchObject({
+      status: 'processing',
+      operationId: 'op-123',
+      assetId: '4567',
+    });
+  });
+
+  it('status done + assetId menyalip backlog progress dan durable sebelum Promise selesai', async () => {
+    const saved: Array<{ readonly items: readonly { status: string; assetId: string | null }[] }> = [];
+    let release!: () => void;
+    const firstWrite = new Promise<void>((resolve) => { release = resolve; });
+    robloxActions.__setPersistenceForTest({
+      save: async (value) => {
+        saved.push(value);
+        if (saved.length === 1) await firstWrite;
+      },
+      clear: async () => {},
+    });
+
+    robloxActions.addFiles([mp3('a.mp3')]); // transaksi pertama sengaja macet
+    const id = state().items[0]!.id;
+    robloxActions.markUploading(id);
+    for (let pct = 1; pct <= 100; pct++) robloxActions.markProgress(id, pct);
+    const durable = robloxActions.markDone(id, '9876');
+
+    // Seratus update tidak menjadi seratus transaksi Blob: hanya snapshot
+    // aktif + snapshot TERBARU yang menunggu.
+    expect(saved).toHaveLength(1);
+    release();
+    await durable;
+    // Satu snapshot awal + satu commit kritis. Publish UI menjadwalkan satu
+    // snapshot gabungan lagi, tetapi assetId SUDAH durable sebelum itu.
+    expect(saved.length).toBeGreaterThanOrEqual(2);
+    expect(saved.some((entry) =>
+      entry.items[0]?.status === 'done' && entry.items[0]?.assetId === '9876',
+    )).toBe(true);
   });
 
   it('progress dijepit ke 0..100 — laporan aneh dari pengunggah tidak merusak bar', () => {
@@ -137,11 +179,11 @@ describe('siklus hidup unggah', () => {
 });
 
 describe('bersih-bersih', () => {
-  it('BERSIHKAN SELESAI hanya membuang yang selesai — yang gagal sengaja ditinggal', () => {
+  it('BERSIHKAN SELESAI hanya membuang yang selesai — yang gagal sengaja ditinggal', async () => {
     robloxActions.addFiles([mp3('a.mp3'), mp3('b.mp3'), mp3('c.mp3')]);
     const a = state().items[0]!;
     const b = state().items[1]!;
-    robloxActions.markDone(a.id, '1');
+    await robloxActions.markDone(a.id, '1');
     robloxActions.markFailed(b.id, 'gagal');
 
     robloxActions.clearDone();

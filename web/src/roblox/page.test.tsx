@@ -153,13 +153,13 @@ describe('kunci saat berjalan', () => {
     ).toBe(true);
   });
 
-  it('baris yang masih ANTRE bisa dihapus saat baris lain sedang dimoderasi', () => {
+  it('baris yang masih ANTRE bisa dihapus saat baris lain sedang dimoderasi', async () => {
     render(<RobloxPage />);
     drop([mp3('aktif.mp3'), mp3('menunggu.mp3')]);
     const [aktif, menunggu] = robloxStore.getState().items;
-    fromUploader(() => {
+    await act(async () => {
       robloxActions.markQueued([aktif!.id, menunggu!.id]);
-      robloxActions.markProcessing(aktif!.id, 'op-aktif');
+      await robloxActions.markProcessing(aktif!.id, 'op-aktif');
     });
 
     expect((screen.getByLabelText('hapus aktif.mp3') as HTMLButtonElement).disabled).toBe(true);
