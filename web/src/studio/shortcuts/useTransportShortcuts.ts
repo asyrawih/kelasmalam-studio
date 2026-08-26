@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 
 import { studioActions, studioStore } from '../store';
 import { pressSpace, releaseSpace, resetSpace } from './space-pan';
+import { getTimelineCursor } from '../timeline/timeline-cursor';
 
 /** True kalau target event adalah tempat mengetik. */
 function isTextEntry(target: EventTarget | null): boolean {
@@ -50,8 +51,7 @@ export function useTransportShortcuts(): void {
           // Space juga meng-'klik' tombol yang sedang fokus — cegah itu,
           // supaya menekan Space setelah klik PLAY tidak men-toggle dua kali.
           e.preventDefault();
-          // Play-nya di KEYUP, bukan di sini: selama ditahan, spasi adalah alat
-          // tangan untuk pan timeline. Lihat `space-pan.ts`.
+          // Play tetap di KEYUP agar auto-repeat tidak men-toggle berkali-kali.
           pressSpace();
           break;
         }
@@ -125,9 +125,16 @@ export function useTransportShortcuts(): void {
       if (e.key !== ' ') return;
       if (isTextEntry(e.target)) return;
       e.preventDefault();
-      // Hanya ketukan MURNI yang jadi play; kalau spasi barusan dipakai untuk
-      // menggeser timeline, transport tidak boleh ikut berubah.
-      if (releaseSpace()) studioActions.togglePlay();
+      if (releaseSpace()) {
+        const state = studioStore.getState();
+        const cursor = getTimelineCursor();
+        // Saat MULAI play dari area timeline, beri pre-roll visual/audio tiga
+        // detik. Pause tidak pernah melompatkan playhead.
+        if (!state.playing && cursor !== null) {
+          studioActions.setPlayhead(Math.max(0, cursor - state.sampleRate * 3));
+        }
+        studioActions.togglePlay();
+      }
     };
 
     // capture: true — handler ini menang lebih dulu dari handler komponen.

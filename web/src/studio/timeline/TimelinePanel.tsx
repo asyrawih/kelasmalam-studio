@@ -157,6 +157,13 @@ export function TimelinePanel(): JSX.Element {
       const el = scrollerRef.current;
       if (el === null) return;
       e.preventDefault();
+      if (e.shiftKey) {
+        // Wheel vertikal paling mudah dijangkau mouse. Dengan Shift, gunakan
+        // delta itu untuk menggulir timeline secara horizontal.
+        el.scrollLeft += e.deltaY;
+        syncView();
+        return;
+      }
       const rect = el.getBoundingClientRect();
       // Kursor bisa berada di kolom nama lane (di kiri area gulir), jadi
       // offsetnya DIJEPIT: zoom berjangkar di tepi terdekat, bukan di titik
@@ -168,7 +175,7 @@ export function TimelinePanel(): JSX.Element {
     };
     body.addEventListener('wheel', onWheel, { passive: false });
     return () => body.removeEventListener('wheel', onWheel);
-  }, [zoomBy, durationSec]);
+  }, [zoomBy, durationSec, syncView]);
 
   // follow(): jaga playhead tetap terlihat. Tidak saat FIT (seluruh project
   // sudah terlihat) dan tidak saat user sedang men-drag.
@@ -253,7 +260,7 @@ export function TimelinePanel(): JSX.Element {
     <div ref={cardRef} data-tl-card>
       <Card
         title="Timeline"
-        subtitle="klik lane kosong = pilih berkas · drag = pilih area · spasi+drag = geser · scroll = zoom · dobel-klik clip = detail"
+        subtitle="klik lane kosong = pilih berkas · drag = pilih area · Shift+drag = pan · Shift+scroll = gulir timeline · scroll = zoom · Space = play 3 dtk sebelum cursor"
         notched
         glow
       >

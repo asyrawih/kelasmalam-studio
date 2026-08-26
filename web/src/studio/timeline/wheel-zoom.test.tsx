@@ -17,8 +17,8 @@ import { TimelinePanel } from './TimelinePanel';
 Element.prototype.getBoundingClientRect = () =>
   ({ x: 0, y: 0, top: 0, left: 0, right: 800, bottom: 300, width: 800, height: 300, toJSON: () => ({}) }) as DOMRect;
 
-function wheel(el: Element, deltaY: number): WheelEvent {
-  const ev = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true, clientX: 400 });
+function wheel(el: Element, deltaY: number, shiftKey = false): WheelEvent {
+  const ev = new WheelEvent('wheel', { deltaY, shiftKey, bubbles: true, cancelable: true, clientX: 400 });
   el.dispatchEvent(ev);
   return ev;
 }
@@ -61,6 +61,17 @@ describe('gulir untuk zoom', () => {
     act(() => studioActions.setZoom(20));
     wheel(find('[data-tl-body]'), 100);
     expect(studioStore.getState().pxPerSecond).toBeLessThan(20);
+  });
+
+  it('Shift+scroll menggulir timeline horizontal tanpa mengubah zoom', () => {
+    render(<TimelinePanel />);
+    act(() => studioActions.setZoom(20));
+    const el = find('[data-tl-scroll]') as HTMLElement;
+    el.scrollLeft = 40;
+    const ev = wheel(el, 100, true);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(el.scrollLeft).toBe(140);
+    expect(studioStore.getState().pxPerSecond).toBe(20);
   });
 
   it('gulir di TOOLBAR juga men-zoom — seluruh kartu ikut aturan yang sama', () => {

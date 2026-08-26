@@ -16,7 +16,6 @@ import {
   useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
@@ -24,7 +23,6 @@ import {
 } from 'react';
 import { isAudible, laneHeightPx, type StudioClip, type StudioLane } from '../model';
 import { studioActions, studioStore, useStudio, type ClipOrigin, type StudioAsset } from '../store';
-import { isSpaceHeld, markSpacePan, subscribeSpace } from '../shortcuts/space-pan';
 import { runFileImport, runUrlImport } from './lane-import';
 import { LIBRARY_TRACK_MIME, notifyLibraryDrop } from './library-drop';
 import { LaneImportOverlay } from './LaneImportOverlay';
@@ -34,6 +32,7 @@ import { visibleWindow, type WaveWindow } from './wave-window';
 import { fadeOverlayGradient } from './fade';
 import { useCanvasDraw } from '../../ui/lib/canvas';
 import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
+import { clearTimelineCursor, setTimelineCursor } from './timeline-cursor';
 
 export interface ClipAreaProps {
   readonly scrollerRef: RefObject<HTMLDivElement>;
@@ -57,7 +56,7 @@ function fadePct(fadeMs: number, clipLen: number, sampleRate: number): number {
   return Math.max(0, Math.min(50, (fadeSamples / clipLen) * 100));
 }
 
-/** Drag clip (pindah waktu + lane) atau drag latar (pan). */
+/** Drag clip (pindah waktu + lane) atau drag timeline (pan). */
 type Gesture =
   | {
       readonly kind: 'clip';
@@ -562,15 +561,6 @@ export function ClipArea({
   const selectedClipId = useStudio((s) => s.selectedClipId);
   const selectedClipIds = useStudio((s) => s.selectedClipIds);
   const laneH = laneHeightPx(useStudio((s) => s.laneHeight));
-  /**
-   * HANYA untuk kursor. Keputusan pan/seleksi dibaca LANGSUNG dari
-   * `isSpaceHeld()` di dalam handler — nilai dari render bisa satu frame basi,
-   * dan satu frame di sini berarti gerakan pertama setelah menekan spasi jadi
-   * kotak seleksi, bukan geser. Hal yang sama berlaku untuk seleksi: keduanya
-   * dibaca dari sumbernya saat pointer turun, bukan dari closure render.
-   */
-  const spaceHeld = useSyncExternalStore(subscribeSpace, isSpaceHeld, isSpaceHeld);
-
   const gesture = useRef<Gesture | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const view = useTrackView(scrollerRef, trackRef);
@@ -627,6 +617,20 @@ export function ClipArea({
     studioActions.setClipDragging(true);
   };
 
+  const beginPan = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const el = scrollerRef.current;
+    if (el === null) return;
+    e.preventDefault();
+    gesture.current = {
+      kind: 'pan',
+      pointerId: e.pointerId,
+      x0: e.clientX,
+      scrollLeft0: el.scrollLeft,
+    };
+    capture(e);
+    el.style.cursor = 'grabbing';
+  };
+
   /** Posisi awal semua clip pada `ids`, untuk drag berombongan. */
   const originsOf = (ids: readonly string[]): ClipOrigin[] => {
     const wanted = new Set(ids);
@@ -649,6 +653,10 @@ export function ClipArea({
     // Gagang menang atas badan clip: tanpa ini, satu pointerdown akan memulai
     // trim DAN pemindahan clip sekaligus.
     e.stopPropagation();
+    if (e.shiftKey) {
+      beginPan(e);
+      return;
+    }
     e.preventDefault();
     const el = scrollerRef.current;
     const p = trackPoint(e.clientX, e.clientY);
@@ -673,6 +681,10 @@ export function ClipArea({
     e.preventDefault();
     const el = scrollerRef.current;
     if (el === null) return;
+    if (e.button === 0 && e.shiftKey) {
+      beginPan(e);
+      return;
+    }
     const laneIndex = lanes.findIndex((l) => l.clips.some((c) => c.id === clip.id));
     if (laneIndex < 0) return;
 
@@ -695,7 +707,7 @@ export function ClipArea({
       return;
     }
 
-    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    const additive = e.metaKey || e.ctrlKey;
     if (additive) {
       // Menambah/membuang dari seleksi, TANPA memulai drag: menyeret sambil
       // menahan Ctrl hampir selalu tidak disengaja, dan kalau ia ikut memindah
@@ -770,26 +782,16 @@ export function ClipArea({
    * Pointer turun di LATAR.
    *
    * Dulu ini selalu pan. Sejak seleksi kotak ada, latar dipakai untuk MEMILIH —
-   * gerakan yang sama dengan CapCut/Figma — dan pan pindah ke modifier: spasi
-   * ditahan, atau tombol tengah mouse. Keduanya konvensi yang sudah dihafal
-   * tangan, dan keduanya tidak mungkin tertekan tanpa sengaja.
+   * gerakan yang sama dengan CapCut/Figma — dan pan memakai Shift+drag atau
+   * tombol tengah mouse. Shift juga bekerja ketika pointer berada di atas clip,
+   * sehingga clip panjang tidak lagi menutup satu-satunya permukaan untuk pan.
    */
   const beginBackgroundDrag = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const el = scrollerRef.current;
     if (el === null) return;
-    const held = isSpaceHeld();
-    const wantsPan = e.button === 1 || (e.button === 0 && held);
+    const wantsPan = e.button === 1 || (e.button === 0 && e.shiftKey);
     if (wantsPan) {
-      e.preventDefault();
-      if (held) markSpacePan();
-      gesture.current = {
-        kind: 'pan',
-        pointerId: e.pointerId,
-        x0: e.clientX,
-        scrollLeft0: el.scrollLeft,
-      };
-      capture(e);
-      el.style.cursor = 'grabbing';
+      beginPan(e);
       return;
     }
     if (e.button !== 0) return;
@@ -819,6 +821,12 @@ export function ClipArea({
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const cursor = trackPoint(e.clientX, e.clientY);
+    const track = trackRef.current;
+    const trackWidthPx = track?.getBoundingClientRect().width ?? 0;
+    if (cursor !== null && trackWidthPx > 0) {
+      setTimelineCursor((Math.max(0, Math.min(trackWidthPx, cursor.x)) / trackWidthPx) * duration);
+    }
     const g = gesture.current;
     if (g === null || g.pointerId !== e.pointerId) return;
     const el = scrollerRef.current;
@@ -988,6 +996,7 @@ export function ClipArea({
       onPointerMove={onPointerMove}
       onPointerUp={endGesture}
       onPointerCancel={endGesture}
+      onPointerLeave={() => clearTimelineCursor()}
       style={{
         minWidth: 0,
         maxWidth: '100%',
@@ -995,7 +1004,7 @@ export function ClipArea({
         overflowY: 'hidden',
         contain: 'inline-size',
         scrollbarWidth: 'none',
-        cursor: spaceHeld ? 'grab' : 'default',
+        cursor: 'default',
         touchAction: 'pan-y',
       }}
     >

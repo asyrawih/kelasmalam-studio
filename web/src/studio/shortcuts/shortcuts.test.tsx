@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { studioActions, studioStore } from '../store';
 import { useTransportShortcuts } from './useTransportShortcuts';
+import { clearTimelineCursor, setTimelineCursor } from '../timeline/timeline-cursor';
 
 function Harness(): JSX.Element {
   useTransportShortcuts();
@@ -22,6 +23,7 @@ function release(key: string, target?: EventTarget, init: KeyboardEventInit = {}
 describe('useTransportShortcuts', () => {
   beforeEach(() => {
     studioActions.__resetForTest();
+    clearTimelineCursor();
   });
 
   it('Space men-toggle play dari mana saja — saat DILEPAS', () => {
@@ -33,6 +35,28 @@ describe('useTransportShortcuts', () => {
     expect(studioStore.getState().playing).toBe(before);
     release(' ');
     expect(studioStore.getState().playing).toBe(!before);
+  });
+
+  it('Space mulai play tiga detik sebelum cursor timeline', () => {
+    render(<Harness />);
+    const sr = studioStore.getState().sampleRate;
+    setTimelineCursor(sr * 20);
+    press(' ');
+    release(' ');
+    expect(studioStore.getState().playing).toBe(true);
+    expect(studioStore.getState().playhead).toBe(sr * 17);
+  });
+
+  it('Space untuk pause tidak memindahkan playhead ke cursor', () => {
+    render(<Harness />);
+    const sr = studioStore.getState().sampleRate;
+    studioActions.setPlayhead(sr * 8);
+    studioActions.setPlaying(true);
+    setTimelineCursor(sr * 20);
+    press(' ');
+    release(' ');
+    expect(studioStore.getState().playing).toBe(false);
+    expect(studioStore.getState().playhead).toBe(sr * 8);
   });
 
   it('Space yang dipakai untuk pan TIDAK ikut men-toggle play', async () => {

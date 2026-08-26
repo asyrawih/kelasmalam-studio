@@ -72,6 +72,12 @@ function ids(): readonly string[] {
   return studioStore.getState().selectedClipIds;
 }
 
+function clipStart(id: string): number {
+  const found = studioStore.getState().lanes.flatMap((lane) => lane.clips).find((item) => item.id === id);
+  if (found === undefined) throw new Error(`clip ${id} tidak ada`);
+  return found.start;
+}
+
 /** px per detik pada track ini. */
 function pxAt(sec: number): number {
   const dur = studioStore.getState().duration / SR;
@@ -138,24 +144,24 @@ describe('kotak seleksi', () => {
     expect(ids()).toEqual(['a']);
   });
 
-  it('Shift menambah ke seleksi yang sudah ada', () => {
+  it('Ctrl menambah ke seleksi yang sudah ada', () => {
     render(<Harness />);
     studioActions.setSelectedClips(['b']);
     const el = scroller();
-    fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: 0, clientY: 0, shiftKey: true });
+    fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: true });
     fireEvent.pointerMove(el, { pointerId: 1, clientX: pxAt(5), clientY: laneH() - 4 });
     expect([...ids()].sort()).toEqual(['a', 'b']);
   });
 });
 
 describe('klik dan geser clip', () => {
-  it('Shift-klik clip menambahkannya tanpa memulai geser', () => {
+  it('Ctrl-klik clip menambahkannya tanpa memulai geser', () => {
     render(<Harness />);
     studioActions.selectClip('a');
-    fireEvent.pointerDown(clipEl('c'), { pointerId: 1, button: 0, clientX: 0, clientY: 0, shiftKey: true });
+    fireEvent.pointerDown(clipEl('c'), { pointerId: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: true });
     fireEvent.pointerMove(clipEl('c'), { pointerId: 1, clientX: 300, clientY: 0 });
     expect([...ids()].sort()).toEqual(['a', 'c']);
-    // Tidak ada yang bergeser: Ctrl/Shift-drag hampir selalu tidak disengaja.
+    // Tidak ada yang bergeser: Ctrl-drag hampir selalu tidak disengaja.
     expect(studioStore.getState().lanes[1]!.clips[0]!.start).toBe(2 * SR);
   });
 
@@ -254,18 +260,24 @@ describe('trim & slip di timeline', () => {
 });
 
 describe('pan', () => {
-  it('spasi ditahan mengubah drag latar jadi geser tampilan, bukan seleksi', async () => {
-    const { pressSpace, releaseSpace } = await import('../shortcuts/space-pan');
+  it('Shift+drag latar menggeser tampilan, bukan seleksi', () => {
     render(<Harness />);
-    pressSpace();
     const el = scroller();
-    fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerDown(el, { pointerId: 1, button: 0, shiftKey: true, clientX: 0, clientY: 0 });
     fireEvent.pointerMove(el, { pointerId: 1, clientX: pxAt(5), clientY: laneH() * 2 });
     expect(ids()).toEqual([]);
     expect(document.querySelector('[data-marquee]')).toBeNull();
     fireEvent.pointerUp(el, { pointerId: 1, clientX: pxAt(5), clientY: 0 });
-    // Spasi yang dipakai untuk pan tidak boleh ikut men-toggle play.
-    expect(releaseSpace()).toBe(false);
+  });
+
+  it('Shift+drag di atas clip melakukan pan dan TIDAK menggeser clip', () => {
+    render(<Harness />);
+    const el = clipEl('a');
+    const before = clipStart('a');
+    fireEvent.pointerDown(el, { pointerId: 1, button: 0, shiftKey: true, clientX: pxAt(4), clientY: 10 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: pxAt(1), clientY: 10 });
+    expect(clipStart('a')).toBe(before);
+    expect(scroller().scrollLeft).toBeGreaterThan(0);
   });
 
   it('tombol tengah juga pan, tanpa spasi', () => {
