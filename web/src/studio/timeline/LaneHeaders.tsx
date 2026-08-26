@@ -10,11 +10,13 @@
  * dua kali (atau Enter/Space) membuka `LaneColorModal`.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   isAudible,
   laneHeightPx,
+  MAX_LANE_SPEED,
+  MIN_LANE_SPEED,
   LANE_SPEEDS,
   formatTime,
   laneTotalSamples,
@@ -44,6 +46,132 @@ const MICRO_BTN = {
   cursor: 'pointer',
 } as const;
 
+function formatLaneSpeed(value: number): string {
+  return `${Number(value.toFixed(3))}x`;
+}
+
+function LaneSpeedControl({ lane }: { readonly lane: StudioLane }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [manual, setManual] = useState(() => String(lane.speedRatio));
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setManual(String(Number(lane.speedRatio.toFixed(3)))), [lane.speedRatio]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (e: PointerEvent): void => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const closeEscape = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('pointerdown', closeOutside);
+    window.addEventListener('keydown', closeEscape);
+    return () => {
+      window.removeEventListener('pointerdown', closeOutside);
+      window.removeEventListener('keydown', closeEscape);
+    };
+  }, [open]);
+
+  const applyManual = (): void => {
+    const parsed = Number(manual.replace(',', '.'));
+    if (Number.isFinite(parsed)) studioActions.setLaneSpeed(lane.id, parsed);
+    else setManual(String(Number(lane.speedRatio.toFixed(3))));
+  };
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', marginLeft: '2px' }} onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label={`kecepatan lane ${lane.name}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="Atur kecepatan lane"
+        onClick={() => setOpen((value) => !value)}
+        style={{
+          height: '18px',
+          minWidth: '40px',
+          padding: '0 5px',
+          background: lane.speedRatio === 1 ? 'transparent' : 'var(--cy-accent)',
+          color: lane.speedRatio === 1 ? 'var(--cy-text-muted)' : 'var(--cy-text-on-accent)',
+          border: '1px solid var(--cy-border-strong)',
+          fontFamily: 'var(--cy-font-mono)',
+          fontSize: '8px',
+          cursor: 'pointer',
+        }}
+      >
+        {formatLaneSpeed(lane.speedRatio)}
+      </button>
+
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={`atur kecepatan ${lane.name}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            zIndex: 30,
+            left: 0,
+            top: '24px',
+            width: '246px',
+            padding: '14px',
+            border: '1px solid var(--cy-accent)',
+            background: 'var(--cy-surface-1)',
+            boxShadow: '0 16px 42px #000c',
+          }}
+        >
+          <div style={{ fontSize: '9px', letterSpacing: '.18em', color: 'var(--cy-accent)', marginBottom: '12px' }}>
+            VARISPEED · {lane.name.toUpperCase()}
+          </div>
+          <label style={{ display: 'grid', gap: '6px', fontSize: '9px', color: 'var(--cy-text-muted)', letterSpacing: '.12em' }}>
+            SPEED MANUAL
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input
+                aria-label={`speed manual ${lane.name}`}
+                inputMode="decimal"
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+                onBlur={applyManual}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') applyManual();
+                  if (e.key === 'Escape') setOpen(false);
+                }}
+                style={{ width: '100%', minWidth: 0, height: '30px', padding: '0 8px', border: '1px solid var(--cy-border-strong)', background: '#050505', color: 'var(--cy-text)', fontFamily: 'var(--cy-font-mono)' }}
+              />
+              <span style={{ alignSelf: 'center', color: 'var(--cy-text-muted)' }}>×</span>
+            </div>
+          </label>
+          <input
+            type="range"
+            aria-label={`slider speed ${lane.name}`}
+            min={MIN_LANE_SPEED}
+            max={MAX_LANE_SPEED}
+            step="0.01"
+            value={lane.speedRatio}
+            onChange={(e) => studioActions.setLaneSpeed(lane.id, Number(e.target.value))}
+            style={{ width: '100%', margin: '14px 0 10px', accentColor: 'var(--cy-accent)' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', color: 'var(--cy-text-muted)' }}>
+            <span>{MIN_LANE_SPEED}×</span>
+            <strong style={{ color: 'var(--cy-accent)' }}>{formatLaneSpeed(lane.speedRatio)}</strong>
+            <span>{MAX_LANE_SPEED}×</span>
+          </div>
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--cy-border)' }}>
+            {LANE_SPEEDS.map((speed) => (
+              <button key={speed} type="button" onClick={() => studioActions.setLaneSpeed(lane.id, speed)} style={{ height: '24px', padding: '0 7px', border: '1px solid var(--cy-border-strong)', background: speed === lane.speedRatio ? 'var(--cy-accent)' : 'transparent', color: speed === lane.speedRatio ? 'var(--cy-text-on-accent)' : 'var(--cy-text-muted)', fontFamily: 'var(--cy-font-mono)', fontSize: '8px', cursor: 'pointer' }}>
+                {formatLaneSpeed(speed)}
+              </button>
+            ))}
+          </div>
+          <p style={{ margin: '10px 0 0', fontSize: '8px', lineHeight: 1.5, color: 'var(--cy-text-muted)' }}>
+            VARISPEED — SPEED DAN PITCH BERUBAH BERSAMA.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps): JSX.Element {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [swatchHover, setSwatchHover] = useState(false);
@@ -60,7 +188,6 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
         : `${lane.clips.length} CLIP · ${formatTime(samplesToSec(laneTotalSamples(lane), sampleRate))}`;
 
   const laneH = laneHeightPx(useStudio((st) => st.laneHeight));
-  const hasPresetSpeed = (LANE_SPEEDS as readonly number[]).includes(lane.speedRatio);
 
   return (
     <>
@@ -210,42 +337,7 @@ function LaneRow({ lane, selected, sampleRate, silencedByOther }: LaneRowProps):
               ✕
             </span>
 
-            {/*
-              Speed lane. VARISPEED — pitch ikut berubah, jadi label-nya harus
-              jujur; lihat catatan PITCH_LOCK_AVAILABLE di model.ts.
-              `select` dipilih daripada tombol siklus: nilainya langsung terbaca
-              tanpa harus menekan berkali-kali untuk tahu ada pilihan apa.
-            */}
-            <select
-              aria-label={`kecepatan lane ${lane.name}`}
-              title="Kecepatan lane (varispeed — pitch ikut berubah)"
-              value={lane.speedRatio}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => {
-                e.stopPropagation();
-                studioActions.setLaneSpeed(lane.id, Number.parseFloat(e.target.value));
-              }}
-              style={{
-                height: '18px',
-                marginLeft: '2px',
-                background: lane.speedRatio === 1 ? 'transparent' : 'var(--cy-accent)',
-                color: lane.speedRatio === 1 ? 'var(--cy-text-muted)' : 'var(--cy-text-on-accent)',
-                border: '1px solid var(--cy-border-strong)',
-                fontFamily: 'var(--cy-font-mono)',
-                fontSize: '8px',
-                padding: '0 2px',
-                cursor: 'pointer',
-              }}
-            >
-              {!hasPresetSpeed ? (
-                <option value={lane.speedRatio}>{lane.speedRatio.toFixed(3)}x · SYNC</option>
-              ) : null}
-              {LANE_SPEEDS.map((r) => (
-                <option key={r} value={r}>
-                  {r}x
-                </option>
-              ))}
-            </select>
+            <LaneSpeedControl lane={lane} />
           </div>
         </div>
       </div>
