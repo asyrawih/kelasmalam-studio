@@ -48,7 +48,7 @@ cookie, dan konfigurasi CORS sekaligus. Putuskan sekarang.
 ```bash
 cd backend
 npm ci
-npm test          # 86 tes; kalau merah, jangan deploy
+npm test          # 130 tes; kalau merah, jangan deploy
 npx wrangler login
 ```
 
@@ -204,7 +204,7 @@ Yang tidak rahasia masuk `wrangler.library.toml`:
 [vars]
 APP_ORIGIN = "https://app.contoh.com"
 API_ORIGIN = "https://api.contoh.com"
-ALLOWED_ORIGINS = ""                     # kosong = pakai APP_ORIGIN saja
+ALLOWED_ORIGINS = ""                     # kosong = pakai APP_ORIGIN saja; desktop butuh isian (§3.7)
 GOOGLE_CLIENT_ID = "....apps.googleusercontent.com"
 R2_ACCOUNT_ID = "<account id>"
 R2_BUCKET = "dawonweb-tracks"
@@ -246,6 +246,70 @@ curl https://api.contoh.com/health
 curl -i https://api.contoh.com/me
 # HTTP/2 401  → benar: belum ada sesi
 ```
+
+### 3.7 Aplikasi desktop (Tauri)
+
+Login desktop (docs/16 §9, docs/20 §1d) butuh dua hal di sisi Worker, dan
+**tidak butuh apa pun di Google Cloud Console** — redirect URI tetap
+`https://api.contoh.com/auth/callback`; deep link `kelasmalam://auth` dipanggil
+oleh Worker, bukan oleh Google.
+
+**1. Migrasi `0006_desktop_auth_code.sql`** — tabel code sekali pakai. Tanpa
+ini `/auth/callback?…` untuk `client=desktop` menjawab `GALAT_INTERNAL` dengan
+pesan `no such table: desktop_auth_code`.
+
+```bash
+npm run migrate:library
+```
+
+**2. `ALLOWED_ORIGINS` diisi** di `wrangler.library.toml`. Daftar yang terisi
+*menggantikan* `APP_ORIGIN`, jadi origin web ditulis ulang di dalamnya:
+
+```toml
+ALLOWED_ORIGINS = "https://app.contoh.com,tauri://localhost,http://tauri.localhost"
+```
+
+Lalu `npm run deploy:library`.
+
+Verifikasi dari terminal — tanpa aplikasi desktop, tanpa browser:
+
+```bash
+# Preflight dari origin desktop harus menyebut authorization.
+curl -si -X OPTIONS https://api.contoh.com/me \
+  -H 'Origin: tauri://localhost' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: authorization' | grep -i '^access-control'
+# access-control-allow-origin: tauri://localhost
+# access-control-allow-headers: content-type,x-roblox-api-key,if-match,authorization
+# access-control-allow-credentials: true
+
+# Code ngawur → 401, bukan 500 (500 = migrasi 0006 belum jalan).
+curl -si -X POST https://api.contoh.com/auth/desktop/exchange \
+  -H 'Content-Type: application/json' -d '{"code":"ngawur"}'
+# HTTP/2 401  {"code":"CODE_TIDAK_SAH",…}
+
+# Bearer ngawur → 401.
+curl -si https://api.contoh.com/me -H 'Authorization: Bearer ngawur'
+# HTTP/2 401
+```
+
+Alur utuh dengan code sungguhan, kalau aplikasinya belum ada di mesin ini:
+buka `https://api.contoh.com/auth/google?client=desktop&state=coba` di browser,
+selesaikan login — browser akan mencoba membuka `kelasmalam://auth?code=…&state=coba`
+dan gagal (skema belum terdaftar); salin `code` dari bilah alamat, lalu **dalam
+60 detik**:
+
+```bash
+curl -s -X POST https://api.contoh.com/auth/desktop/exchange \
+  -H 'Content-Type: application/json' -d '{"code":"<code dari URL>"}'
+# {"token":"…"}
+curl -s https://api.contoh.com/me -H 'Authorization: Bearer <token>'
+# {"id":"…","email":"…","name":"…"}
+curl -s -X POST https://api.contoh.com/auth/logout -H 'Authorization: Bearer <token>'
+# {"ok":true}  — tanpa Set-Cookie; token itu sekarang 401
+```
+
+Mengulang `exchange` dengan code yang sama harus 401: sekali pakai.
 
 ---
 
@@ -314,6 +378,8 @@ Urutannya menaik: yang gagal lebih dulu menyempitkan masalahnya.
 4. Klik **MASUK DENGAN GOOGLE** → consent → kembali ke `/studio`, nama muncul
 5. Refresh → masih masuk (kalau tidak: cookie tidak bertahan, lihat §6)
 6. `/roblox`: badge berubah dari `UI ONLY` jadi `SIAP`
+7. Desktop: ketiga `curl` di §3.7 — preflight menyebut `authorization`,
+   exchange dan bearer ngawur menjawab `401` (bukan `500`, bukan `403`)
 
 ---
 
@@ -333,6 +399,9 @@ Urutannya menaik: yang gagal lebih dulu menyempitkan masalahnya.
 | `Cannot read properties of undefined (reading 'prepare')` | nama binding di `wrangler.toml` bukan `DB` | kode membaca `env.DB`; dashboard menyarankan nama yang mengikuti nama database, dan saran itu salah. Sejak versi ini pesannya langsung menyebut `BINDING_HILANG` |
 | `error code: 1101` dari Worker | Worker melempar exception — HAMPIR SELALU binding basi (deploy lebih tua dari config) atau tabel belum ada | redeploy, lalu ulangi tes di §5; sejak versi ini galatnya dibalas ber-JSON dengan pesannya, bukan halaman 1101 |
 | `/tracks/init` menjawab 413 | berkas > `MAX_TRACK_BYTES` | naikkan, atau tunggu multipart (§5c) |
+| Desktop: semua panggilan `403 ORIGIN_DITOLAK` | `ALLOWED_ORIGINS` tidak memuat `tauri://localhost` / `http://tauri.localhost` | §3.7 — keduanya, dan origin web ditulis ulang di daftar yang sama |
+| Desktop: login berhasil di browser, lalu `500` `no such table: desktop_auth_code` | migrasi 0006 belum jalan di **remote** | `npm run migrate:library` |
+| Desktop: `exchange` selalu `401 CODE_TIDAK_SAH` | code lewat 60 detik, atau sudah ditukar (deep link dibuka dua kali) | ulangi login; kalau konsisten, periksa jam mesin Worker vs `expires_at` lewat `wrangler d1 execute` |
 
 Log langsung:
 
