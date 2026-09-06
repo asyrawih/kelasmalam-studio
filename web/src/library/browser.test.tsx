@@ -18,6 +18,7 @@ import { fakeLibraryApi } from './fake-api';
 import { libraryActions, libraryStore } from './store';
 import type { LibraryApi } from './api';
 import type { LibraryTrack } from './model';
+import { registerLaneLocator, registerLibraryDropHandler } from '../studio/timeline/library-drop';
 
 const H1 = 'a'.repeat(64);
 const H2 = 'b'.repeat(64);
@@ -309,24 +310,78 @@ describe('nama project', () => {
 });
 
 describe('seret ke lane', () => {
-  it('baris lagu bisa diseret, dan yang dibawa HASH-nya', async () => {
+  const SR = 48_000;
+  let dropHandler: ReturnType<typeof vi.fn>;
+  let detach: (() => void)[] = [];
+
+  afterEach(() => detach.forEach((d) => d()));
+
+  /**
+   * Dok mendaftarkan penangan drop-nya sendiri saat mount, jadi spy-nya
+   * dipasang SESUDAH dok terbuka — yang diuji di sini gesturnya, bukan
+   * pemuatan lagunya (itu urusan `load-track`).
+   */
+  async function bukaLaluSadap(): Promise<void> {
     await bukaDok();
-    const row = lagu()[0]!;
-    expect(row.getAttribute('draggable')).toBe('true');
+    dropHandler = vi.fn();
+    detach = [
+      registerLibraryDropHandler(dropHandler),
+      // Timeline palsu: semua titik di bawah y=200 adalah `lane-1`, dan posisi
+      // jatuhnya sekadar x (dalam sample) supaya bisa dicek apa adanya.
+      registerLaneLocator({
+        locate: (x, y) => (y >= 200 ? { laneId: 'lane-1', startSamples: x * SR } : null),
+        highlight: vi.fn(),
+      }),
+    ];
+  }
 
-    const data: Record<string, string> = {};
-    fireEvent.dragStart(row, {
-      dataTransfer: {
-        setData: (type: string, value: string) => {
-          data[type] = value;
-        },
-        effectAllowed: '',
-      },
-    });
+  const seret = (el: HTMLElement, to: { x: number; y: number }): void => {
+    fireEvent.pointerDown(el, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 40, clientY: 40 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: to.x, clientY: to.y });
+    fireEvent.pointerUp(el, { pointerId: 1, clientX: to.x, clientY: to.y });
+  };
 
+  it('dilepas di atas lane: yang diumumkan HASH-nya, lane, dan posisinya', async () => {
+    await bukaLaluSadap();
     // Yang dibawa hash, BUKAN byte-nya: lagunya bisa 25 MB, dan penerima drop
     // toh sudah tahu cara mengambilnya.
-    expect(data['application/x-kelasmalam-track']).toMatch(/^[0-9a-f]{64}$/);
+    seret(lagu()[0]!, { x: 3, y: 250 });
+    expect(dropHandler).toHaveBeenCalledWith({
+      contentHash: H1,
+      laneId: 'lane-1',
+      startSamples: 3 * SR,
+    });
+  });
+
+  it('bukan drag HTML5: di desktop, drop HTML5 ditelan penangan native Tauri', async () => {
+    await bukaLaluSadap();
+    expect(lagu()[0]!.getAttribute('draggable')).toBeNull();
+  });
+
+  it('dilepas di luar lane: tidak ada pengumuman', async () => {
+    await bukaLaluSadap();
+    seret(lagu()[0]!, { x: 30, y: 50 });
+    expect(dropHandler).not.toHaveBeenCalled();
+  });
+
+  it('tekanan tanpa berpindah adalah klik, bukan seretan', async () => {
+    await bukaLaluSadap();
+    const row = lagu()[0]!;
+    fireEvent.pointerDown(row, { button: 0, pointerId: 1, clientX: 10, clientY: 250 });
+    fireEvent.pointerMove(row, { pointerId: 1, clientX: 11, clientY: 251 });
+    fireEvent.pointerUp(row, { pointerId: 1, clientX: 11, clientY: 251 });
+    expect(dropHandler).not.toHaveBeenCalled();
+  });
+
+  it('menekan tombol di dalam baris tidak memulai seretan', async () => {
+    await bukaLaluSadap();
+    const row = lagu()[0]!;
+    const tombol = row.querySelector('button')!;
+    fireEvent.pointerDown(tombol, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(row, { pointerId: 1, clientX: 60, clientY: 250 });
+    fireEvent.pointerUp(row, { pointerId: 1, clientX: 60, clientY: 250 });
+    expect(dropHandler).not.toHaveBeenCalled();
   });
 });
 

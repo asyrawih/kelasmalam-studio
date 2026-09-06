@@ -9,9 +9,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  LIBRARY_TRACK_MIME,
   hasLibraryDropHandler,
+  highlightLane,
+  locateLane,
   notifyLibraryDrop,
+  registerLaneLocator,
   registerLibraryDropHandler,
 } from '../studio/timeline/library-drop';
 import { placeAssetOnLane } from '../studio/timeline/audio-import';
@@ -47,6 +49,7 @@ const clips = (): { start: number; len: number; assetId: number }[] =>
 beforeEach(() => {
   studioActions.__resetForTest?.('empty');
   registerLibraryDropHandler(null);
+  registerLaneLocator(null);
 });
 
 describe('perantara drop', () => {
@@ -88,11 +91,46 @@ describe('perantara drop', () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
-  it('MIME-nya khusus, bukan text/plain', () => {
-    // Lane sudah memakai `text/plain` untuk URL. Hash yang lewat jalur itu akan
-    // dicoba diunduh sebagai URL dan gagal dengan pesan yang tidak masuk akal.
-    expect(LIBRARY_TRACK_MIME).toBe('application/x-kelasmalam-track');
-    expect(LIBRARY_TRACK_MIME).not.toContain('text/');
+});
+
+describe('pencari lane', () => {
+  it('tanpa timeline, tidak ada lane dan menyorot tidak melempar', () => {
+    expect(locateLane(10, 10)).toBeNull();
+    expect(() => highlightLane('l1')).not.toThrow();
+  });
+
+  it('meneruskan titik ke timeline dan mengembalikan jawabannya apa adanya', () => {
+    const locate = vi.fn((x: number, y: number) =>
+      y > 100 ? { laneId: 'lane-2', startSamples: x * 10 } : null,
+    );
+    const highlight = vi.fn();
+    const detach = registerLaneLocator({ locate, highlight });
+
+    expect(locateLane(30, 150)).toEqual({ laneId: 'lane-2', startSamples: 300 });
+    expect(locateLane(30, 50)).toBeNull();
+    highlightLane('lane-2');
+    highlightLane(null);
+    detach();
+
+    expect(highlight.mock.calls).toEqual([['lane-2'], [null]]);
+  });
+
+  it('locator yang melempar terbaca sebagai "bukan lane", bukan galat', () => {
+    registerLaneLocator({
+      locate: () => {
+        throw new Error('timeline rusak');
+      },
+      highlight: () => {
+        throw new Error('timeline rusak');
+      },
+    });
+    expect(locateLane(0, 0)).toBeNull();
+    expect(() => highlightLane('x')).not.toThrow();
+  });
+
+  it('mencabut locator benar-benar mencabutnya', () => {
+    registerLaneLocator({ locate: () => ({ laneId: 'l', startSamples: 0 }), highlight: () => {} })();
+    expect(locateLane(0, 0)).toBeNull();
   });
 });
 
