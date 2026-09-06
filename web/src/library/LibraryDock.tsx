@@ -36,6 +36,7 @@ import { djStore } from '../dj/store';
 import { registerImportSink } from '../studio/timeline/import-sink';
 import { registerLibraryDropHandler } from '../studio/timeline/library-drop';
 import { placeAssetOnLane } from '../studio/timeline/audio-import';
+import { getPlatformHost } from '../platform';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
 import {
@@ -76,6 +77,12 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   const state = useLibrary();
   const assets = useStudio((s) => s.assets);
   const [busy, setBusy] = useState(false);
+  /*
+   * Naik satu tiap kali login desktop SELESAI, supaya pemeriksaan sesi di
+   * bawah diulang tanpa memuat ulang halaman. Di web tidak pernah naik:
+   * `login()` menavigasi keluar, dan halaman ini dibongkar.
+   */
+  const [sessionEpoch, setSessionEpoch] = useState(0);
   /*
    * Nama untuk project BARU, hidup selama dok terbuka.
    *
@@ -122,7 +129,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     return () => {
       alive = false;
     };
-  }, [api]);
+  }, [api, sessionEpoch]);
 
   /*
    * Unggah otomatis, TAPI hanya saat sudah login.
@@ -490,6 +497,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       }}
     >
       <Header
+        onSessionChanged={() => setSessionEpoch((n) => n + 1)}
         collapsed={collapsed}
         onToggle={() => libraryActions.toggleCollapsed()}
         api={api}
@@ -561,10 +569,13 @@ function Header({
   collapsed,
   onToggle,
   api,
+  onSessionChanged,
 }: {
   readonly collapsed: boolean;
   readonly onToggle: () => void;
   readonly api: LibraryApi | null;
+  /** Login desktop selesai — sesi harus diperiksa ulang. */
+  readonly onSessionChanged: () => void;
 }): JSX.Element {
   const status = useLibrary((s) => s.status);
   const user = useLibrary((s) => s.user);
@@ -613,7 +624,13 @@ function Header({
             size="sm"
             variant="ghost"
             onClick={() => {
-              void api?.logout().then(() => libraryActions.signedOut());
+              // Server dulu (mencabut sesi), baru kredensial lokal: kalau
+              // urutannya dibalik, permintaan logout-nya sendiri sudah tidak
+              // membawa token dan sesi di server tetap hidup.
+              void api
+                ?.logout()
+                .then(() => getPlatformHost().logout())
+                .then(() => libraryActions.signedOut());
             }}
           >
             KELUAR
@@ -626,12 +643,17 @@ function Header({
           size="sm"
           onClick={() => {
             /*
-             * NAVIGASI, bukan fetch: `/auth/google` membalas 302 ke layar
-             * consent Google, dan mengambilnya lewat fetch tidak pernah bisa
-             * berhasil. Path sekarang dititipkan supaya user kembali ke
-             * tempat ia menekan tombol.
+             * Web: NAVIGASI ke `/auth/google` (302 ke consent Google — tidak
+             * bisa di-fetch), dan promise-nya tidak pernah selesai karena
+             * halaman ini dibongkar. Desktop: browser OS + deep link; selesai
+             * = token tersimpan, dan sesi diperiksa ulang lewat epoch.
              */
-            window.location.href = api.loginUrl(window.location.pathname);
+            void getPlatformHost()
+              .login({ apiBase: api.base, nextPath: window.location.pathname })
+              .then(onSessionChanged)
+              .catch((err: unknown) =>
+                libraryActions.setNotice(err instanceof Error ? err.message : String(err)),
+              );
           }}
         >
           MASUK DENGAN GOOGLE

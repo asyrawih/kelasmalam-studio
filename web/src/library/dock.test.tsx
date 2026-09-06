@@ -14,6 +14,8 @@ import { LibraryDock } from './LibraryDock';
 import { libraryActions, libraryStore } from './store';
 import type { LibraryApi } from './api';
 import { fakeLibraryApi } from './fake-api';
+import { createWebHost } from '../platform/web';
+import { setPlatformHostForTests } from '../platform';
 import type { LibraryTrack } from './model';
 
 const HASH = 'a'.repeat(64);
@@ -42,7 +44,10 @@ const withTrack = (over: Partial<LibraryApi> = {}): LibraryApi =>
 const strip = (): HTMLElement => screen.getByRole('button', { name: /kepustakaan/i });
 
 beforeEach(() => libraryActions.__resetForTest());
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setPlatformHostForTests(null);
+});
 
 describe('lipat / buka', () => {
   it('mulai terlipat — permukaan kerja tidak dimakan sebelum diminta', async () => {
@@ -199,5 +204,59 @@ describe('daftar lagu', () => {
       'textContent',
       expect.stringContaining('tidak ada di kepustakaanmu'),
     );
+  });
+});
+
+describe('masuk / keluar lewat platform', () => {
+  it('MASUK memanggil host.login dengan base API dan path sekarang; selesai → sesi diperiksa ulang', async () => {
+    const login = vi.fn(async () => {});
+    setPlatformHostForTests({ ...createWebHost(), login });
+    let sudahMasuk = false;
+    const me = vi.fn(async () => (sudahMasuk ? { id: 'u1', email: 'a@b', name: 'Asy' } : null));
+    render(<LibraryDock api={withTrack({ me })} />);
+    await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
+
+    sudahMasuk = true;
+    fireEvent.click(screen.getByRole('button', { name: /MASUK DENGAN GOOGLE/ }));
+    expect(login).toHaveBeenCalledWith({ apiBase: 'https://api.test', nextPath: window.location.pathname });
+    // Desktop: promise login selesai = token tersimpan → `/me` ditanya lagi
+    // tanpa memuat ulang halaman, dan nama user muncul di strip.
+    await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
+    expect(me).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Asy')).toBeDefined();
+  });
+
+  it('login yang gagal (state tidak cocok, kode ditolak) jadi catatan, bukan crash', async () => {
+    setPlatformHostForTests({
+      ...createWebHost(),
+      login: async () => {
+        throw new Error('state login tidak cocok');
+      },
+    });
+    render(<LibraryDock api={withTrack({ me: async () => null })} />);
+    await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
+    fireEvent.click(screen.getByRole('button', { name: /MASUK DENGAN GOOGLE/ }));
+    await waitFor(() => expect(libraryStore.getState().notice).toMatch(/state login tidak cocok/));
+    expect(libraryStore.getState().status).toBe('anonim');
+  });
+
+  it('KELUAR: server dulu, lalu kredensial lokal, lalu store', async () => {
+    const order: string[] = [];
+    setPlatformHostForTests({
+      ...createWebHost(),
+      logout: async () => {
+        order.push('host');
+      },
+    });
+    const api = withTrack({
+      logout: async () => {
+        order.push('api');
+      },
+    });
+    render(<LibraryDock api={api} />);
+    await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
+    fireEvent.click(screen.getByRole('button', { name: 'KELUAR' }));
+    await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
+    expect(order).toEqual(['api', 'host']);
   });
 });
