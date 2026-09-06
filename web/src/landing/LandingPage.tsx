@@ -18,6 +18,7 @@
 import { useState, type CSSProperties } from 'react';
 import { VersionTag } from '../app-shell/VersionTag';
 import { Badge, Button, Card } from '../ui/cyber';
+import { getPlatformHost } from '../platform';
 import { HeroShot } from './HeroShot';
 import {
   BENCH,
@@ -417,7 +418,7 @@ export function LandingPage({
                 variant="outline"
                 style={{ height: '44px' }}
                 onClick={() => {
-                  window.open('https://github.com/asyrawih/DawOnWeb#readme', '_blank', 'noopener');
+                  void getPlatformHost().openExternal('https://github.com/asyrawih/DawOnWeb#readme');
                 }}
               >
                 BACA CATATAN TEKNIS
