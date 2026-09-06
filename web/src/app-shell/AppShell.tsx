@@ -31,9 +31,18 @@ import { libraryActions, useLibrary } from '../library/store';
 import type { LibraryUser } from '../library/model';
 import { RobloxRoute } from '../roblox';
 import { ProofStemPage } from '../proof-stem';
+import { selectProjectDirty, studioStore, useStudio } from '../studio/store';
 import { Button } from '../ui/cyber';
 import { CommandPalette } from './CommandPalette';
 import { KeymapEditor } from './KeymapEditor';
+import {
+  closeGuardReason,
+  guardWindowClose,
+  isDesktop,
+  listenMenuCommands,
+  setWindowTitle,
+  windowTitle,
+} from './desktop';
 import { useCommands } from './useCommands';
 import { useKeyDispatch } from './useKeyDispatch';
 import { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
@@ -57,6 +66,10 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   const [keymap, setKeymap] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  // Naik tiap kali user minta cek sesi diulang. Di web muat ulang halaman
+  // juga bisa, tapi di Tauri shell tidak pernah memuat ulang (docs/20 §2b) —
+  // jadi jalur pulihnya harus ada di dalam aplikasi.
+  const [authAttempt, setAuthAttempt] = useState(0);
   const authStatus = useLibrary((s) => s.status);
   const apiBase = (import.meta.env.VITE_LIBRARY_API ?? '').trim();
   const authApi = useMemo<AuthApi | null>(
@@ -67,7 +80,16 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   // backend bisa diuji tanpa sesi OAuth. Production tetap terkunci. Saat API
   // disuntikkan di tes, guard tetap aktif agar perilakunya bisa diverifikasi
   // tanpa jaringan sungguhan.
-  const authRequired = !import.meta.env.DEV || injectedAuthApi !== undefined;
+  //
+  // DESKTOP TANPA LOGIN (keputusan produk, untuk sekarang): di jendela Tauri
+  // gerbang ini dilewati seluruhnya. Alasannya bukan cuma "belum ada jalur
+  // login desktop" (docs/20 §1d): cookie sesi tidak pernah ikut dari origin
+  // `tauri://`, jadi `me()` selalu menjawab anonim dan seluruh .app terkunci
+  // di balik tombol MASUK yang — lewat `location.href` — menavigasi WebView ke
+  // Google dan tidak pernah kembali. Kepustakaan tetap tidak tersedia di
+  // desktop sampai D3; halaman-halamannya sendiri bekerja penuh tanpanya.
+  const desktop = isDesktop();
+  const authRequired = !desktop && (!import.meta.env.DEV || injectedAuthApi !== undefined);
 
   useEffect(() => {
     if (!authRequired) return undefined;
@@ -100,7 +122,7 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
     return () => {
       alive = false;
     };
-  }, [authApi, authRequired]);
+  }, [authApi, authRequired, authAttempt]);
 
   // Logout dari dock kepustakaan juga harus langsung menutup halaman aktif.
   // Status `memeriksa` sengaja tidak membatalkan akses: dock melakukan cek
@@ -160,6 +182,20 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
         run: () => setKeymap((v) => !v),
       },
       {
+        id: 'shell.preferences',
+        title: 'Pengaturan…',
+        group: 'Aplikasi',
+        /*
+         * `⌘,` adalah konvensi OS untuk "Pengaturan…" (macOS), dan menu native
+         * desktop butuh id sendiri untuk item itu — bukan alias dari `?`, karena
+         * alias dilepas begitu user mengikat chord-nya sendiri, sedangkan item
+         * menu harus tetap punya sasaran. Satu-satunya layar pengaturan hari ini
+         * adalah editor pintasan, jadi ke sanalah ia membuka.
+         */
+        defaultChord: 'mod+Comma',
+        run: () => setKeymap(true),
+      },
+      {
         id: 'shell.goto.dj',
         title: 'Buka mixer DJ',
         group: 'Aplikasi',
@@ -196,6 +232,46 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   // kalau tidak tombol yang sudah terpakai mustahil direbut.
   useKeyDispatch({ suspended: capturing });
 
+  // ── Rasa desktop (docs/20 fase D5) ──
+  //
+  // Judul dokumen mengikuti nama project + tanda kotor, di web DAN desktop.
+  // `document.title` tidak sampai ke judul jendela Tauri, jadi keduanya diatur;
+  // yang desktop hanya saat `isDesktop()` supaya web tidak menyentuh API Tauri.
+  const projectName = useStudio((s) => s.projectName);
+  const dirty = useStudio(selectProjectDirty);
+  useEffect(() => {
+    const title = windowTitle(projectName, dirty);
+    document.title = title;
+    if (isDesktop()) void setWindowTitle(title);
+  }, [projectName, dirty]);
+
+  // Menu native adalah pintu ketiga ke registry: satu listener, satu
+  // penerjemah (`dispatchMenuCommand`), tanpa salinan daftar aksi.
+  useEffect(() => {
+    if (!isDesktop()) return undefined;
+    return listenMenuCommands();
+  }, []);
+
+  // Penjaga tutup: export yang sedang jalan atau project kotor → tanya dulu.
+  // Desktop lewat `onCloseRequested` (dialog native, jendela dihancurkan
+  // hanya kalau user setuju); web lewat `beforeunload` (browser yang bertanya,
+  // dengan kalimatnya sendiri). Satu aturan (`closeGuardReason`), dua pintu.
+  useEffect(() => {
+    const snapshot = (): { exportProgress: number | null; dirty: boolean } => {
+      const s = studioStore.getState();
+      return { exportProgress: s.exportProgress, dirty: selectProjectDirty(s) };
+    };
+    if (isDesktop()) return guardWindowClose(snapshot);
+    const onBeforeUnload = (e: BeforeUnloadEvent): void => {
+      if (closeGuardReason(snapshot()) === null) return;
+      e.preventDefault();
+      // Chrome lama masih membutuhkan `returnValue` untuk memunculkan dialog.
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
   // Esc menutup overlay. Tidak lewat registry: ini perilaku dialog, bukan
   // perintah aplikasi, dan mengikatnya ke command berarti user bisa melepasnya
   // lalu terkurung di dalam overlay.
@@ -216,7 +292,7 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   return (
     <>
       {blocked ? (
-        <AuthGuard status={authStatus} api={authApi} />
+        <AuthGuard status={authStatus} api={authApi} onRetry={() => setAuthAttempt((n) => n + 1)} />
       ) : route === 'studio' ? (
         <App
           createEngine={createEngine}
@@ -241,12 +317,17 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
           showAppLinks={!authRequired || authenticated}
+          // Di desktop tidak ada tombol MASUK sama sekali: tautan aplikasi
+          // sudah terbuka (`showAppLinks`), dan `location.href` ke halaman
+          // login akan membawa WebView pergi tanpa jalan pulang.
           onLogin={
-            authApi === null
-              ? () => navigate(STUDIO_PATH)
-              : () => {
-                  window.location.href = authApi.loginUrl(STUDIO_PATH);
-                }
+            desktop
+              ? undefined
+              : authApi === null
+                ? () => navigate(STUDIO_PATH)
+                : () => {
+                    window.location.href = authApi.loginUrl(STUDIO_PATH);
+                  }
           }
         />
       )}
@@ -261,7 +342,15 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   );
 }
 
-function AuthGuard({ status, api }: { readonly status: string; readonly api: AuthApi | null }): JSX.Element {
+function AuthGuard({
+  status,
+  api,
+  onRetry,
+}: {
+  readonly status: string;
+  readonly api: AuthApi | null;
+  readonly onRetry: () => void;
+}): JSX.Element {
   const checking = status === 'memeriksa';
   const failed = status === 'gagal';
   const missing = status === 'tidak-dikonfigurasi' || api === null;
@@ -298,7 +387,7 @@ function AuthGuard({ status, api }: { readonly status: string; readonly api: Aut
           {missing
             ? 'Google OAuth belum dikonfigurasi untuk build ini.'
             : failed
-              ? 'Server autentikasi sedang tidak dapat dijangkau. Coba muat ulang halaman.'
+              ? 'Server autentikasi sedang tidak dapat dijangkau.'
               : checking
                 ? 'Tunggu sebentar, sesi Google kamu sedang diverifikasi.'
                 : 'Masuk dengan akun Google untuk membuka Studio, DJ, dan Roblox.'}
@@ -311,6 +400,11 @@ function AuthGuard({ status, api }: { readonly status: string; readonly api: Aut
           >
             MASUK DENGAN GOOGLE
           </Button>
+        ) : null}
+        {failed ? (
+          // Ulangi cek sesi DI DALAM aplikasi. "Muat ulang halaman" bukan
+          // nasihat yang bisa diikuti di jendela Tauri (docs/20 §2b).
+          <Button onClick={onRetry}>COBA LAGI</Button>
         ) : null}
         <div style={{ marginTop: '18px' }}>
           <Button
