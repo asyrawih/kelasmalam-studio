@@ -1,9 +1,9 @@
 /**
  * Adapter desktop dengan `@tauri-apps/*` di-mock seluruhnya — tidak ada Tauri
- * di vitest. Yang dijaga adalah KONTRAK dengan sisi Rust dan Worker (docs/20
- * §1d): state acak yang harus cocok, kode yang ditukar lewat fetch tanpa
- * kredensial, token yang hanya tersimpan kalau penukaran berhasil, dan drop
- * OS yang datang sebagai path lalu jadi `File`.
+ * di vitest. Yang dijaga adalah KONTRAK dengan sisi Rust: export streaming ke
+ * berkas yang dipilih dialog, drop OS yang datang sebagai path lalu jadi
+ * `File`, model lewat command + event progres — dan bahwa TIDAK ADA sesi:
+ * `login` tidak didefinisikan dan `authHeaders()` kosong.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,16 +12,6 @@ const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
   isTauri: () => true,
-}));
-
-/** Handler `onOpenUrl` yang terpasang terakhir; tes memanggilnya seolah OS. */
-let deepLinkHandler: ((urls: string[]) => void) | null = null;
-const unlistenDeepLink = vi.fn();
-vi.mock('@tauri-apps/plugin-deep-link', () => ({
-  onOpenUrl: async (handler: (urls: string[]) => void) => {
-    deepLinkHandler = handler;
-    return unlistenDeepLink;
-  },
 }));
 
 const openUrl = vi.fn(async (_u: string) => {});
@@ -68,28 +58,12 @@ vi.mock('@tauri-apps/api/event', () => ({
   },
 }));
 
-import { baseName, createDesktopHost, parseAuthDeepLink, randomState } from './desktop';
-
-const API = 'https://api.test';
-
-function stateOf(url: string): string {
-  return new URL(url).searchParams.get('state') ?? '';
-}
-
-/** Tunggu sampai browser dibuka — itu tanda listener deep link sudah terpasang. */
-async function untilBrowserOpened(): Promise<string> {
-  for (let i = 0; i < 20 && openUrl.mock.calls.length === 0; i++) await Promise.resolve();
-  const url = openUrl.mock.calls[0]?.[0] as string | undefined;
-  if (url === undefined) throw new Error('browser tidak dibuka');
-  return url;
-}
+import { baseName, createDesktopHost } from './desktop';
 
 beforeEach(() => {
   invoke.mockReset();
   invoke.mockResolvedValue(null);
   openUrl.mockClear();
-  unlistenDeepLink.mockClear();
-  deepLinkHandler = null;
   dropHandler = null;
   progressHandler = null;
   dialogSave.mockReset();
@@ -110,21 +84,6 @@ afterEach(() => {
 });
 
 describe('helper', () => {
-  it('randomState 32 hex dari getRandomValues, berbeda tiap panggilan', () => {
-    const a = randomState();
-    const b = randomState();
-    expect(a).toMatch(/^[0-9a-f]{32}$/);
-    expect(a).not.toBe(b);
-  });
-
-  it('parseAuthDeepLink hanya menerima kelasmalam://auth dengan code+state', () => {
-    expect(parseAuthDeepLink('kelasmalam://auth?code=abc&state=xyz')).toEqual({ code: 'abc', state: 'xyz' });
-    expect(parseAuthDeepLink('kelasmalam://auth?code=abc')).toBeNull();
-    expect(parseAuthDeepLink('kelasmalam://lain?code=abc&state=xyz')).toBeNull();
-    expect(parseAuthDeepLink('https://evil.test/auth?code=abc&state=xyz')).toBeNull();
-    expect(parseAuthDeepLink('bukan url')).toBeNull();
-  });
-
   it('baseName memahami pemisah macOS dan Windows', () => {
     expect(baseName('/Users/a/Music/lagu.wav')).toBe('lagu.wav');
     expect(baseName('C:\\Users\\a\\lagu.mp3')).toBe('lagu.mp3');
@@ -132,110 +91,13 @@ describe('helper', () => {
   });
 });
 
-describe('login', () => {
-  it('listener dipasang sebelum browser dibuka; state cocok → tukar kode tanpa kredensial → simpan token', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ token: 'tok-1' }), { status: 200 }),
-    );
-    invoke.mockResolvedValue(null);
+describe('sesi', () => {
+  it('tidak ada login di desktop: `login` tidak didefinisikan, authHeaders() kosong, tanpa IPC', async () => {
     const host = createDesktopHost();
-
-    const pending = host.login({ apiBase: API, nextPath: '/studio' });
-    const url = await untilBrowserOpened();
-    expect(deepLinkHandler).not.toBeNull();
-    expect(url).toMatch(/^https:\/\/api\.test\/auth\/google\?client=desktop&state=[0-9a-f]{32}&next=%2Fstudio$/);
-
-    deepLinkHandler!([`kelasmalam://auth?code=kode-1&state=${stateOf(url)}`]);
-    await pending;
-
-    const [exchangeUrl, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(exchangeUrl).toBe(`${API}/auth/desktop/exchange`);
-    expect(init.method).toBe('POST');
-    expect(init.credentials).toBe('omit');
-    expect(init.body).toBe(JSON.stringify({ code: 'kode-1' }));
-    expect(invoke).toHaveBeenCalledWith('auth_token_set', { token: 'tok-1' });
-    expect(unlistenDeepLink).toHaveBeenCalledOnce();
-    // Token yang baru langsung dipakai, tanpa membaca keychain lagi.
-    expect(await host.authHeaders()).toEqual({ authorization: 'Bearer tok-1' });
-    expect(invoke).not.toHaveBeenCalledWith('auth_token_get', undefined);
-  });
-
-  it('state yang tidak cocok DITOLAK: tidak ada penukaran, tidak ada token', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const host = createDesktopHost();
-    const pending = host.login({ apiBase: API, nextPath: '/studio' });
-    await untilBrowserOpened();
-
-    deepLinkHandler!(['kelasmalam://auth?code=kode-asing&state=' + 'f'.repeat(32)]);
-    await expect(pending).rejects.toThrow(/state login tidak cocok/);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(invoke).not.toHaveBeenCalledWith('auth_token_set', expect.anything());
-    expect(unlistenDeepLink).toHaveBeenCalledOnce();
-  });
-
-  it('deep link yang bukan auth diabaikan, dan yang benar sesudahnya tetap diterima', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ token: 'tok-2' }), { status: 200 }),
-    );
-    invoke.mockResolvedValue(null);
-    const host = createDesktopHost();
-    const pending = host.login({ apiBase: API, nextPath: '/dj' });
-    const url = await untilBrowserOpened();
-    deepLinkHandler!(['kelasmalam://open?project=abc']);
-    deepLinkHandler!([`kelasmalam://auth?code=kode-2&state=${stateOf(url)}`]);
-    await pending;
-    expect(invoke).toHaveBeenCalledWith('auth_token_set', { token: 'tok-2' });
-  });
-
-  it('penukaran ditolak server → gagal, token TIDAK disimpan', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }));
-    const host = createDesktopHost();
-    const pending = host.login({ apiBase: API, nextPath: '/studio' });
-    const url = await untilBrowserOpened();
-    deepLinkHandler!([`kelasmalam://auth?code=kadaluarsa&state=${stateOf(url)}`]);
-    await expect(pending).rejects.toThrow(/HTTP 401/);
-    expect(invoke).not.toHaveBeenCalledWith('auth_token_set', expect.anything());
-  });
-
-  it('balasan tanpa token juga tidak menyimpan apa pun', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
-    const host = createDesktopHost();
-    const pending = host.login({ apiBase: API, nextPath: '/studio' });
-    const url = await untilBrowserOpened();
-    deepLinkHandler!([`kelasmalam://auth?code=k&state=${stateOf(url)}`]);
-    await expect(pending).rejects.toThrow(/tidak mengembalikan token/);
-    expect(invoke).not.toHaveBeenCalledWith('auth_token_set', expect.anything());
-  });
-});
-
-describe('authHeaders / logout', () => {
-  it('tanpa token di keychain → {} ; keychain dibaca SEKALI', async () => {
-    invoke.mockResolvedValue(null);
-    const host = createDesktopHost();
+    expect(host.kind).toBe('desktop');
+    expect(host.login).toBeUndefined();
     expect(await host.authHeaders()).toEqual({});
-    expect(await host.authHeaders()).toEqual({});
-    expect(invoke.mock.calls.filter(([c]) => c === 'auth_token_get')).toHaveLength(1);
-  });
-
-  it('token di keychain → Bearer', async () => {
-    invoke.mockImplementation(async (cmd) => (cmd === 'auth_token_get' ? 'tok-k' : null));
-    expect(await createDesktopHost().authHeaders()).toEqual({ authorization: 'Bearer tok-k' });
-  });
-
-  it('keychain gagal dibaca → {} untuk permintaan ini, dicoba lagi berikutnya', async () => {
-    invoke.mockRejectedValueOnce(new Error('keyring')).mockResolvedValue('tok-lagi');
-    const host = createDesktopHost();
-    expect(await host.authHeaders()).toEqual({});
-    expect(await host.authHeaders()).toEqual({ authorization: 'Bearer tok-lagi' });
-  });
-
-  it('logout menghapus keychain dan melupakan token di memori', async () => {
-    invoke.mockImplementation(async (cmd) => (cmd === 'auth_token_get' ? 'tok-k' : null));
-    const host = createDesktopHost();
-    expect(await host.authHeaders()).toEqual({ authorization: 'Bearer tok-k' });
-    await host.logout();
-    expect(invoke).toHaveBeenCalledWith('auth_token_clear', undefined);
-    expect(await host.authHeaders()).toEqual({});
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
 

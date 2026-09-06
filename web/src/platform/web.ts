@@ -206,11 +206,6 @@ export function createWebHost(): PlatformHost {
       return new Promise<void>(() => {});
     },
 
-    async logout(): Promise<void> {
-      // Sesi ada di cookie yang dicabut server lewat `/auth/logout`; di sisi
-      // klien tidak ada yang disimpan.
-    },
-
     async authHeaders(): Promise<Record<string, string>> {
       // Sesi web adalah cookie `__Host-lib_session`; `credentials: 'include'`
       // di `library/api.ts` yang membawanya. Tidak ada header tambahan.

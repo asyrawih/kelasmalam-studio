@@ -86,7 +86,7 @@ describe('login / openExternal / authHeaders', () => {
     try {
       const host = createWebHost();
       let settled = false;
-      void host.login({ apiBase: 'https://api.test', nextPath: '/studio' }).then(() => {
+      void host.login!({ apiBase: 'https://api.test', nextPath: '/studio' }).then(() => {
         settled = true;
       });
       expect(fake.href).toBe('https://api.test/auth/google?next=%2Fstudio');

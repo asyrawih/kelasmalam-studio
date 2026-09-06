@@ -15,6 +15,7 @@ import { libraryActions, libraryStore } from './store';
 import type { LibraryApi } from './api';
 import { fakeLibraryApi } from './fake-api';
 import { createWebHost } from '../platform/web';
+import { createDesktopHost } from '../platform/desktop';
 import { setPlatformHostForTests } from '../platform';
 import type { LibraryTrack } from './model';
 
@@ -207,56 +208,28 @@ describe('daftar lagu', () => {
   });
 });
 
-describe('masuk / keluar lewat platform', () => {
-  it('MASUK memanggil host.login dengan base API dan path sekarang; selesai → sesi diperiksa ulang', async () => {
+describe('sesi lewat platform', () => {
+  it('web: MASUK memanggil host.login dengan base API dan path sekarang', async () => {
     const login = vi.fn(async () => {});
     setPlatformHostForTests({ ...createWebHost(), login });
-    let sudahMasuk = false;
-    const me = vi.fn(async () => (sudahMasuk ? { id: 'u1', email: 'a@b', name: 'Asy' } : null));
-    render(<LibraryDock api={withTrack({ me })} />);
-    await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
-
-    sudahMasuk = true;
-    fireEvent.click(screen.getByRole('button', { name: /MASUK DENGAN GOOGLE/ }));
-    expect(login).toHaveBeenCalledWith({ apiBase: 'https://api.test', nextPath: window.location.pathname });
-    // Desktop: promise login selesai = token tersimpan → `/me` ditanya lagi
-    // tanpa memuat ulang halaman, dan nama user muncul di strip.
-    await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
-    expect(me).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('Asy')).toBeDefined();
-  });
-
-  it('login yang gagal (state tidak cocok, kode ditolak) jadi catatan, bukan crash', async () => {
-    setPlatformHostForTests({
-      ...createWebHost(),
-      login: async () => {
-        throw new Error('state login tidak cocok');
-      },
-    });
     render(<LibraryDock api={withTrack({ me: async () => null })} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
     fireEvent.click(screen.getByRole('button', { name: /MASUK DENGAN GOOGLE/ }));
-    await waitFor(() => expect(libraryStore.getState().notice).toMatch(/state login tidak cocok/));
-    expect(libraryStore.getState().status).toBe('anonim');
+    expect(login).toHaveBeenCalledWith({ apiBase: 'https://api.test', nextPath: window.location.pathname });
   });
 
-  it('KELUAR: server dulu, lalu kredensial lokal, lalu store', async () => {
-    const order: string[] = [];
-    setPlatformHostForTests({
-      ...createWebHost(),
-      logout: async () => {
-        order.push('host');
-      },
-    });
-    const api = withTrack({
-      logout: async () => {
-        order.push('api');
-      },
-    });
-    render(<LibraryDock api={api} />);
-    await waitFor(() => expect(libraryStore.getState().status).toBe('masuk'));
-    fireEvent.click(screen.getByRole('button', { name: 'KELUAR' }));
-    await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
-    expect(order).toEqual(['api', 'host']);
+  it('desktop: tidak ada tombol masuk, /me tidak ditanya, dan dok mengatakan kenapa', async () => {
+    setPlatformHostForTests(createDesktopHost());
+    const me = vi.fn(async () => null);
+    render(<LibraryDock api={withTrack({ me })} />);
+    await waitFor(() => expect(libraryStore.getState().status).toBe('tidak-tersedia'));
+    expect(me).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /MASUK/ })).toBeNull();
+    expect(screen.getByText('BELUM TERSEDIA DI DESKTOP')).toBeDefined();
+    fireEvent.click(strip());
+    expect(screen.getByText(/belum tersedia di versi desktop/i)).toBeDefined();
+    // Bukan "rusak": tidak ada badge merah, tidak ada catatan galat.
+    expect(screen.queryByText('TIDAK TERSAMBUNG')).toBeNull();
+    expect(libraryStore.getState().error).toBeNull();
   });
 });

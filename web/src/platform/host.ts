@@ -74,23 +74,24 @@ export interface PlatformHost {
   openExternal(url: string): Promise<void>;
 
   /**
-   * Mulai login Google.
-   *
-   * Web: NAVIGASI ke `/auth/google` (docs/16) — halaman ini dibongkar, jadi
-   * promise-nya tidak pernah selesai. Desktop: browser OS + deep link + bearer
-   * (docs/20 §1d); promise selesai saat token sudah tersimpan, dan melempar
-   * kalau state tidak cocok atau penukaran kode ditolak.
-   */
-  login(req: LoginRequest): Promise<void>;
-
-  /** Lupakan kredensial lokal. Web: tidak ada (cookie dicabut server). */
-  logout(): Promise<void>;
-
-  /**
    * Header yang harus ikut di SETIAP fetch ke Worker kepustakaan. Web: `{}` —
-   * sesinya cookie. Desktop: `Authorization: Bearer`.
+   * sesinya cookie. Desktop: juga `{}` untuk sekarang; ini titik sambung
+   * bearer token begitu alur login desktop ada (docs/20 §1d, ditunda).
    */
   authHeaders(): Promise<Record<string, string>>;
+
+  /**
+   * Mulai login Google. Web: NAVIGASI ke `/auth/google` (docs/16) — halaman
+   * ini dibongkar, jadi promise-nya tidak pernah selesai.
+   *
+   * OPSIONAL, dan ketiadaannya BERARTI SESUATU: host tanpa `login` tidak punya
+   * cara membangun sesi kepustakaan sama sekali, dan dok kepustakaan
+   * menampilkan keadaan "belum tersedia" alih-alih tombol yang tidak bisa
+   * berbuat apa-apa. Desktop hari ini begitu: alur login desktop ditunda
+   * (dari origin `tauri://` cookie tidak pernah ikut), dan kode login yang
+   * belum punya backend adalah kode mati yang tidak bisa diuji sungguhan.
+   */
+  login?(req: LoginRequest): Promise<void>;
 
   /** Byte model ONNX, dengan laporan kemajuan unduhan. */
   modelBytes(

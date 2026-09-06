@@ -3,27 +3,24 @@
  *
  * Yang statis di-import hanya `@tauri-apps/api/core` (`invoke`; `isTauri`-nya
  * sudah dipakai `index.ts`) — modul kecil tanpa efek samping. Plugin dialog,
- * fs, opener, deep-link, dan `webview`/`event` di-`import()` DINAMIS di dalam
+ * fs, opener, dan `webview`/`event` di-`import()` DINAMIS di dalam
  * method: bundel web tidak perlu membawa kode yang hanya hidup di Tauri, dan
  * Vite memecahnya jadi chunk yang tidak pernah diminta browser.
  *
  * Yang disediakan sisi Rust (`desktop/src-tauri/src/lib.rs`, dikawinkan
- * setelah merge):
- *   - `auth_token_get() -> string | null`, `auth_token_set({token})`,
- *     `auth_token_clear()` — token di keychain OS, BUKAN di localStorage.
- *   - `model_download({id}) -> path` dengan event `daw://model-progress`
- *     `{id, done, total}`, lalu `model_read({id}) -> byte`.
+ * setelah merge): `model_download({id}) -> path` dengan event
+ * `daw://model-progress` `{id, done, total}`, lalu `model_read({id}) -> byte`.
+ *
+ * TIDAK ADA LOGIN di sini. Kepustakaan butuh sesi, sesi web adalah cookie yang
+ * tidak pernah ikut dari origin `tauri://`, dan alur penggantinya (docs/20
+ * §1d) ditunda — jadi host ini tidak mendefinisikan `login`, dan dok
+ * kepustakaan membaca ketiadaan itu sebagai "belum tersedia di versi desktop".
  */
 
 import { invoke } from '@tauri-apps/api/core';
 import { assertModelSize, SCNET_MODELS, type ScnetModelId } from '../proof-stem/scnet-catalog';
 import type { ExportSink } from '../studio/export/sinks';
 import type { DropPoint, ModelBytes, OpenAudioFilesOptions, PlatformHost, SaveTarget } from './host';
-
-/** Skema deep link yang didaftarkan `tauri.conf.json` (docs/20 §1d). */
-export const DEEP_LINK_SCHEME = 'kelasmalam';
-/** Kalau user menutup browser tanpa menyelesaikan consent, jangan menunggu selamanya. */
-export const LOGIN_TIMEOUT_MS = 10 * 60_000;
 
 export const AUDIO_EXTENSIONS: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'aif', 'aiff', 'm4a', 'aac'];
 
@@ -56,33 +53,6 @@ function mimeOf(name: string): string {
   const dot = name.lastIndexOf('.');
   const ext = dot === -1 ? '' : name.slice(dot + 1).toLowerCase();
   return MIME_OF_EXT[ext] ?? '';
-}
-
-/** Hex acak 32 karakter dari `crypto.getRandomValues` — bukan `Math.random`. */
-export function randomState(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * `kelasmalam://auth?code=…&state=…` → `{code, state}`; `null` untuk URL lain.
- * `new URL` menerima skema custom: host-nya `auth`, dan `searchParams` bekerja.
- */
-export function parseAuthDeepLink(raw: string): { code: string; state: string } | null {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== `${DEEP_LINK_SCHEME}:`) return null;
-  const isAuth = url.host === 'auth' || url.pathname === '/auth' || url.pathname === 'auth';
-  if (!isAuth) return null;
-  const code = url.searchParams.get('code') ?? '';
-  const state = url.searchParams.get('state') ?? '';
-  if (code === '' || state === '') return null;
-  return { code, state };
 }
 
 /** Bentuk minimal `FileHandle` plugin-fs yang dipakai sink. */
@@ -162,13 +132,6 @@ export class TauriFileSink implements ExportSink {
 }
 
 export function createDesktopHost(): PlatformHost {
-  /**
-   * `undefined` = belum pernah dibaca dari keychain; `null` = sudah dibaca,
-   * tidak ada. Dibaca sekali lalu ditahan di memori: setiap fetch kepustakaan
-   * memanggil `authHeaders()`, dan satu IPC ke keychain per request tidak perlu.
-   */
-  let token: string | null | undefined;
-
   const readFiles = async (paths: readonly string[]): Promise<File[]> => {
     const { readFile } = await import('@tauri-apps/plugin-fs');
     const files: File[] = [];
@@ -211,93 +174,11 @@ export function createDesktopHost(): PlatformHost {
       await openUrl(url);
     },
 
-    async login({ apiBase, nextPath }): Promise<void> {
-      const state = randomState();
-      const [{ onOpenUrl }, { openUrl }] = await Promise.all([
-        import('@tauri-apps/plugin-deep-link'),
-        import('@tauri-apps/plugin-opener'),
-      ]);
-      const loginUrl =
-        `${apiBase}/auth/google?client=desktop&state=${state}` +
-        `&next=${encodeURIComponent(nextPath)}`;
-
-      const code = await new Promise<string>((resolve, reject) => {
-        let settled = false;
-        let unlisten: (() => void) | null = null;
-        const finish = (outcome: () => void): void => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          unlisten?.();
-          outcome();
-        };
-        const timer = setTimeout(
-          () => finish(() => reject(new Error('login tidak selesai — coba lagi'))),
-          LOGIN_TIMEOUT_MS,
-        );
-
-        // Listener dipasang DULU, baru browser dibuka: deep link yang datang
-        // sebelum listener siap akan hilang tanpa jejak.
-        onOpenUrl((urls) => {
-          for (const raw of urls) {
-            const parsed = parseAuthDeepLink(raw);
-            if (parsed === null) continue;
-            if (parsed.state !== state) {
-              // Bukan balasan untuk permintaan INI. Bisa deep link basi, bisa
-              // percobaan menyusupkan sesi orang lain — dua-duanya ditolak,
-              // dan user mengulang dari tombol.
-              finish(() => reject(new Error('state login tidak cocok — permintaan diabaikan')));
-              return;
-            }
-            finish(() => resolve(parsed.code));
-            return;
-          }
-        })
-          .then((un) => {
-            if (settled) un();
-            else unlisten = un;
-            return openUrl(loginUrl);
-          })
-          .catch((e: unknown) => finish(() => reject(e)));
-      });
-
-      /*
-       * `credentials: 'omit'`: origin `tauri://` tidak punya cookie untuk
-       * dikirim, dan permintaan ini memang tidak boleh bergantung padanya —
-       * kode sekali pakai (60 s) adalah satu-satunya bukti.
-       */
-      const res = await fetch(`${apiBase}/auth/desktop/exchange`, {
-        method: 'POST',
-        credentials: 'omit',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      if (!res.ok) throw new Error(`penukaran kode login ditolak (HTTP ${res.status})`);
-      const body = (await res.json()) as { token?: unknown };
-      if (typeof body.token !== 'string' || body.token === '') {
-        throw new Error('server tidak mengembalikan token');
-      }
-      await invoke('auth_token_set', { token: body.token });
-      token = body.token;
-    },
-
-    async logout(): Promise<void> {
-      token = null;
-      await invoke('auth_token_clear');
-    },
-
     async authHeaders(): Promise<Record<string, string>> {
-      if (token === undefined) {
-        try {
-          token = (await invoke<string | null>('auth_token_get')) ?? null;
-        } catch {
-          // Keychain tidak bisa dibaca sekarang: jawab "tanpa token" untuk
-          // permintaan ini saja, JANGAN diingat — percobaan berikutnya boleh
-          // berhasil.
-          return {};
-        }
-      }
-      return token === null ? {} : { authorization: `Bearer ${token}` };
+      // Tidak ada sesi desktop (lihat kepala berkas). Kosong, bukan bearer —
+      // dan permintaan kepustakaan memang tidak pernah dikirim dari desktop
+      // selama `login` tidak ada.
+      return {};
     },
 
     async modelBytes(id: ScnetModelId, onProgress): Promise<ModelBytes> {

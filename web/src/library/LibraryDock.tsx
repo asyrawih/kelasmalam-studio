@@ -78,12 +78,6 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   const assets = useStudio((s) => s.assets);
   const [busy, setBusy] = useState(false);
   /*
-   * Naik satu tiap kali login desktop SELESAI, supaya pemeriksaan sesi di
-   * bawah diulang tanpa memuat ulang halaman. Di web tidak pernah naik:
-   * `login()` menavigasi keluar, dan halaman ini dibongkar.
-   */
-  const [sessionEpoch, setSessionEpoch] = useState(0);
-  /*
    * Nama untuk project BARU, hidup selama dok terbuka.
    *
    * Di komponen, bukan di store: ia cuma berarti sampai tombol simpan ditekan,
@@ -102,6 +96,16 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   useEffect(() => {
     if (api === null) {
       libraryActions.setStatus('tidak-dikonfigurasi');
+      return undefined;
+    }
+    /*
+     * Tanpa cara membangun sesi, `/me` tidak ditanya sama sekali: jawabannya
+     * pasti bukan "masuk", dan dari origin desktop permintaannya bahkan gagal
+     * di CORS — yang akan terbaca sebagai "TIDAK TERSAMBUNG", seolah server
+     * yang rusak. Keadaan yang jujur: belum tersedia.
+     */
+    if (getPlatformHost().login === undefined) {
+      libraryActions.setStatus('tidak-tersedia');
       return undefined;
     }
     let alive = true;
@@ -129,7 +133,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     return () => {
       alive = false;
     };
-  }, [api, sessionEpoch]);
+  }, [api]);
 
   /*
    * Unggah otomatis, TAPI hanya saat sudah login.
@@ -497,7 +501,6 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       }}
     >
       <Header
-        onSessionChanged={() => setSessionEpoch((n) => n + 1)}
         collapsed={collapsed}
         onToggle={() => libraryActions.toggleCollapsed()}
         api={api}
@@ -528,6 +531,11 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
             <Empty>
               Kepustakaan belum dipasang di build ini. Isi <code>VITE_LIBRARY_API</code> dengan
               alamat Worker kepustakaan; sampai itu ada, import berkas lokal tetap berjalan penuh.
+            </Empty>
+          ) : state.status === 'tidak-tersedia' ? (
+            <Empty>
+              Kepustakaan belum tersedia di versi desktop: menyimpan lagu dan project ke
+              akun menyusul. Import berkas lokal dan export tetap berjalan penuh.
             </Empty>
           ) : state.status === 'memeriksa' ? (
             <Empty>Memeriksa sesi…</Empty>
@@ -569,14 +577,12 @@ function Header({
   collapsed,
   onToggle,
   api,
-  onSessionChanged,
 }: {
   readonly collapsed: boolean;
   readonly onToggle: () => void;
   readonly api: LibraryApi | null;
-  /** Login desktop selesai — sesi harus diperiksa ulang. */
-  readonly onSessionChanged: () => void;
 }): JSX.Element {
+  const host = getPlatformHost();
   const status = useLibrary((s) => s.status);
   const user = useLibrary((s) => s.user);
   const tracks = useLibrary((s) => s.tracks);
@@ -624,13 +630,7 @@ function Header({
             size="sm"
             variant="ghost"
             onClick={() => {
-              // Server dulu (mencabut sesi), baru kredensial lokal: kalau
-              // urutannya dibalik, permintaan logout-nya sendiri sudah tidak
-              // membawa token dan sesi di server tetap hidup.
-              void api
-                ?.logout()
-                .then(() => getPlatformHost().logout())
-                .then(() => libraryActions.signedOut());
+              void api?.logout().then(() => libraryActions.signedOut());
             }}
           >
             KELUAR
@@ -638,26 +638,28 @@ function Header({
         </>
       ) : null}
 
-      {status === 'anonim' && api !== null ? (
+      {status === 'anonim' && api !== null && host.login !== undefined ? (
         <Button
           size="sm"
           onClick={() => {
             /*
-             * Web: NAVIGASI ke `/auth/google` (302 ke consent Google — tidak
-             * bisa di-fetch), dan promise-nya tidak pernah selesai karena
-             * halaman ini dibongkar. Desktop: browser OS + deep link; selesai
-             * = token tersimpan, dan sesi diperiksa ulang lewat epoch.
+             * NAVIGASI, bukan fetch: `/auth/google` membalas 302 ke layar
+             * consent Google, dan mengambilnya lewat fetch tidak pernah bisa
+             * berhasil. Path sekarang dititipkan supaya user kembali ke
+             * tempat ia menekan tombol. Promise-nya tidak pernah selesai —
+             * halaman ini dibongkar.
              */
-            void getPlatformHost()
-              .login({ apiBase: api.base, nextPath: window.location.pathname })
-              .then(onSessionChanged)
-              .catch((err: unknown) =>
-                libraryActions.setNotice(err instanceof Error ? err.message : String(err)),
-              );
+            void host.login?.({ apiBase: api.base, nextPath: window.location.pathname });
           }}
         >
           MASUK DENGAN GOOGLE
         </Button>
+      ) : null}
+
+      {status === 'tidak-tersedia' ? (
+        <Badge tone="warning" height={22}>
+          BELUM TERSEDIA DI DESKTOP
+        </Badge>
       ) : null}
 
       {status === 'gagal' ? (
@@ -678,6 +680,8 @@ function Header({
  */
 const LABEL: Readonly<Record<string, string>> = {
   'tidak-dikonfigurasi': 'BELUM DIPASANG',
+  // Kosong: badge di kanan strip sudah mengatakannya.
+  'tidak-tersedia': '',
   memeriksa: 'MEMERIKSA…',
   anonim: 'BELUM MASUK',
   gagal: '',
