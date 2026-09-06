@@ -2,7 +2,7 @@
  * Tab GRANT ACCESS di DESKTOP: formulir yang sama dengan web, di atas
  * `createLocalGrantApi()` dengan `invoke` di-mock. Yang dijaga: daftar
  * datang dari `roblox_assets_list`, GRANT memanggil `roblox_grant` tanpa
- * API key di argumen, dan SIMPAN menaruh cookie ke keychain lalu
+ * API key di argumen, dan SIMPAN menaruh cookie ke berkas rahasia lalu
  * mengosongkan kolomnya.
  */
 
@@ -56,7 +56,7 @@ describe('GrantAccess di desktop', () => {
     expect(screen.getByText('2 asset')).toBeDefined();
     const key = screen.getByLabelText('API key Roblox untuk grant') as HTMLInputElement;
     expect(key.value).toBe('');
-    expect(key.placeholder).toMatch(/sudah tersimpan di keychain/);
+    expect(key.placeholder).toMatch(/sudah tersimpan di mesin ini/);
     expect(robloxStore.getState().apiKeyStored).toBe(true);
     expect(screen.queryByText(/belum tersedia di versi desktop/i)).toBeNull();
     expect(screen.queryByText(/Belum ada history/)).toBeNull();
@@ -70,7 +70,7 @@ describe('GrantAccess di desktop', () => {
     fireEvent.click(screen.getByLabelText(/Audio Lama/));
     fireEvent.change(screen.getByPlaceholderText('Universe ID'), { target: { value: '77' } });
     const button = screen.getByRole('button', { name: 'GRANT 1' }) as HTMLButtonElement;
-    // Kunci di keychain cukup; kolom kunci boleh kosong.
+    // Kunci di berkas rahasia cukup; kolom kunci boleh kosong.
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
 
@@ -80,7 +80,7 @@ describe('GrantAccess di desktop', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/1 audio berhasil diberi izin Use ke Universe 77/));
   });
 
-  it('tanpa kunci di keychain tombol GRANT mati; SIMPAN cookie → roblox_grant_cookie_set lalu kolom kosong', async () => {
+  it('tanpa kunci di berkas rahasia tombol GRANT mati; SIMPAN cookie → roblox_grant_cookie_set lalu kolom kosong', async () => {
     table({ hasApiKey: false });
     render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} platform="desktop" />);
     await waitFor(() => expect(screen.getByText('Audio Lama')).toBeDefined());
@@ -99,7 +99,7 @@ describe('GrantAccess di desktop', () => {
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('roblox_grant_cookie_set', { cookie: 'cookie-rahasia' }));
     expect(invoke).toHaveBeenCalledWith('secret_set', { key: 'roblox.api_key', value: 'kunci-baru-yang-panjang' });
-    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/keychain OS/));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/berkas lokal/));
     expect((screen.getByLabelText('API key Roblox untuk grant') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('cookie .ROBLOSECURITY') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('cookie .ROBLOSECURITY') as HTMLInputElement).placeholder).toMatch(/sudah tersimpan/);

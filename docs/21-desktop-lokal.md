@@ -5,7 +5,7 @@ semua data tinggal di mesin user, tanpa login, tanpa Worker.
 
 | Bagian | Yang berubah | Fase |
 |---|---|---|
-| **Fondasi lokal** | SQLite + folder berkas + keychain di `crates/desktop-host`, dipanggil lewat command Tauri | K0 |
+| **Fondasi lokal** | SQLite + folder berkas + berkas rahasia Roblox di `crates/desktop-host`, dipanggil lewat command Tauri | K0 |
 | **Kepustakaan (LibraryDock)** | `LibraryApi` yang sama, implementasi lokal menggantikan Worker; dock tidak tahu bedanya | K1–K3 |
 | **Halaman Roblox** | kategori & genre WAJIB sebelum unggah; katalog lokal yang menjawab "lagu genre apa yang sudah kuunggah"; unggah dan moderasi langsung ke Open Cloud dari Rust | R1–R5 |
 
@@ -33,7 +33,7 @@ kedua di balik antarmuka yang sudah ada — bukan cabang UI.
    MP3/OGG draft. Worker Roblox ada karena dua hal (backend/README): Open Cloud
    tidak mengirim CORS, dan API key tidak aman di halaman. **Di desktop
    keduanya hilang**: Rust memanggil `apis.roblox.com` tanpa CORS, dan API key
-   duduk di keychain OS. Worker tidak diperlukan.
+   duduk di berkas lokal milik aplikasi (§1f). Worker tidak diperlukan.
 
 3. **Open Cloud tidak punya kolom genre.** `POST /assets/v1/assets` hanya
    menerima `displayName`, `description`, `assetType`, dan `creator`. Kategori
@@ -146,13 +146,29 @@ bawaan; body dibungkus stream yang mengirim event `daw://roblox-progress`
 boleh mengirim progres kasar (0 → 100) dan mencatatnya sebagai utang — bar
 yang jujur "sedang mengirim" lebih baik daripada bar yang mengarang angka.
 
-### f) API key dan cookie Roblox di keychain, bukan di SQLite
+### f) API key dan cookie Roblox dalam satu berkas lokal, bukan di SQLite maupun keychain
 
-`SecretStore` (pemulihan `TokenStore` PR #44 `7f9d34e`, dengan nama yang lebih
-jujur): `roblox.api_key` dan, untuk Grant Access, `roblox.cookie`. Tidak pernah
-masuk `library.sqlite`, tidak pernah masuk log, tidak pernah lewat event.
-Kebijakan docs/17 "API key tidak disimpan di browser" berlaku persis sama:
-ia tidak disimpan di WebView; yang menyimpannya OS.
+`SecretStore` (`crates/desktop-host/src/secret.rs`): `roblox.api_key` dan, untuk
+Grant Access, `roblox.cookie`, dalam `app_config_dir()/roblox-secrets.json`
+(mode `0600`, ditulis atomik, dihapus saat kosong). Tidak pernah masuk
+`library.sqlite`, tidak pernah masuk log, tidak pernah lewat event; UI hanya
+menerima "ada/tidak", nilainya hanya dibaca Rust. Kebijakan docs/17 "API key
+tidak disimpan di browser" berlaku persis sama: ia tidak disimpan di WebView.
+
+**Kenapa bukan keychain OS** (rancangan awal K0, dicabut): Keychain macOS
+mengikat entri ke code signature aplikasi, dan build adhoc-signed berganti
+signature tiap build — setiap `cargo tauri dev` dan tiap rilis memunculkan
+prompt keychain. Untuk aplikasi satu-pengguna di mesin pengguna sendiri itu
+gangguan tanpa manfaat, dengan biaya tiga crate dan fallback in-memory untuk CI
+Linux.
+
+**Kenapa bukan `library.sqlite`**: folder kepustakaan bisa dipindah user
+(`store_relocate`) ke iCloud Drive/Dropbox dan ikut backup, dan nilai yang
+dihapus masih tertinggal di WAL/halaman bebas SQLite. Cookie `.ROBLOSECURITY`
+adalah sesi akun penuh. Maka berkasnya di folder config aplikasi, dan relokasi
+kepustakaan hanya memindahkan `library.sqlite` + `tracks/` + `models/` —
+bukan seluruh isi folder (di macOS/Windows `app_config_dir()` sama dengan
+`app_data_dir()`, folder kepustakaan bawaan).
 
 ---
 
@@ -164,7 +180,7 @@ ia tidak disimpan di WebView; yang menyimpannya OS.
 |---|---|
 | `store_info()` | path folder, ukuran total, jumlah lagu/project, versi skema |
 | `store_relocate(newDir)` | pindahkan folder (salin → verifikasi → tukar → hapus lama), progres lewat event |
-| `secret_get/set/clear(key)` | keychain, hanya untuk kunci yang terdaftar (`roblox.api_key`, `roblox.cookie`) |
+| `secret_get/set/clear(key)` | berkas `roblox-secrets.json` (§1f), hanya untuk kunci yang terdaftar (`roblox.api_key`, `roblox.cookie`) |
 | `library_*` | §2c |
 | `roblox_*` | §3e |
 
@@ -265,7 +281,7 @@ ROBLOX ─┬─ UNGGAH   (yang ada) + kolom KATEGORI/GENRE di DetailPanel dan Q
         └─ GRANT    (yang ada) — §3f
 ```
 
-Header: badge `SIAP` hanya kalau API key ada di keychain DAN creator id terisi;
+Header: badge `SIAP` hanya kalau API key tersimpan (§1f) DAN creator id terisi;
 `UI ONLY` diganti `BELUM ADA API KEY` yang menunjuk ke panel target — badge yang
 menyebut penyebabnya, bukan keadaannya.
 
@@ -295,7 +311,7 @@ menyebut penyebabnya, bukan keadaannya.
 Hari ini ia memakai Worker kepustakaan (butuh sesi) untuk katalog asset, daftar
 experience (`games.roblox.com`), resolve place, dan grant (`apis.roblox.com`).
 Semua panggilan itu bisa dilakukan Rust langsung, dengan cookie Roblox di
-keychain. Tapi ia fitur terpisah dengan API tidak resmi (`itemconfiguration`,
+berkas rahasia lokal (§1f). Tapi ia fitur terpisah dengan API tidak resmi (`itemconfiguration`,
 cookie `.ROBLOSECURITY`), jadi dinyatakan **fase terakhir (R5)** dan sampai
 saat itu tab GRANT di desktop berkata "belum tersedia di versi desktop" —
 kalimat yang sama dengan kepustakaan di PR #46. Katalog lokal (§3a) sudah
@@ -317,7 +333,7 @@ Prasyarat: PR #44, #46, #47 sudah di-merge (docs/20 wave 1).
 | **R2 — Antrean berkategori** | `QueueItem.categoryId/genreId`, `violationsOf`, kolom di QueueRow/DetailPanel, pilihan massal, antrean di SQLite (desktop) di balik `PersistenceAdapter` | Baris tanpa genre tidak bisa diunggah dan alasannya tertulis; pilih 12 baris → satu klik memberi genre semuanya; tutup app saat draft → draft kembali |
 | **R3 — Unggah dari Rust** | `roblox.rs` (port `open-cloud.ts` + tesnya di atas server HTTP lokal), `roblox_upload_start/operation_poll`, `createDesktopTransport`, progres, badge `BELUM ADA API KEY` | Unggah satu MP3 sungguhan → `MODERASI` → `DISETUJUI` dengan `assetId`; tutup app di tengah moderasi → buka → poll lanjut; API key tidak ada di SQLite maupun log (tes grep) |
 | **R4 — Katalog** | tab KATALOG: kelompok, hitungan, filter, salin assetId, "coba lagi"; opsi "genre ke deskripsi" | Sesudah 3 unggahan beda genre, tab KATALOG menampilkan 3 kelompok dengan hitungan benar; deskripsi asset di Creator Hub memuat baris Genre bila opsi hidup |
-| **R5 — Grant Access lokal** | port `/roblox/*` Worker kepustakaan ke Rust, cookie di keychain | Grant satu asset ke satu universe dari desktop tanpa Worker |
+| **R5 — Grant Access lokal** | port `/roblox/*` Worker kepustakaan ke Rust, cookie di berkas rahasia lokal | Grant satu asset ke satu universe dari desktop tanpa Worker |
 
 Urutan: K0 → (K1, R1 paralel) → (K2, R2 paralel) → R3 → (K3, R4 paralel) → R5.
 K0 adalah gerbang; tidak ada yang mulai sebelum tes §2d hijau.

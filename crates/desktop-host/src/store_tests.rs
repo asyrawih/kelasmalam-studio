@@ -1042,6 +1042,62 @@ fn relocate_moves_everything_and_reports_progress() {
 }
 
 #[test]
+fn relocate_leaves_foreign_files_alone() {
+    // Folder kepustakaan bawaan = `app_data_dir()` = `app_config_dir()` di
+    // macOS/Windows: di sampingnya tinggal penunjuk folder, berkas rahasia
+    // Roblox, model, dan cache. Bukan milik kepustakaan → tidak ikut pindah,
+    // tidak ikut dihapus, dan foldernya sendiri tetap ada.
+    let (old, mut store) = open_temp();
+    let src = tempfile::tempdir().unwrap();
+    seed_track(&store, src.path(), "a.mp3", 1);
+    std::fs::write(old.path().join("library-dir.txt"), b"/nanti").unwrap();
+    std::fs::write(old.path().join(crate::SECRETS_FILE), b"{}").unwrap();
+    std::fs::write(old.path().join("soundcloud-client-id.json"), b"{}").unwrap();
+    // `models/` sebaliknya MILIK kepustakaan (kepala `store.rs`): ikut pindah.
+    std::fs::write(old.path().join("models").join("scnet.onnx"), b"model").unwrap();
+
+    let parent = tempfile::tempdir().unwrap();
+    let new_dir = parent.path().join("Kepustakaan");
+    store.relocate(&new_dir, |_, _| {}, |_| Ok(())).unwrap();
+
+    assert_eq!(track_files(&new_dir).len(), 1);
+    assert!(new_dir.join(DB_FILE).is_file());
+    assert!(
+        !new_dir.join("library-dir.txt").exists(),
+        "tidak ikut disalin"
+    );
+    assert!(
+        !new_dir.join(crate::SECRETS_FILE).exists(),
+        "rahasia tidak ikut ke folder user"
+    );
+    assert!(!new_dir.join("soundcloud-client-id.json").exists());
+    assert!(
+        new_dir.join("models").join("scnet.onnx").is_file(),
+        "model ikut pindah"
+    );
+
+    assert!(
+        old.path().is_dir(),
+        "folder lama masih ada karena ada isi lain"
+    );
+    assert!(
+        old.path().join("library-dir.txt").is_file(),
+        "penunjuk tidak dihapus"
+    );
+    assert!(old.path().join(crate::SECRETS_FILE).is_file());
+    assert!(old.path().join("soundcloud-client-id.json").is_file());
+    assert!(
+        !old.path().join(DB_FILE).exists(),
+        "basis data lama dihapus"
+    );
+    assert!(
+        !old.path().join(TRACKS_SUBDIR).exists(),
+        "tracks/ lama dihapus"
+    );
+    assert!(!old.path().join("models").exists(), "models/ lama dihapus");
+}
+
+#[test]
 fn relocate_failed_commit_leaves_old_folder_intact() {
     let (old, mut store) = open_temp();
     let src = tempfile::tempdir().unwrap();
@@ -1138,9 +1194,9 @@ fn relocate_rejects_nested_or_non_empty_targets() {
 
 #[test]
 fn secret_in_memory_round_trip() {
-    let store = SecretStore::in_memory("app.kelasmalam.test");
+    let store = SecretStore::in_memory();
     assert!(!store.is_persistent());
-    assert_eq!(store.service(), "app.kelasmalam.test");
+    assert_eq!(store.path(), None);
     assert_eq!(store.get(SecretKey::RobloxApiKey).unwrap(), None);
 
     store.set(SecretKey::RobloxApiKey, "key-1").unwrap();
@@ -1189,8 +1245,8 @@ fn secret_keys_are_a_closed_list() {
         Err(HostError::Invalid(msg)) => assert!(msg.contains("session.token")),
         other => panic!("harus Invalid, dapat {other:?}"),
     }
-    let a = SecretStore::in_memory("svc");
-    let b = SecretStore::in_memory("svc");
+    let a = SecretStore::in_memory();
+    let b = SecretStore::in_memory();
     a.set(SecretKey::RobloxCookie, "milik-a").unwrap();
     assert_eq!(
         b.get(SecretKey::RobloxCookie).unwrap(),
@@ -1199,27 +1255,107 @@ fn secret_keys_are_a_closed_list() {
     );
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 #[test]
-fn secret_new_falls_back_to_memory_on_unsupported_os() {
-    // Di Linux (CI Ubuntu) `new` harus tetap bisa dipakai tanpa dbus.
-    let store = SecretStore::new("app.kelasmalam.test");
-    assert!(!store.is_persistent());
-    store.set(SecretKey::RobloxApiKey, "x").unwrap();
-    assert_eq!(
-        store.get(SecretKey::RobloxApiKey).unwrap().as_deref(),
-        Some("x")
+fn secret_file_persists_across_reopen_and_vanishes_when_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    // Folder induk yang belum ada dibuat saat `set` pertama — `app_config_dir()`
+    // belum tentu sudah ada di peluncuran pertama.
+    let path = tmp.path().join("config").join(crate::SECRETS_FILE);
+    let store = SecretStore::at(&path);
+    assert!(store.is_persistent());
+    assert_eq!(store.path(), Some(path.as_path()));
+    assert_eq!(store.get(SecretKey::RobloxApiKey).unwrap(), None);
+    assert!(!path.exists(), "get tidak membuat berkas");
+
+    store.set(SecretKey::RobloxApiKey, "key-1").unwrap();
+    store.set(SecretKey::RobloxCookie, "cookie-1").unwrap();
+    assert!(path.is_file());
+    assert!(
+        !path.with_extension("json.part").exists(),
+        "tidak ada .part yang tertinggal"
     );
+
+    // Seperti app dibuka ulang: instance baru membaca berkas yang sama.
+    let reopened = SecretStore::at(&path);
+    assert_eq!(
+        reopened.get(SecretKey::RobloxApiKey).unwrap().as_deref(),
+        Some("key-1")
+    );
+    assert_eq!(
+        reopened.get(SecretKey::RobloxCookie).unwrap().as_deref(),
+        Some("cookie-1")
+    );
+    assert!(
+        !format!("{reopened:?}").contains("key-1"),
+        "Debug tidak membocorkan nilai"
+    );
+
+    reopened.clear(SecretKey::RobloxApiKey).unwrap();
+    assert_eq!(store.get(SecretKey::RobloxApiKey).unwrap(), None);
+    assert!(path.is_file(), "masih ada cookie");
+    reopened.clear(SecretKey::RobloxCookie).unwrap();
+    assert!(!path.exists(), "berkas kosong dihapus, bukan ditinggal");
+    reopened
+        .clear(SecretKey::RobloxCookie)
+        .unwrap_or_else(|e| panic!("clear pada berkas yang tidak ada idempoten: {e}"));
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(unix)]
 #[test]
-fn secret_new_uses_native_store_without_touching_it() {
-    // Hanya konstruksi: tidak ada get/set supaya tes tidak memicu prompt
-    // Keychain di mesin pengembang atau runner.
-    let store = SecretStore::new("app.kelasmalam.test");
-    assert!(store.is_persistent());
-    assert!(format!("{store:?}").contains("app.kelasmalam.test"));
+fn secret_file_is_private_to_the_user() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join(crate::SECRETS_FILE);
+    let store = SecretStore::at(&path);
+    store.set(SecretKey::RobloxApiKey, "rahasia").unwrap();
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "mode {mode:o}");
+    // Menimpa lewat rename tidak boleh melonggarkannya.
+    store.set(SecretKey::RobloxApiKey, "rahasia-2").unwrap();
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "mode sesudah timpa {mode:o}");
+}
+
+#[test]
+fn secret_file_keeps_unknown_keys_and_rejects_garbage() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join(crate::SECRETS_FILE);
+    // Kunci dari versi app yang lebih baru tidak boleh hilang saat kita menulis.
+    std::fs::write(
+        &path,
+        r#"{ "roblox.api_key": "lama", "masa.depan": "dijaga" }"#,
+    )
+    .unwrap();
+    let store = SecretStore::at(&path);
+    assert_eq!(
+        store.get(SecretKey::RobloxApiKey).unwrap().as_deref(),
+        Some("lama")
+    );
+    store.set(SecretKey::RobloxCookie, "baru").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("\"masa.depan\": \"dijaga\""), "{text}");
+
+    // Berkas rusak = SECRET_UNAVAILABLE yang menyebut path-nya, bukan "kosong"
+    // yang lalu ditimpa diam-diam saat set berikutnya.
+    std::fs::write(&path, b"{ bukan json").unwrap();
+    for outcome in [
+        store.get(SecretKey::RobloxApiKey).map(|_| ()),
+        store.set(SecretKey::RobloxApiKey, "x"),
+        store.clear(SecretKey::RobloxApiKey),
+    ] {
+        match outcome {
+            Err(e @ HostError::SecretUnavailable(_)) => {
+                assert_eq!(e.code(), "SECRET_UNAVAILABLE");
+                assert!(e.to_string().contains(crate::SECRETS_FILE), "{e}");
+            }
+            other => panic!("harus SecretUnavailable, dapat {other:?}"),
+        }
+    }
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        b"{ bukan json",
+        "berkas rusak tidak disentuh"
+    );
 }
 
 // ---------------------------------------------------------- LocalError
@@ -1258,7 +1394,7 @@ fn local_error_serializes_like_the_contract() {
     assert_eq!(http["status"], 429);
 
     assert_eq!(
-        HostError::KeyringUnavailable("x".into()).code(),
+        HostError::SecretUnavailable("x".into()).code(),
         "SECRET_UNAVAILABLE"
     );
     assert_eq!(HostError::Invalid("x".into()).code(), "INVALID");

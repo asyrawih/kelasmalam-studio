@@ -244,7 +244,7 @@ impl Store {
             Ok(conn) => {
                 self.conn = conn;
                 self.dir = new_dir.to_path_buf();
-                let _ = fs::remove_dir_all(&old_dir);
+                remove_library_files(&old_dir);
                 self.info()
             }
             Err(e) => {
@@ -309,11 +309,30 @@ fn is_transient(path: &Path) -> bool {
         || name == ".DS_Store"
 }
 
-/// Semua berkas (bukan direktori) di bawah `root`, relatif terhadap `root`,
-/// tanpa yang transien. Urut supaya progres dan verifikasi deterministik.
+/// Berkas MILIK KEPUSTAKAAN di bawah `root`, relatif terhadap `root`, tanpa
+/// yang transien: `library.sqlite`, semua isi `tracks/`, dan `models/` (tata
+/// letak di kepala berkas ini). Urut supaya progres dan verifikasi
+/// deterministik.
+///
+/// Sengaja bukan "semua berkas di folder": folder kepustakaan bawaan adalah
+/// `app_data_dir()`, yang di macOS dan Windows SAMA dengan `app_config_dir()`
+/// — tempat `library-dir.txt` (penunjuk folder), `roblox-secrets.json`
+/// (`secret.rs`), dan cache SoundCloud tinggal. Memindahkan semuanya ke
+/// folder pilihan user berarti rahasia Roblox ikut ke iCloud Drive, dan
+/// menghapus folder lama berarti penunjuknya sendiri ikut hilang.
 fn list_files(root: &Path) -> Result<Vec<(PathBuf, u64)>, HostError> {
     let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
+    let db = root.join(DB_FILE);
+    if let Ok(meta) = fs::metadata(&db) {
+        if meta.is_file() {
+            out.push((PathBuf::from(DB_FILE), meta.len()));
+        }
+    }
+    let mut stack: Vec<PathBuf> = [TRACKS_SUBDIR, MODELS_SUBDIR]
+        .iter()
+        .map(|sub| root.join(sub))
+        .filter(|p| p.is_dir())
+        .collect();
     while let Some(dir) = stack.pop() {
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
@@ -332,6 +351,22 @@ fn list_files(root: &Path) -> Result<Vec<(PathBuf, u64)>, HostError> {
     }
     out.sort();
     Ok(out)
+}
+
+/// Hapus berkas kepustakaan dari folder lama sesudah relokasi berhasil:
+/// `library.sqlite` (+ sisa `-wal`/`-shm`/`-journal`-nya), `tracks/`, dan
+/// `models/` seluruhnya — TIDAK folder itu sendiri, dan tidak berkas lain
+/// di dalamnya (lihat `list_files`). Folder yang jadi kosong dihapus supaya
+/// relokasi dari folder khusus kepustakaan tidak meninggalkan folder hampa.
+/// Best-effort (lihat catatan di `relocate`).
+fn remove_library_files(dir: &Path) {
+    let _ = fs::remove_dir_all(dir.join(TRACKS_SUBDIR));
+    let _ = fs::remove_dir_all(dir.join(MODELS_SUBDIR));
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+        let _ = fs::remove_file(dir.join(format!("{DB_FILE}{suffix}")));
+    }
+    // Gagal = masih ada isi lain; itu memang maksudnya.
+    let _ = fs::remove_dir(dir);
 }
 
 /// Total byte semua berkas di bawah `root` (termasuk transien — yang ditanya

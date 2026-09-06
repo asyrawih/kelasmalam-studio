@@ -53,10 +53,10 @@ pub enum HostError {
     /// Argumen yang tidak masuk akal (hash bukan hex, ext asing, kunci rahasia
     /// tidak terdaftar, genre bukan milik kategorinya).
     Invalid(String),
-    /// Keychain OS menolak atau gagal (bukan "entri tidak ada" — itu `Ok(None)`).
-    Keyring(keyring_core::Error),
-    /// Store keychain native tidak bisa dibuat di proses ini.
-    KeyringUnavailable(String),
+    /// Berkas rahasia Roblox tidak bisa dibaca/ditulis, atau isinya rusak
+    /// (bukan "entri tidak ada" — itu `Ok(None)`). Isinya kalimat untuk user,
+    /// menyebut path berkasnya.
+    SecretUnavailable(String),
 }
 
 impl HostError {
@@ -71,7 +71,7 @@ impl HostError {
             Self::InUse { .. } => "IN_USE",
             Self::VersionConflict { .. } => "VERSION_CONFLICT",
             Self::DiskFull { .. } => "DISK_FULL",
-            Self::Keyring(_) | Self::KeyringUnavailable(_) => "SECRET_UNAVAILABLE",
+            Self::SecretUnavailable(_) => "SECRET_UNAVAILABLE",
         }
     }
 
@@ -135,8 +135,7 @@ impl fmt::Display for HostError {
                 available / 1_000_000
             ),
             Self::Invalid(why) => f.write_str(why),
-            Self::Keyring(e) => write!(f, "keychain OS: {e}"),
-            Self::KeyringUnavailable(why) => write!(f, "keychain OS tidak tersedia: {why}"),
+            Self::SecretUnavailable(why) => write!(f, "berkas rahasia Roblox: {why}"),
         }
     }
 }
@@ -147,7 +146,6 @@ impl std::error::Error for HostError {
             Self::Io(e) => Some(e),
             Self::Http(e) => Some(e),
             Self::Sqlite(e) => Some(e),
-            Self::Keyring(e) => Some(e),
             _ => None,
         }
     }

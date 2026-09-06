@@ -153,7 +153,7 @@ export interface RobloxTarget {
   /**
    * API key Open Cloud aktif. Web: salinan aktif yang dimuat dari D1. Desktop:
    * HANYA isi kolom yang belum disimpan — begitu ditekan SIMPAN ia pindah ke
-   * keychain OS dan kolomnya dikosongkan (docs/21 §1f); yang menandai bahwa
+   * berkas rahasia lokal dan kolomnya dikosongkan (docs/21 §1f); yang menandai bahwa
    * kuncinya ada adalah `RobloxState.apiKeyStored`.
    */
   readonly apiKey: string;
@@ -236,7 +236,7 @@ export interface RobloxState {
   readonly catalog: readonly RobloxUploadRow[];
   readonly catalogFilter: CatalogFilter;
   /**
-   * Desktop: API key ada di keychain OS. Web: selalu `false` — di sana kuncinya
+   * Desktop: API key ada di berkas rahasia lokal. Web: selalu `false` — di sana kuncinya
    * ada di `target.apiKey`. Yang dibaca `targetProblems` adalah salah satunya.
    */
   readonly apiKeyStored: boolean;

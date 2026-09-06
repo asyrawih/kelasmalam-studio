@@ -3,7 +3,7 @@
  *
  * Pemisahannya disengaja. `RobloxPage` adalah UI murni — ia menerima `onUpload`
  * dan tidak tahu apa pun tentang HTTP maupun Tauri, dan itulah yang membuatnya
- * bisa dites tanpa jaringan sama sekali. Yang tahu soal URL, keychain, probe
+ * bisa dites tanpa jaringan sama sekali. Yang tahu soal URL, berkas rahasia, probe
  * kesiapan, dan siklus hidup runner adalah berkas ini, dan hanya berkas ini.
  *
  * ## Dua kabel, satu runner (docs/21 §1e)
@@ -11,9 +11,9 @@
  * Web: `createHttpTransport(VITE_ROBLOX_API)` ke Worker unggah, Grant Access
  * lewat Worker kepustakaan — persis seperti sebelum desktop ada.
  * Desktop: `createDesktopTransport()` ke command Tauri; unggah dan poll
- * dilakukan Rust, API key di keychain, target di SQLite. Grant Access lewat
+ * dilakukan Rust, API key di berkas rahasia, target di SQLite. Grant Access lewat
  * `createLocalGrantApi()` — command `roblox_grant_*`/`roblox_assets_*` yang
- * bicara ke Roblox langsung dari Rust dengan cookie di keychain (§3f, R5).
+ * bicara ke Roblox langsung dari Rust dengan cookie di berkas rahasia (§3f, R5).
  * `runner.ts` sama untuk keduanya.
  *
  * ## Tanpa `VITE_ROBLOX_API`, halaman web persis seperti sebelum backend ada
@@ -157,7 +157,7 @@ export function RobloxRoute({
    * Kesiapan diperiksa, bukan diasumsikan dari adanya konfigurasi. URL yang
    * terisi tapi Worker-nya mati adalah keadaan yang paling sering terjadi saat
    * pengembangan, dan badge yang berkata SIAP di situ berbohong tepat di
-   * tempat yang paling mahal. Di desktop yang diperiksa keychain + target —
+   * tempat yang paling mahal. Di desktop yang diperiksa berkas rahasia + target —
    * dan keduanya baru terisi setelah `restoreRobloxQueue` memuat tabel
    * `setting`, jadi probe menunggu itu dulu.
    */
@@ -195,9 +195,9 @@ export function RobloxRoute({
 
   /**
    * SIMPAN di panel TUJUAN. Desktop: creator → `roblox_target_set`, kunci →
-   * keychain lewat `secret_set` (docs/21 §1f), lalu kolom kunci DIKOSONGKAN —
+   * berkas rahasia lewat `secret_set` (docs/21 §1f), lalu kolom kunci DIKOSONGKAN —
    * salinan di memori WebView tidak punya alasan untuk hidup lebih lama
-   * daripada perjalanan ke keychain. Web: Worker kepustakaan seperti semula.
+   * daripada perjalanan ke berkas rahasia. Web: Worker kepustakaan seperti semula.
    */
   const onSaveTarget = desktop
     ? async (target: RobloxTarget): Promise<void> => {

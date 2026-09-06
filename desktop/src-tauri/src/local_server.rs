@@ -28,7 +28,7 @@
 //! dilayani `studio.kelasmalam.app` ke siapa pun. Tidak ada IPC di sini:
 //! `invoke` berjalan lewat jembatan `__TAURI_INTERNALS__` yang hanya disuntik
 //! ke WebView aplikasi, jadi proses lain yang membuka port ini mendapat HTML,
-//! bukan akses ke keychain atau kepustakaan. Yang diserahkan: proses lokal
+//! bukan akses ke rahasia Roblox atau kepustakaan. Yang diserahkan: proses lokal
 //! lain bisa tahu aplikasi ini sedang berjalan dan di port berapa.
 
 use std::io;

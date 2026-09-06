@@ -26,7 +26,7 @@ export interface GrantApi {
   /**
    * `apiKey`/`robloxCookie` terisi hanya di web (Worker mengembalikannya untuk
    * mengisi ulang kolom). Di desktop keduanya `''` dan yang menjawab "sudah
-   * ada?" adalah `hasApiKey`/`hasRobloxCookie` — nilainya tinggal di keychain.
+   * ada?" adalah `hasApiKey`/`hasRobloxCookie` — nilainya tinggal di berkas rahasia.
    */
   settings(): Promise<GrantSettings | null>;
   saveSettings(settings: { creatorKind: 'user' | 'group'; creatorId: string; apiKey: string; robloxCookie?: string }): Promise<void>;

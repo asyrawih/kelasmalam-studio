@@ -9,13 +9,13 @@
  * ## Yang berbeda dari transport HTTP, dan kenapa
  *
  * - `upload()` menerima `File` dan `target`, tapi TIDAK memakainya: byte-nya
- *   dibaca Rust dari `tracks/<hash>` dan API key dari keychain — tidak pernah
+ *   dibaca Rust dari `tracks/<hash>` dan API key dari berkas rahasia — tidak pernah
  *   lewat IPC (docs/21 §1f). Yang dikirim hanya `id` baris.
  * - `operation()` menerima `operationId` (kontrak runner), sedangkan
  *   `roblox_operation_poll` menerima `id` BARIS. Pemetaannya lewat `rowIdOf`
  *   yang disuntik route dari store — supaya `resume()` setelah restart, yang
  *   hanya punya `operationId` dari tabel, tetap bisa poll.
- * - `health()` = "API key ada di keychain DAN creator id terisi". Tidak ada
+ * - `health()` = "API key ada di berkas rahasia DAN creator id terisi". Tidak ada
  *   Worker yang bisa mati; yang bisa kurang hanya dua hal itu.
  *
  * Progres unggah datang dari event `daw://roblox-progress` `{ id, sent, total }`
@@ -61,7 +61,7 @@ function moderationOf(value: unknown): OperationState['moderationState'] {
   return value === 'reviewing' || value === 'approved' || value === 'rejected' ? value : null;
 }
 
-/** Apakah API key Roblox ada di keychain OS. Dipakai badge header dan `health()`. */
+/** Apakah API key Roblox ada di berkas rahasia lokal. Dipakai badge header dan `health()`. */
 export async function hasStoredApiKey(): Promise<boolean> {
   return (await localInvoke('secret_get', { key: 'roblox.api_key' })) !== null;
 }
@@ -72,7 +72,7 @@ export function createDesktopTransport(opts: DesktopTransportOptions): Transport
       try {
         return (await hasStoredApiKey()) && opts.creatorId().trim() !== '';
       } catch {
-        // Keychain tidak bisa dibaca (`SECRET_UNAVAILABLE`) sama artinya
+        // Berkas rahasia tidak bisa dibaca (`SECRET_UNAVAILABLE`) sama artinya
         // dengan "tidak ada kunci" bagi halaman: belum bisa mengirim.
         return false;
       }
