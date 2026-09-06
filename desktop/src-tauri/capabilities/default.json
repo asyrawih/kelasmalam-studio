@@ -1,0 +1,32 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Izin jendela utama. Seminimal mungkin (docs/20 §2e): tiap izin di sini adalah permukaan yang bisa dipanggil dari JS, jadi hanya yang sudah ada pemakainya. D2 (adapter platform) menambah izin fs/dialog seiring adapternya ditulis.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [{ "path": "$APPDATA/**" }]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [{ "path": "$APPDATA/**" }]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://accounts.google.com/*" },
+        { "url": "https://lib.kelasmalam.app/*" },
+        { "url": "https://studio.kelasmalam.app/*" },
+        { "url": "https://soundcloud.com/*" },
+        { "url": "https://www.roblox.com/*" },
+        { "url": "https://roblox.com/*" }
+      ]
+    },
+    "deep-link:default",
+    "updater:default"
+  ]
+}

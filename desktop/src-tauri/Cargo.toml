@@ -7,4 +7,40 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# Nama lib TIDAK sama dengan nama package: Tauri menyarankan `<nama>_lib`
+# supaya bin dan lib tidak berebut nama artefak di `target/`, dan supaya
+# `staticlib`/`cdylib` (dipakai kalau suatu saat ada target mobile) tidak
+# menabrak `rlib` yang dipakai `src/main.rs` dan tes unit.
+[lib]
+name = "daw_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "daw-desktop"
+path = "src/main.rs"
+
+# tauri-build menanam `tauri.conf.json`, ikon, dan capability ke binary saat
+# compile; tanpa ini `generate_context!()` tidak punya apa-apa untuk dibaca.
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# Versi TIDAK ditaruh di [workspace.dependencies]: tidak ada crate lain yang
+# memakai Tauri, dan crate ini dikecualikan dari job CI Ubuntu — mengangkatnya
+# ke workspace hanya menambah kebisingan untuk crate yang tidak pernah
+# menyentuhnya. Fitur `tauri` dibiarkan bawaan (`wry` + kompresi aset);
+# `devtools` sengaja tidak dinyalakan — WKWebView sudah memberi DevTools di
+# build debug, dan di rilis kita tidak mau inspector tersedia untuk siapa pun.
 [dependencies]
+tauri = { version = "2", features = [] }
+# Plugin sesuai docs/20 §2d. Semuanya HANYA didaftarkan di D1; adapter web yang
+# memakainya digarap di D2–D4.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
+# Fitur `std` sengaja penuh (bukan `workspace = true` yang no_std-oriented):
+# ini crate native, dan payload event IPC memang butuh `String`.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

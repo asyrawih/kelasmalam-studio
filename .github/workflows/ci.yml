@@ -91,9 +91,15 @@ jobs:
       #
       # Cakupannya tidak berkurang: yang dikecualikan di sini diuji utuh di job
       # sebelah. Yang berubah hanya siapa yang ikut mati saat apt bermasalah.
+      #
+      # `daw-desktop` (Tauri, docs/20 §1e) dikecualikan dengan alasan yang sama
+      # dalam bentuk yang lebih parah: di Linux crate Tauri menyeret webkit2gtk,
+      # libsoup, dan gtk lewat apt — dan Linux memang bukan target desktop.
+      # Ia diuji di job `desktop` di runner macOS + Windows, tempat WebView-nya
+      # sudah ada di OS. `cargo fmt` tetap menyentuhnya: fmt tidak mengompilasi.
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --exclude daw-native-host --all-targets -- -D warnings
-      - run: cargo test --workspace --exclude daw-native-host
+      - run: cargo clippy --workspace --exclude daw-native-host --exclude daw-desktop --all-targets -- -D warnings
+      - run: cargo test --workspace --exclude daw-native-host --exclude daw-desktop
 
       # Deteksi alokasi di jalur RT (allocator penjaga, docs/01 §1c).
       - run: cargo test -p daw-engine --features rt-guard
@@ -257,10 +263,12 @@ jobs:
       # sana berarti menjalankan tsc + vite untuk kedua kalinya atas commit yang
       # sama — dan, lebih buruk, mengirim ke produksi berkas yang BUKAN berkas
       # yang baru saja diuji.
+      #
+      # Dulu langkah ini hanya jalan saat deploy. Sekarang SELALU: job `desktop`
+      # menanam `web/dist` ke dalam binary Tauri (tauri-build gagal kalau
+      # direktorinya tidak ada), dan ia juga jalan di pull request. Harganya
+      # ~60 MB artefak per run yang dibuang setelah sehari.
       - name: Upload dist
-        if: >-
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && inputs.deploy)
         uses: actions/upload-artifact@v4
         with:
           name: web-dist
@@ -307,6 +315,72 @@ jobs:
       - name: Typecheck
         working-directory: backend
         run: npm run typecheck
+
+  # --------------------------------------------------------------- desktop
+  # Aplikasi desktop Tauri (docs/20 §3). Dua runner, dua WebView: WKWebView di
+  # macOS dan WebView2 di Windows. Yang dibuktikan di sini adalah crate-nya
+  # mengompilasi, link dengan toolchain OS masing-masing (MSVC di Windows), dan
+  # tes unit menu lewat — BUKAN bahwa suara keluar. Itu tetap butuh mesin
+  # sungguhan (docs/20 §5b).
+  #
+  # `needs: [wasm, web]`: `web/dist` ditanam ke binary saat compile, jadi
+  # artefak `web-dist` harus sudah ada. Artefak `wasm` TIDAK diunduh terpisah:
+  # isinya sudah ikut ke dalam `web/dist` (vite meng-copy artefak `mt`/`st`
+  # sebagai asset), dan crate Rust-nya sendiri tidak menyentuh WASM sama sekali.
+  #
+  # Job ini SENGAJA tidak ada di `needs:` job deploy: runner macOS/Windows
+  # lebih lambat dan lebih jarang tersedia daripada Ubuntu, dan kegagalan
+  # bundel desktop tidak boleh menahan web yang tidak memakainya. Merah di
+  # sini tetap terlihat di run — hanya tidak menyandera.
+  desktop:
+    name: desktop (${{ matrix.os }})
+    needs: [wasm, web]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # Compile Tauri dari cache dingin ~6 menit di macOS dan ~12 menit di
+    # Windows; dua kali (clippy + build) plus tes. Longgar, supaya runner
+    # Windows yang sedang lambat tidak dihitung sebagai gagal.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (dari rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Cache dipisah per OS dan per crate: target Tauri tidak berbagi apa
+          # pun dengan target job `native`, dan menimpanya hanya bikin keduanya
+          # saling membuang cache.
+          key: desktop-${{ matrix.os }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+
+      # tauri-cli lewat npm, BUKAN `cargo install tauri-cli` — yang terakhir
+      # mengompilasi CLI-nya dari source (~5 menit per runner, per run) untuk
+      # binary yang sudah tersedia jadi di npm sebagai dependensi opsional
+      # per-platform. Versinya dipin sama dengan yang dipakai di mesin
+      # pengembang supaya `tauri.conf.json` dibaca skema yang sama.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: cargo clippy -p daw-desktop --all-targets -- -D warnings
+
+      # `--no-bundle`: yang diuji adalah compile + link + penanaman aset, bukan
+      # .dmg/.msi — bundling adalah urusan `release-desktop.yml` (D6) dan butuh
+      # sertifikat yang tidak ada di PR.
+      - name: tauri build (debug, tanpa bundel)
+        working-directory: desktop/src-tauri
+        run: npx --yes @tauri-apps/cli@2.11.4 build --debug --no-bundle
+
+      - run: cargo test -p daw-desktop
 
   # ---------------------------------------------------------------- deploy
   # Deploy adalah KELANJUTAN dari CI, bukan pipeline kedua yang berlomba
