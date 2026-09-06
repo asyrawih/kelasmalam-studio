@@ -30,6 +30,7 @@ import { RobloxHeader } from './header/RobloxHeader';
 import { GrantAccess } from './grant/GrantAccess';
 import type { GrantApi } from './grant/api';
 import { TargetPanel } from './destination/TargetPanel';
+import { CatalogPanel } from './catalog/CatalogPanel';
 import { TaxonomyPanel } from './taxonomy/TaxonomyPanel';
 import { DetailPanel } from './upload/DetailPanel';
 import { DropZone } from './upload/DropZone';
@@ -151,6 +152,7 @@ export function RobloxPage({
 
   const tabs: readonly { readonly id: RobloxTab; readonly label: string }[] = [
     { id: 'upload', label: 'UNGGAH' },
+    { id: 'catalog', label: `KATALOG${state.catalog.length > 0 ? ` ${state.catalog.length}` : ''}` },
     { id: 'taxonomy', label: 'TAKSONOMI' },
     { id: 'grant', label: 'GRANT ACCESS' },
   ];
@@ -298,6 +300,8 @@ export function RobloxPage({
             </div>
           </div>
         </>
+      ) : tab === 'catalog' ? (
+        <CatalogPanel state={state} />
       ) : tab === 'taxonomy' ? (
         <TaxonomyPanel taxonomy={state.taxonomy} items={state.items} catalog={state.catalog} />
       ) : (
