@@ -271,8 +271,10 @@ impl Store {
         )
     }
 
-    /// `roblox_queue_put`: upsert. `id` kosong = baris baru (id + waktu dari
-    /// sini). `bytes` diabaikan — selalu dari `track`.
+    /// `roblox_queue_put`: upsert. `id` biasanya dibuat TS (UUID) dan selalu
+    /// dikirim — id yang belum ada di tabel = INSERT, bukan `NOT_FOUND`;
+    /// `id` kosong = Rust yang membuat id. `createdAt` diisi saat insert,
+    /// `updatedAt` tiap put. `bytes` diabaikan — selalu dari `track`.
     pub fn queue_put(&self, input: &UploadInput) -> Result<UploadRow, HostError> {
         if !self.has_track(&input.hash)? {
             return Err(HostError::NotFound(
@@ -375,6 +377,30 @@ impl Store {
         );
         let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|b| b.as_ref()).collect();
         self.uploads(&sql, &refs)
+    }
+
+    /// Nama kategori dan genre satu unggahan — bahan baris
+    /// `Genre: <kategori> / <genre>` di akhir deskripsi asset (docs/21 §1d),
+    /// yang ditambahkan SISI RUST saat `roblox_upload_start` (R3) kalau
+    /// `target().genre_to_description` hidup. `None` kalau baris tidak punya
+    /// genre; `NOT_FOUND` kalau barisnya tidak ada.
+    pub fn upload_genre_names(&self, id: &str) -> Result<Option<(String, String)>, HostError> {
+        let found: Option<Option<(String, String)>> = self
+            .conn()
+            .query_row(
+                "SELECT c.name, g.name FROM roblox_upload u
+                   LEFT JOIN roblox_genre g ON g.id = u.genre_id
+                   LEFT JOIN roblox_category c ON c.id = g.category_id
+                  WHERE u.id = ?1",
+                [id],
+                |r| {
+                    let c: Option<String> = r.get(0)?;
+                    let g: Option<String> = r.get(1)?;
+                    Ok(c.zip(g))
+                },
+            )
+            .optional()?;
+        found.ok_or_else(|| HostError::NotFound("baris unggahan tidak ditemukan".into()))
     }
 
     /// Satu baris, `NOT_FOUND` kalau tidak ada.

@@ -112,34 +112,36 @@ CREATE TABLE setting (
   value TEXT NOT NULL
 );
 
--- Taksonomi bawaan docs/21 §1d. Id-nya slug yang stabil (bukan UUID) supaya
--- terbaca di tes dan di berkas cadangan; yang dibuat user memakai UUID.
+-- Taksonomi bawaan docs/21 §1d. Id-nya deterministik dan SAMA dengan yang
+-- dipakai sisi TS (`kat:<slug>`, `gen:<slug-kategori>/<slug-genre>`; slug =
+-- huruf kecil, spasi → `-`) supaya draft yang dibuat sebelum tabel ini ada
+-- tetap menunjuk genre yang benar; yang dibuat user memakai UUID.
 -- HANYA kalau tabel kosong: migrasi ini idempoten terhadap folder yang sudah
 -- pernah dibuka versi pra-rilis.
 INSERT INTO roblox_category (id, name, sort)
 SELECT * FROM (
-  SELECT 'musik' AS id, 'Musik' AS name, 0 AS sort UNION ALL
-  SELECT 'efek-suara', 'Efek suara', 1 UNION ALL
-  SELECT 'suara', 'Suara', 2
+  SELECT 'kat:musik' AS id, 'Musik' AS name, 0 AS sort UNION ALL
+  SELECT 'kat:efek-suara', 'Efek suara', 1 UNION ALL
+  SELECT 'kat:suara', 'Suara', 2
 ) WHERE NOT EXISTS (SELECT 1 FROM roblox_category);
 
 INSERT INTO roblox_genre (id, category_id, name, sort)
 SELECT * FROM (
-  SELECT 'musik.lo-fi' AS id, 'musik' AS category_id, 'Lo-fi' AS name, 0 AS sort UNION ALL
-  SELECT 'musik.hip-hop',   'musik', 'Hip-hop',  1 UNION ALL
-  SELECT 'musik.edm',       'musik', 'EDM',      2 UNION ALL
-  SELECT 'musik.pop',       'musik', 'Pop',      3 UNION ALL
-  SELECT 'musik.rock',      'musik', 'Rock',     4 UNION ALL
-  SELECT 'musik.ambient',   'musik', 'Ambient',  5 UNION ALL
-  SELECT 'musik.orkestra',  'musik', 'Orkestra', 6 UNION ALL
-  SELECT 'musik.jazz',      'musik', 'Jazz',     7 UNION ALL
-  SELECT 'musik.chiptune',  'musik', 'Chiptune', 8 UNION ALL
-  SELECT 'efek-suara.ui',       'efek-suara', 'UI',       0 UNION ALL
-  SELECT 'efek-suara.ambience', 'efek-suara', 'Ambience', 1 UNION ALL
-  SELECT 'efek-suara.foley',    'efek-suara', 'Foley',    2 UNION ALL
-  SELECT 'efek-suara.stinger',  'efek-suara', 'Stinger',  3 UNION ALL
-  SELECT 'efek-suara.senjata',  'efek-suara', 'Senjata',  4 UNION ALL
-  SELECT 'suara.jingle',  'suara', 'Jingle',  0 UNION ALL
-  SELECT 'suara.narasi',  'suara', 'Narasi',  1 UNION ALL
-  SELECT 'suara.vokal',   'suara', 'Vokal',   2
+  SELECT 'gen:musik/lo-fi' AS id, 'kat:musik' AS category_id, 'Lo-fi' AS name, 0 AS sort UNION ALL
+  SELECT 'gen:musik/hip-hop',   'kat:musik', 'Hip-hop',  1 UNION ALL
+  SELECT 'gen:musik/edm',       'kat:musik', 'EDM',      2 UNION ALL
+  SELECT 'gen:musik/pop',       'kat:musik', 'Pop',      3 UNION ALL
+  SELECT 'gen:musik/rock',      'kat:musik', 'Rock',     4 UNION ALL
+  SELECT 'gen:musik/ambient',   'kat:musik', 'Ambient',  5 UNION ALL
+  SELECT 'gen:musik/orkestra',  'kat:musik', 'Orkestra', 6 UNION ALL
+  SELECT 'gen:musik/jazz',      'kat:musik', 'Jazz',     7 UNION ALL
+  SELECT 'gen:musik/chiptune',  'kat:musik', 'Chiptune', 8 UNION ALL
+  SELECT 'gen:efek-suara/ui',       'kat:efek-suara', 'UI',       0 UNION ALL
+  SELECT 'gen:efek-suara/ambience', 'kat:efek-suara', 'Ambience', 1 UNION ALL
+  SELECT 'gen:efek-suara/foley',    'kat:efek-suara', 'Foley',    2 UNION ALL
+  SELECT 'gen:efek-suara/stinger',  'kat:efek-suara', 'Stinger',  3 UNION ALL
+  SELECT 'gen:efek-suara/senjata',  'kat:efek-suara', 'Senjata',  4 UNION ALL
+  SELECT 'gen:suara/jingle',  'kat:suara', 'Jingle',  0 UNION ALL
+  SELECT 'gen:suara/narasi',  'kat:suara', 'Narasi',  1 UNION ALL
+  SELECT 'gen:suara/vokal',   'kat:suara', 'Vokal',   2
 ) WHERE NOT EXISTS (SELECT 1 FROM roblox_genre);

@@ -95,8 +95,8 @@ fn upload_input(hash: &str, name: &str) -> UploadInput {
         seconds: Some(12.5),
         name: name.to_owned(),
         description: String::new(),
-        category_id: Some("musik".into()),
-        genre_id: Some("musik.lo-fi".into()),
+        category_id: Some("kat:musik".into()),
+        genre_id: Some("gen:musik/lo-fi".into()),
         creator_kind: CreatorKind::User,
         creator_id: "123".into(),
         status: UploadStatus::Draft,
@@ -159,7 +159,7 @@ fn reopen_keeps_data_and_does_not_reseed() {
         let store = open_at(tmp.path());
         // User menghapus satu genre bawaan; membuka ulang tidak boleh
         // mengembalikannya.
-        store.delete_genre("musik.chiptune").unwrap();
+        store.delete_genre("gen:musik/chiptune").unwrap();
         seed_track(&store, src.path(), "a.mp3", 1)
     };
     let store = open_at(tmp.path());
@@ -612,19 +612,19 @@ fn taxonomy_upsert_rename_move_and_duplicates() {
     ));
     // Nama yang sama di kategori lain boleh.
     store
-        .upsert_genre(None, "musik", "Wawancara", None)
+        .upsert_genre(None, "kat:musik", "Wawancara", None)
         .unwrap();
 
     // Pindah genre ke kategori lain.
     let moved = store
-        .upsert_genre(Some(&genre.id), "suara", "Wawancara", Some(9))
+        .upsert_genre(Some(&genre.id), "kat:suara", "Wawancara", Some(9))
         .unwrap();
-    assert_eq!((moved.category_id.as_str(), moved.sort), ("suara", 9));
+    assert_eq!((moved.category_id.as_str(), moved.sort), ("kat:suara", 9));
     let tax = store.taxonomy().unwrap();
     assert!(tax
         .genres
         .iter()
-        .any(|g| g.id == genre.id && g.category_id == "suara"));
+        .any(|g| g.id == genre.id && g.category_id == "kat:suara"));
 }
 
 #[test]
@@ -636,7 +636,7 @@ fn delete_genre_in_use_reports_count() {
     store.queue_put(&upload_input(&a, "A")).unwrap();
     store.queue_put(&upload_input(&b, "B")).unwrap();
 
-    match store.delete_genre("musik.lo-fi") {
+    match store.delete_genre("gen:musik/lo-fi") {
         Err(HostError::InUse { count, message }) => {
             assert_eq!(count, 2);
             assert!(
@@ -646,29 +646,52 @@ fn delete_genre_in_use_reports_count() {
         }
         other => panic!("harus InUse, dapat {other:?}"),
     }
-    store.delete_genre("musik.jazz").unwrap();
+    store.delete_genre("gen:musik/jazz").unwrap();
     assert!(matches!(
-        store.delete_genre("musik.jazz"),
+        store.delete_genre("gen:musik/jazz"),
         Err(HostError::NotFound(_))
     ));
 
     // Kategori dengan lagu: count = lagu; tanpa lagu tapi ada genre: count = genre.
-    match store.delete_category("musik") {
+    match store.delete_category("kat:musik") {
         Err(HostError::InUse { count, .. }) => assert_eq!(count, 2),
         other => panic!("harus InUse, dapat {other:?}"),
     }
-    match store.delete_category("suara") {
+    match store.delete_category("kat:suara") {
         Err(HostError::InUse { count, message }) => {
             assert_eq!(count, 3);
             assert!(message.contains("genre"), "{message}");
         }
         other => panic!("harus InUse, dapat {other:?}"),
     }
-    for g in ["suara.jingle", "suara.narasi", "suara.vokal"] {
+    for g in ["gen:suara/jingle", "gen:suara/narasi", "gen:suara/vokal"] {
         store.delete_genre(g).unwrap();
     }
-    store.delete_category("suara").unwrap();
+    store.delete_category("kat:suara").unwrap();
     assert_eq!(store.taxonomy().unwrap().categories.len(), 2);
+}
+
+#[test]
+fn queue_put_accepts_ids_made_by_ts() {
+    let (_tmp, store) = open_temp();
+    let src = tempfile::tempdir().unwrap();
+    let a = seed_track(&store, src.path(), "a.mp3", 1);
+    let mut input = upload_input(&a, "Dari TS");
+    input.id = "8b1f5c1e-0000-4000-8000-000000000001".into();
+    let row = store.queue_put(&input).unwrap();
+    assert_eq!(row.id, input.id, "id non-kosong yang belum ada = INSERT");
+    assert_eq!(
+        store.upload_genre_names(&row.id).unwrap(),
+        Some(("Musik".to_owned(), "Lo-fi".to_owned()))
+    );
+    input.genre_id = None;
+    input.category_id = None;
+    store.queue_put(&input).unwrap();
+    assert_eq!(store.upload_genre_names(&row.id).unwrap(), None);
+    assert!(matches!(
+        store.upload_genre_names("tidak-ada"),
+        Err(HostError::NotFound(_))
+    ));
 }
 
 #[test]
@@ -678,11 +701,11 @@ fn moving_a_genre_moves_its_uploads_category() {
     let a = seed_track(&store, src.path(), "a.mp3", 1);
     let row = store.queue_put(&upload_input(&a, "A")).unwrap();
     store
-        .upsert_genre(Some("musik.lo-fi"), "suara", "Lo-fi", None)
+        .upsert_genre(Some("gen:musik/lo-fi"), "kat:suara", "Lo-fi", None)
         .unwrap();
     assert_eq!(
         store.upload(&row.id).unwrap().category_id.as_deref(),
-        Some("suara")
+        Some("kat:suara")
     );
 }
 
@@ -716,7 +739,7 @@ fn queue_put_assigns_id_and_times_and_validates_references() {
     let mut bad = upload_input(&"e".repeat(64), "X");
     assert!(matches!(store.queue_put(&bad), Err(HostError::NotFound(_))));
     bad = upload_input(&a, "X");
-    bad.genre_id = Some("efek-suara.ui".into()); // bukan milik "musik"
+    bad.genre_id = Some("gen:efek-suara/ui".into()); // bukan milik "kat:musik"
     assert!(matches!(store.queue_put(&bad), Err(HostError::Invalid(_))));
     bad = upload_input(&a, "X");
     bad.genre_id = Some("tidak-ada".into());
@@ -741,8 +764,8 @@ fn status_transitions_and_catalog_split() {
     let b = seed_track(&store, src.path(), "b.mp3", 2);
     let ra = store.queue_put(&upload_input(&a, "Lo-fi malam")).unwrap();
     let mut ib = upload_input(&b, "Tembakan");
-    ib.category_id = Some("efek-suara".into());
-    ib.genre_id = Some("efek-suara.senjata".into());
+    ib.category_id = Some("kat:efek-suara".into());
+    ib.genre_id = Some("gen:efek-suara/senjata".into());
     let rb = store.queue_put(&ib).unwrap();
 
     let up = store.mark_uploading(&ra.id).unwrap();
@@ -781,7 +804,7 @@ fn status_transitions_and_catalog_split() {
     // Filter kategori / genre / teks.
     let musik = store
         .catalog_list(&CatalogFilter {
-            category_id: Some("musik".into()),
+            category_id: Some("kat:musik".into()),
             ..Default::default()
         })
         .unwrap();
@@ -791,7 +814,7 @@ fn status_transitions_and_catalog_split() {
     );
     let senjata = store
         .catalog_list(&CatalogFilter {
-            genre_id: Some("efek-suara.senjata".into()),
+            genre_id: Some("gen:efek-suara/senjata".into()),
             ..Default::default()
         })
         .unwrap();
@@ -815,8 +838,8 @@ fn status_transitions_and_catalog_split() {
     );
     let none = store
         .catalog_list(&CatalogFilter {
-            category_id: Some("musik".into()),
-            genre_id: Some("efek-suara.senjata".into()),
+            category_id: Some("kat:musik".into()),
+            genre_id: Some("gen:efek-suara/senjata".into()),
             ..Default::default()
         })
         .unwrap();

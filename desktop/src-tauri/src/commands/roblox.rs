@@ -88,7 +88,10 @@ pub struct UploadStarted {
 }
 
 /// Belum dikawinkan (R3). `id` tetap diterima supaya tanda tangannya sudah
-/// benar saat klien Open Cloud masuk.
+/// benar saat klien Open Cloud masuk. Saat dikawinkan: baris
+/// `Genre: <kategori> / <genre>` di akhir deskripsi ditambahkan DI SINI
+/// (`Store::upload_genre_names` + `Store::target().genre_to_description`,
+/// `open_cloud::describe_with_genre`) — TS di desktop tidak menambahkannya.
 #[tauri::command]
 pub async fn roblox_upload_start(
     _state: State<'_, AppState>,
