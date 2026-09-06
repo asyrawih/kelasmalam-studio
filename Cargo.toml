@@ -58,9 +58,18 @@ console_error_panic_hook = "0.1"
 # Host native dev-only.
 cpal         = "0.15"
 anyhow       = "1"
+# --- desktop-host (docs/20 §1g) — HANYA crates/desktop-host ---
+# HTTP untuk unduh model. Tanpa fitur default: tanpa http2, tanpa proxy sistem,
+# dan TLS lewat rustls (aws-lc-rs, prebuilt-nasm) — tidak ada OpenSSL. Fitur
+# `stream` sengaja tidak dinyalakan: `Response::chunk()` sudah streaming tanpa
+# menyeret futures-util/tokio-util.
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+tokio   = { version = "1", default-features = false, features = ["fs", "io-util"] }
+sha2    = "0.11"
 # Dev/test.
 criterion    = "0.5"
 proptest     = "1"
+tempfile     = "3"
 
 [profile.release]
 opt-level     = 3
