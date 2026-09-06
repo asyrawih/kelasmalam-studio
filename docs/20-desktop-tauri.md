@@ -16,6 +16,61 @@ cabang baru.
 
 ---
 
+## Hasil D0 — spike isolasi (6 Sep 2026)
+
+Diukur otomatis: halaman memanggil `invoke('report')` saat load, Rust mencetak
+JSON ke stdout lalu keluar (skrip di §6). Tauri 2.11.5 / wry 0.55.1, mesin
+macOS 26.5 arm64 (WKWebView 605.1.15, 8 core).
+
+| OS | Asal halaman | Header COOP/COEP/CORP | `crossOriginIsolated` | `SharedArrayBuffer` | `WebAssembly.Memory {shared}` | `AudioWorklet` | `hardwareConcurrency` | Varian yang dimuat Studio |
+|---|---|---|---|---|---|---|---|---|
+| macOS | `tauri://localhost` | tidak | **false** | undefined | ok | function | 8 | — |
+| macOS | `tauri://localhost` | ya, `app.security.headers` | **false** | undefined | ok | function | 8 | **`st`** (`engine_bg` st diambil) |
+| macOS | `tauri://localhost` | ya + `useHttpsScheme: true` | **false** (opsi ini hanya berlaku Windows/Android; `href` tetap `tauri://localhost`) | undefined | ok | function | 8 | — |
+| macOS | `http://localhost:5199` (server statis lokal) | tidak | false | undefined | ok | function | 8 | — |
+| macOS | `http://localhost:5199` (server statis lokal) | ya | **true** | function | ok | function | 8 | **`mt`** — Studio hidup, tanpa error console |
+| macOS | `http://localhost:5173` (`cargo tauri dev` → Vite) | ya (`vite.config.ts`) | true | function | ok | function | 8 | `mt` (dev meminta `wasm/mt/engine_bg.wasm`) |
+| Windows | — | — | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin |
+
+Yang ditetapkan dari tabel ini:
+
+1. **Header-nya sampai, WebKit-nya yang tidak peduli.** `fetch(location.href)`
+   dari dalam halaman `tauri://` membaca `coep: require-corp` — jadi §1c benar
+   soal Tauri menyisipkan header, tapi WKWebView **tidak menerapkan COOP/COEP
+   pada skema kustom**. Halaman yang sama, header yang sama, lewat
+   `http://localhost` → isolated. Ini bukan soal versi macOS (26.5) atau
+   `isSecureContext` (true di keduanya); ini perilaku WebKit untuk
+   `WKURLSchemeHandler`.
+2. **Konsekuensi untuk v1 macOS:** build produksi (`frontendDist` di
+   `tauri://`) berjalan **`st`** — degraded sesuai docs/01 §1d: command lewat
+   `postMessage`, export single-thread, ORT single-thread (§5d). Tidak crash,
+   tidak ada error. Dev (`cargo tauri dev` → Vite) justru **`mt`**, jadi
+   pengembang tidak akan pernah melihat mode `st` kecuali sengaja mencoba
+   binary produksi.
+3. **Jalan ke `mt` di produksi macOS ada, dan itu keputusan tersendiri:**
+   sajikan `web/dist` dari server HTTP lokal di dalam proses Rust
+   (`tauri-plugin-localhost` dengan `on_request` menambah tiga header, atau
+   server kecil sendiri) dan arahkan jendela ke `http://localhost:<port>`.
+   Harganya: origin app jadi `http://localhost:<port>` (daftar origin §5c
+   bertambah), aset terbaca proses lokal mana pun, dan IPC harus diizinkan
+   untuk origin remote lewat `capabilities[].remote`. **Gerbang D0 memutuskan:
+   v1 macOS menerima `st`** — kerangka D1 dibangun di atas `tauri://` apa
+   adanya. Jalur localhost ini pantas jadi butir baru di §5 (utang terbuka)
+   dan §5e harus dibaca ulang: kedua varian WASM tetap dibawa bundel macOS.
+4. `app.security.headers` **tetap dipasang** di `tauri.conf.json`: tidak
+   merugikan di macOS, dan di Windows (WebView2 = Chromium) ia justru yang
+   diharapkan membuat `mt` jalan — yang harus dibuktikan di mesin Windows.
+5. Dua hal yang ketahuan sambil lalu dan menjadi pekerjaan D2:
+   `/_vercel/insights/script.js` (komponen `<Analytics/>`) di-fallback ke
+   `index.html` oleh protokol Tauri → `SyntaxError: Unexpected token '<'` di
+   console (sudah dicatat §2c: Analytics mati saat `kind === 'desktop'`); dan
+   build produksi tanpa `VITE_LIBRARY_API` menampilkan gerbang login di
+   `/studio` — untuk mengukur varian dari `web/dist` sungguhan, spike memakai
+   `NODE_ENV=development vite build --mode development` (auth dilewati oleh
+   `import.meta.env.DEV`).
+
+---
+
 ## 0. Dari mana kita mulai
 
 Tiga fakta dari repo yang menentukan bentuk rencana ini:
@@ -351,22 +406,81 @@ itu keputusan setelah tabel D0, bukan sebelumnya.
 
 ---
 
-## 6. Perintah D0
+## 6. Perintah D0 (yang benar-benar dijalankan)
+
+Bukan `cargo tauri init` + DevTools manual seperti rencana semula — hasilnya
+harus bisa diulang tanpa tangan di keyboard, jadi halaman melapor sendiri lewat
+IPC dan prosesnya keluar begitu laporan tercetak. Semuanya di luar repo
+(direktori sementara); tidak ada yang di-commit dari sini selain tabel di atas.
 
 ```bash
-# di luar repo, sekali pakai
-mkdir -p /tmp/kms-spike && cd /tmp/kms-spike
-cargo tauri init \
-  --app-name "KELAS MALAM STUDIO" \
-  --window-title "KELAS MALAM STUDIO" \
-  --frontend-dist /Users/dxh4nan/Projects/DawOnWeb/web/dist \
-  --dev-url http://localhost:5173 \
-  --before-dev-command "" --before-build-command ""
-# tambahkan app.security.headers (§1c) ke src-tauri/tauri.conf.json
-cargo tauri build --debug --no-bundle
-# jalankan binarinya, buka DevTools (⌥⌘I), lalu di console:
-#   crossOriginIsolated
-#   (await import('/src/audio/caps.ts')).detectCaps()   // di dev
+mkdir -p /tmp/kms-spike/{src,ui,capabilities} && cd /tmp/kms-spike
+cat > Cargo.toml <<'TOML'
+[package]
+name = "kms-spike"
+version = "0.0.0"
+edition = "2021"
+[build-dependencies]
+tauri-build = "2"
+[dependencies]
+tauri = "2"
+serde_json = "1"
+TOML
+printf 'fn main() { tauri_build::build() }\n' > build.rs
+cat > src/main.rs <<'RS'
+#[tauri::command]
+fn report(app: tauri::AppHandle, report: serde_json::Value) {
+    println!("D0_REPORT {report}");
+    app.exit(0);
+}
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![report])
+        .run(tauri::generate_context!())
+        .expect("spike");
+}
+RS
+cat > ui/index.html <<'HTML'
+<!doctype html><meta charset="utf-8"><script>
+(async () => {
+  const r = { href: location.href, crossOriginIsolated, sab: typeof SharedArrayBuffer,
+    audioWorklet: typeof AudioWorklet, hardwareConcurrency: navigator.hardwareConcurrency,
+    userAgent: navigator.userAgent, isSecureContext };
+  try { new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }); r.sharedWasmMemory = true }
+  catch (e) { r.sharedWasmMemory = String(e) }
+  const h = (await fetch(location.href)).headers;
+  r.selfHeaders = { coop: h.get('cross-origin-opener-policy'), coep: h.get('cross-origin-embedder-policy') };
+  await window.__TAURI__.core.invoke('report', { report: r });
+})();
+</script>
+HTML
+echo '{ "identifier": "default", "windows": ["main"], "permissions": ["core:default"] }' > capabilities/default.json
+cat > tauri.conf.json <<'JSON'
+{ "productName": "kms-spike", "version": "0.0.0", "identifier": "app.kelasmalam.spike",
+  "build": { "frontendDist": "./ui" },
+  "app": { "withGlobalTauri": true, "windows": [{ "label": "main", "title": "spike" }],
+    "security": { "csp": null,
+      "headers": { "Cross-Origin-Opener-Policy": "same-origin",
+                   "Cross-Origin-Embedder-Policy": "require-corp",
+                   "Cross-Origin-Resource-Policy": "same-origin" } } },
+  "bundle": { "active": false } }
+JSON
+cargo tauri icon /path/ke/web/public/apple-touch-icon.png -o icons   # tauri-build menuntut icons/icon.png
+cargo build && ./target/debug/kms-spike | grep D0_REPORT
+# baris kedua tabel. Hapus `headers` → baris pertama. Tambah
+# `"useHttpsScheme": true` di windows[0] → baris ketiga.
 ```
 
-Hasilnya dicatat sebagai tabel di kepala dokumen ini sebelum D1 dimulai.
+Langkah kedua, `web/dist` sungguhan (baris `st`/`mt` dengan "Varian yang
+dimuat Studio"): salin `web/dist` ke direktori sementara, sisipkan
+`<script src="/reporter.js">` setelah `<div id="root">` yang membungkus
+`fetch` dan setelah 15 detik melaporkan URL `engine_bg-*.wasm` yang diminta
+(`BN89mABI` = mt, `BWSYtPMo` = st — cocokkan ukurannya dengan
+`web/src/wasm/{mt,st}/engine_bg.wasm`), arahkan `frontendDist` ke salinan itu
+dan `windows[0].url` ke `/studio`. **Aset ditanam saat compile** — setiap
+perubahan di salinan `dist` butuh `cargo build` lagi, kalau tidak yang jalan
+adalah salinan lama. Untuk baris `http://localhost`, server statis Node
+sepuluh baris dengan tiga header yang sama, `windows[0].url` ke
+`http://localhost:5199/studio`, dan laporan dikirim lewat `fetch('/report',
+{method:'POST'})` ke server itu (IPC dari origin remote butuh
+`capabilities[].remote`, dan itu bukan yang sedang diuji).
