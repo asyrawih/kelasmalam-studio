@@ -331,8 +331,18 @@ K0 adalah gerbang; tidak ada yang mulai sebelum tes §2d hijau.
 - **Progres unggah Roblox** (§1e) mungkin kasar di R3.
 - **Kuota Roblox** (`quotaLeft`) tidak diketahui tanpa Worker; Open Cloud
   tidak mengumumkannya. Ditampilkan sebagai "—" sampai ada sumber yang benar.
-- **Durasi di Rust** (`library_import_path`) butuh pembaca header MP3/OGG/WAV;
-  kalau `symphonia` terlalu berat, durasi diisi `null` dan diprobe oleh
-  `<audio>` seperti sekarang — jalur yang sudah ada tetap benar.
+- **Durasi di Rust** (`library_import_path`): K0 memakai `symphonia` (hanya
+  probe format: mp3/ogg-vorbis/wav/flac, tanpa decode). Header yang tidak
+  terbaca — MP3 tanpa Xing/Info, berkas rusak — menghasilkan `frames`/
+  `sampleRate` 0, dan `library_commit` (UPSERT; nol tidak pernah menimpa nilai
+  yang sudah diketahui) mengisinya dari probe `<audio>` yang sudah ada.
+- **Katalog Roblox ikut hilang bersama lagunya.** `roblox_upload.hash`
+  `REFERENCES track ON DELETE CASCADE`: hapus lagu ditolak selama ada unggahan
+  yang belum `done`/`failed` (§2b), tapi baris yang SUDAH selesai ikut terhapus
+  — assetId-nya tetap ada di Creator Hub, hanya catatannya di mesin ini yang
+  hilang. Kalau R4 memutuskan katalog harus bertahan tanpa lagunya, kolom
+  `bytes`/`file_name` harus disalin ke `roblox_upload` dan FK-nya dilonggarkan.
+- **`roblox_upload.seconds`** ditambahkan di luar daftar kolom §2b: durasi yang
+  diukur `<audio>` di TS butuh tempat saat `frames` = 0.
 - **Hasil bake/stem** (docs/16 §8e) tetap tanpa berkas asal, tetap tidak masuk
   kepustakaan lokal. Tidak berubah oleh rencana ini.
