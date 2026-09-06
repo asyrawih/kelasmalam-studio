@@ -58,21 +58,17 @@ function MenuButton({
 }: {
   readonly def: MenuDef;
   readonly open: boolean;
-  readonly onToggle: (el: HTMLButtonElement) => void;
+  readonly onToggle: () => void;
 }): JSX.Element {
-  const ref = useRef<HTMLButtonElement>(null);
   return (
     <button
-      ref={ref}
       type="button"
       data-menu-button={def.id}
       aria-expanded={open}
       aria-label={def.label}
       title={def.title}
       className="cy-btn-reset cy-focusable cy-hover-accent-border"
-      onClick={() => {
-        if (ref.current !== null) onToggle(ref.current);
-      }}
+      onClick={onToggle}
       style={{
         ...BTN,
         color: open ? 'var(--cy-accent)' : 'var(--cy-text-dim)',
@@ -137,13 +133,22 @@ export function MenuBar({
     };
   }, [openMenu]);
 
-  // Jepit ke tepi kanan SETELAH layout: popup menu paling kanan akan menjorok
-  // keluar layar kalau posisinya cuma disamakan dengan tombolnya.
+  // Jangkar popup dihitung DI SINI, dari tombol menu yang sedang terbuka —
+  // bukan di handler klik. Menu juga dibuka lewat registry command
+  // (`studio.export.open` dari ⌘⇧E, palette, atau menu native desktop), dan
+  // popup yang muncul di tepi kiri layar jauh dari tombolnya terasa seperti
+  // bug. Lalu dijepit ke tepi kanan SETELAH layout: popup menu paling kanan
+  // akan menjorok keluar layar kalau posisinya cuma disamakan dengan tombolnya.
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (bar === null || active === null) return;
+    const button = bar.querySelector<HTMLElement>(`[data-menu-button="${active.id}"]`);
+    const left =
+      button === null
+        ? 0
+        : Math.max(0, button.getBoundingClientRect().left - bar.getBoundingClientRect().left);
     const max = Math.max(0, bar.clientWidth - active.width - 8);
-    setAnchorLeft((l) => Math.min(l, max));
+    setAnchorLeft(Math.min(left, max));
   }, [active]);
 
   return (
@@ -179,15 +184,7 @@ export function MenuBar({
             key={m.id}
             def={m}
             open={openMenu === m.id}
-            onToggle={(el) => {
-              const bar = barRef.current;
-              if (bar !== null) {
-                const rect = el.getBoundingClientRect();
-                const base = bar.getBoundingClientRect();
-                setAnchorLeft(Math.max(0, rect.left - base.left));
-              }
-              studioActions.toggleMenu(m.id);
-            }}
+            onToggle={() => studioActions.toggleMenu(m.id)}
           />
         ))}
         {trailing === undefined ? null : (

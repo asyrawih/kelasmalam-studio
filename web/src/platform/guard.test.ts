@@ -31,12 +31,12 @@ const FORBIDDEN: readonly { readonly re: RegExp; readonly why: string }[] = [
  * Pengecualian, masing-masing dengan alasan:
  *   - `audio/caps.ts`: hanya `'showSaveFilePicker' in globalThis` — probe
  *     kemampuan untuk laporan, bukan panggilan.
- *   - `app-shell/AppShell.tsx`: dua `location.href =` untuk login di landing
- *     dan gerbang halaman. Milik pekerjaan app-shell (docs/20 D5); sampai
- *     dipindahkan ke `PlatformHost.login()`, login dari sana hanya benar di
- *     web. Hapus baris ini begitu dipindahkan.
+ *
+ * `app-shell/AppShell.tsx` pernah ada di sini (dua `location.href =` untuk
+ * login); sekarang login dari shell lewat `PlatformHost.login()`, dan penjagaan
+ * ini berlaku lagi untuknya.
  */
-const ALLOWED: ReadonlySet<string> = new Set(['audio/caps.ts', 'app-shell/AppShell.tsx']);
+const ALLOWED: ReadonlySet<string> = new Set(['audio/caps.ts']);
 
 function* sources(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {

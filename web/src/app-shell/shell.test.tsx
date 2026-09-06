@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AppShell } from './AppShell';
 import { djActions, djStore } from '../dj/store';
-import { studioActions } from '../studio/store';
+import { isSpaceHeld } from '../studio/shortcuts/space-pan';
+import { studioActions, studioStore } from '../studio/store';
 
 const SR = 48_000;
 const RECT = {
@@ -234,6 +235,54 @@ describe('editor pintasan', () => {
     render(<AppShell />);
     press('Slash');
     expect(screen.getByRole('dialog', { name: 'pintasan keyboard' })).toBeTruthy();
+  });
+});
+
+/**
+ * Studio memakai dispatcher yang SAMA — tidak ada listener keyboard milik
+ * halaman. Yang khas di sini adalah fase tahan: Spasi menyala saat DILEPAS,
+ * supaya "ditahan" bisa berarti alat tangan untuk pan.
+ */
+describe('shortcut halaman Studio', () => {
+  beforeEach(() => {
+    window.history.pushState(null, '', '/studio');
+  });
+
+  it('Spasi: ditahan tidak memutar, dilepas memutar', () => {
+    render(<AppShell />);
+    press('Space');
+    expect(isSpaceHeld()).toBe(true);
+    expect(studioStore.getState().playing).toBe(false);
+    fireEvent.keyUp(window, { code: 'Space' });
+    expect(isSpaceHeld()).toBe(false);
+    expect(studioStore.getState().playing).toBe(true);
+  });
+
+  it('Spasi saat fokus di tombol menekan TOMBOLNYA, bukan transport', () => {
+    render(<AppShell />);
+    const button = screen.getByRole('button', { name: 'kembali ke awal' });
+    button.focus();
+    fireEvent.keyDown(button, { code: 'Space' });
+    fireEvent.keyUp(button, { code: 'Space' });
+    expect(studioStore.getState().playing).toBe(false);
+  });
+
+  it('mod+Z membatalkan edit, dan chord DJ tidak berlaku di sini', () => {
+    render(<AppShell />);
+    const before = studioStore.getState().masterGainDb;
+    act(() => studioActions.setMasterGain(before - 6));
+    press('KeyZ', { metaKey: true, ctrlKey: true });
+    expect(studioStore.getState().masterGainDb).toBe(before);
+    press('KeyQ');
+    expect(djStore.getState().decks.A.playing).toBe(false);
+  });
+
+  it('palette menampilkan command Studio dan menjalankannya', () => {
+    render(<AppShell />);
+    press('KeyK', { metaKey: true, ctrlKey: true });
+    fireEvent.change(screen.getByLabelText('cari perintah'), { target: { value: 'putar' } });
+    fireEvent.keyDown(screen.getByLabelText('cari perintah'), { key: 'Enter' });
+    expect(studioStore.getState().playing).toBe(true);
   });
 });
 
