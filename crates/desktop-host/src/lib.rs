@@ -30,6 +30,11 @@ mod store;
 mod tracks;
 pub mod types;
 
+#[cfg(test)]
+mod contract_tests;
+#[cfg(test)]
+mod store_tests;
+
 pub use error::{HostError, LocalError};
 pub use secret::{SecretKey, SecretStore};
 pub use store::{Store, DB_FILE};
