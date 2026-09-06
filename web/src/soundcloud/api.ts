@@ -101,6 +101,12 @@ export const fetchTransport: SoundCloudTransport = {
 
 const ok = (status: number): boolean => status >= 200 && status < 300;
 
+export interface SoundCloudHealth {
+  readonly online: boolean;
+  /** Kalimat sebab saat `online === false`; `null` saat online. */
+  readonly reason: string | null;
+}
+
 export class SoundCloudApi {
   constructor(private readonly baseUrl: string, private readonly transport: SoundCloudTransport = fetchTransport) {}
 
@@ -117,8 +123,23 @@ export class SoundCloudApi {
   }
 
   async health(signal?: AbortSignal): Promise<boolean> {
-    try { return ok((await this.transport.json(this.url('/health', {}).toString(), signal)).status); }
-    catch (err: unknown) { if (err instanceof Error && err.name === 'AbortError') throw err; return false; }
+    return (await this.healthDetail(signal)).online;
+  }
+
+  /**
+   * Seperti `health()`, tapi membawa SEBABNYA saat offline. "API OFFLINE"
+   * tanpa alasan pernah menyembunyikan tiga hal yang berbeda sama sekali:
+   * server yang lambat menjawab, CORS dari WebView, dan command Tauri yang
+   * belum ada di binari lama — dan ketiganya diperbaiki dengan cara berbeda.
+   */
+  async healthDetail(signal?: AbortSignal): Promise<SoundCloudHealth> {
+    try {
+      const { status } = await this.transport.json(this.url('/health', {}).toString(), signal);
+      return ok(status) ? { online: true, reason: null } : { online: false, reason: `server menjawab ${status}` };
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') throw err;
+      return { online: false, reason: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   async search(query: string, offset = 0, signal?: AbortSignal): Promise<SoundCloudSearchPage> {
