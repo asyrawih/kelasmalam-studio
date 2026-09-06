@@ -420,8 +420,19 @@ interface TrackDragState {
   readonly pointerId: number;
   readonly x0: number;
   readonly y0: number;
+  /** Titik pegang relatif terhadap sudut kiri-atas kartu, dan lebar kartunya. */
+  readonly grabX: number;
+  readonly grabY: number;
+  readonly width: number;
   /** `true` begitu melewati ambang: sejak itu yang dilihat lane, bukan klik. */
   active: boolean;
+}
+
+/** Kartu hantu: posisi sudut kiri-atasnya di layar, dan lebarnya. */
+interface GhostAt {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
 }
 
 /**
@@ -437,23 +448,32 @@ interface TrackDragState {
  * tidak menaruh clip di lane yang kebetulan ada di bawah kursor.
  */
 function useTrackDrag(contentHash: string): {
-  readonly ghost: { readonly x: number; readonly y: number } | null;
+  readonly ghost: GhostAt | null;
   readonly onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
   readonly onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
   readonly onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
   readonly onPointerCancel: (e: ReactPointerEvent<HTMLDivElement>) => void;
 } {
   const drag = useRef<TrackDragState | null>(null);
-  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
+  const [ghost, setGhost] = useState<GhostAt | null>(null);
 
   // Baris yang hilang di tengah seretan (daftar dimuat ulang) tidak boleh
-  // meninggalkan lane tersorot.
+  // meninggalkan lane tersorot atau kursor "menggenggam".
   useEffect(
     () => () => {
-      if (drag.current?.active) highlightLane(null);
+      if (drag.current?.active) {
+        highlightLane(null);
+        document.body.style.cursor = '';
+      }
     },
     [],
   );
+
+  const ghostAt = (clientX: number, clientY: number, d: TrackDragState): GhostAt => ({
+    left: clientX - d.grabX,
+    top: clientY - d.grabY,
+    width: d.width,
+  });
 
   const finish = (e: ReactPointerEvent<HTMLDivElement>): TrackDragState | null => {
     const d = drag.current;
@@ -470,6 +490,7 @@ function useTrackDrag(contentHash: string): {
     }
     setGhost(null);
     highlightLane(null);
+    document.body.style.cursor = '';
     return d;
   };
 
@@ -478,7 +499,23 @@ function useTrackDrag(contentHash: string): {
     onPointerDown: (e) => {
       if (e.button !== 0) return;
       if ((e.target as Element).closest('button, a, input') !== null) return;
-      drag.current = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, active: false };
+      /*
+       * Cegah default action-nya: tanpa ini WebKit memulai SELEKSI TEKS dari
+       * titik tekan, dan menyeret lalu terlihat seperti menyorot nama lagu —
+       * bukan mengangkat kartunya. `user-select: none` saja tidak cukup di
+       * WKWebView (butuh prefix, dan seleksi bisa merambat ke elemen lain).
+       */
+      e.preventDefault();
+      const r = e.currentTarget.getBoundingClientRect();
+      drag.current = {
+        pointerId: e.pointerId,
+        x0: e.clientX,
+        y0: e.clientY,
+        grabX: e.clientX - r.left,
+        grabY: e.clientY - r.top,
+        width: r.width,
+        active: false,
+      };
     },
     onPointerMove: (e) => {
       const d = drag.current;
@@ -495,8 +532,12 @@ function useTrackDrag(contentHash: string): {
             // tetap jalan lewat bubbling biasa.
           }
         }
+        // Kartu hantu `pointer-events: none`, jadi kursor datang dari elemen
+        // di bawahnya (lane: `default`). Genggaman dipasang di body supaya
+        // konsisten sepanjang seretan.
+        document.body.style.cursor = 'grabbing';
       }
-      setGhost({ x: e.clientX, y: e.clientY });
+      setGhost(ghostAt(e.clientX, e.clientY, d));
       highlightLane(locateLane(e.clientX, e.clientY)?.laneId ?? null);
     },
     onPointerUp: (e) => {
@@ -512,39 +553,54 @@ function useTrackDrag(contentHash: string): {
 }
 
 /**
- * Label yang mengikuti kursor selama seretan — pengganti gambar hantu HTML5.
- * Lewat portal ke `body`: dok punya `position: sticky`, dan `fixed` di dalam
- * leluhur yang ber-`transform`/`contain` akan ikut terpotong. `pointer-events:
- * none` supaya `elementFromPoint` di locator melihat lane, bukan label ini.
+ * Kartu yang terangkat mengikuti kursor selama seretan — pengganti gambar
+ * hantu HTML5. Selebar baris aslinya dan dipegang di titik yang sama dengan
+ * saat ditekan, supaya yang terlihat adalah KARTUNYA yang ikut, bukan sebuah
+ * label yang muncul di samping kursor. Lewat portal ke `body`: dok punya
+ * `position: sticky`, dan `fixed` di dalam leluhur yang ber-`transform`/
+ * `contain` akan ikut terpotong. `pointer-events: none` supaya
+ * `elementFromPoint` di locator melihat lane, bukan kartu ini.
  */
 function DragGhost({
-  name,
+  track,
   at,
 }: {
-  readonly name: string;
-  readonly at: { readonly x: number; readonly y: number };
+  readonly track: LibraryTrack;
+  readonly at: GhostAt;
 }): JSX.Element {
   return createPortal(
     <div
       aria-hidden
+      data-drag-ghost
       style={{
         position: 'fixed',
-        left: at.x + 12,
-        top: at.y + 12,
+        left: at.left,
+        top: at.top,
+        width: at.width,
         zIndex: 1000,
         pointerEvents: 'none',
-        padding: '4px 8px',
+        display: 'grid',
+        gridTemplateColumns: 'auto minmax(0,1fr) auto',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '6px 10px',
         fontSize: '11px',
         color: 'var(--cy-text)',
         background: 'var(--cy-surface-1)',
         border: '1px solid var(--cy-accent)',
-        whiteSpace: 'nowrap',
-        maxWidth: '240px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.55)',
+        transform: 'scale(1.02)',
+        transformOrigin: 'center',
+        boxSizing: 'border-box',
       }}
     >
-      {name}
+      <span style={{ color: 'var(--cy-accent)' }}>
+        <NoteIcon />
+      </span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {track.name}
+      </span>
+      <span style={CELL}>{formatDuration(track.frames, track.sampleRate)}</span>
     </div>,
     document.body,
   );
@@ -592,11 +648,14 @@ function TrackRow({
         border: '1px solid var(--cy-border)',
         background: 'var(--cy-surface-1)',
         cursor: drag.ghost === null ? 'grab' : 'grabbing',
+        // Yang terangkat kartunya (hantu di atas); yang tertinggal meredup.
+        opacity: drag.ghost === null ? 1 : 0.35,
         userSelect: 'none',
+        WebkitUserSelect: 'none',
         touchAction: 'pan-y',
       }}
     >
-      {drag.ghost === null ? null : <DragGhost name={track.name} at={drag.ghost} />}
+      {drag.ghost === null ? null : <DragGhost track={track} at={drag.ghost} />}
       <span style={{ color: inSession ? 'var(--cy-accent)' : 'var(--cy-text-muted)' }}>
         <NoteIcon />
       </span>

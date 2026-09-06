@@ -374,6 +374,50 @@ describe('seret ke lane', () => {
     expect(dropHandler).not.toHaveBeenCalled();
   });
 
+  it('tekanan pada baris mencegah seleksi teks; pada tombol tidak', async () => {
+    await bukaLaluSadap();
+    const row = lagu()[0]!;
+    // `fireEvent` mengembalikan `false` kalau default action-nya dicegah.
+    // Tanpa ini WebKit menyorot nama lagu alih-alih mengangkat kartunya.
+    expect(fireEvent.pointerDown(row, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })).toBe(
+      false,
+    );
+    fireEvent.pointerUp(row, { pointerId: 1, clientX: 10, clientY: 10 });
+    expect(
+      fireEvent.pointerDown(row.querySelector('button')!, {
+        button: 0,
+        pointerId: 2,
+        clientX: 10,
+        clientY: 10,
+      }),
+    ).toBe(true);
+  });
+
+  it('selama diseret, KARTUNYA ikut kursor dan baris aslinya meredup', async () => {
+    await bukaLaluSadap();
+    const row = lagu()[0]!;
+    const hantu = (): HTMLElement | null => document.querySelector('[data-drag-ghost]');
+    expect(hantu()).toBeNull();
+
+    fireEvent.pointerDown(row, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(row, { pointerId: 1, clientX: 60, clientY: 250 });
+
+    const kartu = hantu();
+    expect(kartu).not.toBeNull();
+    expect(kartu!.textContent).toContain('Intro');
+    // Dipegang di titik yang sama dengan saat ditekan: sudut kirinya ikut
+    // bergeser 50px, bukan menempel di samping kursor.
+    expect(kartu!.style.left).toBe('50px');
+    expect(kartu!.style.top).toBe('240px');
+    expect(row.style.opacity).toBe('0.35');
+    expect(document.body.style.cursor).toBe('grabbing');
+
+    fireEvent.pointerUp(row, { pointerId: 1, clientX: 60, clientY: 250 });
+    expect(hantu()).toBeNull();
+    expect(row.style.opacity).toBe('1');
+    expect(document.body.style.cursor).toBe('');
+  });
+
   it('menekan tombol di dalam baris tidak memulai seretan', async () => {
     await bukaLaluSadap();
     const row = lagu()[0]!;
