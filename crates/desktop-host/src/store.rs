@@ -37,7 +37,20 @@ pub const DB_FILE: &str = "library.sqlite";
 
 /// Migrasi, urut. Menambah migrasi = menambah satu entri di sini DAN satu
 /// berkas di `migrations/`; nomornya harus menaik tanpa lubang.
-const MIGRATIONS: &[(u32, &str)] = &[(1, include_str!("../migrations/0001_init.sql"))];
+const MIGRATIONS: &[(u32, &str)] = &[
+    (1, include_str!("../migrations/0001_init.sql")),
+    // Nomor 2 disisakan untuk migrasi fase lain yang digarap paralel; yang
+    // penting bagi migrator hanya nomornya menaik.
+    (
+        3,
+        include_str!("../migrations/0003_roblox_catalog_asset.sql"),
+    ),
+];
+
+/// Versi skema yang dihasilkan [`Store::open`] pada folder baru = nomor
+/// migrasi terakhir. Tes membandingkan dengan ini, bukan angka literal, supaya
+/// menambah migrasi tidak berarti mengubah belasan assert.
+pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 
 /// Sumber waktu yang bisa diganti tes. Milidetik epoch, seperti Worker.
 pub type Clock = Box<dyn Fn() -> i64 + Send + Sync>;
