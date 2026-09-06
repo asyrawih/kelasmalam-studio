@@ -19,21 +19,10 @@ rusqlite     = { workspace = true }
 symphonia    = { workspace = true }
 fs4          = { workspace = true }
 uuid         = { workspace = true }
-keyring-core = { workspace = true }
 # Fitur `std` dinyalakan di sini: versi workspace-nya no_std-oriented (untuk
 # crate WASM), sedangkan ini crate native yang payload IPC-nya memang `String`.
 serde        = { workspace = true, features = ["std"] }
 serde_json   = { workspace = true, features = ["std"] }
-
-# Store keychain per-OS. Di OS lain (Linux CI) tidak ada store native sama
-# sekali — `SecretStore::new` jatuh ke store in-memory keyring-core (lihat
-# src/secret.rs). Ini disengaja: menyeret Secret Service/dbus hanya supaya
-# Ubuntu bisa `cargo test` adalah biaya tanpa manfaat.
-[target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store = { workspace = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows-native-keyring-store = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

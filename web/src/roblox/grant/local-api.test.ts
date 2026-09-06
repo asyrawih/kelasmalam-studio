@@ -34,7 +34,7 @@ describe('settings', () => {
 });
 
 describe('saveSettings', () => {
-  it('target ke roblox_target_set (opsi genre dipertahankan), kunci ke keychain, cookie ke roblox_grant_cookie_set', async () => {
+  it('target ke roblox_target_set (opsi genre dipertahankan), kunci ke berkas rahasia, cookie ke roblox_grant_cookie_set', async () => {
     invoke.mockImplementation(async (cmd) =>
       cmd === 'roblox_target_get' ? { creatorKind: 'user', creatorId: '1', genreToDescription: false } : null);
     await api.saveSettings({ creatorKind: 'user', creatorId: ' 555 ', apiKey: ' rahasia ', robloxCookie: 'cookie' });
@@ -79,7 +79,7 @@ describe('katalog, experience, place', () => {
 });
 
 describe('grant', () => {
-  it('memanggil roblox_grant TANPA API key di argumen — Rust membacanya dari keychain', async () => {
+  it('memanggil roblox_grant TANPA API key di argumen — Rust membacanya dari berkas rahasia', async () => {
     invoke.mockResolvedValue(2);
     expect(await api.grant(['123', '456'], 'Universe', '77', 'kunci-yang-tidak-boleh-lewat')).toBe(2);
     expect(invoke).toHaveBeenCalledWith('roblox_grant', { assetIds: ['123', '456'], subjectType: 'Universe', subjectId: '77' });

@@ -27,7 +27,7 @@ export interface LocalError {
     | 'VERSION_CONFLICT' // simpan project dengan versi basi; `currentVersion` terisi
     | 'DISK_FULL'
     | 'INVALID'
-    | 'SECRET_UNAVAILABLE' // keychain tidak bisa dipakai di mesin ini
+    | 'SECRET_UNAVAILABLE' // berkas rahasia Roblox tidak bisa dibaca/ditulis
     | 'HTTP' // Open Cloud menjawab galat; `status` terisi
     | 'IO';
   readonly message: string;
@@ -196,7 +196,7 @@ export interface RobloxExperience {
 /**
  * Hasil `roblox_grant_settings_get`. Rahasia TIDAK pernah ikut: yang
  * dikembalikan hanya "ada/tidak" — nilai cookie dan API key tinggal di
- * keychain OS (docs/21 §1f) dan hanya Rust yang membacanya.
+ * berkas rahasia lokal (docs/21 §1f) dan hanya Rust yang membacanya.
  */
 export interface RobloxGrantSettings {
   readonly creatorKind: 'user' | 'group';
@@ -285,7 +285,7 @@ export interface LocalCommands {
   /**
    * Baca `tracks/<hash>`, kirim ke Open Cloud, simpan `operationId`.
    * Event `daw://roblox-progress` `{ id, sent, total }` selama mengirim.
-   * API key dibaca dari keychain (`roblox.api_key`); tidak pernah lewat IPC.
+   * API key dibaca dari berkas rahasia (`roblox.api_key`); tidak pernah lewat IPC.
    */
   roblox_upload_start: { args: { id: string }; result: RobloxOperationState & { operationId: string } };
   /** Poll operasi & perbarui baris. */
@@ -299,11 +299,11 @@ export interface LocalCommands {
 
   // roblox — grant (docs/21 §3f): port rute `/roblox/*` Worker kepustakaan
   roblox_grant_settings_get: { args: Record<string, never>; result: RobloxGrantSettings };
-  /** Simpan cookie `.ROBLOSECURITY` ke keychain (`roblox.cookie`). Kosong ditolak `INVALID`. */
+  /** Simpan cookie `.ROBLOSECURITY` ke berkas rahasia (`roblox.cookie`). Kosong ditolak `INVALID`. */
   roblox_grant_cookie_set: { args: { cookie: string }; result: null };
   roblox_grant_cookie_clear: { args: Record<string, never>; result: null };
   /**
-   * `itemconfiguration` `get-assets` dengan cookie dari keychain → upsert ke
+   * `itemconfiguration` `get-assets` dengan cookie dari berkas rahasia → upsert ke
    * `roblox_catalog_asset`. Hasil = jumlah baris yang disinkronkan. Tanpa
    * cookie: `INVALID` yang kalimatnya meminta cookie.
    */
@@ -319,7 +319,7 @@ export interface LocalCommands {
   /** Hasil = Universe ID. */
   roblox_resolve_place: { args: { placeId: string }; result: string };
   /**
-   * PATCH Asset Permissions API. API key dibaca dari keychain (`roblox.api_key`)
+   * PATCH Asset Permissions API. API key dibaca dari berkas rahasia (`roblox.api_key`)
    * — TIDAK ada di argumen. Hasil = jumlah asset yang diberi izin.
    */
   roblox_grant: {

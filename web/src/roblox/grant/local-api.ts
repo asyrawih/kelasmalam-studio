@@ -7,14 +7,14 @@
  *
  * ## Rahasia tidak pernah lewat sini
  *
- * - `saveSettings` menaruh API key ke keychain lewat `secret_set` dan cookie
+ * - `saveSettings` menaruh API key ke berkas rahasia lewat `secret_set` dan cookie
  *   lewat `roblox_grant_cookie_set` — sekali jalan, ke OS.
  * - `settings()` mengembalikan `apiKey`/`robloxCookie` KOSONG dan hanya dua
  *   flag `hasApiKey`/`hasRobloxCookie`: Rust (`roblox_grant_settings_get`)
  *   memang tidak pernah mengembalikan nilainya.
  * - `grant()` menerima `apiKey` karena itu tanda tangan `GrantApi` (web
  *   mengirimnya di header), tapi TIDAK meneruskannya: `roblox_grant` membaca
- *   kunci dari keychain sendiri. Kolom kunci di tab GRANT hanya untuk
+ *   kunci dari berkas rahasia sendiri. Kolom kunci di tab GRANT hanya untuk
  *   mengganti kunci lewat SIMPAN.
  *
  * ## Galat
@@ -71,7 +71,7 @@ export function createLocalGrantApi(): GrantApi {
         genreToDescription: current.genreToDescription,
       });
       // Kosong = "jangan ganti", bukan "hapus": kunci yang sudah ada di
-      // keychain tetap ada (web: Worker menolak kunci kosong dengan 400).
+      // berkas rahasia tetap ada (web: Worker menolak kunci kosong dengan 400).
       if (apiKey.trim() !== '') await call('secret_set', { key: 'roblox.api_key', value: apiKey.trim() });
       if ((robloxCookie ?? '').trim() !== '') {
         await call('roblox_grant_cookie_set', { cookie: (robloxCookie ?? '').trim() });

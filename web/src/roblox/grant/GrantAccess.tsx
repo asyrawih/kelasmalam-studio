@@ -33,7 +33,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
   const [placeId, setPlaceId] = useState('');
   const [apiKey, setApiKey] = useState(uploadTarget.apiKey);
   /*
-   * Desktop: kunci tinggal di keychain OS dan TIDAK pernah kembali ke halaman
+   * Desktop: kunci tinggal di berkas rahasia lokal dan TIDAK pernah kembali ke halaman
    * (docs/21 §1f), jadi kolomnya kosong dan yang tahu "sudah ada" hanya flag
    * ini. Web: kolom terisi dari Worker dan flag ini sekadar `apiKey !== ''`.
    */
@@ -57,7 +57,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
     robloxActions.setCreatorKind(saved.creatorKind);
     robloxActions.setCreatorId(saved.creatorId);
     robloxActions.setApiKey(saved.apiKey);
-    // Kunci ada tapi nilainya tidak ikut: itu keychain (desktop). Badge dan
+    // Kunci ada tapi nilainya tidak ikut: itu berkas rahasia (desktop). Badge dan
     // `targetProblems` membaca flag ini, bukan kolom yang memang kosong.
     if (saved.hasApiKey && saved.apiKey === '') robloxActions.setApiKeyStored(true);
   };
@@ -69,11 +69,11 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
     robloxActions.setApiKey(apiKey);
     // Baca ulang, bukan mengasumsikan: di desktop kolom kunci/cookie kembali
     // kosong karena salinannya di WebView tidak punya alasan hidup lebih lama
-    // daripada perjalanan ke keychain.
+    // daripada perjalanan ke berkas rahasia.
     const saved = await api.settings().catch(() => null);
     if (saved !== null) applySaved(saved);
     setMessage(desktop
-      ? 'User tersimpan; API key dan cookie di keychain OS'
+      ? 'User tersimpan; API key dan cookie di berkas lokal mesin ini'
       : 'User dan API key tersimpan terenkripsi di D1');
   };
   useEffect(() => {
@@ -139,7 +139,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
   };
 
   // Desktop (docs/21 §3f, R5): `api` adalah `createLocalGrantApi()` — Rust
-  // yang bicara ke Roblox, cookie dan kunci di keychain. Formulirnya sama;
+  // yang bicara ke Roblox, cookie dan kunci di berkas rahasia. Formulirnya sama;
   // hanya kalimat tentang TEMPAT penyimpanan yang berbeda.
   const storeName = desktop ? 'katalog lokal' : 'D1';
   if (api === null) return <Card title="Grant Access" subtitle="Library API belum tersambung">Isi VITE_LIBRARY_API untuk memakai katalog dan grant.</Card>;
@@ -189,12 +189,12 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
           <div style={{ display: 'grid', gap: '8px' }}>
             <select value={targetType} onChange={(e) => setTargetType(e.target.value as typeof targetType)} style={fieldStyle}><option>Universe</option><option>Group</option><option>User</option></select>
             <input value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder={`${targetType} ID`} style={fieldStyle} />
-            <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" autoComplete="off" aria-label="API key Roblox untuk grant" placeholder={hasApiKey && apiKey === '' ? 'API key sudah tersimpan di keychain — isi untuk mengganti' : 'API key dengan asset-permissions:write'} style={fieldStyle} />
+            <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" autoComplete="off" aria-label="API key Roblox untuk grant" placeholder={hasApiKey && apiKey === '' ? 'API key sudah tersimpan di mesin ini — isi untuk mengganti' : 'API key dengan asset-permissions:write'} style={fieldStyle} />
             <input value={robloxCookie} onChange={(e) => setRobloxCookie(e.target.value)} type="password" autoComplete="off" aria-label="cookie .ROBLOSECURITY" placeholder={hasRobloxCookie ? '.ROBLOSECURITY sudah tersimpan — isi untuk mengganti' : '.ROBLOSECURITY untuk sync audio lama'} style={fieldStyle} />
             <small style={{ color: 'var(--cy-text-muted)' }}>{desktop
-              ? 'Cookie hanya dipakai Rust untuk legacy asset-list API dan disimpan di keychain OS — tidak pernah di SQLite.'
+              ? 'Cookie hanya dipakai Rust untuk legacy asset-list API dan disimpan dalam berkas lokal di luar folder kepustakaan — tidak pernah di SQLite.'
               : 'Cookie hanya dipakai oleh Worker untuk legacy asset-list API dan disimpan terenkripsi di D1.'}</small>
-            {/* Desktop: kunci yang sudah di keychain boleh dibiarkan kosong — SIMPAN cukup untuk user/cookie. */}
+            {/* Desktop: kunci yang sudah di berkas rahasia boleh dibiarkan kosong — SIMPAN cukup untuk user/cookie. */}
             <Button variant="outline" disabled={!/^\d+$/.test(ownerId) || (apiKey.trim() === '' ? !(desktop && hasApiKey) : apiKey.trim().length < 10)} onClick={() => void saveCredentials().catch((e: unknown) => setMessage(String(e)))}>SIMPAN USER + API KEY</Button>
             <Button disabled={busy || selected.size === 0 || !/^\d+$/.test(targetId) || (apiKey.trim() === '' && !hasApiKey)} onClick={async () => { setBusy(true); try { const n = await api.grant([...selected], targetType, targetId, apiKey); setMessage(`${n} audio berhasil diberi izin Use ke ${targetType} ${targetId}`); } catch (e) { setMessage(String(e)); } finally { setBusy(false); } }}>GRANT {selected.size}</Button>
             {message ? <p role="status" style={{ margin: 0, color: 'var(--cy-warning)', fontSize: '10px', lineHeight: 1.6 }}>{message}</p> : null}

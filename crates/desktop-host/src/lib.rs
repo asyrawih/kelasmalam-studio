@@ -19,7 +19,7 @@
 //!   yang menyeberang IPC ada di [`types`] — cermin
 //!   `web/src/platform/local-commands.ts`, dijaga tes `contract_tests.rs`.
 //! - **Rahasia** (`secret.rs`): [`SecretStore`] untuk API key/cookie Roblox
-//!   di keychain OS — pemulihan `TokenStore` PR #44.
+//!   dalam satu berkas lokal di `app_config_dir()`, di luar folder kepustakaan.
 
 mod error;
 mod library;
@@ -36,7 +36,7 @@ mod contract_tests;
 mod store_tests;
 
 pub use error::{HostError, LocalError};
-pub use secret::{SecretKey, SecretStore};
+pub use secret::{SecretKey, SecretStore, SECRETS_FILE};
 pub use store::{Store, DB_FILE, SCHEMA_VERSION};
 pub use tracks::{Probe, TRACKS_SUBDIR};
 

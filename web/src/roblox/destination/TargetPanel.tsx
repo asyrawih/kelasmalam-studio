@@ -14,7 +14,7 @@
  *
  * ## Dua tempat simpan, satu kartu
  *
- * Web: Library Worker mengenkripsinya ke D1 per akun Google. Desktop: keychain
+ * Web: Library Worker mengenkripsinya ke D1 per akun Google. Desktop: berkas rahasia
  * OS lewat `secret_set` (docs/21 §1f) — kolomnya dikosongkan begitu tersimpan,
  * dan `apiKeyStored` yang memberi tahu bahwa kuncinya ada. Kartu ini tidak
  * tahu mana yang aktif; ia hanya menerima `onSave` dan kalimat penjelasnya.
@@ -27,7 +27,7 @@ import { targetProblems, type CreatorKind, type RobloxTarget } from '../model';
 
 export interface TargetPanelProps {
   readonly target: RobloxTarget;
-  /** Desktop: kunci sudah ada di keychain. Web: selalu `false`. */
+  /** Desktop: kunci sudah ada di berkas rahasia. Web: selalu `false`. */
   readonly apiKeyStored: boolean;
   readonly onCreatorKind: (kind: CreatorKind) => void;
   readonly onCreatorId: (id: string) => void;
@@ -154,7 +154,7 @@ export function TargetPanel({
           type={reveal ? 'text' : 'password'}
           autoComplete="off"
           spellCheck={false}
-          placeholder={apiKeyStored ? 'tersimpan di keychain — tempel untuk mengganti' : 'tempel kunci dari create.roblox.com'}
+          placeholder={apiKeyStored ? 'tersimpan di mesin ini — tempel untuk mengganti' : 'tempel kunci dari create.roblox.com'}
           value={target.apiKey}
           disabled={locked}
           onChange={(e) => onApiKey(e.target.value)}

@@ -3,7 +3,7 @@
  * pemetaan ke KONTRAK: `send` → `roblox_upload_start` dengan id BARIS dan
  * progres dari event `daw://roblox-progress`; `operation` → `roblox_operation_poll`
  * dengan id baris yang dipetakan dari operationId; `health` = kunci di
- * keychain DAN creator id terisi. Tidak ada byte maupun API key yang lewat.
+ * berkas rahasia DAN creator id terisi. Tidak ada byte maupun API key yang lewat.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -96,7 +96,7 @@ describe('operation', () => {
 });
 
 describe('health', () => {
-  it('siap hanya kalau kunci ada di keychain DAN creator id terisi', async () => {
+  it('siap hanya kalau kunci ada di berkas rahasia DAN creator id terisi', async () => {
     invoke.mockResolvedValue('kunci');
     expect(await transport().health()).toBe(true);
     expect(invoke).toHaveBeenCalledWith('secret_get', { key: 'roblox.api_key' });
@@ -109,8 +109,8 @@ describe('health', () => {
     expect(await transport().health()).toBe(false);
   });
 
-  it('keychain yang tidak bisa dibaca berarti belum siap, bukan galat', async () => {
-    invoke.mockRejectedValue({ code: 'SECRET_UNAVAILABLE', message: 'keychain terkunci' });
+  it('berkas rahasia yang tidak bisa dibaca berarti belum siap, bukan galat', async () => {
+    invoke.mockRejectedValue({ code: 'SECRET_UNAVAILABLE', message: 'berkas rahasia rusak' });
     expect(await transport().health()).toBe(false);
   });
 });

@@ -19,7 +19,7 @@
  *
  * Web: Library Worker menyimpannya terenkripsi di D1 per akun Google; store
  * hanya memegang salinan aktif selama halaman digunakan. Desktop: kolomnya
- * dikosongkan begitu kunci pindah ke keychain OS (docs/21 §1f), dan
+ * dikosongkan begitu kunci pindah ke berkas rahasia lokal (docs/21 §1f), dan
  * `apiKeyStored` yang menandai bahwa kuncinya ada.
  *
  * ## Satu adapter, dua platform (docs/21 §3b)
@@ -534,7 +534,7 @@ export const robloxActions = {
     );
   },
 
-  /** Desktop: kunci ada/tidak di keychain. Bukan kuncinya — hanya kenyataannya. */
+  /** Desktop: kunci ada/tidak di berkas rahasia. Bukan kuncinya — hanya kenyataannya. */
   setApiKeyStored(apiKeyStored: boolean): void {
     set((s) => (s.apiKeyStored === apiKeyStored ? null : { apiKeyStored }));
   },

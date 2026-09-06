@@ -111,8 +111,8 @@ describe('dengan URL terisi', () => {
 });
 
 /**
- * DESKTOP (docs/21 §3): tidak ada Worker. Kesiapan = kunci di keychain +
- * creator id; SIMPAN menaruh kunci ke keychain lalu mengosongkan kolomnya;
+ * DESKTOP (docs/21 §3): tidak ada Worker. Kesiapan = kunci di berkas rahasia +
+ * creator id; SIMPAN menaruh kunci ke berkas rahasia lalu mengosongkan kolomnya;
  * GRANT memakai command lokal (§3f, R5) — tanpa Worker, tanpa login.
  */
 describe('desktop', () => {
@@ -134,7 +134,7 @@ describe('desktop', () => {
     });
   };
 
-  it('tanpa kunci di keychain: badge BELUM ADA API KEY dan tombol mati dengan alasan itu', async () => {
+  it('tanpa kunci di berkas rahasia: badge BELUM ADA API KEY dan tombol mati dengan alasan itu', async () => {
     table({ key: null, creatorId: '123' });
     render(<RobloxRoute platform="desktop" />);
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('secret_get', { key: 'roblox.api_key' }));
@@ -154,14 +154,14 @@ describe('desktop', () => {
     expect(robloxStore.getState().apiKeyStored).toBe(true);
   });
 
-  it('SIMPAN: target ke roblox_target_set, kunci ke keychain, kolom kunci dikosongkan, lalu SIAP', async () => {
+  it('SIMPAN: target ke roblox_target_set, kunci ke berkas rahasia, kolom kunci dikosongkan, lalu SIAP', async () => {
     table({ key: null, creatorId: '' });
     render(<RobloxRoute platform="desktop" />);
     await waitFor(() => expect(screen.getByText('BELUM ADA API KEY')).toBeDefined());
 
     fireEvent.change(screen.getByLabelText('ID user'), { target: { value: '555' } });
     fireEvent.change(screen.getByLabelText('API key Open Cloud'), { target: { value: 'rahasia' } });
-    // Sesudah tersimpan, keychain menjawab ada.
+    // Sesudah tersimpan, berkas rahasia menjawab ada.
     invoke.mockImplementation(async (cmd) => (cmd === 'secret_get' ? 'rahasia' : cmd === 'roblox_queue_list' || cmd === 'roblox_catalog_list' ? [] : cmd === 'roblox_taxonomy_list' ? { categories: [], genres: [] } : cmd === 'roblox_target_get' ? { creatorKind: 'user', creatorId: '555', genreToDescription: true } : null));
     fireEvent.click(screen.getByRole('button', { name: 'SIMPAN USER + API KEY' }));
 
@@ -181,6 +181,6 @@ describe('desktop', () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('roblox_assets_list', { query: '' }));
     // Pengaturan grant dibaca dari Rust; tidak ada fetch ke VITE_LIBRARY_API.
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('roblox_grant_settings_get', {}));
-    expect(screen.getByText(/disimpan di keychain OS/i)).toBeDefined();
+    expect(screen.getByText(/disimpan dalam berkas lokal/i)).toBeDefined();
   });
 });

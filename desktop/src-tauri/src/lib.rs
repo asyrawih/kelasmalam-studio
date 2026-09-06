@@ -16,7 +16,7 @@ mod menu;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use daw_desktop_host::{SecretStore, Store};
+use daw_desktop_host::{SecretStore, Store, SECRETS_FILE};
 use tauri::webview::{Color, PageLoadEvent};
 use tauri::{App, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
@@ -36,7 +36,7 @@ fn ping() -> &'static str {
     "pong"
 }
 
-/// Buka folder kepustakaan dan keychain saat aplikasi mulai.
+/// Buka folder kepustakaan dan berkas rahasia Roblox saat aplikasi mulai.
 ///
 /// Folder: yang tertulis di berkas penunjuk kalau ada DAN masih berisi
 /// `library.sqlite` (folder yang dipindah/dihapus user di luar app jatuh ke
@@ -46,7 +46,8 @@ fn ping() -> &'static str {
 /// tidak berguna, dan pesannya lebih jelas di sini daripada di tiap command.
 fn open_state(app: &App) -> Result<AppState, Box<dyn std::error::Error>> {
     let default_dir = app.path().app_data_dir()?;
-    let location_file = app.path().app_config_dir()?.join(LOCATION_FILE);
+    let config_dir = app.path().app_config_dir()?;
+    let location_file = config_dir.join(LOCATION_FILE);
     let dir = std::fs::read_to_string(&location_file)
         .ok()
         .map(|s| PathBuf::from(s.trim()))
@@ -58,7 +59,9 @@ fn open_state(app: &App) -> Result<AppState, Box<dyn std::error::Error>> {
     let discovery = daw_desktop_host::soundcloud::Discovery::new(&default_dir)?;
     Ok(AppState {
         store: Arc::new(Mutex::new(store)),
-        secrets: SecretStore::new(&app.config().identifier),
+        // Di folder config, BUKAN di folder kepustakaan: kepustakaan bisa
+        // dipindah user ke mana saja, rahasia Roblox tidak ikut (docs/21 §1f).
+        secrets: SecretStore::at(config_dir.join(SECRETS_FILE)),
         discovery: Arc::new(discovery),
         location_file,
     })

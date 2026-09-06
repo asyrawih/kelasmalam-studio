@@ -81,15 +81,6 @@ symphonia = { version = "0.5", default-features = false, features = ["mp3", "ogg
 # menulis, bukan sesudah ENOSPC di tengah). Pure Rust (rustix/windows-sys).
 fs4 = { version = "1", default-features = false }
 uuid = { version = "1", features = ["v4"] }
-# Keyring generasi baru: `keyring` 4.x sendiri hanya facade; fitur `v1`-nya
-# memaksa zbus/Secret Service di Linux, dan tanpa `v1` ia compile_error. Maka
-# kita mengikuti anjuran README-nya: link `keyring-core` + store per-OS yang
-# dipilih sendiri. Store Linux sengaja TIDAK ada (target rilis hanya macOS +
-# Windows; job CI Ubuntu tetap harus mengompilasi tanpa dbus).
-keyring-core                 = "1"
-apple-native-keyring-store   = { version = "1", features = ["keychain"] }
-# `search` (default) menyeret regex; kita hanya get/set/delete.
-windows-native-keyring-store = { version = "1", default-features = false }
 # Discovery SoundCloud in-process untuk desktop (crates/desktop-host/src/soundcloud.rs):
 # pustaka yang SAMA dengan yang menjalankan soundcloud.kelasmalam.app, di-pin ke
 # revisi supaya build bisa diulang. Menarik reqwest 0.12 di samping 0.13 —

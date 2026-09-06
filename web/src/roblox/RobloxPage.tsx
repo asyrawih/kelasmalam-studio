@@ -246,7 +246,7 @@ export function RobloxPage({
                 onSave={onSaveTarget}
                 storageNote={
                   platform === 'desktop'
-                    ? 'Disimpan di keychain OS mesin ini. Tidak pernah masuk basis data maupun log aplikasi.'
+                    ? 'Disimpan dalam berkas lokal di mesin ini, di luar folder kepustakaan. Tidak pernah masuk basis data maupun log aplikasi.'
                     : 'Disimpan terenkripsi di D1 untuk akun Google yang sedang login.'
                 }
                 locked={busy}

@@ -9,7 +9,7 @@
  * bukan spinner, bukan tombol yang menyala lalu tidak melakukan apa-apa.
  *
  * Di desktop tidak ada Worker yang bisa "belum tersambung"; yang bisa kurang
- * adalah API key di keychain atau ID pemilik. Badge-nya menyebut PENYEBABNYA
+ * adalah API key di berkas rahasia atau ID pemilik. Badge-nya menyebut PENYEBABNYA
  * (`BELUM ADA API KEY`, `ID PEMILIK KOSONG`), bukan keadaannya (docs/21 §3c),
  * karena penyebab itulah yang bisa diperbaiki user dari panel TUJUAN.
  */
@@ -43,7 +43,7 @@ export function RobloxHeader({ onClose, onOpenStudio, platform = 'web' }: Roblox
       <Badge
         tone="warning"
         dot
-        title="Tempel API key Open Cloud di panel TUJUAN lalu SIMPAN — kuncinya disimpan di keychain OS, bukan di aplikasi."
+        title="Tempel API key Open Cloud di panel TUJUAN lalu SIMPAN — kuncinya disimpan dalam berkas lokal di mesin ini dan hanya dibaca Rust."
       >
         BELUM ADA API KEY
       </Badge>
@@ -52,7 +52,7 @@ export function RobloxHeader({ onClose, onOpenStudio, platform = 'web' }: Roblox
         ID PEMILIK KOSONG
       </Badge>
     ) : (
-      <Badge tone="warning" dot title="Memeriksa keychain dan tujuan…">
+      <Badge tone="warning" dot title="Memeriksa kunci dan tujuan…">
         MEMERIKSA
       </Badge>
     )
