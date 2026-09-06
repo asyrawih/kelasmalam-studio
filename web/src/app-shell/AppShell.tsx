@@ -80,7 +80,16 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   // backend bisa diuji tanpa sesi OAuth. Production tetap terkunci. Saat API
   // disuntikkan di tes, guard tetap aktif agar perilakunya bisa diverifikasi
   // tanpa jaringan sungguhan.
-  const authRequired = !import.meta.env.DEV || injectedAuthApi !== undefined;
+  //
+  // DESKTOP TANPA LOGIN (keputusan produk, untuk sekarang): di jendela Tauri
+  // gerbang ini dilewati seluruhnya. Alasannya bukan cuma "belum ada jalur
+  // login desktop" (docs/20 §1d): cookie sesi tidak pernah ikut dari origin
+  // `tauri://`, jadi `me()` selalu menjawab anonim dan seluruh .app terkunci
+  // di balik tombol MASUK yang — lewat `location.href` — menavigasi WebView ke
+  // Google dan tidak pernah kembali. Kepustakaan tetap tidak tersedia di
+  // desktop sampai D3; halaman-halamannya sendiri bekerja penuh tanpanya.
+  const desktop = isDesktop();
+  const authRequired = !desktop && (!import.meta.env.DEV || injectedAuthApi !== undefined);
 
   useEffect(() => {
     if (!authRequired) return undefined;
@@ -308,12 +317,17 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
           showAppLinks={!authRequired || authenticated}
+          // Di desktop tidak ada tombol MASUK sama sekali: tautan aplikasi
+          // sudah terbuka (`showAppLinks`), dan `location.href` ke halaman
+          // login akan membawa WebView pergi tanpa jalan pulang.
           onLogin={
-            authApi === null
-              ? () => navigate(STUDIO_PATH)
-              : () => {
-                  window.location.href = authApi.loginUrl(STUDIO_PATH);
-                }
+            desktop
+              ? undefined
+              : authApi === null
+                ? () => navigate(STUDIO_PATH)
+                : () => {
+                    window.location.href = authApi.loginUrl(STUDIO_PATH);
+                  }
           }
         />
       )}

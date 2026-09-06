@@ -345,6 +345,64 @@ describe('penjaga tutup jendela', () => {
   });
 });
 
+/**
+ * DESKTOP TANPA LOGIN. Di produksi web, `authRequired` mengunci /studio, /dj,
+ * /roblox di balik sesi Google. Di jendela Tauri cookie sesi tidak pernah ikut
+ * (origin `tauri://`), jadi tanpa pengecualian ini seluruh .app terkunci di
+ * balik tombol MASUK yang menavigasi WebView ke Google tanpa jalan pulang.
+ */
+describe('gerbang auth di desktop', () => {
+  const api = () => ({
+    me: vi.fn(async () => null),
+    loginUrl: vi.fn((next: string) => `https://auth.test/google?next=${next}`),
+  });
+
+  it('/studio terbuka langsung tanpa login, dan tidak ada navigasi keluar', async () => {
+    window.history.pushState(null, '', '/studio');
+    const authApi = api();
+    const href = window.location.href;
+    // `authApi` disuntikkan = di web ini berarti `authRequired` TRUE.
+    render(<AppShell authApi={authApi} />);
+    expect(screen.queryByTestId('auth-guard')).toBeNull();
+    expect(screen.getByText('KELAS MALAM STUDIO')).toBeTruthy();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(authApi.me).not.toHaveBeenCalled();
+    expect(authApi.loginUrl).not.toHaveBeenCalled();
+    expect(window.location.href).toBe(href);
+  });
+
+  it('/dj dan /roblox juga terbuka', () => {
+    window.history.pushState(null, '', '/dj');
+    const view = render(<AppShell authApi={api()} />);
+    expect(screen.queryByTestId('auth-guard')).toBeNull();
+    expect(screen.getByText('KELAS MALAM DJ')).toBeTruthy();
+    view.unmount();
+
+    window.history.pushState(null, '', '/roblox');
+    render(<AppShell authApi={api()} />);
+    expect(screen.queryByTestId('auth-guard')).toBeNull();
+  });
+
+  it('landing di desktop tidak menampilkan tombol MASUK, tautan aplikasi terbuka', () => {
+    window.history.pushState(null, '', '/');
+    render(<AppShell authApi={api()} />);
+    expect(screen.queryByRole('button', { name: 'MASUK' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'BUKA STUDIO' }).length).toBeGreaterThan(0);
+  });
+
+  it('di web (isTauri false) gerbangnya tetap ada — perilaku web tidak berubah', async () => {
+    tauri.desktop = false;
+    window.history.pushState(null, '', '/studio');
+    const authApi = api();
+    render(<AppShell authApi={authApi} />);
+    await waitFor(() => expect(screen.getByTestId('auth-guard')).toBeTruthy());
+    expect(authApi.me).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('KELAS MALAM STUDIO')).toBeNull();
+  });
+});
+
 describe('pintasan ⌘,', () => {
   it('membuka editor pintasan lewat command shell.preferences', () => {
     render(<AppShell />);
