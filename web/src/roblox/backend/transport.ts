@@ -65,8 +65,18 @@ export function normalizeBase(base: string): string {
   return base.replace(/\/+$/, '');
 }
 
-export function createHttpTransport(baseUrl: string): Transport {
+export interface HttpTransportOptions {
+  /**
+   * Deskripsi yang benar-benar dikirim (docs/21 §3d: + baris `Genre: …` kalau
+   * opsinya hidup). Disuntik dari route, bukan dihitung di sini: transport
+   * tidak tahu taksonomi, dan tidak perlu tahu.
+   */
+  readonly description?: (item: QueueItem) => string;
+}
+
+export function createHttpTransport(baseUrl: string, opts: HttpTransportOptions = {}): Transport {
   const base = normalizeBase(baseUrl);
+  const describe = opts.description ?? ((item: QueueItem) => item.description);
 
   return {
     async health(): Promise<boolean> {
@@ -90,7 +100,7 @@ export function createHttpTransport(baseUrl: string): Transport {
       const form = new FormData();
       form.append('file', file, item.fileName);
       form.append('name', item.name);
-      form.append('description', item.description);
+      form.append('description', describe(item));
       form.append('creatorKind', target.creatorKind);
       form.append('creatorId', target.creatorId.trim());
 

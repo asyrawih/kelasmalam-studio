@@ -17,8 +17,18 @@
  *
  * ## API key di state hanya salinan aktif
  *
- * Library Worker dapat menyimpannya terenkripsi di D1 per akun Google. Store
- * browser tetap hanya memegang salinan aktif selama halaman digunakan.
+ * Web: Library Worker menyimpannya terenkripsi di D1 per akun Google; store
+ * hanya memegang salinan aktif selama halaman digunakan. Desktop: kolomnya
+ * dikosongkan begitu kunci pindah ke keychain OS (docs/21 §1f), dan
+ * `apiKeyStored` yang menandai bahwa kuncinya ada.
+ *
+ * ## Satu adapter, dua platform (docs/21 §3b)
+ *
+ * Semua yang harus bertahan melewati refresh/restart — antrean, taksonomi,
+ * katalog, target — lewat SATU `PersistenceAdapter`: IndexedDB di web,
+ * command Tauri di desktop. Dipilih lazy dari `getPlatformHost().kind` saat
+ * pertama dibutuhkan, bukan saat modul dimuat, supaya tes bisa menukar host
+ * lebih dulu. Tidak ada satu pun komponen yang tahu adapter mana yang aktif.
  *
  * ## Seam untuk lapisan unggah
  *
@@ -30,21 +40,26 @@
 
 import { useSyncExternalStore } from 'react';
 
+import { getPlatformHost } from '../platform';
+import type { RobloxGenre, RobloxTaxonomy, RobloxUploadRow } from '../platform/local-commands';
 import {
   baseNameOf,
   createInitialRoblox,
   isAudioFile,
+  type CatalogFilter,
   type CreatorKind,
   type QueueItem,
   type RobloxState,
   type UploadStatus,
 } from './model';
 import {
-  clearRobloxQueue,
-  loadRobloxQueue,
-  saveRobloxQueue,
+  createWebPersistence,
+  messageOfLocalError,
+  randomId,
   type PersistedRobloxQueue,
+  type PersistenceAdapter,
 } from './persistence';
+import { createLocalQueuePersistence } from './local/queue-persistence';
 
 // ── Inti store ───────────────────────────────────────────────────────────────
 
@@ -71,14 +86,18 @@ function set(patch: (s: RobloxState) => Partial<RobloxState> | null): void {
   if (next === null) return;
   state = { ...state, ...next };
   for (const fn of [...listeners]) fn();
-  // Status koneksi, kuota, dan API key tidak termasuk dokumen antrean. Selain
-  // menjaga kredensial agar tidak tersimpan, ini mencegah probe `/health`
-  // menimpa snapshot IndexedDB dengan state kosong saat hydration masih jalan.
+  // Status koneksi, kuota, penyaring katalog, dan API key tidak termasuk
+  // dokumen yang disimpan. Selain menjaga kredensial agar tidak tersimpan, ini
+  // mencegah probe `/health` menimpa snapshot IndexedDB dengan state kosong
+  // saat hydration masih jalan.
   if (
     state.items !== before.items ||
     state.selected !== before.selected ||
+    state.taxonomy !== before.taxonomy ||
+    state.catalog !== before.catalog ||
     state.target.creatorKind !== before.target.creatorKind ||
-    state.target.creatorId !== before.target.creatorId
+    state.target.creatorId !== before.target.creatorId ||
+    state.target.genreToDescription !== before.target.genreToDescription
   ) persist();
 }
 
@@ -108,24 +127,24 @@ let nextId = 1;
  *
  * Di sini hanya satu transaksi aktif dan satu snapshot TERBARU yang menunggu.
  * Snapshot tengah dibuang; status akhir tidak pernah harus mengejar backlog.
+ * Aturan yang sama berlaku untuk desktop: `roblox_queue_put` per persen adalah
+ * ratusan transaksi SQLite untuk satu baris.
  */
 type PersistJob = () => Promise<void>;
 interface CriticalPersist {
   readonly job: PersistJob;
   readonly done: () => void;
 }
-interface PersistenceAdapter {
-  save(value: PersistedRobloxQueue): Promise<void>;
-  clear(): Promise<void>;
-}
-const defaultPersistence: PersistenceAdapter = {
-  save: saveRobloxQueue,
-  clear: clearRobloxQueue,
-};
-let persistence: PersistenceAdapter = defaultPersistence;
+let persistence: PersistenceAdapter | null = null;
 let pendingPersist: PersistJob | null = null;
 const criticalPersists: CriticalPersist[] = [];
 let activePersist: Promise<void> | null = null;
+
+/** Adapter aktif, dipilih saat pertama dibutuhkan (lihat kepala berkas). */
+function adapter(): PersistenceAdapter {
+  persistence ??= getPlatformHost().kind === 'desktop' ? createLocalQueuePersistence() : createWebPersistence();
+  return persistence;
+}
 
 function enqueuePersist(job: PersistJob): Promise<void> {
   pendingPersist = job;
@@ -175,26 +194,45 @@ function persistedValue(snapshot: RobloxState): PersistedRobloxQueue {
     target: {
       creatorKind: snapshot.target.creatorKind,
       creatorId: snapshot.target.creatorId,
+      genreToDescription: snapshot.target.genreToDescription,
     },
     files: snapshot.items.flatMap((it) => {
       const file = files.get(it.id);
       return file === undefined ? [] : [{ id: it.id, file }];
     }),
+    taxonomy: snapshot.taxonomy,
+    catalog: snapshot.catalog,
   };
 }
 
 function persist(): Promise<void> {
   const value = persistedValue(state);
-  return enqueuePersist(() => persistence.save(value));
+  return enqueuePersist(() => adapter().save(value));
+}
+
+/**
+ * Dokumen IndexedDB dari versi sebelum taksonomi tidak punya kolom-kolom
+ * baru. `undefined` di `categoryId` akan lolos `=== null` dan membuat baris
+ * lama tampak sudah berkategori — jadi setiap kolom dinormalkan di sini.
+ */
+function normalizeItem(it: QueueItem): QueueItem {
+  return {
+    ...it,
+    categoryId: it.categoryId ?? null,
+    genreId: it.genreId ?? null,
+    localId: typeof it.localId === 'string' && it.localId !== '' ? it.localId : randomId('rbx'),
+    hash: it.hash ?? null,
+    operationId: it.operationId ?? null,
+  };
 }
 
 /** Pulihkan antrean sebelum route mulai melanjutkan polling moderasi. */
 export async function restoreRobloxQueue(): Promise<void> {
-  const saved = await loadRobloxQueue().catch(() => null);
+  const saved = await adapter().load().catch(() => null);
   if (saved === null) return;
   files.clear();
   for (const entry of saved.files) files.set(entry.id, entry.file);
-  const items = saved.items.map((it) => {
+  const items = saved.items.map(normalizeItem).map((it) => {
     // Request yang putus sebelum operationId diterima tidak aman diteruskan
     // otomatis. Biarkan user melihat penjelasannya dan memutuskan sendiri.
     if (it.status === 'queued' || it.status === 'uploading') {
@@ -216,6 +254,8 @@ export async function restoreRobloxQueue(): Promise<void> {
     items,
     selected: items.some((it) => it.id === saved.selected) ? saved.selected : (items[0]?.id ?? null),
     target: { ...state.target, ...saved.target },
+    taxonomy: saved.taxonomy ?? state.taxonomy,
+    catalog: saved.catalog ?? state.catalog,
   };
   for (const fn of [...listeners]) fn();
 }
@@ -249,11 +289,94 @@ function patchItem(
   return { items };
 }
 
+/** Ganti BEBERAPA baris sekaligus; yang tidak berubah tetap objek yang sama. */
+function patchItems(
+  s: RobloxState,
+  ids: readonly number[],
+  fn: (it: QueueItem) => QueueItem,
+): Partial<RobloxState> | null {
+  const wanted = new Set(ids);
+  let changed = false;
+  const items = s.items.map((it) => {
+    if (!wanted.has(it.id)) return it;
+    const after = fn(it);
+    if (after !== it) changed = true;
+    return after;
+  });
+  return changed ? { items } : null;
+}
+
 /** Ubah status baris, kecuali kalau ia sudah persis begitu. */
 function withStatus(it: QueueItem, status: UploadStatus, extra: Partial<QueueItem> = {}): QueueItem {
   return { ...it, status, ...extra };
 }
 
+/** Berapa baris (antrean + katalog) yang memakai satu genre / kategori. */
+function usageOfGenre(s: RobloxState, genreId: string): number {
+  return s.items.filter((it) => it.genreId === genreId).length + s.catalog.filter((r) => r.genreId === genreId).length;
+}
+function usageOfCategory(s: RobloxState, categoryId: string): { genres: number; uploads: number } {
+  return {
+    genres: s.taxonomy.genres.filter((g) => g.categoryId === categoryId).length,
+    uploads:
+      s.items.filter((it) => it.categoryId === categoryId).length +
+      s.catalog.filter((r) => r.categoryId === categoryId).length,
+  };
+}
+
+/** Hasil aksi taksonomi: id baris yang disentuh, atau kalimat untuk user. */
+export type TaxonomyResult = { readonly ok: true; readonly id: string } | { readonly ok: false; readonly message: string };
+
+function failure(e: unknown): TaxonomyResult {
+  return { ok: false, message: messageOfLocalError(e) };
+}
+
+function newQueueItem(fileName: string, bytes: number, extra: Partial<QueueItem> = {}): QueueItem {
+  return {
+    id: nextId++,
+    localId: randomId('rbx'),
+    hash: null,
+    fileName,
+    bytes,
+    seconds: null,
+    name: baseNameOf(fileName),
+    description: '',
+    status: 'draft',
+    progress: 0,
+    error: null,
+    assetId: null,
+    operationId: null,
+    categoryId: null,
+    genreId: null,
+    ...extra,
+  };
+}
+
+/**
+ * Desktop: byte masuk kepustakaan dulu (`tracks/<hash>`), baru barisnya bisa
+ * ditulis ke tabel. Berjalan di latar per berkas; kegagalannya mendarat di
+ * baris yang bersangkutan sebagai GAGAL dengan alasannya, bukan menjatuhkan
+ * seluruh drop.
+ */
+function ingestInBackground(id: number, file: File): void {
+  const ingest = adapter().ingest;
+  if (ingest === undefined) return;
+  void ingest(file)
+    .then(({ hash }) => {
+      set((s) => patchItem(s, id, (it) => (it.hash === hash ? it : { ...it, hash })));
+    })
+    .catch((e: unknown) => {
+      set((s) =>
+        patchItem(s, id, (it) =>
+          withStatus(it, 'failed', { error: `tidak bisa masuk kepustakaan: ${messageOfLocalError(e)}` }),
+        ),
+      );
+    });
+}
+
+// Method di bawah saling memanggil lewat `robloxActions.x`, BUKAN `this`:
+// komponen meneruskannya lepas (`onRetry={robloxActions.retry}`), dan `this`
+// pada fungsi yang dilepas adalah `undefined`.
 export const robloxActions = {
   // ── Antrean ───────────────────────────────────────────────────────────────
 
@@ -273,21 +396,9 @@ export const robloxActions = {
         rejected.push(file.name);
         continue;
       }
-      const id = nextId++;
-      files.set(id, file);
-      fresh.push({
-        id,
-        fileName: file.name,
-        bytes: file.size,
-        seconds: null,
-        name: baseNameOf(file.name),
-        description: '',
-        status: 'draft',
-        progress: 0,
-        error: null,
-        assetId: null,
-        operationId: null,
-      });
+      const item = newQueueItem(file.name, file.size);
+      files.set(item.id, file);
+      fresh.push(item);
     }
 
     const first = fresh[0];
@@ -298,17 +409,27 @@ export const robloxActions = {
         // kosong setelah drop pertama.
         selected: s.selected ?? first.id,
       }));
+      for (const it of fresh) {
+        const file = files.get(it.id);
+        if (file !== undefined) ingestInBackground(it.id, file);
+      }
     }
     return rejected;
   },
 
   remove(id: number): void {
     files.delete(id);
+    let removed: QueueItem | undefined;
     set((s) => {
+      removed = s.items.find((it) => it.id === id);
       const items = s.items.filter((it) => it.id !== id);
       if (items.length === s.items.length) return null;
       return { items, selected: s.selected === id ? (items[0]?.id ?? null) : s.selected };
     });
+    if (removed !== undefined) {
+      const localId = removed.localId;
+      void persistCritical(() => adapter().remove([localId]));
+    }
   },
 
   /** Bersihkan baris yang sudah selesai. Baris gagal SENGAJA ditinggal. */
@@ -319,12 +440,16 @@ export const robloxActions = {
       for (const it of s.items) if (it.status === 'done') files.delete(it.id);
       return { items, selected: items.some((it) => it.id === s.selected) ? s.selected : null };
     });
+    // Tidak ada `remove` ke adapter: baris `done` justru harus tetap ada di
+    // tabel — ia isi katalog. Yang dibersihkan hanya tampilan antrean.
   },
 
   clearAll(): void {
     files.clear();
+    const localIds = state.items.map((it) => it.localId);
     set((s) => (s.items.length === 0 ? null : { items: [], selected: null }));
-    void enqueuePersist(() => persistence.clear());
+    if (localIds.length > 0) void persistCritical(() => adapter().remove(localIds));
+    void enqueuePersist(() => adapter().clear());
   },
 
   select(id: number | null): void {
@@ -355,6 +480,36 @@ export const robloxActions = {
     set((s) => patchItem(s, id, (it) => (it.seconds === seconds ? it : { ...it, seconds })));
   },
 
+  /**
+   * Kategori untuk SATU atau BANYAK baris — pilihan massal (docs/21 §1d)
+   * memakai aksi yang sama dengan kolom per baris. Mengganti kategori
+   * mengosongkan genre yang tidak lagi berada di bawahnya: genre `Lo-fi` di
+   * bawah kategori `Efek suara` adalah data yang tidak pernah benar.
+   */
+  setCategory(ids: readonly number[], categoryId: string | null): void {
+    set((s) =>
+      patchItems(s, ids, (it) => {
+        if (it.categoryId === categoryId) return it;
+        const genre = s.taxonomy.genres.find((g) => g.id === it.genreId);
+        const keepGenre = genre !== undefined && genre.categoryId === categoryId;
+        return { ...it, categoryId, genreId: keepGenre ? it.genreId : null };
+      }),
+    );
+  },
+
+  /** Genre untuk satu/banyak baris; kategorinya mengikuti genre supaya tidak pernah saling bertentangan. */
+  setGenre(ids: readonly number[], genreId: string | null): void {
+    set((s) => {
+      const genre = genreId === null ? null : (s.taxonomy.genres.find((g) => g.id === genreId) ?? null);
+      if (genreId !== null && genre === null) return null;
+      return patchItems(s, ids, (it) => {
+        const categoryId = genre === null ? it.categoryId : genre.categoryId;
+        if (it.genreId === genreId && it.categoryId === categoryId) return it;
+        return { ...it, genreId, categoryId };
+      });
+    });
+  },
+
   // ── Target ────────────────────────────────────────────────────────────────
 
   setCreatorKind(creatorKind: CreatorKind): void {
@@ -371,7 +526,192 @@ export const robloxActions = {
     set((s) => (s.target.apiKey === apiKey ? null : { target: { ...s.target, apiKey } }));
   },
 
-  // ── Seam untuk lapisan unggah (belum ada pemanggilnya di UI ini) ──────────
+  setGenreToDescription(genreToDescription: boolean): void {
+    set((s) =>
+      s.target.genreToDescription === genreToDescription
+        ? null
+        : { target: { ...s.target, genreToDescription } },
+    );
+  },
+
+  /** Desktop: kunci ada/tidak di keychain. Bukan kuncinya — hanya kenyataannya. */
+  setApiKeyStored(apiKeyStored: boolean): void {
+    set((s) => (s.apiKeyStored === apiKeyStored ? null : { apiKeyStored }));
+  },
+
+  // ── Taksonomi (docs/21 §1d) ───────────────────────────────────────────────
+
+  setTaxonomy(taxonomy: RobloxTaxonomy): void {
+    set((s) => (s.taxonomy === taxonomy ? null : { taxonomy }));
+  },
+
+  async addCategory(name: string): Promise<TaxonomyResult> {
+    try {
+      const sort = Math.max(-1, ...state.taxonomy.categories.map((c) => c.sort)) + 1;
+      const category = await adapter().upsertCategory({ name, sort });
+      set((s) => ({ taxonomy: { ...s.taxonomy, categories: [...s.taxonomy.categories, category] } }));
+      return { ok: true, id: category.id };
+    } catch (e: unknown) {
+      return failure(e);
+    }
+  },
+
+  async renameCategory(id: string, name: string): Promise<TaxonomyResult> {
+    const current = state.taxonomy.categories.find((c) => c.id === id);
+    if (current === undefined) return { ok: false, message: 'kategori sudah tidak ada' };
+    try {
+      const category = await adapter().upsertCategory({ id, name, sort: current.sort });
+      set((s) => ({
+        taxonomy: { ...s.taxonomy, categories: s.taxonomy.categories.map((c) => (c.id === id ? category : c)) },
+      }));
+      return { ok: true, id };
+    } catch (e: unknown) {
+      return failure(e);
+    }
+  },
+
+  /** Ditolak (`IN_USE`, pesannya menyebut jumlah) selama masih ada genre atau lagu di bawahnya. */
+  async deleteCategory(id: string): Promise<TaxonomyResult> {
+    try {
+      await adapter().deleteCategory(id, usageOfCategory(state, id));
+      set((s) => ({
+        taxonomy: {
+          categories: s.taxonomy.categories.filter((c) => c.id !== id),
+          genres: s.taxonomy.genres.filter((g) => g.categoryId !== id),
+        },
+      }));
+      return { ok: true, id };
+    } catch (e: unknown) {
+      return failure(e);
+    }
+  },
+
+  async addGenre(categoryId: string, name: string): Promise<TaxonomyResult> {
+    if (!state.taxonomy.categories.some((c) => c.id === categoryId)) {
+      return { ok: false, message: 'pilih kategori dulu' };
+    }
+    try {
+      const sort = Math.max(-1, ...state.taxonomy.genres.filter((g) => g.categoryId === categoryId).map((g) => g.sort)) + 1;
+      const genre = await adapter().upsertGenre({ categoryId, name, sort });
+      set((s) => ({ taxonomy: { ...s.taxonomy, genres: [...s.taxonomy.genres, genre] } }));
+      return { ok: true, id: genre.id };
+    } catch (e: unknown) {
+      return failure(e);
+    }
+  },
+
+  async renameGenre(id: string, name: string): Promise<TaxonomyResult> {
+    return robloxActions.upsertGenre(id, { name });
+  },
+
+  /** Pindah ke kategori lain. Baris yang memakainya ikut pindah kategorinya — mereka tetap konsisten. */
+  async moveGenre(id: string, categoryId: string): Promise<TaxonomyResult> {
+    const result = await robloxActions.upsertGenre(id, { categoryId });
+    if (result.ok) {
+      set((s) => {
+        const ids = s.items.filter((it) => it.genreId === id && it.categoryId !== categoryId).map((it) => it.id);
+        return patchItems(s, ids, (it) => ({ ...it, categoryId }));
+      });
+    }
+    return result;
+  },
+
+  async upsertGenre(id: string, patch: Partial<Pick<RobloxGenre, 'name' | 'categoryId'>>): Promise<TaxonomyResult> {
+    const current = state.taxonomy.genres.find((g) => g.id === id);
+    if (current === undefined) return { ok: false, message: 'genre sudah tidak ada' };
+    try {
+      const genre = await adapter().upsertGenre({
+        id,
+        categoryId: patch.categoryId ?? current.categoryId,
+        name: patch.name ?? current.name,
+        sort: current.sort,
+      });
+      set((s) => ({
+        taxonomy: { ...s.taxonomy, genres: s.taxonomy.genres.map((g) => (g.id === id ? genre : g)) },
+      }));
+      return { ok: true, id };
+    } catch (e: unknown) {
+      return failure(e);
+    }
+  },
+
+  async deleteGenre(id: string): Promise<TaxonomyResult> {
+    try {
+      await adapter().deleteGenre(id, usageOfGenre(state, id));
+      set((s) => ({ taxonomy: { ...s.taxonomy, genres: s.taxonomy.genres.filter((g) => g.id !== id) } }));
+      return { ok: true, id };
+    } catch (e: unknown) {
+      return failure(e);
+    }
+  },
+
+  // ── Katalog (docs/21 §3a) ─────────────────────────────────────────────────
+
+  setCatalog(catalog: readonly RobloxUploadRow[]): void {
+    set((s) => (s.catalog === catalog ? null : { catalog }));
+  },
+
+  setCatalogFilter(patch: Partial<CatalogFilter>): void {
+    set((s) => {
+      const next = { ...s.catalogFilter, ...patch };
+      // Genre yang tidak berada di bawah kategori terpilih tidak pernah
+      // menghasilkan apa-apa — daripada daftar kosong yang membingungkan,
+      // genre-nya dilepas.
+      if (next.categoryId !== null && next.genreId !== null) {
+        const genre = s.taxonomy.genres.find((g) => g.id === next.genreId);
+        if (genre === undefined || genre.categoryId !== next.categoryId) next.genreId = null;
+      }
+      return next.categoryId === s.catalogFilter.categoryId &&
+        next.genreId === s.catalogFilter.genreId &&
+        next.query === s.catalogFilter.query
+        ? null
+        : { catalogFilter: next };
+    });
+  },
+
+  /** Muat ulang katalog dari adapter (desktop: tabel; web: gabungan dokumen). */
+  async refreshCatalog(): Promise<void> {
+    try {
+      const catalog = await adapter().catalog(persistedValue(state));
+      set(() => ({ catalog }));
+    } catch {
+      // Katalog yang gagal dimuat bukan alasan menahan unggahan; tab KATALOG
+      // menampilkan isi terakhir yang diketahui.
+    }
+  },
+
+  /**
+   * "Coba lagi" dari katalog: baris draft BARU dari hash yang sama. Kalau
+   * barisnya masih ada di antrean (web: `failed` yang belum dibersihkan),
+   * cukup ULANGI baris itu. Mengembalikan kalimat kalau byte-nya tidak bisa
+   * didapat — web tanpa berkas di IndexedDB tidak punya apa-apa untuk dikirim.
+   */
+  async retryFromCatalog(row: RobloxUploadRow): Promise<string | null> {
+    const existing = state.items.find((it) => it.localId === row.id);
+    if (existing !== undefined) {
+      if (existing.status === 'failed') robloxActions.retry(existing.id);
+      robloxActions.select(existing.id);
+      return null;
+    }
+    const blobOf = adapter().blobOf;
+    const file = row.hash === '' || blobOf === undefined ? null : await blobOf(row.hash, row.fileName).catch(() => null);
+    if (file === null) {
+      return 'berkasnya sudah tidak ada di halaman ini — jatuhkan lagi berkas yang sama untuk mencoba ulang';
+    }
+    const item = newQueueItem(row.fileName, row.bytes, {
+      hash: row.hash,
+      seconds: row.seconds,
+      name: row.name,
+      description: row.description,
+      categoryId: row.categoryId,
+      genreId: row.genreId,
+    });
+    files.set(item.id, file);
+    set((s) => ({ items: [...s.items, item], selected: item.id }));
+    return null;
+  },
+
+  // ── Seam untuk lapisan unggah ─────────────────────────────────────────────
 
   /** Lapisan unggah melapor bahwa ia hidup. Selama `false`, UI mengatakannya. */
   setBackendReady(ready: boolean, quotaLeft: number | null = null): void {
@@ -419,7 +759,7 @@ export const robloxActions = {
     // Persist bentuk akhirnya SEBELUM status terlihat di UI.
     await persistCritical(async () => {
       const patch = update(state);
-      if (patch !== null) await persistence.save(persistedValue({ ...state, ...patch }));
+      if (patch !== null) await adapter().save(persistedValue({ ...state, ...patch }));
     });
     set(update);
   },
@@ -433,14 +773,18 @@ export const robloxActions = {
     // refresh tepat sesudah response approved tetapi sebelum transaksi IDB.
     await persistCritical(async () => {
       const patch = update(state);
-      if (patch !== null) await persistence.save(persistedValue({ ...state, ...patch }));
+      if (patch !== null) await adapter().save(persistedValue({ ...state, ...patch }));
     });
     set(update);
+    // Baris `done` adalah isi katalog; muat ulang supaya tab KATALOG tidak
+    // menunggu kunjungan berikutnya.
+    await robloxActions.refreshCatalog();
   },
 
   /** Baris gagal kembali bisa dikirim ulang — `readyItems` ikut menerimanya. */
   markFailed(id: number, error: string): void {
     set((s) => patchItem(s, id, (it) => withStatus(it, 'failed', { error, operationId: null })));
+    void robloxActions.refreshCatalog();
   },
 
   /** Kembalikan baris gagal ke draft supaya bisa disunting lalu dikirim lagi. */
@@ -455,15 +799,19 @@ export const robloxActions = {
   __resetForTest(): void {
     files.clear();
     nextId = 1;
-    persistence = defaultPersistence;
+    persistence = null;
     pendingPersist = null;
     criticalPersists.length = 0;
     state = createInitialRoblox();
     for (const fn of [...listeners]) fn();
   },
 
-  /** Suntikan storage lambat untuk menguji refresh-race tanpa IndexedDB nyata. */
-  __setPersistenceForTest(adapter: PersistenceAdapter): void {
-    persistence = adapter;
+  /**
+   * Suntikan storage untuk tes: yang tidak diberikan diambil dari adapter web,
+   * jadi tes refresh-race lama cukup memberi `save`/`clear`.
+   */
+  __setPersistenceForTest(adapterPatch: Partial<PersistenceAdapter>): void {
+    persistence = { ...createWebPersistence(), ...adapterPatch };
   },
 };
+

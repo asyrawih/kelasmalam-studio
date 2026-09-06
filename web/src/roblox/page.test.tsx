@@ -6,12 +6,13 @@
  * yang, kalau salah, membuat user mengira lagunya sudah terkirim.
  */
 
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { RobloxPage } from './RobloxPage';
 import { robloxActions, robloxStore } from './store';
 import { MAX_BYTES, type QueueItem } from './model';
+import type { RobloxUploadRow } from '../platform/local-commands';
 
 const mp3 = (name = 'lagu.mp3', bytes = 1024): File =>
   new File([new Uint8Array(bytes)], name, { type: 'audio/mpeg' });
@@ -27,6 +28,13 @@ function drop(files: readonly File[]): void {
 function verifyDurations(seconds = 60): void {
   fromUploader(() => {
     for (const item of robloxStore.getState().items) robloxActions.setDuration(item.id, seconds);
+  });
+}
+
+/** Kategori & genre wajib sejak docs/21 §1d — beri semua baris genre bawaan. */
+function assignGenre(genreId = 'gen:musik/lo-fi'): void {
+  fromUploader(() => {
+    robloxActions.setGenre(robloxStore.getState().items.map((it) => it.id), genreId);
   });
 }
 
@@ -77,6 +85,7 @@ describe('tombol unggah', () => {
     fromUploader(() => robloxActions.setApiKey('kunci'));
     drop([mp3('lagu.mp3')]);
     verifyDurations();
+    assignGenre();
 
     expect(uploadButton().disabled).toBe(false);
     fireEvent.click(uploadButton());
@@ -92,6 +101,7 @@ describe('tombol unggah', () => {
     fromUploader(() => robloxActions.setApiKey('kunci'));
     drop([mp3('kecil.mp3'), mp3('raksasa.mp3', MAX_BYTES + 1)]);
     verifyDurations();
+    assignGenre();
 
     fireEvent.click(uploadButton());
     expect(sentNames(onUpload)).toEqual(['kecil.mp3']);
@@ -167,5 +177,169 @@ describe('kunci saat berjalan', () => {
 
     fireEvent.click(screen.getByLabelText('hapus menunggu.mp3'));
     expect(robloxStore.getState().items.map((it) => it.fileName)).toEqual(['aktif.mp3']);
+  });
+});
+
+describe('kategori & genre (docs/21 §1d)', () => {
+  it('baris tanpa genre tidak bisa diunggah dan alasannya tertulis di barisnya', () => {
+    const onUpload = vi.fn();
+    render(<RobloxPage onUpload={onUpload} />);
+    fromUploader(() => robloxActions.setBackendReady(true));
+    fromUploader(() => robloxActions.setCreatorId('123'));
+    fromUploader(() => robloxActions.setApiKey('kunci'));
+    drop([mp3('lagu.mp3')]);
+    verifyDurations();
+
+    const row = screen.getAllByRole('row')[0]!;
+    expect(within(row).getByText(/kategori belum dipilih/).textContent).toContain('!');
+    expect(uploadButton().disabled).toBe(true);
+  });
+
+  it('kolom KATEGORI dan GENRE ada di tiap baris, dan berantai: genre menunggu kategori', () => {
+    render(<RobloxPage />);
+    drop([mp3('lagu.mp3')]);
+
+    const category = screen.getByLabelText('kategori lagu.mp3') as HTMLSelectElement;
+    const genre = screen.getByLabelText('genre lagu.mp3') as HTMLSelectElement;
+    expect(genre.disabled).toBe(true);
+
+    fireEvent.change(category, { target: { value: 'kat:musik' } });
+    expect(robloxStore.getState().items[0]!.categoryId).toBe('kat:musik');
+    expect((screen.getByLabelText('genre lagu.mp3') as HTMLSelectElement).disabled).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('genre lagu.mp3'), { target: { value: 'gen:musik/edm' } });
+    expect(robloxStore.getState().items[0]!.genreId).toBe('gen:musik/edm');
+  });
+
+  it('pilihan massal memberi genre ke SEMUA baris yang dicentang dalam satu klik', () => {
+    render(<RobloxPage />);
+    drop([mp3('a.mp3'), mp3('b.mp3'), mp3('c.mp3')]);
+
+    fireEvent.click(screen.getByLabelText('pilih a.mp3'));
+    fireEvent.click(screen.getByLabelText('pilih c.mp3'));
+    fireEvent.change(screen.getByLabelText('kategori untuk baris terpilih'), { target: { value: 'kat:musik' } });
+    fireEvent.change(screen.getByLabelText('genre untuk baris terpilih'), { target: { value: 'gen:musik/lo-fi' } });
+    fireEvent.click(screen.getByRole('button', { name: /TERAPKAN KE 2 BARIS/ }));
+
+    const byName = (n: string) => robloxStore.getState().items.find((it) => it.fileName === n)!;
+    expect(byName('a.mp3')).toMatchObject({ categoryId: 'kat:musik', genreId: 'gen:musik/lo-fi' });
+    expect(byName('c.mp3')).toMatchObject({ categoryId: 'kat:musik', genreId: 'gen:musik/lo-fi' });
+    expect(byName('b.mp3')).toMatchObject({ categoryId: null, genreId: null });
+  });
+
+  it('"+ genre baru" di panel detail membuat genre dan langsung memasangnya ke baris', async () => {
+    render(<RobloxPage />);
+    drop([mp3('lagu.mp3')]);
+    fireEvent.change(screen.getByLabelText('kategori baris terpilih'), { target: { value: 'kat:musik' } });
+    fireEvent.change(screen.getByLabelText('nama genre baru'), { target: { value: 'Phonk' } });
+    fireEvent.click(screen.getByRole('button', { name: '+ GENRE BARU' }));
+
+    await waitFor(() => {
+      const it = robloxStore.getState().items[0]!;
+      const genre = robloxStore.getState().taxonomy.genres.find((g) => g.id === it.genreId);
+      expect(genre?.name).toBe('Phonk');
+      expect(genre?.categoryId).toBe('kat:musik');
+    });
+  });
+});
+
+describe('tab KATALOG (docs/21 §3a)', () => {
+  const row = (id: string, name: string, categoryId: string, genreId: string, status: 'done' | 'failed' = 'done'): RobloxUploadRow => ({
+    id, hash: 'h'.repeat(64), fileName: `${name}.mp3`, bytes: 1024, seconds: 60, name, description: '',
+    categoryId, genreId, creatorKind: 'user', creatorId: '1', status, operationId: null,
+    assetId: status === 'done' ? `${id}0` : null, moderationState: status === 'done' ? 'approved' : null,
+    error: status === 'failed' ? 'ditolak' : null, createdAt: 1, updatedAt: 1, uploadedAt: 1, approvedAt: status === 'done' ? 1 : null,
+  });
+
+  it('mengelompokkan tiga baris beda genre ke kelompoknya dengan hitungan yang benar', () => {
+    render(<RobloxPage />);
+    fromUploader(() =>
+      robloxActions.setCatalog([
+        row('r1', 'Satu', 'kat:musik', 'gen:musik/lo-fi'),
+        row('r2', 'Dua', 'kat:musik', 'gen:musik/lo-fi'),
+        row('r3', 'Tiga', 'kat:efek-suara', 'gen:efek-suara/ui'),
+      ]),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /KATALOG/ }));
+
+    // Ringkasan per kategori di kepala: 2 Musik, 1 Efek suara, 0 Suara.
+    expect(screen.getByText(/2 Musik · 1 Efek suara · 0 Suara/)).toBeDefined();
+    const lofi = screen.getByRole('region', { name: 'genre Lo-fi' });
+    expect(within(lofi).getAllByRole('listitem')).toHaveLength(2);
+    const ui = screen.getByRole('region', { name: 'genre UI' });
+    expect(within(ui).getAllByRole('listitem')).toHaveLength(1);
+    // Genre tanpa lagu tetap tampil dengan 0 — supaya "yang belum kupunya" terjawab.
+    expect(within(screen.getByRole('region', { name: 'genre Jazz' })).queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.getByText(/Genre tersimpan di mesin ini/)).toBeDefined();
+  });
+
+  it('penyaring genre dan pencarian nama menyempitkan daftar', () => {
+    render(<RobloxPage />);
+    fromUploader(() =>
+      robloxActions.setCatalog([
+        row('r1', 'Satu', 'kat:musik', 'gen:musik/lo-fi'),
+        row('r3', 'Tiga', 'kat:efek-suara', 'gen:efek-suara/ui'),
+      ]),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /KATALOG/ }));
+    fireEvent.change(screen.getByLabelText('kategori penyaring katalog'), { target: { value: 'kat:musik' } });
+    expect(screen.queryByText('Tiga')).toBeNull();
+    expect(screen.getByText('Satu')).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('cari di katalog'), { target: { value: 'tidak-ada' } });
+    expect(screen.queryByText('Satu')).toBeNull();
+  });
+
+  it('SALIN ID menaruh rbxassetid:// ke papan klip; COBA LAGI hanya untuk yang gagal', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<RobloxPage />);
+    fromUploader(() =>
+      robloxActions.setCatalog([
+        row('r1', 'Satu', 'kat:musik', 'gen:musik/lo-fi'),
+        row('r2', 'Dua', 'kat:musik', 'gen:musik/lo-fi', 'failed'),
+      ]),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /KATALOG/ }));
+    fireEvent.click(screen.getByLabelText('salin asset id Satu'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('rbxassetid://r10'));
+    expect(screen.queryByLabelText('coba lagi Satu')).toBeNull();
+    expect(screen.getByLabelText('coba lagi Dua')).toBeDefined();
+  });
+});
+
+describe('tab TAKSONOMI (docs/21 §1d)', () => {
+  it('menolak menghapus genre yang dipakai, dengan pesan IN_USE yang menyebut jumlahnya', async () => {
+    // Adapter dimock seperti Rust: `IN_USE` dengan `count`. Store hanya
+    // meneruskan kalimatnya — panel tidak menghitung sendiri.
+    robloxActions.__setPersistenceForTest({
+      deleteGenre: async () => {
+        throw { code: 'IN_USE', message: 'genre masih dipakai 3 lagu — ganti genre lagunya dulu', count: 3 };
+      },
+    });
+    render(<RobloxPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'TAKSONOMI' }));
+    fireEvent.click(screen.getByLabelText('hapus genre Lo-fi'));
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/dipakai 3 lagu/));
+    expect(robloxStore.getState().taxonomy.genres.some((g) => g.id === 'gen:musik/lo-fi')).toBe(true);
+  });
+
+  it('menambah kategori dan genre baru, lalu memindahkan genre ke kategori lain', async () => {
+    render(<RobloxPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'TAKSONOMI' }));
+    fireEvent.change(screen.getByLabelText('kategori baru'), { target: { value: 'Podcast' } });
+    fireEvent.click(screen.getByRole('button', { name: '+ KATEGORI' }));
+    await waitFor(() => expect(screen.getByLabelText('genre baru di Podcast')).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText('genre baru di Podcast'), { target: { value: 'Intro' } });
+    fireEvent.click(within(screen.getByLabelText('genre baru di Podcast').parentElement!).getByRole('button', { name: '+ GENRE' }));
+    await waitFor(() => expect(screen.getByLabelText('hapus genre Intro')).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText('pindahkan genre Intro ke kategori'), { target: { value: 'kat:suara' } });
+    await waitFor(() => {
+      const intro = robloxStore.getState().taxonomy.genres.find((g) => g.name === 'Intro');
+      expect(intro?.categoryId).toBe('kat:suara');
+    });
   });
 });
