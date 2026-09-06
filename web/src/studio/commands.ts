@@ -32,7 +32,7 @@
  * editor pintasan (`?`).
  */
 
-import type { Command } from '../app-shell/command';
+import { runCommand, type Command } from '../app-shell/command';
 import { libraryActions } from '../library/store';
 import { pressSpace, releaseSpace, resetSpace } from './shortcuts/space-pan';
 import { studioActions, studioStore } from './store';
@@ -72,18 +72,26 @@ function allClipIds(): string[] {
 }
 
 /**
- * `studio.project.save` — buka dok kepustakaan dan fokuskan tombol simpan.
+ * `studio.project.save` — ⌘S: simpan lewat dok kepustakaan.
  *
  * Simpan yang sebenarnya (`saveProject` + versi `If-Match` + pembaruan daftar)
- * adalah callback di dalam `LibraryDock`, bukan aksi store — dan menyalin
- * urutannya ke sini berarti dua tempat yang bisa berbeda tentang apa artinya
- * "simpan". Jadi command ini mengantar user ke tombolnya: dok terbuka, tombol
- * SIMPAN PROJECT fokus, Enter menekan. Kalau belum ada project yang dibuka,
- * yang difokuskan kotak nama project baru — langkah pertama sebelum bisa
- * menyimpan. Di desktop dok menampilkan "belum tersedia" (docs/20 §1d), dan
- * itu jawaban yang jujur untuk ⌘S di sana.
+ * adalah callback di dalam `LibraryDock`, dan dok mendaftarkannya sebagai
+ * `library.project.save` selama ia hidup. Command ini TIDAK menyalin urutan
+ * itu — ia menyerahkannya lewat registry, supaya "apa artinya simpan" tetap
+ * punya satu jawaban. Yang dimilikinya hanya id stabil dan pintasannya:
+ * menu native (`menu.rs`) dan keymap user menyebut `studio.project.save`,
+ * dan itu tidak perlu berubah ketika yang di baliknya berganti.
+ *
+ * Kalau `runCommand` menjawab `false` — dok belum terdaftar, atau terdaftar
+ * tapi sedang tidak bisa (belum masuk, kepustakaan tidak dipasang, sedang
+ * sibuk) — yang dilakukan adalah mengantar user ke tombolnya: dok terbuka,
+ * tombol SIMPAN PROJECT fokus, Enter menekan; kalau belum ada project yang
+ * dibuka, yang difokuskan kotak nama. Bukan diam: ⌘S yang tidak menjawab
+ * apa-apa membuat orang menekan lagi, sedangkan dok yang terbuka MENUNJUKKAN
+ * kenapa belum bisa (ajakan masuk, atau kalimat "belum tersedia").
  */
 function openSave(): void {
+  if (runCommand('library.project.save')) return;
   libraryActions.setCollapsed(false);
   // Isi dok baru ada di DOM pada render sesudah `collapsed` berubah.
   setTimeout(() => {
