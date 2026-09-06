@@ -31,6 +31,8 @@ import type { LibraryApi } from './api';
 import { hashesIn } from './projects';
 import { formatBytes, formatDuration, type LibraryState, type LibraryTrack } from './model';
 import { libraryActions, libraryStore } from './store';
+import { useAudioFilePicker } from '../platform/useAudioFilePicker';
+import { useNativeFileDrop } from '../platform/useNativeFileDrop';
 import './library.css';
 
 export interface LibraryBrowserProps {
@@ -518,11 +520,11 @@ function TrackRow({
  * ditambahkan hanyalah pintu yang kelihatan.
  */
 function AddAudio({ busy }: { readonly busy: boolean }): JSX.Element {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const zoneRef = useRef<HTMLDivElement>(null);
   const dragCount = useRef(0);
   const [over, setOver] = useState(false);
 
-  const terima = async (files: FileList | null): Promise<void> => {
+  const terima = async (files: FileList | readonly File[] | null): Promise<void> => {
     if (files === null || files.length === 0) return;
     const sr = studioStore.getState().sampleRate;
     for (const file of Array.from(files)) {
@@ -533,8 +535,16 @@ function AddAudio({ busy }: { readonly busy: boolean }): JSX.Element {
     }
   };
 
+  const picker = useAudioFilePicker((files) => void terima(files), {
+    accept: 'audio/*,.mp3,.ogg,.wav,.flac',
+    ariaLabel: 'tambah lagu ke kepustakaan',
+  });
+  // Drop dari Finder/Explorer di desktop; di web `onDrop` di bawah yang bekerja.
+  useNativeFileDrop(zoneRef, (files) => void terima(files), !busy);
+
   return (
     <div
+      ref={zoneRef}
       onDragEnter={(e) => {
         e.preventDefault();
         dragCount.current += 1;
@@ -564,26 +574,13 @@ function AddAudio({ busy }: { readonly busy: boolean }): JSX.Element {
         background: over ? 'var(--cy-surface-2)' : 'transparent',
       }}
     >
-      <Button size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
+      <Button size="sm" disabled={busy} onClick={picker.open}>
         + TAMBAH LAGU
       </Button>
       <span style={{ fontSize: '10px', color: 'var(--cy-text-muted)', letterSpacing: '.1em' }}>
         atau jatuhkan berkas audio di sini
       </span>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept="audio/*,.mp3,.ogg,.wav,.flac"
-        aria-label="tambah lagu ke kepustakaan"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          void terima(e.target.files);
-          // Direset supaya memilih berkas yang SAMA dua kali tetap memicu
-          // `change` — tanpa ini percobaan kedua diam saja.
-          e.target.value = '';
-        }}
-      />
+      {picker.input}
     </div>
   );
 }
