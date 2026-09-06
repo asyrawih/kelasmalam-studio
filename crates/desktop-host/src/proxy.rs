@@ -228,3 +228,24 @@ mod tests {
         assert_eq!(v["body"]["a"], 1);
     }
 }
+
+#[cfg(test)]
+mod network_tests {
+    //! Menyentuh jaringan sungguhan — `#[ignore]`, dijalankan manual:
+    //! `cargo test -p daw-desktop-host network_tests -- --ignored --nocapture`.
+    //! Ada karena tes di atas memakai server HTTP lokal tanpa TLS, sedangkan
+    //! produksi HTTPS: fitur `rustls` reqwest yang salah konfigurasi baru
+    //! terlihat di sini, bukan di tes unit.
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "butuh jaringan"]
+    async fn real_https_health() {
+        let url = check_url("https://soundcloud.kelasmalam.app/health", SOUNDCLOUD_HOSTS).unwrap();
+        let reply = get_json(&url, DEFAULT_TIMEOUT)
+            .await
+            .expect("HTTPS lewat reqwest/rustls");
+        println!("status={} body={}", reply.status, reply.body);
+        assert_eq!(reply.status, 200);
+    }
+}

@@ -57,3 +57,16 @@ describe('soundCloudApiBase', () => {
   });
 });
 
+describe('healthDetail', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('online tanpa alasan; status bukan-2xx dan galat transport membawa sebabnya', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ status: 'ok' })));
+    expect(await new SoundCloudApi('https://sc.example').healthDetail()).toEqual({ online: true, reason: null });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('x', { status: 503 })));
+    expect(await new SoundCloudApi('https://sc.example').healthDetail()).toEqual({ online: false, reason: 'server menjawab 503' });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('command soundcloud_json not found')));
+    expect(await new SoundCloudApi('https://sc.example').healthDetail()).toEqual({ online: false, reason: 'command soundcloud_json not found' });
+  });
+});
+

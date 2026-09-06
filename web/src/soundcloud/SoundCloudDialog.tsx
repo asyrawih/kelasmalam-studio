@@ -33,21 +33,38 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
   const [results, setResults] = useState<readonly SoundCloudTrack[]>([]); const [heading, setHeading] = useState('DISCOVER TRACKS');
   const [searchTerm, setSearchTerm] = useState(''); const [searchOffset, setSearchOffset] = useState(0); const [searchTotal, setSearchTotal] = useState<number | null>(null); const [searchHasNext, setSearchHasNext] = useState(false);
   const [profile, setProfile] = useState<SoundCloudProfile | null>(null); const [preview, setPreview] = useState<SoundCloudTrack | null>(null);
-  const [online, setOnline] = useState<boolean | null>(null); const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null);
+  const [online, setOnline] = useState<boolean | null>(null); const [offlineReason, setOfflineReason] = useState<string | null>(null); const [healthAttempt, setHealthAttempt] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null);
   const active = useRef<AbortController | null>(null);
   const previewSource = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    if (configured) void api.health(controller.signal).then(setOnline).catch(() => setOnline(false));
-    else setOnline(false);
+    if (configured) {
+      /*
+       * Health dicoba DUA kali sebelum dinyatakan offline: origin di balik
+       * Cloudflare sesekali menjawab lambat pada permintaan pertama, dan
+       * "offline" yang menempel selama dialog terbuka membuat server yang
+       * sehat tampak mati. Sebabnya ditampilkan apa adanya di header.
+       */
+      setOnline(null); setOfflineReason(null);
+      void (async () => {
+        let result = await api.healthDetail(controller.signal);
+        if (!result.online && !controller.signal.aborted) {
+          await new Promise((r) => setTimeout(r, 2500));
+          if (!controller.signal.aborted) result = await api.healthDetail(controller.signal);
+        }
+        if (controller.signal.aborted) return;
+        setOnline(result.online); setOfflineReason(result.reason);
+      })().catch(() => { /* dibatalkan saat dialog ditutup */ });
+    } else setOnline(false);
     const close = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', close); return () => {
       controller.abort(); window.removeEventListener('keydown', close); active.current?.abort();
       const source = previewSource.current; previewSource.current = null;
       if (source !== null) { try { source.stop(); } catch { /* sudah selesai */ } source.disconnect(); }
     };
-  }, [api, configured, onClose]);
+  }, [api, configured, onClose, healthAttempt]);
 
   function stopPreview(): void {
     const source = previewSource.current;
@@ -140,7 +157,7 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
   const placeholder = mode === 'search' ? 'Cari judul, artist, genre…' : mode === 'likes' ? 'URL profil SoundCloud…' : 'URL track, playlist, atau profil…';
   return <div role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ position:'fixed', inset:0, zIndex:1000, display:'grid', placeItems:'center', padding:20, background:'#05090de8' }}>
     <section role="dialog" aria-modal="true" aria-labelledby="soundcloud-title" style={{ width:'min(900px, 100%)', maxHeight:'min(820px, 92vh)', overflow:'auto', border:'1px solid var(--cy-accent)', background:'var(--cy-surface-1)', boxShadow:'0 24px 80px #000', padding:20 }}>
-      <header style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}><div><h2 id="soundcloud-title" style={{ margin:0, color:'var(--cy-text)', fontSize:18 }}>SOUNDCLOUD DISCOVERY</h2><div style={{ color:'var(--cy-text-dim)', fontSize:10, marginTop:5 }}>SEARCH · SETS · LIKES · RELATED · INSERT TO LANE</div></div><span style={{ marginLeft:'auto', color:online === true ? '#00ffc2' : online === false ? '#ff708d' : 'var(--cy-text-dim)', fontSize:10 }}>● {!configured ? 'API NOT CONFIGURED' : online === true ? 'API ONLINE' : online === false ? 'API OFFLINE' : 'CHECKING API'}</span><Button variant="ghost" onClick={onClose}>✕ CLOSE</Button></header>
+      <header style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}><div><h2 id="soundcloud-title" style={{ margin:0, color:'var(--cy-text)', fontSize:18 }}>SOUNDCLOUD DISCOVERY</h2><div style={{ color:'var(--cy-text-dim)', fontSize:10, marginTop:5 }}>SEARCH · SETS · LIKES · RELATED · INSERT TO LANE</div></div><span title={offlineReason ?? undefined} style={{ marginLeft:'auto', color:online === true ? '#00ffc2' : online === false ? '#ff708d' : 'var(--cy-text-dim)', fontSize:10, maxWidth:360, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>● {!configured ? 'API NOT CONFIGURED' : online === true ? 'API ONLINE' : online === false ? `API OFFLINE${offlineReason === null ? '' : ` — ${offlineReason}`}` : 'CHECKING API'}</span>{online === false && configured ? <Button variant="ghost" onClick={() => setHealthAttempt((n) => n + 1)}>CEK LAGI</Button> : null}<Button variant="ghost" onClick={onClose}>✕ CLOSE</Button></header>
       <nav aria-label="Discovery mode" style={{ display:'flex', gap:8, marginBottom:10 }}>{(['search','url','likes'] as const).map((item) => <Button key={item} variant="ghost" active={mode === item} onClick={() => { setMode(item); setQuery(''); if (item !== 'search') setSearchTerm(''); }}>{item === 'search' ? 'SEARCH' : item === 'url' ? 'OPEN URL / SET' : 'PROFILE LIKES'}</Button>)}</nav>
       <form onSubmit={(e) => void submit(e)} style={{ display:'grid', gridTemplateColumns:'1fr minmax(150px,220px) auto', gap:10 }}>
         <input autoFocus aria-label="SoundCloud query" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={placeholder} style={inputStyle} />
