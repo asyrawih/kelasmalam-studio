@@ -25,11 +25,13 @@ mod error;
 mod library;
 mod model;
 mod roblox_db;
+mod secret;
 mod store;
 mod tracks;
 pub mod types;
 
 pub use error::{HostError, LocalError};
+pub use secret::{SecretKey, SecretStore};
 pub use store::{Store, DB_FILE};
 pub use tracks::{Probe, TRACKS_SUBDIR};
 
