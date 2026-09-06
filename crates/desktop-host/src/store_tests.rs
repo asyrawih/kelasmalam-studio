@@ -642,7 +642,9 @@ fn migration_0002_keeps_uploads_fills_bytes_and_drops_cascade() {
     }
 
     let store = open_at(tmp.path());
-    assert_eq!(store.schema_version().unwrap(), 2);
+    // Membuka folder lama menjalankan SEMUA migrasi yang tersisa, bukan hanya
+    // 0002 — jadi yang diperiksa versi akhirnya, bukan angka 2.
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
     let row = store.upload("u1").unwrap();
     assert_eq!(row.bytes, 4321, "bytes disalin dari track");
     assert_eq!(row.asset_id.as_deref(), Some("asset-1"));
@@ -678,7 +680,7 @@ fn migration_0002_keeps_uploads_fills_bytes_and_drops_cascade() {
     // Buka lagi: migrasi tidak dijalankan dua kali.
     drop(store);
     let store = open_at(tmp.path());
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
     assert_eq!(store.upload("u1").unwrap().bytes, 4321);
 }
 
