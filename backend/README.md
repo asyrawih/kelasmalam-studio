@@ -85,7 +85,7 @@ autentikasi — bukan mengetatkan daftar origin.
 ```bash
 cd backend
 npm ci
-npm test              # 86 tes; tanpa jaringan, tanpa Cloudflare
+npm test              # 130 tes; tanpa jaringan, tanpa Cloudflare
 npm run typecheck     # dua tsconfig — lihat catatan di bawah
 npm run dev:roblox
 npm run deploy:roblox
@@ -158,9 +158,10 @@ atas **perintahnya**.
 | Metode | Rute | Isi |
 | --- | --- | --- |
 | `GET` | `/health` | probe |
-| `GET` | `/auth/google?next=/dj` | redirect ke consent (PKCE) |
-| `GET` | `/auth/callback` | tukar code → sesi → kembali ke app |
-| `POST` | `/auth/logout` | cabut sesi |
+| `GET` | `/auth/google?next=/dj` | redirect ke consent (PKCE); `&client=desktop&state=…` untuk aplikasi Tauri |
+| `GET` | `/auth/callback` | tukar code → sesi → kembali ke app, atau ke `kelasmalam://auth?code&state` |
+| `POST` | `/auth/desktop/exchange` | `{code}` → `{token}` bearer; code sekali pakai, 60 s (docs/16 §9) |
+| `POST` | `/auth/logout` | cabut sesi (cookie atau `Authorization: Bearer`) |
 | `GET` | `/me` | `{id,email,name}` atau 401 |
 | `GET` | `/tracks` | kepustakaan + marks, sudah terurai |
 | `POST` | `/tracks/init` | `{exists:true}` **atau** `{uploadUrl}` |
@@ -226,7 +227,7 @@ Di Google Cloud Console, redirect URI-nya `https://<API_ORIGIN>/auth/callback`.
 ## Tentang tesnya
 
 D1 diuji dengan **SQLite sungguhan** (`node:sqlite`), bukan palsuan. Ini yang
-membuat 34 tes kepustakaan berarti: palsuan yang "mengerti" query kami akan
+membuat 76 tes kepustakaan berarti: palsuan yang "mengerti" query kami akan
 mengerti persis apa yang kami KIRA kami tulis — `WHERE user_id` yang lupa,
 `ON CONFLICT` yang tidak cocok dengan PK, `UPDATE … WHERE version` yang tidak
 benar-benar menghitung perubahan. R2 sebaliknya dipalsukan, karena "objeknya
