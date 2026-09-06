@@ -59,13 +59,37 @@ console_error_panic_hook = "0.1"
 cpal         = "0.15"
 anyhow       = "1"
 # --- desktop-host (docs/20 §1g) — HANYA crates/desktop-host ---
-# HTTP untuk unduh model. Tanpa fitur default: tanpa http2, tanpa proxy sistem,
-# dan TLS lewat rustls (aws-lc-rs, prebuilt-nasm) — tidak ada OpenSSL. Fitur
-# `stream` sengaja tidak dinyalakan: `Response::chunk()` sudah streaming tanpa
-# menyeret futures-util/tokio-util.
-reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+# HTTP untuk unduh model dan unggah ke Roblox Open Cloud (docs/21 §1e).
+# Tanpa fitur default: tanpa http2, tanpa proxy sistem, dan TLS lewat rustls
+# (aws-lc-rs, prebuilt-nasm) — tidak ada OpenSSL. `multipart` dibutuhkan
+# `open_cloud.rs` (bagian `request` + `fileContent`). Fitur `stream` sengaja
+# tidak dinyalakan: `Response::chunk()` sudah streaming tanpa menyeret
+# tokio-util, dan `Body::wrap_stream` toh tidak bisa dipakai tanpa
+# `futures-core` sebagai dependensi langsung.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "multipart"] }
 tokio   = { version = "1", default-features = false, features = ["fs", "io-util"] }
 sha2    = "0.11"
+# Penyimpanan lokal desktop (docs/21 §1a). `bundled`: SQLite dikompilasi ikut
+# crate, bukan dicari di sistem — di Windows tidak ada libsqlite3, dan di macOS
+# versi bawaan OS terlalu tua untuk `RETURNING`/`UPSERT` yang dipakai skema.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# Baca header audio saat impor (frames + sample rate) — hanya probe, tanpa
+# decode. Fitur dipilih satu per satu: bawaan `symphonia` menyeret semua codec
+# royalti-bebas, dan yang dipakai kepustakaan hanya empat kontainer ini.
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "flac", "pcm"] }
+# Ruang disk tersisa sebelum menyalin berkas ke `tracks/` (DISK_FULL sebelum
+# menulis, bukan sesudah ENOSPC di tengah). Pure Rust (rustix/windows-sys).
+fs4 = { version = "1", default-features = false }
+uuid = { version = "1", features = ["v4"] }
+# Keyring generasi baru: `keyring` 4.x sendiri hanya facade; fitur `v1`-nya
+# memaksa zbus/Secret Service di Linux, dan tanpa `v1` ia compile_error. Maka
+# kita mengikuti anjuran README-nya: link `keyring-core` + store per-OS yang
+# dipilih sendiri. Store Linux sengaja TIDAK ada (target rilis hanya macOS +
+# Windows; job CI Ubuntu tetap harus mengompilasi tanpa dbus).
+keyring-core                 = "1"
+apple-native-keyring-store   = { version = "1", features = ["keychain"] }
+# `search` (default) menyeret regex; kita hanya get/set/delete.
+windows-native-keyring-store = { version = "1", default-features = false }
 # Dev/test.
 criterion    = "0.5"
 proptest     = "1"

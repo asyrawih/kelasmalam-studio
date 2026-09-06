@@ -1,29 +1,50 @@
-import { render } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+/**
+ * Pintasan Studio lewat registry shell.
+ *
+ * Harness-nya persis yang dilakukan `/studio` di aplikasi: daftarkan
+ * `studioCommands()` dan pasang dispatcher shell — tanpa listener keyboard
+ * milik Studio sendiri. Yang dijaga di sini adalah PERILAKU yang dulu dimiliki
+ * `useTransportShortcuts` (Spasi tahan/ketuk, pre-roll cursor, Backspace di
+ * input, panah, X/C/V/B) tetap sama sesudah pemetaannya pindah ke registry.
+ */
 
+import { cleanup, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { useCommands } from '../../app-shell/useCommands';
+import { useKeyDispatch } from '../../app-shell/useKeyDispatch';
+import { __clearCommandsForTest } from '../../app-shell/command';
+import { studioCommands } from '../commands';
 import { studioActions, studioStore } from '../store';
-import { useTransportShortcuts } from './useTransportShortcuts';
 import { clearTimelineCursor, setTimelineCursor } from '../timeline/timeline-cursor';
+import { isSpaceHeld, markSpacePan, resetSpace } from './space-pan';
 
 function Harness(): JSX.Element {
-  useTransportShortcuts();
+  useCommands(studioCommands());
+  useKeyDispatch();
   return <input data-lane-name defaultValue="LANE 1" />;
 }
 
-function press(key: string, target?: EventTarget, init: KeyboardEventInit = {}): void {
-  const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+/** Tombol disebut lewat `code` (posisi fisik) — itu yang dibaca keymap shell. */
+function press(code: string, target?: EventTarget, init: KeyboardEventInit = {}): void {
+  const ev = new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true, ...init });
   (target ?? window).dispatchEvent(ev);
 }
 
-function release(key: string, target?: EventTarget, init: KeyboardEventInit = {}): void {
-  const ev = new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true, ...init });
+function release(code: string, target?: EventTarget, init: KeyboardEventInit = {}): void {
+  const ev = new KeyboardEvent('keyup', { code, bubbles: true, cancelable: true, ...init });
   (target ?? window).dispatchEvent(ev);
 }
 
-describe('useTransportShortcuts', () => {
+describe('pintasan transport', () => {
   beforeEach(() => {
     studioActions.__resetForTest();
     clearTimelineCursor();
+    resetSpace();
+  });
+  afterEach(() => {
+    cleanup();
+    __clearCommandsForTest();
   });
 
   it('Space men-toggle play dari mana saja — saat DILEPAS', () => {
@@ -31,9 +52,9 @@ describe('useTransportShortcuts', () => {
     const before = studioStore.getState().playing;
     // Selama ditahan, spasi adalah alat tangan untuk pan timeline; transport
     // tidak boleh berubah sampai jelas bahwa ia cuma diketuk.
-    press(' ');
+    press('Space');
     expect(studioStore.getState().playing).toBe(before);
-    release(' ');
+    release('Space');
     expect(studioStore.getState().playing).toBe(!before);
   });
 
@@ -41,8 +62,8 @@ describe('useTransportShortcuts', () => {
     render(<Harness />);
     const sr = studioStore.getState().sampleRate;
     setTimelineCursor(sr * 20);
-    press(' ');
-    release(' ');
+    press('Space');
+    release('Space');
     expect(studioStore.getState().playing).toBe(true);
     expect(studioStore.getState().playhead).toBe(sr * 17);
   });
@@ -53,51 +74,67 @@ describe('useTransportShortcuts', () => {
     studioActions.setPlayhead(sr * 8);
     studioActions.setPlaying(true);
     setTimelineCursor(sr * 20);
-    press(' ');
-    release(' ');
+    press('Space');
+    release('Space');
     expect(studioStore.getState().playing).toBe(false);
     expect(studioStore.getState().playhead).toBe(sr * 8);
   });
 
-  it('Space yang dipakai untuk pan TIDAK ikut men-toggle play', async () => {
-    const { markSpacePan } = await import('./space-pan');
+  it('Space yang dipakai untuk pan TIDAK ikut men-toggle play', () => {
     render(<Harness />);
     const before = studioStore.getState().playing;
-    press(' ');
+    press('Space');
     markSpacePan(); // ClipArea memanggilnya saat pan benar-benar dimulai
-    release(' ');
+    release('Space');
     expect(studioStore.getState().playing).toBe(before);
   });
 
   it('auto-repeat saat ditahan tidak menumpuk toggle', () => {
     render(<Harness />);
     const before = studioStore.getState().playing;
-    press(' ');
-    press(' ');
-    press(' ');
-    release(' ');
+    press('Space');
+    press('Space', undefined, { repeat: true });
+    press('Space', undefined, { repeat: true });
+    release('Space');
     expect(studioStore.getState().playing).toBe(!before);
   });
 
-  it('kehilangan fokus jendela membatalkan keadaan tahan', async () => {
-    const { isSpaceHeld } = await import('./space-pan');
+  it('kehilangan fokus jendela membatalkan keadaan tahan', () => {
     render(<Harness />);
-    press(' ');
+    press('Space');
     expect(isSpaceHeld()).toBe(true);
     window.dispatchEvent(new Event('blur'));
     expect(isSpaceHeld()).toBe(false);
     // Dan keyup yang datang belakangan tidak lagi menyalakan transport.
     const before = studioStore.getState().playing;
-    release(' ');
+    release('Space');
     expect(studioStore.getState().playing).toBe(before);
   });
 
-  it('Backspace mengembalikan playhead ke awal', () => {
+  it('Space dicegah defaultnya saat ditekan DAN dilepas — supaya tidak menggulir halaman', () => {
     render(<Harness />);
-    studioActions.setPlayhead(48_000 * 30);
-    expect(studioStore.getState().playhead).toBeGreaterThan(0);
-    press('Backspace');
-    expect(studioStore.getState().playhead).toBe(0);
+    const down = new KeyboardEvent('keydown', { code: 'Space', bubbles: true, cancelable: true });
+    window.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    const up = new KeyboardEvent('keyup', { code: 'Space', bubbles: true, cancelable: true });
+    window.dispatchEvent(up);
+    expect(up.defaultPrevented).toBe(true);
+  });
+
+  it('Backspace mengembalikan playhead ke awal; Home dan Enter juga', () => {
+    render(<Harness />);
+    for (const code of ['Backspace', 'Home', 'Enter']) {
+      studioActions.setPlayhead(48_000 * 30);
+      expect(studioStore.getState().playhead).toBeGreaterThan(0);
+      press(code);
+      expect(studioStore.getState().playhead, code).toBe(0);
+    }
+  });
+
+  it('End membawa playhead ke akhir', () => {
+    render(<Harness />);
+    press('End');
+    expect(studioStore.getState().playhead).toBe(studioStore.getState().duration);
   });
 
   it('TIDAK membajak Backspace saat mengetik di input nama lane', () => {
@@ -113,10 +150,21 @@ describe('useTransportShortcuts', () => {
     expect(studioStore.getState().playhead).toBe(before);
   });
 
+  it('Space di dalam input tidak ditahan sebagai alat pan, dan keyup-nya tidak memutar', () => {
+    const { container } = render(<Harness />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    const before = studioStore.getState().playing;
+    press('Space', input);
+    expect(isSpaceHeld()).toBe(false);
+    release('Space', input);
+    expect(studioStore.getState().playing).toBe(before);
+  });
+
   it('mengabaikan kombinasi dengan modifier (shortcut browser tetap jalan)', () => {
     render(<Harness />);
     const before = studioStore.getState().playing;
-    press(' ', undefined, { metaKey: true });
+    press('Space', undefined, { metaKey: true, ctrlKey: true });
+    release('Space', undefined, { metaKey: true, ctrlKey: true });
     expect(studioStore.getState().playing).toBe(before);
   });
 
@@ -129,18 +177,32 @@ describe('useTransportShortcuts', () => {
     press('ArrowLeft', undefined, { shiftKey: true });
     expect(studioStore.getState().playhead).toBe(sr * 34);
   });
+
+  it('Cmd/Ctrl+Z membatalkan edit terakhir, Shift+Z mengulanginya', () => {
+    render(<Harness />);
+    const before = studioStore.getState().masterGainDb;
+    studioActions.setMasterGain(before - 6);
+    press('KeyZ', undefined, { metaKey: true, ctrlKey: true });
+    expect(studioStore.getState().masterGainDb).toBe(before);
+    press('KeyZ', undefined, { metaKey: true, ctrlKey: true, shiftKey: true });
+    expect(studioStore.getState().masterGainDb).toBe(before - 6);
+  });
 });
 
-describe('shortcut editing clip', () => {
+describe('pintasan editing clip', () => {
   beforeEach(() => {
     studioActions.__resetForTest();
+  });
+  afterEach(() => {
+    cleanup();
+    __clearCommandsForTest();
   });
 
   it('X menghapus clip terpilih', () => {
     render(<Harness />);
     const id = studioStore.getState().selectedClipId;
     expect(id).not.toBeNull();
-    press('x');
+    press('KeyX');
     const gone = studioStore
       .getState()
       .lanes.flatMap((l) => l.clips)
@@ -155,9 +217,9 @@ describe('shortcut editing clip', () => {
     const original = src.lanes.flatMap((l) => l.clips).find((c) => c.id === src.selectedClipId);
     expect(original).toBeDefined();
 
-    press('c');
+    press('KeyC');
     studioActions.setPlayhead(src.sampleRate * 90);
-    press('v');
+    press('KeyV');
 
     const after = studioStore.getState();
     const pasted = after.lanes.flatMap((l) => l.clips).find((c) => c.id === after.selectedClipId);
@@ -170,14 +232,26 @@ describe('shortcut editing clip', () => {
   it('V tanpa copy sebelumnya tidak melakukan apa-apa', () => {
     render(<Harness />);
     const before = studioStore.getState().lanes.flatMap((l) => l.clips).length;
-    press('v');
+    press('KeyV');
     expect(studioStore.getState().lanes.flatMap((l) => l.clips).length).toBe(before);
+  });
+
+  it('Cmd/Ctrl+A memilih semua clip', () => {
+    render(<Harness />);
+    const total = studioStore.getState().lanes.flatMap((l) => l.clips).length;
+    expect(total).toBeGreaterThan(1);
+    press('KeyA', undefined, { metaKey: true, ctrlKey: true });
+    expect(studioStore.getState().selectedClipIds.length).toBe(total);
   });
 });
 
-describe('shortcut B — split di playhead', () => {
+describe('pintasan B — split di playhead', () => {
   beforeEach(() => {
     studioActions.__resetForTest();
+  });
+  afterEach(() => {
+    cleanup();
+    __clearCommandsForTest();
   });
 
   it('memecah clip terpilih jadi dua di posisi playhead', () => {
@@ -187,7 +261,7 @@ describe('shortcut B — split di playhead', () => {
     const before = s.lanes.flatMap((l) => l.clips).length;
 
     studioActions.setPlayhead(clip.start + Math.round(clip.len / 2));
-    press('b');
+    press('KeyB');
 
     const clips = studioStore.getState().lanes.flatMap((l) => l.clips);
     expect(clips.length).toBe(before + 1);
@@ -206,7 +280,7 @@ describe('shortcut B — split di playhead', () => {
     const before = s.lanes.flatMap((l) => l.clips).length;
 
     studioActions.setPlayhead(clip.start + clip.len + 48_000);
-    press('b');
+    press('KeyB');
 
     expect(studioStore.getState().lanes.flatMap((l) => l.clips).length).toBe(before);
   });
@@ -219,7 +293,7 @@ describe('shortcut B — split di playhead', () => {
     studioActions.setPlayhead(clip.start + Math.round(clip.len / 2));
     const before = s.lanes.flatMap((l) => l.clips).length;
 
-    press('b', input);
+    press('KeyB', input);
 
     expect(studioStore.getState().lanes.flatMap((l) => l.clips).length).toBe(before);
   });

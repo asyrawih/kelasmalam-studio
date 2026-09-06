@@ -24,7 +24,8 @@ import { bufferLookup } from './studio/preview/audio-preview';
 import { BeatProvider, TimelinePanel } from './studio/timeline';
 import { LibraryDock } from './library';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
-import { useTransportShortcuts } from './studio/shortcuts/useTransportShortcuts';
+import { studioCommands } from './studio/commands';
+import { useCommands } from './app-shell/useCommands';
 import { SoundCloudDialog } from './soundcloud/SoundCloudDialog';
 import { SnapToggle } from './studio/shell/SnapToggle';
 
@@ -67,8 +68,11 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps)
   // otomatis — penyimpanan lokalnya sudah dibuang seluruhnya. Alasannya di
   // kepala `persist/persistence.ts`. Simpan dan muat akan datang lewat
   // kepustakaan yang eksplisit.
-  // Shortcut transport: Space, Backspace/Enter/Home, End, ←/→.
-  useTransportShortcuts();
+  // Command Studio (transport, undo/redo, clip, simpan, export) didaftarkan ke
+  // registry shell selama halaman hidup. Keyboard, palette ⌘K, dan menu native
+  // desktop semuanya masuk lewat id yang sama — tidak ada listener keyboard
+  // milik Studio sendiri lagi (docs/15).
+  useCommands(studioCommands());
   // Coba bangun engine sekali. Kegagalannya adalah informasi, bukan crash.
   useEffect(() => {
     if (createEngine === undefined) {

@@ -20,6 +20,7 @@ import {
   type LibraryStatus,
   type LibraryTrack,
   type LibraryUser,
+  type LocalStoreSummary,
   type OpenProject,
   type ProjectRow,
   type UploadState,
@@ -73,6 +74,15 @@ export const libraryActions = {
 
   fail(message: string): void {
     set(() => ({ status: 'gagal', error: message, listing: false }));
+  },
+
+  /** Folder + ukuran kepustakaan lokal. `null` = bukan lokal / belum diketahui. */
+  setStoreInfo(store: LocalStoreSummary | null): void {
+    set((s) =>
+      s.store === store || (s.store !== null && store !== null && s.store.dir === store.dir && s.store.bytes === store.bytes)
+        ? null
+        : { store },
+    );
   },
 
   setListing(listing: boolean): void {

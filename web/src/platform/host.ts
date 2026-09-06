@@ -11,6 +11,7 @@
  * menyentuh satu pun komponen.
  */
 
+import type { LibraryApi } from '../library/api';
 import type { ScnetModelDownloadProgress, ScnetModelId } from '../proof-stem/scnet-catalog';
 import type { ExportSink } from '../studio/export/sinks';
 
@@ -114,4 +115,34 @@ export interface PlatformHost {
    * `File` supaya jalur import-nya tetap satu.
    */
   onFilesDropped?(cb: (files: readonly File[], point: DropPoint) => void): () => void;
+
+  /**
+   * Kepustakaan milik platform ini (docs/21 §1c).
+   *
+   * Web: klien Worker dari `VITE_LIBRARY_API`, atau `null` kalau build ini
+   * memang tanpa backend — dok tetap tampil dan mengatakan kenapa kosong.
+   * Desktop: implementasi LOKAL di atas command Tauri; tidak pernah `null`,
+   * tidak butuh sesi. Dok tidak membaca env sendiri: satu-satunya yang tahu
+   * dari mana kepustakaan datang adalah host, sama seperti export dan drop.
+   *
+   * Objek yang sama dikembalikan tiap panggilan — dok memakainya sebagai
+   * kunci effect, dan klien baru tiap render berarti boot ulang tiap render.
+   */
+  libraryApi(): LibraryApi | null;
+
+  /**
+   * Path asli berkas yang baru dijatuhkan/dipilih, untuk jalur cepat
+   * `library_import_path` (docs/21 §2c): Rust menyalin dan meng-hash berkasnya
+   * sendiri, jadi byte-nya tidak perlu dikirim BALIK lewat IPC.
+   *
+   * Dicari lewat `(name, size)`, bukan lewat objek `File`: jalur import
+   * (`readFileBytes` → `importBytesToAsset` → `notifyImported`) sudah melepas
+   * `File`-nya sebelum kepustakaan mendengar kabarnya, dan yang sampai ke sana
+   * hanya nama + byte. Satu entri dipakai SEKALI — drop berkas yang sama dua
+   * kali memberi dua entri. Entri yang tidak pernah diklaim (import gagal
+   * decode, zona lain yang tidak mengumumkan) kedaluwarsa sendiri.
+   *
+   * OPSIONAL: hanya host yang menerima berkas sebagai path yang punya ini.
+   */
+  droppedPathFor?(name: string, size: number): string | null;
 }

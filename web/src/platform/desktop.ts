@@ -11,13 +11,15 @@
  * setelah merge): `model_download({id}) -> path` dengan event
  * `daw://model-progress` `{id, done, total}`, lalu `model_read({id}) -> byte`.
  *
- * TIDAK ADA LOGIN di sini. Kepustakaan butuh sesi, sesi web adalah cookie yang
- * tidak pernah ikut dari origin `tauri://`, dan alur penggantinya (docs/20
- * §1d) ditunda — jadi host ini tidak mendefinisikan `login`, dan dok
- * kepustakaan membaca ketiadaan itu sebagai "belum tersedia di versi desktop".
+ * TIDAK ADA LOGIN di sini, dan sekarang memang tidak perlu: kepustakaan
+ * desktop adalah `createLocalLibraryApi()` di atas SQLite + folder lokal
+ * (docs/21 §1c) — tanpa sesi, tanpa Worker. `login` tetap tidak didefinisikan,
+ * dan dok membaca ketiadaan itu sebagai "tidak ada tombol MASUK/KELUAR".
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { createLocalLibraryApi } from '../library/local-api';
+import type { LibraryApi } from '../library/api';
 import { assertModelSize, SCNET_MODELS, type ScnetModelId } from '../proof-stem/scnet-catalog';
 import type { ExportSink } from '../studio/export/sinks';
 import type { DropPoint, ModelBytes, OpenAudioFilesOptions, PlatformHost, SaveTarget } from './host';
@@ -131,13 +133,61 @@ export class TauriFileSink implements ExportSink {
   }
 }
 
+/**
+ * Path berkas yang baru masuk lewat drop/dialog, menunggu diklaim kepustakaan.
+ *
+ * Kunci `(name, size)` — lihat `PlatformHost.droppedPathFor`. Dibatasi jumlah
+ * DAN umur: entri yang tidak pernah diklaim (decode gagal, zona yang tidak
+ * mengumumkan import) tidak boleh menumpuk selama app hidup, dan entri tua
+ * tidak boleh mengklaim berkas lain yang kebetulan senama dan seukuran
+ * berminggu-minggu kemudian.
+ */
+export class DroppedPathRegistry {
+  private readonly entries: { name: string; size: number; path: string; at: number }[] = [];
+
+  constructor(
+    private readonly maxEntries = 64,
+    private readonly ttlMs = 10 * 60_000,
+    private readonly now: () => number = () => Date.now(),
+  ) {}
+
+  remember(name: string, size: number, path: string): void {
+    this.prune();
+    this.entries.push({ name, size, path, at: this.now() });
+    if (this.entries.length > this.maxEntries) this.entries.splice(0, this.entries.length - this.maxEntries);
+  }
+
+  /** Klaim SATU entri yang cocok — yang paling lama dulu — dan buang dari daftar. */
+  take(name: string, size: number): string | null {
+    this.prune();
+    const i = this.entries.findIndex((e) => e.name === name && e.size === size);
+    if (i === -1) return null;
+    const [hit] = this.entries.splice(i, 1);
+    return hit?.path ?? null;
+  }
+
+  private prune(): void {
+    const limit = this.now() - this.ttlMs;
+    let keep = 0;
+    while (keep < this.entries.length && this.entries[keep]!.at < limit) keep++;
+    if (keep > 0) this.entries.splice(0, keep);
+  }
+}
+
 export function createDesktopHost(): PlatformHost {
+  const dropped = new DroppedPathRegistry();
+  let library: LibraryApi | null = null;
+
   const readFiles = async (paths: readonly string[]): Promise<File[]> => {
     const { readFile } = await import('@tauri-apps/plugin-fs');
     const files: File[] = [];
     for (const path of paths) {
       const bytes = await readFile(path);
       const name = baseName(path);
+      // Path-nya diingat SEBELUM `File` diserahkan: begitu import mengumumkan
+      // `(name, size)` yang sama, kepustakaan menyalin dari path ini di Rust
+      // alih-alih mengirim byte yang baru saja dibaca kembali lewat IPC.
+      dropped.remember(name, bytes.byteLength, path);
       files.push(new File([bytes], name, { type: mimeOf(name) }));
     }
     return files;
@@ -145,6 +195,15 @@ export function createDesktopHost(): PlatformHost {
 
   return {
     kind: 'desktop',
+
+    libraryApi(): LibraryApi {
+      library ??= createLocalLibraryApi();
+      return library;
+    },
+
+    droppedPathFor(name, size): string | null {
+      return dropped.take(name, size);
+    },
 
     async pickSaveTarget(fileName, _mime, ext): Promise<SaveTarget> {
       const { save } = await import('@tauri-apps/plugin-dialog');

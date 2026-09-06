@@ -29,7 +29,7 @@
 
 import { isTauri } from '@tauri-apps/api/core';
 
-import { runCommand } from './command';
+import { getCommand, runCommand } from './command';
 
 /**
  * Modul jendela diimpor SEKALI dan janjinya disimpan.
@@ -88,6 +88,11 @@ const warned = new Set<string>();
  * dan id yang tidak terdaftar sama-sama diabaikan dengan `console.warn` —
  * melempar di dalam handler event Tauri hanya menghasilkan unhandled rejection
  * yang tidak dilihat siapa pun.
+ *
+ * Command yang TERDAFTAR tapi sedang tidak bisa dijalankan (Undo tanpa
+ * riwayat, Berhenti saat sudah berhenti) diabaikan tanpa peringatan: menu
+ * native tidak tahu keadaan `enabled` — item-nya selalu bisa diklik — jadi ini
+ * keadaan normal, bukan kontrak yang putus.
  */
 export function dispatchMenuCommand(payload: unknown): boolean {
   const id =
@@ -99,6 +104,7 @@ export function dispatchMenuCommand(payload: unknown): boolean {
     return false;
   }
   if (runCommand(id)) return true;
+  if (getCommand(id) !== undefined) return false;
   if (!warned.has(id)) {
     warned.add(id);
     console.warn(`[desktop] command menu "${id}" tidak terdaftar di halaman ini — diabaikan`);

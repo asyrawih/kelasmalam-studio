@@ -60,6 +60,32 @@ export interface Command {
    */
   readonly enabled?: () => boolean;
   readonly run: () => void;
+  /**
+   * Fase TAHAN — untuk command yang tombolnya punya arti selama ditekan.
+   *
+   * Ada karena Spasi di Studio: ditahan berarti alat tangan untuk pan, diketuk
+   * berarti play, dan play baru menyala saat DILEPAS (`studio/shortcuts/
+   * space-pan.ts`). Tanpa fase ini registry hanya memodelkan `keydown`, dan
+   * Studio terpaksa memasang listener sendiri — dua penerjemah untuk satu
+   * keyboard, persis yang lapisan ini ada untuk menghapus.
+   *
+   * Hanya keyboard yang punya fase tahan. Palette, menu native, dan MIDI
+   * memanggil `run()` langsung: bagi mereka command ini adalah ketukan.
+   */
+  readonly hold?: CommandHold;
+}
+
+export interface CommandHold {
+  /** Tombol DITEKAN. Sekali per tahan — auto-repeat sudah disaring dispatcher. */
+  press(): void;
+  /**
+   * Tombol DILEPAS. `true` = ketukan murni, dan dispatcher lalu memanggil
+   * `run()`. `false` = selama ditahan tombolnya dipakai untuk hal lain (pan),
+   * jadi melepasnya bukan perintah.
+   */
+  release(): boolean;
+  /** Jendela kehilangan fokus saat tombol masih ditahan; keyup tidak akan datang. */
+  cancel(): void;
 }
 
 const commands = new Map<CommandId, Command>();

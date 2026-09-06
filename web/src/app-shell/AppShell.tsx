@@ -26,9 +26,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { App } from '../App';
 import { DjPage } from '../dj';
 import { LandingPage, LegalPage } from '../landing';
-import { createLibraryApi } from '../library/api';
+import { createLibraryApi, normalizeBase } from '../library/api';
 import { libraryActions, useLibrary } from '../library/store';
 import type { LibraryUser } from '../library/model';
+import { getPlatformHost } from '../platform';
 import { RobloxRoute } from '../roblox';
 import { ProofStemPage } from '../proof-stem';
 import { selectProjectDirty, studioStore, useStudio } from '../studio/store';
@@ -55,7 +56,15 @@ export interface AppShellProps {
 
 export interface AuthApi {
   me(): Promise<LibraryUser | null>;
+  /**
+   * Tidak dipakai shell: URL login dibangun `PlatformHost.login()` dari
+   * `base`, karena ke mana dan bagaimana login berjalan adalah urusan platform
+   * (web: navigasi; desktop: belum ada). Tetap di kontrak supaya `LibraryApi`
+   * dan mock yang sudah ada memenuhinya apa adanya.
+   */
   loginUrl(nextPath: string): string;
+  /** Base URL Worker kepustakaan. Opsional hanya untuk mock lama di tes. */
+  readonly base?: string;
 }
 
 const PROTECTED_ROUTES: ReadonlySet<Route> = new Set(['studio', 'dj', 'roblox']);
@@ -85,11 +94,27 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   // gerbang ini dilewati seluruhnya. Alasannya bukan cuma "belum ada jalur
   // login desktop" (docs/20 §1d): cookie sesi tidak pernah ikut dari origin
   // `tauri://`, jadi `me()` selalu menjawab anonim dan seluruh .app terkunci
-  // di balik tombol MASUK yang — lewat `location.href` — menavigasi WebView ke
-  // Google dan tidak pernah kembali. Kepustakaan tetap tidak tersedia di
-  // desktop sampai D3; halaman-halamannya sendiri bekerja penuh tanpanya.
+  // di balik gerbang login yang di desktop tidak punya tombol MASUK sama sekali
+  // (host desktop tidak mendefinisikan `login`, lihat `canLogin`). Kepustakaan
+  // tetap tidak tersedia di desktop sampai D3; halaman-halamannya sendiri
+  // bekerja penuh tanpanya.
   const desktop = isDesktop();
   const authRequired = !desktop && (!import.meta.env.DEV || injectedAuthApi !== undefined);
+
+  // Login lewat adapter platform, bukan `location.href` (docs/20 §2c): dari
+  // WebView Tauri navigasi ke Google tidak pernah kembali, dan `guard.test.ts`
+  // menjaga tidak ada jalan keluar dari WebView di luar `platform/`. `login`
+  // OPSIONAL di host, dan ketiadaannya berarti sesuatu — platform ini tidak
+  // punya cara membangun sesi — jadi tombol MASUK disembunyikan, bukan
+  // dipasang lalu diam.
+  const canLogin = getPlatformHost().login !== undefined;
+  const startLogin = useCallback(
+    (nextPath: string): void => {
+      if (authApi === null) return;
+      void getPlatformHost().login?.({ apiBase: authApi.base ?? normalizeBase(apiBase), nextPath });
+    },
+    [apiBase, authApi],
+  );
 
   useEffect(() => {
     if (!authRequired) return undefined;
@@ -292,7 +317,12 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   return (
     <>
       {blocked ? (
-        <AuthGuard status={authStatus} api={authApi} onRetry={() => setAuthAttempt((n) => n + 1)} />
+        <AuthGuard
+          status={authStatus}
+          api={authApi}
+          onLogin={canLogin ? () => startLogin(window.location.pathname) : null}
+          onRetry={() => setAuthAttempt((n) => n + 1)}
+        />
       ) : route === 'studio' ? (
         <App
           createEngine={createEngine}
@@ -317,17 +347,15 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
           showAppLinks={!authRequired || authenticated}
-          // Di desktop tidak ada tombol MASUK sama sekali: tautan aplikasi
-          // sudah terbuka (`showAppLinks`), dan `location.href` ke halaman
-          // login akan membawa WebView pergi tanpa jalan pulang.
+          // Tanpa `login` di host (desktop hari ini) tidak ada tombol MASUK
+          // sama sekali: tautan aplikasi sudah terbuka (`showAppLinks`), dan
+          // tombol yang tidak bisa berbuat apa-apa lebih buruk daripada tidak ada.
           onLogin={
-            desktop
+            !canLogin
               ? undefined
               : authApi === null
                 ? () => navigate(STUDIO_PATH)
-                : () => {
-                    window.location.href = authApi.loginUrl(STUDIO_PATH);
-                  }
+                : () => startLogin(STUDIO_PATH)
           }
         />
       )}
@@ -345,10 +373,13 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
 function AuthGuard({
   status,
   api,
+  onLogin,
   onRetry,
 }: {
   readonly status: string;
   readonly api: AuthApi | null;
+  /** `null` = platform ini tidak punya jalur login; tombolnya tidak dirender. */
+  readonly onLogin: (() => void) | null;
   readonly onRetry: () => void;
 }): JSX.Element {
   const checking = status === 'memeriksa';
@@ -392,14 +423,8 @@ function AuthGuard({
                 ? 'Tunggu sebentar, sesi Google kamu sedang diverifikasi.'
                 : 'Masuk dengan akun Google untuk membuka Studio, DJ, dan Roblox.'}
         </p>
-        {!checking && !failed && !missing ? (
-          <Button
-            onClick={() => {
-              window.location.href = api.loginUrl(window.location.pathname);
-            }}
-          >
-            MASUK DENGAN GOOGLE
-          </Button>
+        {!checking && !failed && !missing && onLogin !== null ? (
+          <Button onClick={onLogin}>MASUK DENGAN GOOGLE</Button>
         ) : null}
         {failed ? (
           // Ulangi cek sesi DI DALAM aplikasi. "Muat ulang halaman" bukan

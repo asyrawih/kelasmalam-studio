@@ -14,8 +14,8 @@
  * `menu.rs`, tambahkan di sini dulu.
  *
  * Halaman pemilik tiap id ditentukan dari awalannya (`menuCommandRoute`):
- * `shell.*` hidup di semua halaman; `library.*` ikut Studio (dock kepustakaan
- * dirender di sana); `dj.*` dan `roblox.*` ikut halamannya. Id yang dipanggil
+ * `shell.*` hidup di semua halaman; `studio.*` dan `library.*` ikut Studio
+ * (dock kepustakaan dirender di sana); `dj.*` dan `roblox.*` ikut halamannya. Id yang dipanggil
  * saat halamannya tidak aktif diabaikan dengan peringatan — lihat
  * `dispatchMenuCommand`.
  */
@@ -34,9 +34,21 @@ export const DESKTOP_MENU_COMMAND_IDS = [
   'shell.goto.roblox',
   'shell.goto.proof-stem',
 
-  // ── Studio ──
-  // Studio belum mendaftarkan command transport ke registry (docs/15 "Yang
-  // SENGAJA belum dipindahkan"); yang bisa dipanggil menu baru dock kepustakaan.
+  // ── Studio (`studio/commands.ts`) ──
+  // File
+  'studio.project.save',
+  'studio.export.open',
+  // Edit — Cut/Copy/Paste/Select All di menu native tetap item bawaan OS
+  // (teks); `studio.select.all` hidup di registry untuk palette dan ⌘A web.
+  'studio.undo',
+  'studio.redo',
+  // Transport — tanpa akselerator native: Space/Home/End milik keymap web.
+  'studio.transport.playPause',
+  'studio.transport.stop',
+  'studio.transport.toStart',
+  'studio.transport.toEnd',
+  'studio.loop.toggle',
+  // Tampilan
   'library.toggle',
 
   // ── DJ ──
@@ -60,6 +72,7 @@ export type DesktopMenuCommandId = (typeof DESKTOP_MENU_COMMAND_IDS)[number];
 /** Awalan id → halaman pemilik. Awalan baru di daftar HARUS ditambahkan di sini. */
 const ROUTE_BY_PREFIX: Readonly<Record<string, Route | 'any'>> = {
   shell: 'any',
+  studio: 'studio',
   library: 'studio',
   dj: 'dj',
   roblox: 'roblox',

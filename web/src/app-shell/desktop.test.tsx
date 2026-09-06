@@ -8,12 +8,13 @@
  * bocor ke jalur web berarti setiap user web mendapat error di konsol.
  */
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppShell } from './AppShell';
 import { __resetMenuWarningsForTest, closeGuardReason, windowTitle } from './desktop';
 import { djActions, djStore } from '../dj/store';
+import { setPlatformHostForTests, type PlatformHost } from '../platform';
 import { studioActions, studioStore } from '../studio/store';
 
 type Listener = (e: { payload: unknown }) => void;
@@ -112,6 +113,9 @@ beforeEach(() => {
   studioActions.__resetForTest();
   __resetMenuWarningsForTest();
   tauri.desktop = true;
+  // Host platform di-cache sekali per proses; tiap tes memilih ulang supaya
+  // `tauri.desktop` yang diubah di describe benar-benar menentukan host-nya.
+  setPlatformHostForTests(null);
   tauri.listeners.clear();
   tauri.closeHandlers = [];
   vi.clearAllMocks();
@@ -222,6 +226,83 @@ describe('menu native → registry', () => {
     await waitFor(() => expect(tauri.listeners.has('daw://menu-command')).toBe(true));
     unmount();
     expect(tauri.listeners.has('daw://menu-command')).toBe(false);
+  });
+});
+
+/**
+ * Menu Studio (File/Edit/Transport di `menu.rs`) menyasar command yang
+ * didaftarkan `/studio`. Yang dibuktikan: id yang dikirim menu mengubah state
+ * transport dan riwayat yang sama dengan tombol di layar dan keyboard.
+ */
+describe('menu native → Studio', () => {
+  beforeEach(() => {
+    window.history.pushState(null, '', '/studio');
+  });
+
+  it('studio.transport.playPause dan .stop mengubah transport', async () => {
+    render(<AppShell />);
+    expect(studioStore.getState().playing).toBe(false);
+    await emitMenu({ id: 'studio.transport.playPause' });
+    expect(studioStore.getState().playing).toBe(true);
+    await emitMenu({ id: 'studio.transport.stop' });
+    expect(studioStore.getState().playing).toBe(false);
+    // Berhenti IDEMPOTEN: dari menu, berhenti dua kali tetap berhenti.
+    await emitMenu({ id: 'studio.transport.stop' });
+    expect(studioStore.getState().playing).toBe(false);
+  });
+
+  it('studio.undo sesudah satu edit mengembalikan state; studio.redo mengulanginya', async () => {
+    render(<AppShell />);
+    const before = studioStore.getState().masterGainDb;
+    act(() => studioActions.setMasterGain(before - 6));
+    await emitMenu({ id: 'studio.undo' });
+    expect(studioStore.getState().masterGainDb).toBe(before);
+    await emitMenu({ id: 'studio.redo' });
+    expect(studioStore.getState().masterGainDb).toBe(before - 6);
+  });
+
+  it('studio.transport.toStart / toEnd / loop.toggle', async () => {
+    render(<AppShell />);
+    await emitMenu({ id: 'studio.transport.toEnd' });
+    expect(studioStore.getState().playhead).toBe(studioStore.getState().duration);
+    await emitMenu({ id: 'studio.transport.toStart' });
+    expect(studioStore.getState().playhead).toBe(0);
+    const loop = studioStore.getState().loop;
+    await emitMenu({ id: 'studio.loop.toggle' });
+    expect(studioStore.getState().loop).toBe(!loop);
+  });
+
+  it('studio.export.open membuka panel EXPORT — dan tetap terbuka kalau dipanggil lagi', async () => {
+    render(<AppShell />);
+    await emitMenu({ id: 'studio.export.open' });
+    expect(studioStore.getState().openMenu).toBe('export');
+    expect(
+      document.querySelector('[data-menu-button="export"]')?.getAttribute('aria-expanded'),
+    ).toBe('true');
+    await emitMenu({ id: 'studio.export.open' });
+    expect(studioStore.getState().openMenu).toBe('export');
+  });
+
+  it('studio.project.save membuka dok kepustakaan', async () => {
+    render(<AppShell />);
+    const dock = screen.getByTestId('library-dock');
+    expect(within(dock).getByRole('button', { name: 'buka kepustakaan' })).toBeTruthy();
+    await emitMenu({ id: 'studio.project.save' });
+    expect(within(dock).getByRole('button', { name: 'tutup kepustakaan' })).toBeTruthy();
+  });
+
+  /**
+   * Menu native tidak tahu keadaan `enabled` — item Undo selalu bisa diklik.
+   * Undo tanpa riwayat karena itu keadaan normal, bukan "id tidak terdaftar",
+   * dan tidak boleh mengotori konsol dengan peringatan kontrak putus.
+   */
+  it('command terdaftar yang sedang tidak bisa dijalankan diabaikan TANPA peringatan', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<AppShell />);
+    await emitMenu({ id: 'studio.undo' });
+    const hits = warn.mock.calls.filter((c) => String(c[0]).includes('studio.undo'));
+    expect(hits).toHaveLength(0);
+    warn.mockRestore();
   });
 });
 
@@ -400,6 +481,77 @@ describe('gerbang auth di desktop', () => {
     await waitFor(() => expect(screen.getByTestId('auth-guard')).toBeTruthy());
     expect(authApi.me).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('KELAS MALAM STUDIO')).toBeNull();
+  });
+});
+
+/**
+ * Login lewat `PlatformHost.login()`, bukan `location.href` — satu-satunya
+ * jalan keluar dari WebView ada di `platform/` (`guard.test.ts`). `login`
+ * OPSIONAL di host: tanpa itu tombol MASUK tidak dirender sama sekali.
+ */
+describe('login lewat adapter platform', () => {
+  const api = () => ({
+    me: vi.fn(async () => null),
+    loginUrl: vi.fn((next: string) => `https://lib.test/auth/google?next=${next}`),
+    base: 'https://lib.test',
+  });
+
+  function fakeHost(login?: PlatformHost['login']): PlatformHost {
+    return {
+      kind: 'web',
+      pickSaveTarget: vi.fn(),
+      openExternal: vi.fn(),
+      authHeaders: async () => ({}),
+      modelBytes: vi.fn(),
+      // Tes ini tidak menyentuh kepustakaan; `null` = "tidak dikonfigurasi",
+      // sama dengan build web tanpa VITE_LIBRARY_API.
+      libraryApi: () => null,
+      ...(login === undefined ? {} : { login }),
+    };
+  }
+
+  beforeEach(() => {
+    tauri.desktop = false;
+  });
+  afterEach(() => setPlatformHostForTests(null));
+
+  it('gerbang halaman: MASUK DENGAN GOOGLE memanggil host.login dengan path saat ini', async () => {
+    const login = vi.fn(() => new Promise<void>(() => {}));
+    setPlatformHostForTests(fakeHost(login));
+    window.history.pushState(null, '', '/studio');
+    const href = window.location.href;
+    const authApi = api();
+    render(<AppShell authApi={authApi} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'MASUK DENGAN GOOGLE' }));
+    expect(login).toHaveBeenCalledWith({ apiBase: 'https://lib.test', nextPath: '/studio' });
+    // Shell tidak lagi membangun URL login sendiri, apalagi menavigasi.
+    expect(authApi.loginUrl).not.toHaveBeenCalled();
+    expect(window.location.href).toBe(href);
+  });
+
+  it('landing: MASUK menitipkan /studio sebagai tujuan pulang', async () => {
+    const login = vi.fn(() => new Promise<void>(() => {}));
+    setPlatformHostForTests(fakeHost(login));
+    window.history.pushState(null, '', '/');
+    render(<AppShell authApi={api()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'MASUK' }));
+    expect(login).toHaveBeenCalledWith({ apiBase: 'https://lib.test', nextPath: '/studio' });
+  });
+
+  it('host tanpa login: tidak ada tombol MASUK di landing maupun di gerbang', async () => {
+    setPlatformHostForTests(fakeHost());
+    window.history.pushState(null, '', '/');
+    const view = render(<AppShell authApi={api()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('button', { name: 'MASUK' })).toBeNull();
+    view.unmount();
+
+    window.history.pushState(null, '', '/studio');
+    render(<AppShell authApi={api()} />);
+    await waitFor(() => expect(screen.getByText('LOGIN DIPERLUKAN')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'MASUK DENGAN GOOGLE' })).toBeNull();
   });
 });
 

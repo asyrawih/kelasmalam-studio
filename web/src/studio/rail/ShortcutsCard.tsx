@@ -6,9 +6,10 @@
  * berubah. Tes di `shortcuts.test.tsx` memakai array ini juga, jadi shortcut
  * yang didokumentasikan tapi tidak berfungsi akan ketahuan.
  *
- * Modifier ditampilkan apa adanya (tanpa Cmd/Ctrl) karena semua binding
- * transport memang tanpa modifier — kombinasi ber-modifier sengaja diteruskan
- * ke browser (lihat useTransportShortcuts).
+ * Ini binding BAWAAN. Yang berlaku sesungguhnya adalah keymap shell
+ * (`studio/commands.ts` lewat `app-shell`), yang bisa diubah user lewat editor
+ * pintasan (`?`) — daftar di sana selalu benar; kartu ini ringkasan yang
+ * tinggal di dalam Studio.
  */
 
 import { Card } from '../../ui/cyber';
@@ -40,6 +41,9 @@ export const SHORTCUTS: readonly ShortcutDoc[] = [
   { keys: ['X'], label: 'Hapus clip terpilih', group: 'edit' },
   { keys: ['C'], label: 'Copy clip', group: 'edit' },
   { keys: ['V'], label: 'Paste clip di playhead', group: 'edit' },
+  { keys: ['Cmd/Ctrl', 'A'], label: 'Pilih semua clip', group: 'edit' },
+  { keys: ['Cmd/Ctrl', 'S'], label: 'Simpan project ke kepustakaan', group: 'edit' },
+  { keys: ['Cmd/Ctrl', 'Shift', 'E'], label: 'Buka panel EXPORT', group: 'edit' },
   { keys: ['Drag'], label: 'Kotak seleksi di area kosong', group: 'pointer' },
   { keys: ['Cmd/Ctrl', 'Klik'], label: 'Tambah/buang dari seleksi', group: 'pointer' },
   { keys: ['Shift', 'Drag'], label: 'Pan tampilan timeline', group: 'pointer' },

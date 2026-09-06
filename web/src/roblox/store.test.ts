@@ -7,7 +7,7 @@
  * disentuh mengembalikan objek YANG SAMA (dasar dari `memo` di `QueueRow`).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fileOf, robloxActions, robloxStore } from './store';
 
@@ -199,5 +199,124 @@ describe('bersih-bersih', () => {
     expect(state().items).toEqual([]);
     expect(state().selected).toBeNull();
     for (const id of ids) expect(fileOf(id)).toBeUndefined();
+  });
+});
+
+describe('kategori & genre massal (docs/21 §1d)', () => {
+  it('setGenre memberi genre DAN kategori induknya ke semua id sekaligus', () => {
+    robloxActions.addFiles([mp3('a.mp3'), mp3('b.mp3'), mp3('c.mp3')]);
+    const [a, b, c] = state().items;
+    robloxActions.setGenre([a!.id, c!.id], 'gen:musik/lo-fi');
+    expect(state().items[0]).toMatchObject({ categoryId: 'kat:musik', genreId: 'gen:musik/lo-fi' });
+    expect(state().items[2]).toMatchObject({ categoryId: 'kat:musik', genreId: 'gen:musik/lo-fi' });
+    // Baris yang tidak disebut tetap objek yang SAMA — memo QueueRow bergantung padanya.
+    expect(state().items[1]).toBe(b);
+  });
+
+  it('mengganti kategori mengosongkan genre yang bukan anaknya', () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    const id = state().items[0]!.id;
+    robloxActions.setGenre([id], 'gen:musik/lo-fi');
+    robloxActions.setCategory([id], 'kat:efek-suara');
+    expect(state().items[0]).toMatchObject({ categoryId: 'kat:efek-suara', genreId: null });
+  });
+
+  it('genre yang tidak ada di taksonomi ditolak diam-diam', () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    const before = state();
+    robloxActions.setGenre([before.items[0]!.id], 'gen:tidak-ada');
+    expect(state()).toBe(before);
+  });
+
+  it('baris baru lahir dengan localId stabil dan tanpa kategori', () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    const it = state().items[0]!;
+    expect(it.localId).toMatch(/^rbx:/);
+    expect(it).toMatchObject({ categoryId: null, genreId: null, hash: null });
+  });
+});
+
+describe('taksonomi di web (adapter IndexedDB, keputusan di TS)', () => {
+  it('tambah, ganti nama, pindah, hapus — semuanya mendarat di state', async () => {
+    const cat = await robloxActions.addCategory('Podcast');
+    expect(cat.ok).toBe(true);
+    const catId = cat.ok ? cat.id : '';
+    const gen = await robloxActions.addGenre(catId, 'Intro');
+    expect(gen.ok).toBe(true);
+    const genId = gen.ok ? gen.id : '';
+
+    await robloxActions.renameGenre(genId, 'Pembuka');
+    expect(state().taxonomy.genres.find((g) => g.id === genId)?.name).toBe('Pembuka');
+
+    await robloxActions.moveGenre(genId, 'kat:suara');
+    expect(state().taxonomy.genres.find((g) => g.id === genId)?.categoryId).toBe('kat:suara');
+
+    expect((await robloxActions.deleteGenre(genId)).ok).toBe(true);
+    expect((await robloxActions.deleteCategory(catId)).ok).toBe(true);
+    expect(state().taxonomy.categories.some((c) => c.id === catId)).toBe(false);
+  });
+
+  it('hapus genre yang dipakai baris antrean ditolak dengan menyebut jumlahnya', async () => {
+    robloxActions.addFiles([mp3('a.mp3'), mp3('b.mp3')]);
+    robloxActions.setGenre(state().items.map((it) => it.id), 'gen:musik/lo-fi');
+    const r = await robloxActions.deleteGenre('gen:musik/lo-fi');
+    expect(r).toEqual({ ok: false, message: expect.stringMatching(/dipakai 2 lagu/) });
+    expect(state().taxonomy.genres.some((g) => g.id === 'gen:musik/lo-fi')).toBe(true);
+  });
+
+  it('hapus kategori yang masih punya genre ditolak; nama kosong ditolak', async () => {
+    const r = await robloxActions.deleteCategory('kat:musik');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/9 genre/);
+    expect((await robloxActions.addCategory('   ')).ok).toBe(false);
+  });
+
+  it('memindahkan genre ikut memindahkan kategori baris yang memakainya', async () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    robloxActions.setGenre([state().items[0]!.id], 'gen:musik/lo-fi');
+    await robloxActions.moveGenre('gen:musik/lo-fi', 'kat:suara');
+    expect(state().items[0]).toMatchObject({ categoryId: 'kat:suara', genreId: 'gen:musik/lo-fi' });
+  });
+});
+
+describe('katalog di web', () => {
+  it('markDone memasukkan baris ke katalog; markFailed juga, dan ULANGI + DISETUJUI menimpanya', async () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    robloxActions.setCreatorId('9');
+    const id = state().items[0]!.id;
+    robloxActions.markFailed(id, 'ditolak');
+    await vi.waitFor(() => expect(state().catalog).toHaveLength(1));
+    expect(state().catalog[0]).toMatchObject({ status: 'failed', creatorId: '9' });
+
+    robloxActions.retry(id);
+    await robloxActions.markDone(id, '777');
+    expect(state().catalog).toHaveLength(1);
+    expect(state().catalog[0]).toMatchObject({ status: 'done', assetId: '777', moderationState: 'approved' });
+  });
+
+  it('coba lagi dari katalog untuk baris yang masih di antrean = ULANGI baris itu', async () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    const id = state().items[0]!.id;
+    robloxActions.markFailed(id, 'ditolak');
+    await vi.waitFor(() => expect(state().catalog).toHaveLength(1));
+    expect(await robloxActions.retryFromCatalog(state().catalog[0]!)).toBeNull();
+    expect(state().items[0]!.status).toBe('draft');
+  });
+
+  it('coba lagi tanpa byte di web mengatakan kenapa, bukan membuat baris kosong', async () => {
+    robloxActions.addFiles([mp3('a.mp3')]);
+    const id = state().items[0]!.id;
+    robloxActions.markFailed(id, 'ditolak');
+    await vi.waitFor(() => expect(state().catalog).toHaveLength(1));
+    const row = state().catalog[0]!;
+    robloxActions.remove(id);
+    expect(await robloxActions.retryFromCatalog(row)).toMatch(/jatuhkan lagi/);
+    expect(state().items).toEqual([]);
+  });
+
+  it('penyaring katalog melepas genre yang bukan anak kategori terpilih', () => {
+    robloxActions.setCatalogFilter({ genreId: 'gen:musik/lo-fi' });
+    robloxActions.setCatalogFilter({ categoryId: 'kat:suara' });
+    expect(state().catalogFilter).toEqual({ categoryId: 'kat:suara', genreId: null, query: '' });
   });
 });

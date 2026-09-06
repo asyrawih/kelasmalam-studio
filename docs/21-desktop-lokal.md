@@ -98,8 +98,10 @@ Byte lagu menyeberang IPC sebagai **biner mentah** (`tauri::ipc::Response`,
 `invoke` mengembalikan `ArrayBuffer`), bukan JSON array angka — lagu 25 MB
 sebagai JSON adalah 100 MB teks yang di-parse main thread. Untuk berkas yang
 dijatuhkan dari Finder, import memakai **path** (`onDragDropEvent` memberi
-path, PR #46): Rust menyalin dan meng-hash berkasnya sendiri, nol byte lewat
-IPC.
+path, PR #46): Rust menyalin dan meng-hash berkasnya sendiri, jadi perjalanan
+BALIK byte ke Rust (`library_put_bytes`) hilang. Perjalanan MASUK tetap ada:
+WebView masih membaca berkasnya untuk decode ke PCM sesi. Setengah, bukan nol
+— klaim "nol byte lewat IPC" yang semula ditulis di sini tidak tercapai (PR #51).
 
 ### d) Kategori → genre: taksonomi milik user, dua tingkat, wajib saat unggah
 
@@ -308,7 +310,7 @@ Prasyarat: PR #44, #46, #47 sudah di-merge (docs/20 wave 1).
 | Fase | Isi | Done |
 |---|---|---|
 | **K0 — Fondasi** | `rusqlite` + skema §2b + migrasi; `tracks/` store; `SecretStore`; `store_info/relocate`; command `library_*`; generate tipe TS; tes §2d | `cargo test -p daw-desktop-host` mencakup semua butir §2d; `store_relocate` ke folder lain lalu buka app → kepustakaan utuh |
-| **K1 — Dock lokal** | `createLocalLibraryApi`; `getPlatformHost().libraryApi()` memilih lokal di desktop; dock berstatus `masuk`/LOKAL tanpa MASUK/KELUAR; `library_import_path` dari drop Finder | Drop 3 lagu dari Finder → muncul di dock tanpa byte lewat IPC (diukur); tutup-buka app → masih ada; klik lagu → mendarat di lane |
+| **K1 — Dock lokal** | `createLocalLibraryApi`; `getPlatformHost().libraryApi()` memilih lokal di desktop; dock berstatus `masuk`/LOKAL tanpa MASUK/KELUAR; `library_import_path` dari drop Finder | Drop 3 lagu dari Finder → muncul di dock tanpa byte BALIK lewat IPC (diukur, lihat §1c); tutup-buka app → masih ada; klik lagu → mendarat di lane |
 | **K2 — Project & marks lokal** | simpan/buka/hapus project, `markSaved` (PR #45 butir 1), cue+grid | Simpan → tutup app → buka → timeline identik termasuk FX; hot cue di `/dj` bertahan; hapus lagu yang dipakai project ditolak menyebut namanya |
 | **K3 — Pengaturan & ukuran** | panel "Folder kepustakaan": path, ukuran, pindahkan; peringatan disk penuh saat import | Pindahkan folder → tidak ada lagu yang hilang; import saat disk sisa < ukuran berkas → ditolak sebelum menyalin |
 | **R1 — Taksonomi** | tabel + command + tab TAKSONOMI + seed bawaan | Tambah/ganti nama/pindah genre; hapus genre yang dipakai → ditolak menyebut jumlah |
@@ -331,8 +333,18 @@ K0 adalah gerbang; tidak ada yang mulai sebelum tes §2d hijau.
 - **Progres unggah Roblox** (§1e) mungkin kasar di R3.
 - **Kuota Roblox** (`quotaLeft`) tidak diketahui tanpa Worker; Open Cloud
   tidak mengumumkannya. Ditampilkan sebagai "—" sampai ada sumber yang benar.
-- **Durasi di Rust** (`library_import_path`) butuh pembaca header MP3/OGG/WAV;
-  kalau `symphonia` terlalu berat, durasi diisi `null` dan diprobe oleh
-  `<audio>` seperti sekarang — jalur yang sudah ada tetap benar.
+- **Durasi di Rust** (`library_import_path`): K0 memakai `symphonia` (hanya
+  probe format: mp3/ogg-vorbis/wav/flac, tanpa decode). Header yang tidak
+  terbaca — MP3 tanpa Xing/Info, berkas rusak — menghasilkan `frames`/
+  `sampleRate` 0, dan `library_commit` (UPSERT; nol tidak pernah menimpa nilai
+  yang sudah diketahui) mengisinya dari probe `<audio>` yang sudah ada.
+- **Katalog Roblox ikut hilang bersama lagunya.** `roblox_upload.hash`
+  `REFERENCES track ON DELETE CASCADE`: hapus lagu ditolak selama ada unggahan
+  yang belum `done`/`failed` (§2b), tapi baris yang SUDAH selesai ikut terhapus
+  — assetId-nya tetap ada di Creator Hub, hanya catatannya di mesin ini yang
+  hilang. Kalau R4 memutuskan katalog harus bertahan tanpa lagunya, kolom
+  `bytes`/`file_name` harus disalin ke `roblox_upload` dan FK-nya dilonggarkan.
+- **`roblox_upload.seconds`** ditambahkan di luar daftar kolom §2b: durasi yang
+  diukur `<audio>` di TS butuh tempat saat `frames` = 0.
 - **Hasil bake/stem** (docs/16 §8e) tetap tanpa berkas asal, tetap tidak masuk
   kepustakaan lokal. Tidak berubah oleh rencana ini.
