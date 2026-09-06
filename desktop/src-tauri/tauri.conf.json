@@ -34,6 +34,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "dmg",
       "app",
@@ -61,7 +62,8 @@
       "endpoints": [
         "https://github.com/asyrawih/kelasmalam-studio/releases/latest/download/latest.json"
       ],
-      "pubkey": "TODO-D6: ganti dengan kunci publik minisign dari `cargo tauri signer generate`; kunci privatnya ke secrets CI"
+      "pubkey": "TODO-D6: ganti dengan kunci publik minisign dari `cargo tauri signer generate`; kunci privatnya ke secrets CI",
+      "_pubkey_catatan": "Placeholder di atas SENGAJA bukan kunci: app tetap jalan (pubkey baru di-decode saat check() mengunduh), tapi setiap pemeriksaan update akan gagal. Langkah membuat kunci, menaruh kunci privat di .env.release, dan mengganti nilai ini ada di docs/22-rilis-desktop.md. Field ini diabaikan Tauri (config plugin tidak deny_unknown_fields); editor yang memakai $schema boleh menandainya."
     }
   }
 }

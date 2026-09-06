@@ -37,7 +37,7 @@ mod store_tests;
 
 pub use error::{HostError, LocalError};
 pub use secret::{SecretKey, SecretStore};
-pub use store::{Store, DB_FILE};
+pub use store::{Store, DB_FILE, SCHEMA_VERSION};
 pub use tracks::{Probe, TRACKS_SUBDIR};
 
 // Model (docs/20 §1g) — grup sendiri supaya tetap di bawah.
@@ -50,3 +50,8 @@ pub use model::{
 mod tests;
 
 pub mod open_cloud;
+pub mod roblox_upload;
+
+/// Grant Access lokal (docs/21 §3f): port rute `/roblox/*` Worker kepustakaan
+/// — sync katalog dengan cookie, experience, resolve place, grant izin Use.
+pub mod roblox_grant;

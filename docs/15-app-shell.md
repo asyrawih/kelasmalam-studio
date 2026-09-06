@@ -205,6 +205,16 @@ Semua pemetaan Studio kini ada di `studio/commands.ts` (`studio.transport.*`,
 shell: tombol yang ditahan tidak lagi mengulang perintah (panah ←/→), dan
 Spasi/Enter saat fokus ada di tombol menekan tombolnya.
 
+`studio.project.save` (⌘S, juga item File → Simpan di menu native) sendiri
+tidak menyimpan: ia memanggil `runCommand('library.project.save')`, command
+yang didaftarkan `LibraryDock` selama dok hidup — bersama
+`library.project.saveAs` (selalu buat project baru) dan `library.toggle`.
+Simpan yang sebenarnya (`saveProject`, `If-Match`, `markSaved(serial)`,
+pembaruan daftar) tetap satu jalur di dalam dok, dipakai tombol SIMPAN PROJECT
+dan kedua command itu. Kalau dok belum terdaftar atau sedang tidak bisa
+menyimpan (belum masuk, sibuk), ⌘S membuka dok dan memfokuskan tombolnya —
+supaya alasannya terlihat, bukan diam.
+
 ---
 
 ## Menambah pintu masuk berikutnya

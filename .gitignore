@@ -45,3 +45,6 @@ Thumbs.db
 # `target/` sudah tercakup di atas. Ikon di `desktop/src-tauri/icons/` SENGAJA
 # dilacak: ia hasil `cargo tauri icon` yang dijalankan sekali, bukan tiap build.
 /desktop/src-tauri/gen/
+
+# --- rilis desktop (hasil scripts/release-desktop.sh: .dmg, .app.tar.gz, latest.json) ---
+/dist-desktop/

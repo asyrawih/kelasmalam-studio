@@ -1,15 +1,23 @@
 //! Tabel Roblox di `library.sqlite` (docs/21 §1d, §3b, §3e): taksonomi,
 //! antrean/katalog unggahan, target creator.
 //!
-//! Yang TIDAK ada di sini: bicara dengan Open Cloud. Klien HTTP-nya
-//! (`open_cloud.rs`) dan command `roblox_upload_start`/`roblox_operation_poll`
-//! dikawinkan di fase R3; modul ini hanya menyediakan transisi status yang
-//! akan dipakainya (`mark_uploading` → `mark_processing` → `mark_done` /
-//! `mark_failed`) supaya aturan "siapa boleh mengubah kolom apa" tetap satu.
+//! Yang TIDAK ada di sini: bicara dengan Open Cloud. Klien HTTP-nya ada di
+//! `open_cloud.rs`, dan yang merangkai keduanya untuk
+//! `roblox_upload_start`/`roblox_operation_poll` adalah `roblox_upload.rs`;
+//! modul ini hanya menyediakan transisi status yang dipakainya
+//! (`mark_uploading` → `mark_processing` → `mark_done` / `mark_failed`)
+//! supaya aturan "siapa boleh mengubah kolom apa" tetap satu.
 //!
 //! Hapus kategori/genre yang masih dipakai ditolak dengan `IN_USE` + `count`,
 //! pola yang sama dengan hapus lagu (docs/16 §8d): katalog yang separuh
 //! isinya menunjuk genre yang sudah tidak ada tidak menjawab apa-apa.
+//!
+//! `roblox_upload.hash` TIDAK lagi ber-FK ke `track` (migrasi 0002): baris
+//! `done`/`failed` harus bertahan sesudah lagunya dihapus — assetId-nya masih
+//! hidup di Creator Hub dan katalog inilah satu-satunya catatan di mesin ini.
+//! Karena itu `bytes` disalin ke tabel ini saat `queue_put`, bukan dibaca dari
+//! `track` lewat JOIN. Yang menjaga "lagu yang unggahannya masih AKTIF tidak
+//! boleh dihapus" tetap `library.rs`, sebelum DELETE.
 
 use rusqlite::{params, OptionalExtension, Row};
 
@@ -24,7 +32,7 @@ const SETTING_CREATOR_KIND: &str = "roblox.creator_kind";
 const SETTING_CREATOR_ID: &str = "roblox.creator_id";
 const SETTING_GENRE_TO_DESCRIPTION: &str = "roblox.genre_to_description";
 
-const UPLOAD_COLUMNS: &str = "u.id, u.hash, u.file_name, t.bytes, u.seconds, u.name, u.description,
+const UPLOAD_COLUMNS: &str = "u.id, u.hash, u.file_name, u.bytes, u.seconds, u.name, u.description,
     u.category_id, u.genre_id, u.creator_kind, u.creator_id, u.status, u.operation_id,
     u.asset_id, u.moderation_state, u.error, u.created_at, u.updated_at, u.uploaded_at,
     u.approved_at";
@@ -274,35 +282,59 @@ impl Store {
     /// `roblox_queue_put`: upsert. `id` biasanya dibuat TS (UUID) dan selalu
     /// dikirim — id yang belum ada di tabel = INSERT, bukan `NOT_FOUND`;
     /// `id` kosong = Rust yang membuat id. `createdAt` diisi saat insert,
-    /// `updatedAt` tiap put. `bytes` diabaikan — selalu dari `track`.
+    /// `updatedAt` tiap put. `bytes` dari argumen diabaikan — disalin dari
+    /// `track` (satu-satunya yang tahu ukuran berkas di disk).
+    ///
+    /// Baris BARU butuh lagunya ada: tanpa `tracks/<hash>` tidak ada yang bisa
+    /// dikirim. Baris yang sudah ada boleh ditulis ulang walau lagunya sudah
+    /// dihapus (katalog `done`/`failed` bertahan tanpa lagu, migrasi 0002) —
+    /// `bytes` lamanya dipertahankan.
     pub fn queue_put(&self, input: &UploadInput) -> Result<UploadRow, HostError> {
-        if !self.has_track(&input.hash)? {
-            return Err(HostError::NotFound(
-                "lagu untuk unggahan ini tidak ada di kepustakaan".into(),
-            ));
-        }
-        self.ensure_taxonomy_pair(input.category_id.as_deref(), input.genre_id.as_deref())?;
         let conn = self.conn();
+        let track_bytes: Option<i64> = conn
+            .query_row(
+                "SELECT bytes FROM track WHERE hash = ?1",
+                [&input.hash],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let existing: Option<(i64, i64)> = if input.id.is_empty() {
+            None
+        } else {
+            conn.query_row(
+                "SELECT created_at, bytes FROM roblox_upload WHERE id = ?1",
+                [&input.id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+        };
+        let bytes = match (track_bytes, existing) {
+            (Some(b), _) => b,
+            (None, Some((_, b))) => b,
+            (None, None) => {
+                return Err(HostError::NotFound(
+                    "lagu untuk unggahan ini tidak ada di kepustakaan".into(),
+                ))
+            }
+        };
+        self.ensure_taxonomy_pair(input.category_id.as_deref(), input.genre_id.as_deref())?;
         let now = self.now();
         let (id, created_at) = if input.id.is_empty() {
             (uuid::Uuid::new_v4().to_string(), now)
         } else {
-            let created: Option<i64> = conn
-                .query_row(
-                    "SELECT created_at FROM roblox_upload WHERE id = ?1",
-                    [&input.id],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            (input.id.clone(), created.unwrap_or(now))
+            (
+                input.id.clone(),
+                existing.map(|(created, _)| created).unwrap_or(now),
+            )
         };
         conn.execute(
-            "INSERT INTO roblox_upload (id, hash, file_name, seconds, name, description,
+            "INSERT INTO roblox_upload (id, hash, file_name, bytes, seconds, name, description,
                 category_id, genre_id, creator_kind, creator_id, status, operation_id,
                 asset_id, moderation_state, error, created_at, updated_at, uploaded_at, approved_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT (id) DO UPDATE SET
-               hash = excluded.hash, file_name = excluded.file_name, seconds = excluded.seconds,
+               hash = excluded.hash, file_name = excluded.file_name, bytes = excluded.bytes,
+               seconds = excluded.seconds,
                name = excluded.name, description = excluded.description,
                category_id = excluded.category_id, genre_id = excluded.genre_id,
                creator_kind = excluded.creator_kind, creator_id = excluded.creator_id,
@@ -314,6 +346,7 @@ impl Store {
                 id,
                 input.hash,
                 input.file_name,
+                bytes,
                 input.seconds,
                 input.name,
                 input.description,
@@ -381,7 +414,7 @@ impl Store {
 
     /// Nama kategori dan genre satu unggahan — bahan baris
     /// `Genre: <kategori> / <genre>` di akhir deskripsi asset (docs/21 §1d),
-    /// yang ditambahkan SISI RUST saat `roblox_upload_start` (R3) kalau
+    /// yang ditambahkan SISI RUST di `roblox_upload::prepare_upload` kalau
     /// `target().genre_to_description` hidup. `None` kalau baris tidak punya
     /// genre; `NOT_FOUND` kalau barisnya tidak ada.
     pub fn upload_genre_names(&self, id: &str) -> Result<Option<(String, String)>, HostError> {
@@ -416,9 +449,9 @@ impl Store {
         tail: &str,
         args: &[&dyn rusqlite::ToSql],
     ) -> Result<Vec<UploadRow>, HostError> {
-        let sql = format!(
-            "SELECT {UPLOAD_COLUMNS} FROM roblox_upload u JOIN track t ON t.hash = u.hash {tail}"
-        );
+        // Tanpa JOIN ke `track`: baris katalog boleh hidup lebih lama dari
+        // lagunya (migrasi 0002), dan `bytes` sudah ada di tabel ini.
+        let sql = format!("SELECT {UPLOAD_COLUMNS} FROM roblox_upload u {tail}");
         let mut stmt = self.conn().prepare(&sql)?;
         let rows = stmt.query_map(args, row_to_upload)?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -468,7 +501,7 @@ impl Store {
         Ok(())
     }
 
-    // ── transisi status (dipakai command unggah, fase R3) ────────────────
+    // ── transisi status (dipakai `roblox_upload.rs`) ─────────────────────
 
     /// Mulai mengirim byte.
     pub fn mark_uploading(&self, id: &str) -> Result<UploadRow, HostError> {
