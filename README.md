@@ -112,6 +112,22 @@ crossOriginIsolated          // harus true (COOP/COEP aktif)
 lalu pastikan varian yang termuat **`mt`** (bukan `st`), dan lakukan satu export
 WAV sampai berkasnya terunduh.
 
+## Desktop (Tauri 2, macOS + Windows)
+
+Aplikasi desktop memakai frontend yang sama (`web/dist` ditanam ke binary;
+[docs/20](docs/20-desktop-tauri.md)). Rilisnya **dibangun di mesin lokal**,
+bukan CI — sertifikat Developer ID dan kunci updater ada di sana:
+
+```bash
+pnpm dev:desktop                                   # jendela Tauri ke Vite dev
+scripts/release-desktop.sh --unsigned              # .dmg uji, tanpa signing
+scripts/release-desktop.sh --targets aarch64,x86_64 --publish   # draft GitHub Release + latest.json
+```
+
+Windows (`.msi` + `-setup.exe`) dibangun dengan skrip yang sama di mesin
+Windows lewat Git Bash. Kunci updater, sertifikat, `.env.release`, dan daftar
+gejala kegagalan: [docs/22-rilis-desktop.md](docs/22-rilis-desktop.md).
+
 ## Struktur
 
 ```
