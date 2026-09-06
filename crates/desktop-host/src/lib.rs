@@ -50,6 +50,7 @@ pub use model::{
 mod tests;
 
 pub mod open_cloud;
+pub mod proxy;
 pub mod roblox_upload;
 
 /// Grant Access lokal (docs/21 §3f): port rute `/roblox/*` Worker kepustakaan

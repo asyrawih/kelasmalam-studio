@@ -208,6 +208,14 @@ export interface RobloxGrantSettings {
 /** Target grant, ejaan persis milik Asset Permissions API. */
 export type RobloxGrantSubjectType = 'Universe' | 'Group' | 'User';
 
+// ── Proxy HTTP ─────────────────────────────────────────────────────────────
+
+/** Balasan `soundcloud_json`: status HTTP apa adanya + badan JSON (`null` bila bukan JSON). */
+export interface ProxyJsonReply {
+  readonly status: number;
+  readonly body: unknown;
+}
+
 // ── Peta command → argumen → hasil ─────────────────────────────────────────
 
 /**
@@ -318,6 +326,17 @@ export interface LocalCommands {
     args: { assetIds: readonly string[]; subjectType: RobloxGrantSubjectType; subjectId: string };
     result: number;
   };
+
+  // soundcloud — proxy HTTP dari Rust (WebView desktop mati di CORS; pola docs/21 §1e)
+  /**
+   * `GET` ke server discovery SoundCloud. Host di-allowlist di Rust
+   * (`soundcloud.kelasmalam.app` + loopback untuk dev); host lain → `INVALID`.
+   * Status bukan-2xx TIDAK jadi galat — `body`-nya diteruskan supaya halaman
+   * bisa membaca `{ message }` server seperti di web.
+   */
+  soundcloud_json: { args: { url: string }; result: ProxyJsonReply };
+  /** Badan mentah (stream audio). Bukan-2xx → `HTTP` dengan `status`. */
+  soundcloud_bytes: { args: { url: string }; result: ArrayBuffer };
 }
 
 export type LocalCommandName = keyof LocalCommands;
@@ -367,6 +386,8 @@ export const LOCAL_COMMAND_NAMES: readonly LocalCommandName[] = [
   'roblox_experiences',
   'roblox_resolve_place',
   'roblox_grant',
+  'soundcloud_json',
+  'soundcloud_bytes',
 ];
 
 /** Nama event Tauri yang dipancarkan sisi Rust untuk kontrak ini. */
