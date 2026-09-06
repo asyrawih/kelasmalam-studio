@@ -363,6 +363,21 @@ export interface StudioAppState extends StudioState {
   readonly minDurationSec: number;
   /** Batas atas panjang timeline (detik). null = ikut konten (otomatis). */
   readonly maxDurationSec: number | null;
+  /**
+   * PENANDA KOTOR, dalam bentuk dua angka.
+   *
+   * `projectSerial` naik tiap kali KARYA berubah — pakai definisi yang sama
+   * dengan riwayat undo (`EDIT_KEYS`), termasuk undo/redo itu sendiri.
+   * `savedSerial` adalah nilai `projectSerial` saat terakhir disimpan atau
+   * dibuka. Kotor = keduanya tidak sama.
+   *
+   * Dua angka, bukan satu boolean, karena simpan itu ASINKRON: user boleh
+   * mengedit selama unggahan berjalan, dan `markSaved(serialSaatMulai)` harus
+   * membiarkan project tetap kotor kalau ada edit di antaranya. Boolean tidak
+   * bisa membedakan itu. Keduanya state sesi — tidak ikut diserialisasi.
+   */
+  readonly projectSerial: number;
+  readonly savedSerial: number;
 }
 
 /**
@@ -443,6 +458,8 @@ let state: StudioAppState = withDerived({
   minDurationSec: MIN_DURATION_SEC,
   maxDurationSec: null,
   engineError: null,
+  projectSerial: 0,
+  savedSerial: 0,
 });
 
 type Listener = () => void;
@@ -470,7 +487,11 @@ function notify(): void {
 
 function restoreProject(snapshot: StudioAppState): void {
   const patch = Object.fromEntries(EDIT_KEYS.map((key) => [key, snapshot[key]])) as Partial<StudioAppState>;
-  state = withDerived({ ...state, ...patch, draggingClip: false });
+  // Undo/redo mengubah karya relatif terhadap yang tersimpan, jadi ia juga
+  // mengotori — walaupun secara kebetulan kembali ke bentuk yang sama persis
+  // dengan yang disimpan. Membandingkan isi untuk mendeteksi kasus itu berarti
+  // menyerialisasi seluruh project tiap ketukan ⌘Z; tidak sepadan.
+  state = withDerived({ ...state, ...patch, draggingClip: false, projectSerial: state.projectSerial + 1 });
   notify();
 }
 
@@ -500,8 +521,13 @@ function set(patch: (s: StudioAppState) => Partial<StudioAppState> | null): void
       redoStack.length = 0;
     }
     if (state.draggingClip) dragHistoryRecorded = true;
+    // Satu definisi "karya berubah" untuk riwayat undo DAN penanda kotor —
+    // kalau keduanya punya daftar field sendiri, suatu hari ada edit yang bisa
+    // di-undo tapi tidak membuat judul jendela bertanda.
+    state = { ...merged, projectSerial: merged.projectSerial + 1 };
+  } else {
+    state = merged;
   }
-  state = merged;
   notify();
 }
 
@@ -1448,7 +1474,7 @@ export const studioActions = {
     undoStack.length = 0;
     redoStack.length = 0;
     restoringHistory = true;
-    set(() => ({
+    set((s) => ({
       ...clean,
       playing: false,
       scrubbing: false,
@@ -1456,8 +1482,26 @@ export const studioActions = {
       exportProgress: null,
       importJobs: [],
       seekEpoch: 0,
+      // Project yang baru dibuka dari data tersimpan itu BERSIH menurut
+      // definisi. `restoringHistory` di atas menjamin `set` tidak menaikkan
+      // serialnya, jadi menyamakan keduanya di sini cukup.
+      projectSerial: s.projectSerial,
+      savedSerial: s.projectSerial,
     }));
     restoringHistory = false;
+  },
+  /**
+   * Tandai karya SAAT INI (atau saat `serial` diambil) sudah tersimpan.
+   *
+   * Pemanggil yang menyimpan secara asinkron harus membaca `projectSerial`
+   * SEBELUM menyerialisasi, lalu menyerahkannya ke sini sesudah server
+   * menjawab — edit yang terjadi di antaranya tetap terhitung belum tersimpan.
+   */
+  markSaved(serial?: number): void {
+    set((s) => {
+      const saved = serial ?? s.projectSerial;
+      return s.savedSerial === saved ? null : { savedSerial: saved };
+    });
   },
 
   /**
@@ -1908,10 +1952,22 @@ export const studioActions = {
       snapEnabled: true,
       minDurationSec: MIN_DURATION_SEC,
       maxDurationSec: null,
+      projectSerial: 0,
+      savedSerial: 0,
     });
     for (const fn of [...listeners]) fn();
   },
 };
+
+/**
+ * True kalau ada perubahan karya yang belum disimpan.
+ *
+ * Primitif, jadi aman dipakai langsung sebagai selector `useStudio`. Dipakai
+ * judul jendela (tanda `•`) dan penjaga tutup jendela di `app-shell`.
+ */
+export function selectProjectDirty(s: StudioAppState): boolean {
+  return s.projectSerial !== s.savedSerial;
+}
 
 // ── Selector siap pakai (stabil secara referensi) ────────────────────────────
 
