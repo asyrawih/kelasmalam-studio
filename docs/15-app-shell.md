@@ -173,19 +173,37 @@ kecocokan di nama kelompoknya.
 
 ---
 
-## Yang SENGAJA belum dipindahkan
+## Fase tahan — kenapa Studio sempat tidak ikut, dan apa yang mengubahnya
 
-`studio/shortcuts/useTransportShortcuts.ts` **tetap di tempatnya**.
+Sampai wave 1 desktop, `studio/shortcuts/useTransportShortcuts.ts` adalah
+listener `window` kedua di samping dispatcher shell. Alasannya bukan kemalasan:
+Spasi di Studio punya semantik **tahan-lepas** — ditahan berarti alat tangan
+untuk pan, diketuk berarti play, dan play menyala di `keyup` (lihat
+`space-pan.ts`). Registry hanya memodelkan `keydown`.
 
-Alasannya bukan kemalasan: Spasi di Studio punya semantik **tahan-lepas** —
-ditahan berarti alat tangan untuk pan, diketuk berarti play, dan play menyala di
-`keyup` (lihat `space-pan.ts`). Registry ini hanya memodelkan `keydown`.
-Menambahkan fase lepas berarti tiap command dari lima puluh harus memutuskan
-apakah ia punya fase itu, demi dua command yang membutuhkannya.
+Menu native desktop (docs/20 D5) yang memaksa keputusannya: item "Putar /
+Jeda" harus menyasar **satu id**, dan id itu harus sama dengan yang dipakai
+keyboard — kalau tidak, ada dua daftar aksi Studio yang harus dijaga tetap sama.
 
-Keduanya hidup berdampingan tanpa bentrok: dispatcher shell hanya bertindak
-untuk chord yang **terdaftar**, dan Studio tidak mendaftarkan apa pun. Migrasi
-menunggu registry punya konsep "hold", dan itu keputusan tersendiri.
+Jadi registry sekarang punya `Command.hold` — `press` / `release` / `cancel`:
+
+- dispatcher memanggil `press()` di keydown dan **mengingat `e.code`**, bukan
+  chord, supaya keyup tetap cocok walau modifier dilepas lebih dulu;
+- `release()` di keyup menjawab "ketukan murni?" — hanya kalau ya, `run()`
+  dipanggil;
+- `blur` jendela memanggil `cancel()` untuk semua yang masih ditahan: Alt-Tab
+  saat Spasi ditahan berarti keyup tidak pernah datang.
+
+Hanya keyboard yang punya fase ini. Palette, menu native, dan MIDI memanggil
+`run()` langsung — bagi mereka setiap command adalah ketukan. Dan hanya
+command yang **membutuhkannya** yang mengisinya; sisanya tidak berubah.
+
+Semua pemetaan Studio kini ada di `studio/commands.ts` (`studio.transport.*`,
+`studio.undo/redo`, `studio.clip.*`, `studio.project.save`,
+`studio.export.open`), dan `/studio` mendaftarkannya seperti DJ:
+`useCommands(studioCommands())`. Dua perbedaan kecil yang mengikuti aturan
+shell: tombol yang ditahan tidak lagi mengulang perintah (panah ←/→), dan
+Spasi/Enter saat fokus ada di tombol menekan tombolnya.
 
 ---
 

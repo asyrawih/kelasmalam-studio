@@ -10,21 +10,30 @@
 //!     saat diklik, dan itu lebih buruk daripada error. Daftar di `MENUS`
 //!     sengaja disalin dari registrasi yang sungguhan ada, bukan dari apa
 //!     yang "seharusnya" ada. Tes D5 di sisi web menjaga ⊆ registry.
-//!   - command yang terdaftar oleh HALAMAN (`dj.*`, `library.toggle`) tidak
-//!     berarti apa-apa di halaman lain; `runCommand()` mengembalikan false dan
-//!     tidak terjadi apa-apa. Menu Transport karena itu hanya berisi `dj.*`:
-//!     Studio belum mendaftarkan command transport/undo/save ke registry, dan
-//!     mengarang `studio.undo` di sini tidak akan membuatnya ada.
+//!   - command yang terdaftar oleh HALAMAN (`studio.*`, `library.toggle`,
+//!     `dj.*`) tidak berarti apa-apa di halaman lain; `runCommand()`
+//!     mengembalikan false dan tidak terjadi apa-apa. Menu Transport karena
+//!     itu punya dua bagian — Studio dan DJ — dan yang satu diam saat halaman
+//!     yang lain terbuka. Itu disengaja: menu native tidak dibangun ulang tiap
+//!     berpindah halaman, dan item yang muncul-hilang lebih membingungkan
+//!     daripada item yang diam.
 //!
-//! Item yang murni urusan OS (Quit, Hide, Cut/Copy/Paste, Fullscreen) memakai
-//! `PredefinedMenuItem`: perilakunya sudah benar per-platform dan tidak butuh
-//! satu baris pun di web.
+//! Item yang murni urusan OS (Quit, Hide, Cut/Copy/Paste/Select All,
+//! Fullscreen) memakai `PredefinedMenuItem`: perilakunya sudah benar
+//! per-platform dan tidak butuh satu baris pun di web. Undo/Redo BUKAN item
+//! bawaan: yang bawaan adalah undo teks di input yang fokus, sedangkan yang
+//! dimaksud user DAW dengan ⌘Z adalah undo timeline — `studio.undo`.
 //!
-//! Akselerator hanya dipasang pada kombinasi ber-modifier (⌘,  ⌘K). Menu
-//! native menangkap tombol SEBELUM WebView melihatnya, jadi memasang `Space`
-//! di sini akan merampasnya dari setiap input teks di aplikasi. Keymap yang
-//! bisa diubah user tetap hidup di web; akselerator di sini hanyalah cermin
-//! binding bawaan untuk dua command yang secara konvensi memang milik menu.
+//! Akselerator hanya dipasang pada kombinasi ber-modifier (⌘S, ⌘Z, ⌘K).
+//! Menu native menangkap tombol SEBELUM WebView melihatnya (Windows) atau
+//! sesudah WebView melepasnya (macOS), jadi memasang `Space` di sini akan
+//! merampasnya dari setiap input teks di aplikasi. Keymap yang bisa diubah
+//! user tetap hidup di web; akselerator di sini hanyalah cermin binding
+//! bawaan untuk command yang secara konvensi memang milik menu — dan harga
+//! yang disadari: ⌘Z saat mengetik di sebuah input menjadi undo timeline,
+//! bukan undo teks, karena akselerator native tidak tahu apa yang sedang
+//! fokus. Input teks di Studio sedikit (nama lane, nama project); undo
+//! timeline yang tidak bisa dicapai dari menu jauh lebih mahal.
 
 use serde::Serialize;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuEvent, MenuItemBuilder, SubmenuBuilder};
@@ -87,6 +96,22 @@ const APP_ITEMS: &[CommandItem] = &[item_with_key(
     "CmdOrCtrl+,",
 )];
 
+// File: simpan ke kepustakaan dan export. `studio.project.save` membuka dok
+// kepustakaan dan memfokuskan tombol simpan — simpan yang sebenarnya adalah
+// tombol itu (lihat `web/src/studio/commands.ts`); di desktop dok menjawab
+// "belum tersedia" (docs/20 §1d), dan itu jawaban yang jujur untuk ⌘S.
+const FILE_ITEMS: &[CommandItem] = &[
+    item_with_key("studio.project.save", "Simpan Project", "CmdOrCtrl+S"),
+    item_with_key("studio.export.open", "Export…", "CmdOrCtrl+Shift+E"),
+];
+
+// Edit: undo/redo TIMELINE (lihat catatan modul); Cut/Copy/Paste/Select All
+// tetap bawaan OS di bawahnya.
+const EDIT_ITEMS: &[CommandItem] = &[
+    item_with_key("studio.undo", "Undo", "CmdOrCtrl+Z"),
+    item_with_key("studio.redo", "Redo", "CmdOrCtrl+Shift+Z"),
+];
+
 const VIEW_ITEMS: &[CommandItem] = &[
     item("library.toggle", "Kepustakaan"),
     item("shell.goto.home", "Beranda"),
@@ -96,7 +121,17 @@ const VIEW_ITEMS: &[CommandItem] = &[
     item("shell.goto.proof-stem", "Proof Stem"),
 ];
 
-const TRANSPORT_ITEMS: &[CommandItem] = &[
+// Transport Studio: tanpa akselerator — Space/Home/End milik keymap web, dan
+// di sana Spasi punya fase tahan (pan) yang tidak bisa ditiru menu.
+const TRANSPORT_STUDIO_ITEMS: &[CommandItem] = &[
+    item("studio.transport.playPause", "Putar / Jeda"),
+    item("studio.transport.stop", "Berhenti"),
+    item("studio.transport.toStart", "Ke Awal"),
+    item("studio.transport.toEnd", "Ke Akhir"),
+    item("studio.loop.toggle", "Ulangi dari Awal saat Habis"),
+];
+
+const TRANSPORT_DJ_ITEMS: &[CommandItem] = &[
     item("dj.focused.playPause", "Putar / Jeda deck yang fokus"),
     item("dj.focus.toggle", "Pindah fokus deck"),
     item("dj.deckA.playPause", "Putar / Jeda deck A"),
@@ -115,7 +150,15 @@ const HELP_ITEMS: &[CommandItem] = &[
 
 /// Seluruh item command dari semua menu — sumber tunggal untuk tes dan untuk
 /// siapa pun yang perlu tahu "id apa saja yang dikirim menu".
-pub const MENU_COMMANDS: &[&[CommandItem]] = &[APP_ITEMS, VIEW_ITEMS, TRANSPORT_ITEMS, HELP_ITEMS];
+pub const MENU_COMMANDS: &[&[CommandItem]] = &[
+    APP_ITEMS,
+    FILE_ITEMS,
+    EDIT_ITEMS,
+    VIEW_ITEMS,
+    TRANSPORT_STUDIO_ITEMS,
+    TRANSPORT_DJ_ITEMS,
+    HELP_ITEMS,
+];
 
 /// Id item native yang bukan command registry. Diberi awalan `native:` supaya
 /// tidak mungkin tertukar dengan id registry (yang dipisah titik, bukan
@@ -153,18 +196,13 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Menu
         .quit()
         .build()?;
 
-    // File: belum ada command project (buka/simpan) di registry — mengarang
-    // `studio.save` di sini tidak membuatnya ada. Yang tersisa hanya urusan
-    // jendela; menunya tetap ada supaya posisinya tidak berpindah saat D-fase
-    // berikutnya mengisinya.
-    let file_menu = SubmenuBuilder::new(app, "File").close_window().build()?;
+    let mut file_menu = SubmenuBuilder::new(app, "File");
+    file_menu = add_items(app, file_menu, FILE_ITEMS)?;
+    let file_menu = file_menu.separator().close_window().build()?;
 
-    // Edit: seluruhnya bawaan OS. Undo/Redo di sini adalah undo TEKS (input
-    // yang sedang fokus), bukan undo timeline — yang itu milik registry dan
-    // belum terdaftar oleh Studio.
-    let edit_menu = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
+    let mut edit_menu = SubmenuBuilder::new(app, "Edit");
+    edit_menu = add_items(app, edit_menu, EDIT_ITEMS)?;
+    let edit_menu = edit_menu
         .separator()
         .cut()
         .copy()
@@ -178,14 +216,18 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Menu
     view_menu = add_items(app, view_menu, &VIEW_ITEMS[1..])?;
     let view_menu = view_menu.separator().fullscreen().build()?;
 
+    // Studio dulu, lalu DJ — masing-masing dipisah separator, bukan submenu:
+    // submenu menambah satu hover untuk perintah yang dipakai terus-menerus.
     let mut transport_menu = SubmenuBuilder::new(app, "Transport");
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_ITEMS[..2])?;
+    transport_menu = add_items(app, transport_menu, TRANSPORT_STUDIO_ITEMS)?;
     transport_menu = transport_menu.separator();
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_ITEMS[2..4])?;
+    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[..2])?;
     transport_menu = transport_menu.separator();
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_ITEMS[4..6])?;
+    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[2..4])?;
     transport_menu = transport_menu.separator();
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_ITEMS[6..])?;
+    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[4..6])?;
+    transport_menu = transport_menu.separator();
+    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[6..])?;
     let transport_menu = transport_menu.build()?;
 
     let window_menu = SubmenuBuilder::new(app, "Jendela")
@@ -311,6 +353,39 @@ mod tests {
         }
         assert!(lookup(NATIVE_OPEN_SITE).is_none());
         assert!(lookup("").is_none());
+    }
+
+    /// Dua item dengan akselerator yang sama: OS memilih salah satunya tanpa
+    /// memberi tahu, dan yang kalah adalah item yang "tidak bekerja" di
+    /// mesin user. Sama bahayanya dengan id ganda, dan ditangkap di tempat
+    /// yang sama.
+    #[test]
+    fn accelerators_unique() {
+        let accs: Vec<&str> = MENU_COMMANDS
+            .iter()
+            .flat_map(|m| m.iter())
+            .filter_map(|c| c.accelerator)
+            .collect();
+        let set: HashSet<&str> = accs.iter().copied().collect();
+        assert_eq!(accs.len(), set.len(), "akselerator ganda: {accs:?}");
+    }
+
+    /// Menu Studio (File, Edit, Transport bagian Studio) HANYA menyasar
+    /// `studio.*`: id milik halaman lain di sana akan diam saat Studio
+    /// terbuka — persis halaman tempat menu-menu ini bermakna.
+    #[test]
+    fn studio_menus_target_studio_commands() {
+        for c in FILE_ITEMS
+            .iter()
+            .chain(EDIT_ITEMS.iter())
+            .chain(TRANSPORT_STUDIO_ITEMS.iter())
+        {
+            assert!(
+                c.id.starts_with("studio."),
+                "{}: item menu Studio harus menyasar command studio.*",
+                c.id
+            );
+        }
     }
 
     /// Akselerator hanya untuk kombinasi ber-modifier — lihat catatan modul.
