@@ -14,7 +14,7 @@ use crate::types::{
     CatalogFilter, CreatorKind, ModerationState, TargetSettings, TrackMetaInput, UploadInput,
     UploadStatus,
 };
-use crate::{HostError, SecretKey, SecretStore, Store, DB_FILE, TRACKS_SUBDIR};
+use crate::{HostError, SecretKey, SecretStore, Store, DB_FILE, SCHEMA_VERSION, TRACKS_SUBDIR};
 
 // ---------------------------------------------------------------- Helper
 
@@ -117,7 +117,7 @@ fn open_creates_layout_and_seeds_taxonomy() {
     assert!(tmp.path().join(DB_FILE).is_file());
     assert!(tmp.path().join(TRACKS_SUBDIR).is_dir());
     assert!(tmp.path().join(crate::MODELS_SUBDIR).is_dir());
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
 
     let tax = store.taxonomy().unwrap();
     assert_eq!(
@@ -135,7 +135,10 @@ fn open_creates_layout_and_seeds_taxonomy() {
 
     let info = store.info().unwrap();
     assert_eq!(info.dir, tmp.path().to_string_lossy());
-    assert_eq!((info.tracks, info.projects, info.schema_version), (0, 0, 2));
+    assert_eq!(
+        (info.tracks, info.projects, info.schema_version),
+        (0, 0, SCHEMA_VERSION)
+    );
     assert!(info.bytes > 0, "library.sqlite sendiri sudah punya ukuran");
 
     // WAL + foreign_keys memang menyala di koneksi ini.
@@ -163,7 +166,7 @@ fn reopen_keeps_data_and_does_not_reseed() {
         seed_track(&store, src.path(), "a.mp3", 1)
     };
     let store = open_at(tmp.path());
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
     assert!(store.has_track(&hash).unwrap());
     assert_eq!(store.taxonomy().unwrap().genres.len(), 16);
 }
@@ -1126,7 +1129,7 @@ fn relocate_rejects_nested_or_non_empty_targets() {
         Err(HostError::Invalid(_))
     ));
     assert_eq!(store.dir(), old.path());
-    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
 }
 
 // ------------------------------------------------------------ SecretStore

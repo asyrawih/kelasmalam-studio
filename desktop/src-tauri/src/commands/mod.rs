@@ -19,6 +19,7 @@
 //!   `tauri::ipc::Response`, `library_put_bytes` membaca `tauri::ipc::Request`
 //!   mentah dengan header `x-hash`/`x-ext`.
 
+mod grant;
 mod library;
 mod model;
 mod roblox;
@@ -139,6 +140,17 @@ pub fn invoke_handler() -> impl Fn(Invoke) -> bool + Send + Sync + 'static {
         roblox::roblox_catalog_list,
         roblox::roblox_target_get,
         roblox::roblox_target_set,
+        // roblox — grant access (docs/21 §3f, R5)
+        grant::roblox_grant_settings_get,
+        grant::roblox_grant_cookie_set,
+        grant::roblox_grant_cookie_clear,
+        grant::roblox_assets_sync,
+        grant::roblox_assets_list,
+        grant::roblox_assets_import,
+        grant::roblox_assets_record,
+        grant::roblox_experiences,
+        grant::roblox_resolve_place,
+        grant::roblox_grant,
         // model (docs/20 wave 1)
         model::model_download,
         model::model_read,

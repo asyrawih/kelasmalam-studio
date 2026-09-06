@@ -43,7 +43,16 @@ const MIGRATIONS: &[(u32, &str)] = &[
         2,
         include_str!("../migrations/0002_upload_outlives_track.sql"),
     ),
+    (
+        3,
+        include_str!("../migrations/0003_roblox_catalog_asset.sql"),
+    ),
 ];
+
+/// Versi skema yang dihasilkan [`Store::open`] pada folder baru = nomor
+/// migrasi terakhir. Tes membandingkan dengan ini, bukan angka literal, supaya
+/// menambah migrasi tidak berarti mengubah belasan assert.
+pub const SCHEMA_VERSION: u32 = MIGRATIONS[MIGRATIONS.len() - 1].0;
 
 /// Sumber waktu yang bisa diganti tes. Milidetik epoch, seperti Worker.
 pub type Clock = Box<dyn Fn() -> i64 + Send + Sync>;

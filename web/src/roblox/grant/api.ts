@@ -13,8 +13,22 @@ export interface RobloxExperience {
   readonly name: string;
 }
 
+export interface GrantSettings {
+  readonly creatorKind: 'user' | 'group';
+  readonly creatorId: string;
+  readonly apiKey: string;
+  readonly hasApiKey: boolean;
+  readonly hasRobloxCookie: boolean;
+  readonly robloxCookie: string;
+}
+
 export interface GrantApi {
-  settings(): Promise<{ creatorKind: 'user' | 'group'; creatorId: string; apiKey: string; hasRobloxCookie: boolean; robloxCookie: string } | null>;
+  /**
+   * `apiKey`/`robloxCookie` terisi hanya di web (Worker mengembalikannya untuk
+   * mengisi ulang kolom). Di desktop keduanya `''` dan yang menjawab "sudah
+   * ada?" adalah `hasApiKey`/`hasRobloxCookie` — nilainya tinggal di keychain.
+   */
+  settings(): Promise<GrantSettings | null>;
   saveSettings(settings: { creatorKind: 'user' | 'group'; creatorId: string; apiKey: string; robloxCookie?: string }): Promise<void>;
   syncAssets(): Promise<number>;
   assets(query?: string): Promise<readonly RobloxCatalogAsset[]>;
@@ -47,7 +61,8 @@ export function createGrantApi(baseUrl: string, fetchImpl: typeof fetch = fetch)
   return {
     async settings() {
       const res = await call('/roblox/settings');
-      return ((await res.json()) as { settings?: { creatorKind: 'user' | 'group'; creatorId: string; apiKey: string; hasRobloxCookie: boolean; robloxCookie: string } | null }).settings ?? null;
+      const saved = ((await res.json()) as { settings?: Omit<GrantSettings, 'hasApiKey'> | null }).settings ?? null;
+      return saved === null ? null : { ...saved, hasApiKey: saved.apiKey !== '' };
     },
     async saveSettings(settings) {
       await call('/roblox/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(settings) });

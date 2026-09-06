@@ -11,8 +11,10 @@
  * Web: `createHttpTransport(VITE_ROBLOX_API)` ke Worker unggah, Grant Access
  * lewat Worker kepustakaan — persis seperti sebelum desktop ada.
  * Desktop: `createDesktopTransport()` ke command Tauri; unggah dan poll
- * dilakukan Rust, API key di keychain, target di SQLite. `grantApi` `null`,
- * dan tab GRANT mengatakannya (§3f). `runner.ts` sama untuk keduanya.
+ * dilakukan Rust, API key di keychain, target di SQLite. Grant Access lewat
+ * `createLocalGrantApi()` — command `roblox_grant_*`/`roblox_assets_*` yang
+ * bicara ke Roblox langsung dari Rust dengan cookie di keychain (§3f, R5).
+ * `runner.ts` sama untuk keduanya.
  *
  * ## Tanpa `VITE_ROBLOX_API`, halaman web persis seperti sebelum backend ada
  *
@@ -33,6 +35,7 @@ import { localInvoke } from './local/invoke';
 import { descriptionForRoblox, type RobloxTarget } from './model';
 import { restoreRobloxQueue, robloxActions, robloxStore } from './store';
 import { createGrantApi, type GrantApi } from './grant/api';
+import { createLocalGrantApi } from './grant/local-api';
 
 export interface RobloxRouteProps {
   readonly onClose?: () => void;
@@ -75,9 +78,12 @@ export function RobloxRoute({
   const [probeGeneration, setProbeGeneration] = useState(0);
 
   const grantApi = useMemo<GrantApi | null>(() => {
+    // Desktop tidak punya URL: `base` hanya penanda supaya tes yang menyuntik
+    // `makeGrantApi` tetap bisa membedakan dari mana ia dipanggil.
+    if (desktop) return makeGrantApi?.('desktop') ?? createLocalGrantApi();
     if (catalogBase === '') return null;
     return makeGrantApi?.(catalogBase) ?? createGrantApi(catalogBase);
-  }, [catalogBase, makeGrantApi]);
+  }, [catalogBase, desktop, makeGrantApi]);
 
   const transport = useMemo(
     () =>

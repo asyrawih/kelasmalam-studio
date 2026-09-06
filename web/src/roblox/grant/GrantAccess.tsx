@@ -20,6 +20,7 @@ export interface GrantAccessProps {
 }
 
 export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }: GrantAccessProps): JSX.Element {
+  const desktop = platform === 'desktop';
   const [assets, setAssets] = useState<readonly RobloxCatalogAsset[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -31,6 +32,12 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
   const [targetId, setTargetId] = useState('');
   const [placeId, setPlaceId] = useState('');
   const [apiKey, setApiKey] = useState(uploadTarget.apiKey);
+  /*
+   * Desktop: kunci tinggal di keychain OS dan TIDAK pernah kembali ke halaman
+   * (docs/21 §1f), jadi kolomnya kosong dan yang tahu "sudah ada" hanya flag
+   * ini. Web: kolom terisi dari Worker dan flag ini sekadar `apiKey !== ''`.
+   */
+  const [hasApiKey, setHasApiKey] = useState(false);
   const [robloxCookie, setRobloxCookie] = useState('');
   const [hasRobloxCookie, setHasRobloxCookie] = useState(false);
   const [message, setMessage] = useState('');
@@ -40,13 +47,34 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
     if (api === null) return;
     setAssets(await api.assets(query));
   };
+  const applySaved = (saved: NonNullable<Awaited<ReturnType<GrantApi['settings']>>>): void => {
+    setOwnerType(saved.creatorKind);
+    setOwnerId(saved.creatorId);
+    setApiKey(saved.apiKey);
+    setHasApiKey(saved.hasApiKey);
+    setHasRobloxCookie(saved.hasRobloxCookie);
+    setRobloxCookie(saved.robloxCookie);
+    robloxActions.setCreatorKind(saved.creatorKind);
+    robloxActions.setCreatorId(saved.creatorId);
+    robloxActions.setApiKey(saved.apiKey);
+    // Kunci ada tapi nilainya tidak ikut: itu keychain (desktop). Badge dan
+    // `targetProblems` membaca flag ini, bukan kolom yang memang kosong.
+    if (saved.hasApiKey && saved.apiKey === '') robloxActions.setApiKeyStored(true);
+  };
   const saveCredentials = async (): Promise<void> => {
     if (api === null) return;
     await api.saveSettings({ creatorKind: ownerType, creatorId: ownerId, apiKey, ...(robloxCookie === '' ? {} : { robloxCookie }) });
     robloxActions.setCreatorKind(ownerType);
     robloxActions.setCreatorId(ownerId);
     robloxActions.setApiKey(apiKey);
-    setMessage('User dan API key tersimpan terenkripsi di D1');
+    // Baca ulang, bukan mengasumsikan: di desktop kolom kunci/cookie kembali
+    // kosong karena salinannya di WebView tidak punya alasan hidup lebih lama
+    // daripada perjalanan ke keychain.
+    const saved = await api.settings().catch(() => null);
+    if (saved !== null) applySaved(saved);
+    setMessage(desktop
+      ? 'User tersimpan; API key dan cookie di keychain OS'
+      : 'User dan API key tersimpan terenkripsi di D1');
   };
   useEffect(() => {
     setOwnerType(uploadTarget.creatorKind);
@@ -57,15 +85,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
   useEffect(() => {
     if (api === null) return;
     void api.settings().then((saved) => {
-      if (saved === null) return;
-      setOwnerType(saved.creatorKind);
-      setOwnerId(saved.creatorId);
-      setApiKey(saved.apiKey);
-      setHasRobloxCookie(saved.hasRobloxCookie);
-      setRobloxCookie(saved.robloxCookie);
-      robloxActions.setCreatorKind(saved.creatorKind);
-      robloxActions.setCreatorId(saved.creatorId);
-      robloxActions.setApiKey(saved.apiKey);
+      if (saved !== null) applySaved(saved);
     }).catch((e: unknown) => setMessage(String(e)));
   }, [api]);
 
@@ -118,25 +138,10 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
     await load();
   };
 
-  /*
-   * Desktop (docs/21 §3f): Grant Access memakai API tidak resmi + cookie
-   * `.ROBLOSECURITY` dan dijadwalkan fase R5. Sampai saat itu tab ini berkata
-   * apa adanya — bukan formulir yang gagal saat ditekan. Katalog lokal sudah
-   * memberi sebagian nilainya (daftar asset + assetId) tanpa cookie.
-   */
-  if (platform === 'desktop') {
-    return (
-      <div style={{ padding: '16px' }}>
-        <Card title="Grant Access" subtitle="belum tersedia di versi desktop" notched>
-          <p style={{ margin: 0, fontSize: '10px', lineHeight: 1.7, color: 'var(--cy-text-muted)' }}>
-            Grant Access belum tersedia di versi desktop. Daftar asset dan asset id yang sudah
-            disetujui ada di tab KATALOG; pemberian izin ke experience masih lewat versi web
-            atau Creator Hub.
-          </p>
-        </Card>
-      </div>
-    );
-  }
+  // Desktop (docs/21 §3f, R5): `api` adalah `createLocalGrantApi()` — Rust
+  // yang bicara ke Roblox, cookie dan kunci di keychain. Formulirnya sama;
+  // hanya kalimat tentang TEMPAT penyimpanan yang berbeda.
+  const storeName = desktop ? 'katalog lokal' : 'D1';
   if (api === null) return <Card title="Grant Access" subtitle="Library API belum tersambung">Isi VITE_LIBRARY_API untuk memakai katalog dan grant.</Card>;
 
   return (
@@ -151,7 +156,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
           <input value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="Creator ID untuk import" style={fieldStyle} />
           <Button variant="outline" onClick={async () => {
             setBusy(true);
-            try { const n = await api.syncAssets(); await load(); setMessage(`${n} audio disinkronkan dari Roblox ke D1`); }
+            try { const n = await api.syncAssets(); await load(); setMessage(`${n} audio disinkronkan dari Roblox ke ${storeName}`); }
             catch (x) { setMessage(String(x)); } finally { setBusy(false); }
           }}>SYNC ROBLOX</Button>
         </div>
@@ -167,7 +172,7 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
             <span>{asset.name}<small style={{ display: 'block', color: 'var(--cy-text-muted)' }}>{asset.assetId}</small></span>
             <small>{asset.creatorKind.toUpperCase()}</small>
           </label>)}
-          {assets.length === 0 ? <p style={{ color: 'var(--cy-text-muted)', fontSize: '10px' }}>Belum ada history di D1. Upload approved berikutnya masuk otomatis; data lama bisa dimasukkan lewat IMPORT CSV.</p> : null}
+          {assets.length === 0 ? <p style={{ color: 'var(--cy-text-muted)', fontSize: '10px' }}>Belum ada history di {storeName}. Upload approved berikutnya masuk otomatis; data lama bisa dimasukkan lewat IMPORT CSV.</p> : null}
         </div>
       </Card>
 
@@ -184,11 +189,14 @@ export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }
           <div style={{ display: 'grid', gap: '8px' }}>
             <select value={targetType} onChange={(e) => setTargetType(e.target.value as typeof targetType)} style={fieldStyle}><option>Universe</option><option>Group</option><option>User</option></select>
             <input value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder={`${targetType} ID`} style={fieldStyle} />
-            <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" autoComplete="off" placeholder="API key dengan asset-permissions:write" style={fieldStyle} />
-            <input value={robloxCookie} onChange={(e) => setRobloxCookie(e.target.value)} type="password" autoComplete="off" placeholder={hasRobloxCookie ? '.ROBLOSECURITY sudah tersimpan — isi untuk mengganti' : '.ROBLOSECURITY untuk sync audio lama'} style={fieldStyle} />
-            <small style={{ color: 'var(--cy-text-muted)' }}>Cookie hanya dipakai oleh Worker untuk legacy asset-list API dan disimpan terenkripsi di D1.</small>
-            <Button variant="outline" disabled={!/^\d+$/.test(ownerId) || apiKey.trim().length < 10} onClick={() => void saveCredentials().catch((e: unknown) => setMessage(String(e)))}>SIMPAN USER + API KEY</Button>
-            <Button disabled={busy || selected.size === 0 || !/^\d+$/.test(targetId) || apiKey.trim() === ''} onClick={async () => { setBusy(true); try { const n = await api.grant([...selected], targetType, targetId, apiKey); setMessage(`${n} audio berhasil diberi izin Use ke ${targetType} ${targetId}`); } catch (e) { setMessage(String(e)); } finally { setBusy(false); } }}>GRANT {selected.size}</Button>
+            <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" autoComplete="off" aria-label="API key Roblox untuk grant" placeholder={hasApiKey && apiKey === '' ? 'API key sudah tersimpan di keychain — isi untuk mengganti' : 'API key dengan asset-permissions:write'} style={fieldStyle} />
+            <input value={robloxCookie} onChange={(e) => setRobloxCookie(e.target.value)} type="password" autoComplete="off" aria-label="cookie .ROBLOSECURITY" placeholder={hasRobloxCookie ? '.ROBLOSECURITY sudah tersimpan — isi untuk mengganti' : '.ROBLOSECURITY untuk sync audio lama'} style={fieldStyle} />
+            <small style={{ color: 'var(--cy-text-muted)' }}>{desktop
+              ? 'Cookie hanya dipakai Rust untuk legacy asset-list API dan disimpan di keychain OS — tidak pernah di SQLite.'
+              : 'Cookie hanya dipakai oleh Worker untuk legacy asset-list API dan disimpan terenkripsi di D1.'}</small>
+            {/* Desktop: kunci yang sudah di keychain boleh dibiarkan kosong — SIMPAN cukup untuk user/cookie. */}
+            <Button variant="outline" disabled={!/^\d+$/.test(ownerId) || (apiKey.trim() === '' ? !(desktop && hasApiKey) : apiKey.trim().length < 10)} onClick={() => void saveCredentials().catch((e: unknown) => setMessage(String(e)))}>SIMPAN USER + API KEY</Button>
+            <Button disabled={busy || selected.size === 0 || !/^\d+$/.test(targetId) || (apiKey.trim() === '' && !hasApiKey)} onClick={async () => { setBusy(true); try { const n = await api.grant([...selected], targetType, targetId, apiKey); setMessage(`${n} audio berhasil diberi izin Use ke ${targetType} ${targetId}`); } catch (e) { setMessage(String(e)); } finally { setBusy(false); } }}>GRANT {selected.size}</Button>
             {message ? <p role="status" style={{ margin: 0, color: 'var(--cy-warning)', fontSize: '10px', lineHeight: 1.6 }}>{message}</p> : null}
           </div>
         </Card>

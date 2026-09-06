@@ -113,7 +113,7 @@ describe('dengan URL terisi', () => {
 /**
  * DESKTOP (docs/21 §3): tidak ada Worker. Kesiapan = kunci di keychain +
  * creator id; SIMPAN menaruh kunci ke keychain lalu mengosongkan kolomnya;
- * GRANT berkata "belum tersedia".
+ * GRANT memakai command lokal (§3f, R5) — tanpa Worker, tanpa login.
  */
 describe('desktop', () => {
   // Store memilih adapter dari host platform, bukan dari prop route — di app
@@ -126,7 +126,8 @@ describe('desktop', () => {
       switch (cmd) {
         case 'secret_get': return over.key === undefined ? null : over.key;
         case 'roblox_target_get': return { creatorKind: 'user', creatorId: over.creatorId ?? '', genreToDescription: true };
-        case 'roblox_queue_list': case 'roblox_catalog_list': return [];
+        case 'roblox_grant_settings_get': return { creatorKind: 'user', creatorId: over.creatorId ?? '', hasCookie: false, hasApiKey: over.key != null };
+        case 'roblox_queue_list': case 'roblox_catalog_list': case 'roblox_assets_list': return [];
         case 'roblox_taxonomy_list': return { categories: [], genres: [] };
         default: return null;
       }
@@ -171,12 +172,15 @@ describe('desktop', () => {
     expect(robloxStore.getState().apiKeyStored).toBe(true);
   });
 
-  it('tab GRANT mengatakan belum tersedia di versi desktop', async () => {
-    table();
+  it('tab GRANT hidup di desktop lewat command lokal, bukan Worker', async () => {
+    table({ key: 'kunci', creatorId: '123' });
     render(<RobloxRoute platform="desktop" />);
     fireEvent.click(screen.getByRole('tab', { name: 'GRANT ACCESS' }));
-    expect(screen.getAllByText(/belum tersedia di versi desktop/i).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('button', { name: /SYNC ROBLOX/ })).toBeNull();
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith('secret_get', { key: 'roblox.api_key' }));
+    expect(screen.queryByText(/belum tersedia di versi desktop/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /SYNC ROBLOX/ })).toBeDefined();
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('roblox_assets_list', { query: '' }));
+    // Pengaturan grant dibaca dari Rust; tidak ada fetch ke VITE_LIBRARY_API.
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('roblox_grant_settings_get', {}));
+    expect(screen.getByText(/disimpan di keychain OS/i)).toBeDefined();
   });
 });

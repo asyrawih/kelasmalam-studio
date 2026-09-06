@@ -160,6 +160,54 @@ export interface RobloxTargetSettings {
   readonly genreToDescription: boolean;
 }
 
+// ── Roblox — Grant Access (docs/21 §3f, fase R5) ──────────────────────────
+
+/**
+ * Satu baris `roblox_catalog_asset` — cermin `roblox_asset` D1 tanpa
+ * `user_id`. Bentuknya SAMA dengan `RobloxCatalogAsset` di
+ * `roblox/grant/api.ts` supaya `GrantApi` lokal meneruskannya apa adanya.
+ */
+export interface RobloxCatalogAsset {
+  readonly assetId: string;
+  readonly creatorKind: 'user' | 'group';
+  readonly creatorId: string;
+  readonly name: string;
+  readonly moderationState: string | null;
+  readonly source: string;
+}
+
+/** Argumen `roblox_assets_import` / `roblox_assets_record`. */
+export interface RobloxCatalogAssetInput {
+  readonly assetId: string;
+  readonly creatorKind: 'user' | 'group';
+  readonly creatorId: string;
+  readonly name: string;
+  readonly moderationState?: string | null;
+  readonly source: 'upload' | 'import';
+}
+
+/** Cermin `RobloxExperience` di `roblox/grant/api.ts`. */
+export interface RobloxExperience {
+  readonly universeId: string;
+  readonly placeId: string;
+  readonly name: string;
+}
+
+/**
+ * Hasil `roblox_grant_settings_get`. Rahasia TIDAK pernah ikut: yang
+ * dikembalikan hanya "ada/tidak" — nilai cookie dan API key tinggal di
+ * keychain OS (docs/21 §1f) dan hanya Rust yang membacanya.
+ */
+export interface RobloxGrantSettings {
+  readonly creatorKind: 'user' | 'group';
+  readonly creatorId: string;
+  readonly hasCookie: boolean;
+  readonly hasApiKey: boolean;
+}
+
+/** Target grant, ejaan persis milik Asset Permissions API. */
+export type RobloxGrantSubjectType = 'Universe' | 'Group' | 'User';
+
 // ── Peta command → argumen → hasil ─────────────────────────────────────────
 
 /**
@@ -240,6 +288,36 @@ export interface LocalCommands {
   };
   roblox_target_get: { args: Record<string, never>; result: RobloxTargetSettings };
   roblox_target_set: { args: RobloxTargetSettings; result: null };
+
+  // roblox — grant (docs/21 §3f): port rute `/roblox/*` Worker kepustakaan
+  roblox_grant_settings_get: { args: Record<string, never>; result: RobloxGrantSettings };
+  /** Simpan cookie `.ROBLOSECURITY` ke keychain (`roblox.cookie`). Kosong ditolak `INVALID`. */
+  roblox_grant_cookie_set: { args: { cookie: string }; result: null };
+  roblox_grant_cookie_clear: { args: Record<string, never>; result: null };
+  /**
+   * `itemconfiguration` `get-assets` dengan cookie dari keychain → upsert ke
+   * `roblox_catalog_asset`. Hasil = jumlah baris yang disinkronkan. Tanpa
+   * cookie: `INVALID` yang kalimatnya meminta cookie.
+   */
+  roblox_assets_sync: { args: Record<string, never>; result: number };
+  roblox_assets_list: { args: { query?: string }; result: readonly RobloxCatalogAsset[] };
+  /** Maksimum 1000 sekali panggil; baris yang id-nya bukan angka dilewati (seperti Worker). Hasil = jumlah yang masuk. */
+  roblox_assets_import: { args: { assets: readonly RobloxCatalogAssetInput[] }; result: number };
+  roblox_assets_record: { args: { asset: RobloxCatalogAssetInput }; result: null };
+  roblox_experiences: {
+    args: { ownerType: 'user' | 'group'; ownerId: string };
+    result: readonly RobloxExperience[];
+  };
+  /** Hasil = Universe ID. */
+  roblox_resolve_place: { args: { placeId: string }; result: string };
+  /**
+   * PATCH Asset Permissions API. API key dibaca dari keychain (`roblox.api_key`)
+   * — TIDAK ada di argumen. Hasil = jumlah asset yang diberi izin.
+   */
+  roblox_grant: {
+    args: { assetIds: readonly string[]; subjectType: RobloxGrantSubjectType; subjectId: string };
+    result: number;
+  };
 }
 
 export type LocalCommandName = keyof LocalCommands;
@@ -279,6 +357,16 @@ export const LOCAL_COMMAND_NAMES: readonly LocalCommandName[] = [
   'roblox_catalog_list',
   'roblox_target_get',
   'roblox_target_set',
+  'roblox_grant_settings_get',
+  'roblox_grant_cookie_set',
+  'roblox_grant_cookie_clear',
+  'roblox_assets_sync',
+  'roblox_assets_list',
+  'roblox_assets_import',
+  'roblox_assets_record',
+  'roblox_experiences',
+  'roblox_resolve_place',
+  'roblox_grant',
 ];
 
 /** Nama event Tauri yang dipancarkan sisi Rust untuk kontrak ini. */
