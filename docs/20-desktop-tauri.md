@@ -126,7 +126,33 @@ drag dari Finder, ikon di Dock, dan tidak bergantung tab**. Jadi v1 memakai
 jalur yang sudah teruji, dan cpal dinyatakan sebagai utang terbuka (§5a)
 dengan `crates/native-host` sebagai bibitnya.
 
-### c) COOP/COEP lewat `app.security.headers`
+### c) COOP/COEP: server HTTP loopback di build produksi (keputusan sesudah D0)
+
+**Keputusan (2026-09-06):** build produksi TIDAK memuat frontend dari
+`tauri://localhost`, melainkan dari server HTTP kecil di dalam aplikasi
+(`desktop/src-tauri/src/local_server.rs`) yang bind ke `127.0.0.1` pada port
+acak dan mengirim header COOP/COEP/CORP + CSP untuk setiap asset bundel.
+Hasil spike D0 (tabel di kepala dokumen) yang memaksa ini: WKWebView
+menerima header di `tauri://` tapi tidak menerapkannya, sehingga
+`crossOriginIsolated` selalu `false` dan engine jatuh ke `st`; di
+`http://localhost` dengan header yang sama isolasi `true` dan engine `mt`.
+Diverifikasi di build debug: `curl` ke `http://127.0.0.1:<port>/studio`
+menjawab keempat header isolasi + CSP, `index.html` untuk path navigasi, dan
+`application/wasm` untuk artefak engine. `cargo tauri dev` tetap memakai Vite
+(`devUrl`), yang sudah mengirim header yang sama.
+
+Yang diserahkan: satu port loopback terbuka selama aplikasi hidup, hanya
+menyajikan berkas statis yang sama dengan `studio.kelasmalam.app`. IPC tidak
+lewat sana (jembatan `__TAURI_INTERNALS__` hanya disuntik ke WebView
+aplikasi), jadi proses lokal lain paling jauh tahu aplikasi ini berjalan.
+Capability `default.json` mendapat `remote.urls: ["http://127.0.0.1:*"]`
+supaya origin itu boleh memanggil command.
+
+Catatan sejarah — rencana semula di bawah ini dipertahankan karena
+`app.security.headers` tetap dipasang (tidak merugikan, dan Windows/WebView2
+bisa jadi menghormatinya):
+
+#### Rencana semula: `app.security.headers`
 
 Tauri ≥ 2.1 bisa menyisipkan header ke respons protokol `tauri://` lewat
 `tauri.conf.json`:

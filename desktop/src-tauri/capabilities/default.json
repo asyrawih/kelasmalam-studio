@@ -1,10 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Izin jendela utama. Seminimal mungkin (docs/20 §2e): tiap izin di sini adalah permukaan yang bisa dipanggil dari JS, jadi hanya yang sudah ada pemakainya. D2 (adapter platform) menambah izin fs/dialog seiring adapternya ditulis. Tidak ada deep-link dan tidak ada host login: v1 desktop tanpa login (docs/20 §1d).",
+  "description": "Izin jendela utama. Seminimal mungkin (docs/20 §2e): tiap izin di sini adalah permukaan yang bisa dipanggil dari JS, jadi hanya yang sudah ada pemakainya. D2 (adapter platform) menambah izin fs/dialog seiring adapternya ditulis. Tidak ada deep-link dan tidak ada host login: v1 desktop tanpa login (docs/20 §1d). Build produksi memuat frontend dari server loopback (lihat src/local_server.rs), jadi `remote.urls` mengizinkan origin http://127.0.0.1:<port> memakai izin ini; hanya WebView aplikasi yang punya jembatan IPC, jadi ini bukan pintu untuk proses lain.",
   "windows": [
     "main"
   ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*"
+    ]
+  },
   "permissions": [
     "core:default",
     "dialog:allow-open",

@@ -10,13 +10,15 @@
 //! native?" Kalau tidak, tempatnya di `web/src/platform/`.
 
 mod commands;
+mod local_server;
 mod menu;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use daw_desktop_host::{SecretStore, Store};
-use tauri::{App, Manager, RunEvent};
+use tauri::{App, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 use commands::AppState;
 
@@ -59,6 +61,39 @@ fn open_state(app: &App) -> Result<AppState, Box<dyn std::error::Error>> {
 
 /// Titik masuk. `src/main.rs` hanya memanggil ini; dipisah ke lib supaya tes
 /// unit (`menu::tests`) bisa mengimpor modul tanpa menyeret `main`.
+/// Jendela utama dibuat DI SINI, bukan di `app.windows` tauri.conf.json,
+/// karena URL-nya baru diketahui saat jalan:
+///
+/// - `cargo tauri dev`: Vite dev server (`devUrl`), yang sudah mengirim header
+///   COOP/COEP sendiri — `WebviewUrl::App` diterjemahkan Tauri ke sana.
+/// - build produksi: server loopback milik kita (`local_server`) di port acak,
+///   satu-satunya cara WKWebView memberi `crossOriginIsolated` dan engine `mt`
+///   (alasannya di kepala `local_server.rs`).
+///
+/// `cfg!(dev)` ditetapkan tauri-build: `true` hanya untuk `tauri dev`, jadi
+/// `tauri build --debug` pun memakai jalur produksi — yang memang ingin diuji.
+fn open_main_window(app: &App) -> Result<(), Box<dyn std::error::Error>> {
+    let url = if cfg!(dev) {
+        WebviewUrl::App("studio".into())
+    } else {
+        let server = local_server::start(app.handle())?;
+        let url = server.url("/studio");
+        println!("frontend lokal: {url}");
+        app.manage(server);
+        WebviewUrl::External(url.parse()?)
+    };
+    let window = WebviewWindowBuilder::new(app, menu::MAIN_WINDOW, url)
+        .title("KELAS MALAM STUDIO")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(1024.0, 640.0)
+        .resizable(true)
+        .build()?;
+    // Jendela dari kode tidak dipulihkan otomatis oleh plugin window-state;
+    // yang dari config iya. Gagal memulihkan (peluncuran pertama) bukan galat.
+    let _ = window.restore_state(StateFlags::all());
+    Ok(())
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -73,6 +108,7 @@ pub fn run() {
         .setup(|app| {
             menu::install(app.handle())?;
             app.manage(open_state(app)?);
+            open_main_window(app)?;
             Ok(())
         })
         .build(tauri::generate_context!())
