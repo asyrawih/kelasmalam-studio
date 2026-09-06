@@ -22,6 +22,7 @@
 //!   di keychain OS — pemulihan `TokenStore` PR #44.
 
 mod error;
+mod library;
 mod model;
 mod store;
 mod tracks;
