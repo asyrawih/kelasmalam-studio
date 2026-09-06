@@ -53,6 +53,12 @@ pub mod open_cloud;
 pub mod roblox_upload;
 pub mod soundcloud;
 
+/// Impor audio dari YouTube (docs/23): binari yt-dlp + qjs yang diunduh
+/// sekali ke `<app_data_dir>/tools/`, dipanggil sebagai subprocess.
+pub mod youtube;
+#[cfg(all(test, unix))]
+mod youtube_tests;
+
 /// Grant Access lokal (docs/21 §3f): port rute `/roblox/*` Worker kepustakaan
 /// — sync katalog dengan cookie, experience, resolve place, grant izin Use.
 pub mod roblox_grant;

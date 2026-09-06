@@ -13,7 +13,8 @@ unsafe_code = "forbid"
 [dependencies]
 soundclaude  = { workspace = true }
 reqwest      = { workspace = true }
-tokio        = { workspace = true }
+# `process`: yt-dlp dijalankan sebagai subprocess async (src/youtube.rs).
+tokio        = { workspace = true, features = ["process"] }
 sha2         = { workspace = true }
 rusqlite     = { workspace = true }
 symphonia    = { workspace = true }

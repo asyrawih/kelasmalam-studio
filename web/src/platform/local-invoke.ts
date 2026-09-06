@@ -43,6 +43,7 @@ const LOCAL_ERROR_CODES: ReadonlySet<string> = new Set<LocalError['code']>([
   'INVALID',
   'SECRET_UNAVAILABLE',
   'HTTP',
+  'YOUTUBE',
   'IO',
 ]);
 
@@ -120,7 +121,9 @@ export async function callLocal<K extends JsonLocalCommandName>(
   } catch (reason: unknown) {
     throw toLocalError(reason);
   }
-  if (cmd === 'library_blob' || cmd === 'soundcloud_bytes') return toArrayBuffer(raw) as LocalCommands[K]['result'];
+  if (cmd === 'library_blob' || cmd === 'soundcloud_bytes' || cmd === 'youtube_bytes') {
+    return toArrayBuffer(raw) as LocalCommands[K]['result'];
+  }
   return raw as LocalCommands[K]['result'];
 }
 

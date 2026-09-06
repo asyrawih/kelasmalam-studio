@@ -25,6 +25,7 @@ mod model;
 mod roblox;
 mod soundcloud;
 mod store;
+mod youtube;
 
 use std::sync::{Arc, Mutex};
 
@@ -41,6 +42,9 @@ pub const STORE_RELOCATE_EVENT: &str = "daw://store-relocate";
 pub const ROBLOX_PROGRESS_EVENT: &str = "daw://roblox-progress";
 /// Event progres unduh model: `{ id, done, total }` (docs/20 kontrak wave 1).
 pub const MODEL_PROGRESS_EVENT: &str = "daw://model-progress";
+/// Event progres YouTube (docs/23): `{ phase, name, done, total }` —
+/// `phase` `tools` (mengunduh yt-dlp/qjs) atau `audio` (mengunduh lagu).
+pub const YOUTUBE_PROGRESS_EVENT: &str = "daw://youtube-progress";
 
 /// Origin web yang menyajikan model untuk browser; desktop mengunduh dari
 /// tempat yang sama (docs/20 §1g).
@@ -58,6 +62,9 @@ pub struct AppState {
     /// Ditulis `store_relocate` supaya peluncuran berikutnya membuka folder
     /// yang baru (lihat `lib.rs`).
     pub location_file: std::path::PathBuf,
+    /// `<app_data_dir>/tools`: yt-dlp + qjs untuk impor YouTube (docs/23).
+    /// Di folder data bawaan, bukan folder kepustakaan — ia cache.
+    pub tools_dir: std::path::PathBuf,
 }
 
 /// Galat yang menyeberang IPC — `LocalError` kontrak, dibungkus karena aturan
@@ -161,5 +168,11 @@ pub fn invoke_handler() -> impl Fn(Invoke) -> bool + Send + Sync + 'static {
         // model (docs/20 wave 1)
         model::model_download,
         model::model_read,
+        // youtube — yt-dlp + qjs sebagai subprocess (docs/23)
+        youtube::youtube_status,
+        youtube::youtube_setup,
+        youtube::youtube_update,
+        youtube::youtube_info,
+        youtube::youtube_bytes,
     ]
 }

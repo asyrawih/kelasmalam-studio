@@ -12,7 +12,7 @@
  * alih "READY" — tapi playhead tetap berjalan supaya timeline bisa diuji.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ReadoutStrip, StudioHeader, StudioLayout } from './studio/shell';
 import { MenuBar } from './studio/shell/MenuBar';
 import { STUDIO_MENUS } from './studio/shell/StudioMenus';
@@ -27,6 +27,8 @@ import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { studioCommands } from './studio/commands';
 import { useCommands } from './app-shell/useCommands';
 import { SoundCloudDialog } from './soundcloud/SoundCloudDialog';
+import { YouTubeDialog } from './youtube/YouTubeDialog';
+import { getPlatformHost } from './platform';
 import { SnapToggle } from './studio/shell/SnapToggle';
 
 export interface AppProps {
@@ -52,6 +54,10 @@ const TICK_MS = 60;
 
 export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps): JSX.Element {
   const [soundCloudOpen, setSoundCloudOpen] = useState(false);
+  // Impor YouTube HANYA di desktop (docs/23): di web tombolnya pun tidak ada,
+  // bukan sekadar mati — di browser tidak ada jalan untuk fitur itu.
+  const desktop = useMemo(() => getPlatformHost().kind === 'desktop', []);
+  const [youtubeOpen, setYoutubeOpen] = useState(false);
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
   // Sambungkan rail ke project + cache PCM. Cache-nya SAMA dengan yang dipakai
@@ -105,6 +111,7 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps)
   return (
     <BeatProvider>
       {soundCloudOpen ? <SoundCloudDialog onClose={() => setSoundCloudOpen(false)} /> : null}
+      {desktop && youtubeOpen ? <YouTubeDialog onClose={() => setYoutubeOpen(false)} /> : null}
       <StudioLayout
         header={
           <StudioHeader
@@ -112,6 +119,7 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps)
             onOpenDj={onOpenDj}
             onOpenRoblox={onOpenRoblox}
             onOpenSoundCloud={() => setSoundCloudOpen(true)}
+            onOpenYoutube={desktop ? () => setYoutubeOpen(true) : undefined}
           />
         }
         readouts={<ReadoutStrip />}

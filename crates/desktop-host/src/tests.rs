@@ -320,7 +320,7 @@ fn assert_no_files(data_dir: &Path, id: ModelId) {
 }
 
 #[derive(Clone)]
-enum Reply {
+pub(crate) enum Reply {
     /// 200 dengan Content-Length lengkap.
     Full(Vec<u8>),
     /// 200 Transfer-Encoding: chunked (tanpa Content-Length).
@@ -334,7 +334,7 @@ enum Reply {
     NotFound,
 }
 
-struct Server {
+pub(crate) struct Server {
     base: String,
 }
 
@@ -342,7 +342,7 @@ impl Server {
     /// Server yang menjawab SETIAP koneksi dengan `reply`. Thread-nya
     /// dibiarkan hidup sampai proses tes selesai — listener di port acak,
     /// tidak ada yang perlu dibersihkan.
-    fn spawn(reply: Reply) -> Self {
+    pub(crate) fn spawn(reply: Reply) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         thread::spawn(move || {
@@ -369,7 +369,7 @@ impl Server {
         }
     }
 
-    fn url(&self, path: &str) -> String {
+    pub(crate) fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base)
     }
 }
