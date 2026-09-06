@@ -7,6 +7,7 @@
  */
 
 export { LibraryDock, type LibraryDockProps } from './LibraryDock';
+export { StoreSettings } from './StoreSettings';
 export { libraryActions, libraryStore, useLibrary } from './store';
 export { createLibraryApi, LibraryError, type LibraryApi } from './api';
 export { createLocalLibraryApi } from './local-api';

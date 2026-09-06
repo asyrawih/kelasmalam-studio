@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { StoreSettings } from '../library/StoreSettings';
 import { Button } from '../ui/cyber';
 import { listCommands, subscribeCommands } from './command';
 import { bindChord, chordFor, isCustomized, resetKeymap, subscribeKeymap, unbindCommand } from './keymap';
@@ -135,6 +136,14 @@ export function KeymapEditor({ open, onClose, onCaptureChange }: KeymapEditorPro
         </div>
 
         <div style={{ overflowY: 'auto', minHeight: 0, padding: '4px 0' }}>
+          {/*
+           * Layar ini yang dibuka `shell.preferences` (⌘,), jadi pengaturan
+           * yang bukan pintasan ikut di sini. PENYIMPANAN hanya ada di desktop
+           * (web tidak punya folder); komponennya sendiri yang memutuskan —
+           * di web ia `null` tanpa menyentuh Tauri — supaya tidak ada dua
+           * tempat yang harus sama-sama ingat memeriksa `isDesktop()`.
+           */}
+          <StoreSettings />
           {groups.map(([group, list]) => (
             <div key={group}>
               <div
