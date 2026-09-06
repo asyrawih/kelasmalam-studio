@@ -49,6 +49,7 @@ import { getPlatformHost } from '../platform';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
 import {
+  currentProjectName,
   openProject,
   renameProject,
   saveProject,
@@ -293,19 +294,6 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     });
   }, [api]);
 
-  useCommands(
-    [
-      {
-        id: 'library.toggle',
-        title: 'Kepustakaan: buka/tutup',
-        group: 'Kepustakaan',
-        defaultChord: null,
-        run: () => libraryActions.toggleCollapsed(),
-      },
-    ],
-    [],
-  );
-
   const onPick = useCallback(
     async (track: LibraryTrack): Promise<void> => {
       if (api === null) return;
@@ -390,49 +378,191 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     }
   }, [api, saveName]);
 
-  const onSave = useCallback(async (): Promise<void> => {
-    if (api === null) return;
-    const belum = unsavedAssets();
-    if (belum.length > 0) {
-      libraryActions.setNotice(
-        `${belum.length} lagu belum ada di kepustakaan: ${belum.join(', ')}. ` +
-          'Unggah dulu — project yang menunjuk lagu yang tidak ada akan gagal dibuka nanti.',
-      );
-      return;
-    }
+  /**
+   * INTI simpan — satu jalur untuk tombol SIMPAN PROJECT, `library.project.save`
+   * (⌘S lewat `studio.project.save`), dan `library.project.saveAs`.
+   *
+   * Satu fungsi, bukan tiga, karena "apa artinya simpan" harus punya satu
+   * jawaban: pemeriksaan lagu yang belum masuk kepustakaan, `busy`, pesan
+   * konflik versi, dan pembaruan `openProject` + daftar — kalau tombol dan
+   * pintasan masing-masing menyalin urutan itu, suatu saat keduanya berbeda
+   * tentang hal yang tidak pernah dimaksudkan berbeda.
+   *
+   * `id === null` berarti buat project baru; sesudahnya project itu menjadi
+   * yang TERBUKA, supaya ⌘S berikutnya menimpanya alih-alih membuat kembaran.
+   *
+   * `markSaved(serial)` dipanggil di dalam `saveProject` dengan serial yang
+   * dibaca SEBELUM serialisasi — judul jendela kehilangan `•` lewat
+   * `selectProjectDirty`, tanpa ada yang perlu dilakukan di sini.
+   */
+  const simpanKe = useCallback(
+    async (target: {
+      readonly id: string | null;
+      readonly name: string;
+      readonly version: number;
+    }): Promise<boolean> => {
+      if (api === null) return false;
+      const belum = unsavedAssets();
+      if (belum.length > 0) {
+        /*
+         * Tidak disimpan, dan itu disengaja: project yang menunjuk lagu yang
+         * tidak ada di kepustakaan tidak gagal SEKARANG — ia gagal saat dibuka,
+         * berminggu-minggu kemudian. Pesannya menyebut nama lagunya, sesuatu
+         * yang server tidak tahu.
+         */
+        libraryActions.setCollapsed(false);
+        libraryActions.setNotice(
+          `${belum.length} lagu belum ada di kepustakaan: ${belum.join(', ')}. ` +
+            'Unggah dulu — project yang menunjuk lagu yang tidak ada akan gagal dibuka nanti.',
+        );
+        return false;
+      }
 
+      setBusy(true);
+      libraryActions.setNotice(null);
+      const out = await saveProject(api, target);
+      setBusy(false);
+
+      if (!out.ok) {
+        libraryActions.setCollapsed(false);
+        libraryActions.setNotice(
+          out.conflict
+            ? `${out.message} — buka ulang project ini sebelum menyimpan, atau simpan sebagai project baru.`
+            : out.message,
+        );
+        return false;
+      }
+      libraryActions.setOpenProject({ id: out.id, name: target.name, version: out.version });
+      // Isi foldernya berubah; yang di-cache sudah tidak berlaku.
+      libraryActions.forgetProjectTracks(out.id);
+      libraryActions.setNotice(`Tersimpan: ${target.name} (v${out.version})`);
+      try {
+        libraryActions.setProjects(await api.projects());
+      } catch {
+        // Daftar yang gagal disegarkan bukan alasan meragukan simpan yang sudah
+        // dijawab server dengan versi baru.
+      }
+      return true;
+    },
+    [api],
+  );
+
+  /** Tombol SIMPAN PROJECT — hanya tampil saat ada project yang terbuka. */
+  const onSave = useCallback(async (): Promise<void> => {
     const open = libraryStore.getState().openProject;
     if (open === null) return;
-    const nama = open.name;
+    await simpanKe({ id: open.id, name: open.name, version: open.version });
+  }, [simpanKe]);
 
-    setBusy(true);
-    libraryActions.setNotice(null);
-    const out = await saveProject(api, {
-      id: open.id,
-      name: nama,
-      version: open.version,
-    });
-    setBusy(false);
+  /**
+   * Simpan yang belum punya nama: buka dok dan taruh kursor di kolom nama.
+   *
+   * Menyimpan diam-diam dengan nama kosong (atau nama karangan) berarti user
+   * menemukan project bernama "Tanpa nama (3)" seminggu kemudian. Isi dok baru
+   * ada di DOM pada render sesudah `collapsed` berubah, jadi fokusnya ditunda.
+   */
+  const mintaNama = useCallback((): void => {
+    libraryActions.setCollapsed(false);
+    libraryActions.setNotice('beri nama project dulu — ketik di kolom "nama project baru"');
+    setTimeout(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="library-dock"] input[aria-label="nama project baru"]')
+        ?.focus();
+    }, 0);
+  }, []);
 
-    if (!out.ok) {
-      libraryActions.setNotice(
-        out.conflict
-          ? `${out.message} — buka ulang project ini sebelum menyimpan, atau simpan sebagai project baru.`
-          : out.message,
-      );
+  /**
+   * Nama untuk project yang dibuat dari command: yang diketik di kolom kalau
+   * ada, kalau tidak nama project di Studio (yang tampil di judul jendela).
+   */
+  const namaBaru = useCallback((): string => {
+    const typed = saveName.trim();
+    return typed !== '' ? typed : currentProjectName().trim();
+  }, [saveName]);
+
+  /**
+   * `library.project.save` — simpan project yang sedang terbuka; kalau belum
+   * pernah disimpan, jadi "simpan baru" dengan nama saat ini.
+   *
+   * Itu perilaku ⌘S di aplikasi desktop mana pun: dokumen baru ditanya
+   * namanya sekali, sesudahnya ⌘S menimpa tanpa bertanya.
+   */
+  const saveCommand = useCallback(async (): Promise<void> => {
+    const open = libraryStore.getState().openProject;
+    if (open !== null) {
+      await simpanKe({ id: open.id, name: open.name, version: open.version });
       return;
     }
-    libraryActions.setOpenProject({ id: out.id, name: nama, version: out.version });
-    // Isi foldernya berubah; yang di-cache sudah tidak berlaku.
-    libraryActions.forgetProjectTracks(out.id);
-    libraryActions.setNotice(`tersimpan (versi ${out.version})`);
-    try {
-      libraryActions.setProjects(await api.projects());
-    } catch {
-      // Daftar yang gagal disegarkan bukan alasan meragukan simpan yang sudah
-      // dijawab server dengan versi baru.
+    const nama = namaBaru();
+    if (nama === '') {
+      mintaNama();
+      return;
     }
-  }, [api]);
+    if (await simpanKe({ id: null, name: nama, version: 0 })) setSaveName('');
+  }, [simpanKe, mintaNama, namaBaru]);
+
+  /**
+   * `library.project.saveAs` — SELALU buat project baru.
+   *
+   * Saat sudah ada project yang terbuka dan tidak ada nama baru yang diketik,
+   * yang diminta adalah nama — bukan kembaran bernama sama yang tidak bisa
+   * dibedakan di daftar.
+   */
+  const saveAsCommand = useCallback(async (): Promise<void> => {
+    const open = libraryStore.getState().openProject;
+    const typed = saveName.trim();
+    const nama = typed !== '' ? typed : open === null ? namaBaru() : '';
+    if (nama === '') {
+      mintaNama();
+      return;
+    }
+    if (await simpanKe({ id: null, name: nama, version: 0 })) setSaveName('');
+  }, [simpanKe, mintaNama, namaBaru, saveName]);
+
+  /*
+   * Command dok, hidup selama dok hidup (docs/15). `enabled` dibaca dari
+   * render TERBARU lewat `useCommands` — daftar ini ditulis ulang tiap render
+   * dan tidak perlu didaftar ulang.
+   *
+   * Simpan HANYA aktif saat ada kepustakaan yang menjawab (`masuk`: web yang
+   * sudah login, atau kepustakaan lokal desktop) dan tidak ada pekerjaan berat
+   * yang sedang berjalan — di palette keduanya tampil redup, dan
+   * `studio.project.save` jatuh ke "buka dok" supaya user melihat KENAPA
+   * (ajakan masuk, atau kalimat "belum tersedia"). Lagu yang belum masuk
+   * kepustakaan sengaja TIDAK ikut menonaktifkan: command-nya jalan dan
+   * menjawab dengan nama lagunya, persis seperti tombol SIMPAN PROJECT — redup
+   * tanpa alasan lebih membingungkan daripada pesan.
+   */
+  const bisaSimpan = api !== null && state.status === 'masuk' && !busy;
+  useCommands(
+    [
+      {
+        id: 'library.toggle',
+        title: 'Kepustakaan: buka/tutup',
+        group: 'Kepustakaan',
+        defaultChord: null,
+        run: () => libraryActions.toggleCollapsed(),
+      },
+      {
+        id: 'library.project.save',
+        title: 'Kepustakaan: simpan project',
+        group: 'Kepustakaan',
+        // Pintasannya ⌘S milik `studio.project.save`, yang mendelegasikan ke sini.
+        defaultChord: null,
+        enabled: () => bisaSimpan,
+        run: () => void saveCommand(),
+      },
+      {
+        id: 'library.project.saveAs',
+        title: 'Kepustakaan: simpan sebagai project baru',
+        group: 'Kepustakaan',
+        defaultChord: null,
+        enabled: () => bisaSimpan,
+        run: () => void saveAsCommand(),
+      },
+    ],
+    [],
+  );
 
   const onOpen = useCallback(
     async (id: string, name: string, version: number): Promise<void> => {
