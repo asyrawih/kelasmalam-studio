@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SoundCloudApi } from './api';
+import { SOUNDCLOUD_API_DEFAULT, SoundCloudApi, soundCloudApiBase } from './api';
 
 const track = { id: 7, title: 'Night Drive', permalink_url: 'https://soundcloud.com/a/night-drive', artwork_url: null, duration: 123000, user: { username: 'A' } };
 function json(body: unknown): Response { return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }); }
@@ -42,3 +42,18 @@ describe('SoundCloudApi', () => {
     expect(new URL(api.downloadUrl(source)).pathname).toBe('/v1/download');
   });
 });
+
+describe('soundCloudApiBase', () => {
+  it('bawaan = server produksi di mode apa pun, bukan localhost', () => {
+    expect(soundCloudApiBase(undefined)).toBe(SOUNDCLOUD_API_DEFAULT);
+    expect(soundCloudApiBase('')).toBe(SOUNDCLOUD_API_DEFAULT);
+    expect(soundCloudApiBase('   ')).toBe(SOUNDCLOUD_API_DEFAULT);
+    expect(SOUNDCLOUD_API_DEFAULT).not.toContain('localhost');
+  });
+
+  it('env yang diisi menang, tanpa slash di ujung', () => {
+    expect(soundCloudApiBase('http://localhost:8080/')).toBe('http://localhost:8080');
+    expect(soundCloudApiBase('https://sc.example')).toBe('https://sc.example');
+  });
+});
+

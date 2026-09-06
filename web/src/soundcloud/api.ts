@@ -151,11 +151,24 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   catch { return `${fallback} (${response.status})`; }
 }
 
+/** Server discovery yang dipakai kalau `VITE_SOUNDCLAUDE_API` tidak diisi. */
+export const SOUNDCLOUD_API_DEFAULT = 'https://soundcloud.kelasmalam.app';
+
+/**
+ * Basis URL server discovery SoundCloud.
+ *
+ * Dulu mode dev jatuh ke `http://localhost:8080` — dengan asumsi siapa pun
+ * yang menjalankan Vite juga menjalankan `soundclaude-server` di mesinnya.
+ * Asumsi itu salah di dua tempat sekaligus: `bun run dev:desktop` (jendela
+ * Tauri memuat Vite dev) dan `bun run dev` biasa, keduanya menembak port yang
+ * kosong dan dialognya berkata "tidak tersambung" seolah servernya mati.
+ * Sekarang bawaannya server produksi di semua mode; yang mengembangkan
+ * server-nya sendiri cukup mengisi `VITE_SOUNDCLAUDE_API=http://localhost:8080`.
+ */
 export function soundCloudApiBase(configured = import.meta.env.VITE_SOUNDCLAUDE_API): string | null {
   const value = configured?.trim() ?? '';
   if (value !== '') return value.replace(/\/$/, '');
-  // Jangan bake localhost ke production: di sana localhost adalah komputer user.
-  return import.meta.env.DEV ? 'http://localhost:8080' : 'https://soundcloud.kelasmalam.app';
+  return SOUNDCLOUD_API_DEFAULT;
 }
 
 export function createSoundCloudApi(base = soundCloudApiBase()): SoundCloudApi {
