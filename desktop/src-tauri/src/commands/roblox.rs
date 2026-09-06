@@ -1,22 +1,37 @@
-//! `roblox_*` (docs/21 §3e): taksonomi, antrean, katalog, target.
+//! `roblox_*` (docs/21 §3e): taksonomi, antrean, katalog, target, dan dua
+//! command yang bicara dengan Open Cloud.
 //!
-//! Dua command yang bicara dengan Open Cloud — `roblox_upload_start` dan
-//! `roblox_operation_poll` — SENGAJA masih menolak: klien HTTP-nya
-//! (`open_cloud.rs`) digarap terpisah dan dikawinkan di fase R3. Keduanya
-//! tetap terdaftar supaya kontrak tidak berlubang: TS memanggil nama yang
-//! sudah ada dan mendapat `LocalError` yang jelas, bukan "command not found".
+//! `roblox_upload_start` / `roblox_operation_poll` hanya merangkai tiga fase
+//! dari `daw_desktop_host::roblox_upload` (siapkan → HTTP → catat) — urutan
+//! dan aturannya diuji di crate host terhadap server HTTP tiruan. Yang khas
+//! Tauri di sini cuma dua: API key dibaca dari keychain lewat `AppState`,
+//! dan progres dipancarkan sebagai event `daw://roblox-progress`. Kunci
+//! `Store` TIDAK dipegang selama HTTP: fase 1 dan 3 lewat `with_store`
+//! (`spawn_blocking`), fase 2 berjalan di runtime async tanpa kunci — jadi
+//! sepuluh unggahan paralel runner dan `roblox_queue_list` tidak saling
+//! menunggu.
 
+use daw_desktop_host::open_cloud::DEFAULT_BASE;
+use daw_desktop_host::roblox_upload::{
+    finish_poll, finish_upload, prepare_poll, prepare_upload, send_poll, send_upload, UploadStarted,
+};
 use daw_desktop_host::types::{
     CatalogFilter, Category, Genre, OperationState, TargetSettings, Taxonomy, UploadInput,
     UploadRow,
 };
+use daw_desktop_host::SecretKey;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
-use super::{with_store, AppState, CmdError, CmdResult};
+use super::{with_store, AppState, CmdError, CmdResult, ROBLOX_PROGRESS_EVENT};
 
-/// Kalimat yang sama untuk kedua command yang belum dikawinkan.
-const NOT_WIRED: &str = "unggah Roblox belum dikawinkan (docs/21 R3)";
+/// Muatan `daw://roblox-progress`: `{ id, sent, total }` byte.
+#[derive(Clone, Serialize)]
+struct RobloxProgress<'a> {
+    id: &'a str,
+    sent: u64,
+    total: u64,
+}
 
 #[tauri::command]
 pub async fn roblox_taxonomy_list(state: State<'_, AppState>) -> CmdResult<Taxonomy> {
@@ -78,37 +93,62 @@ pub async fn roblox_queue_remove(state: State<'_, AppState>, id: String) -> CmdR
     with_store(&state.store, move |s| s.queue_remove(&id)).await
 }
 
-/// Hasil `roblox_upload_start`: `RobloxOperationState & { operationId }`.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UploadStarted {
-    #[serde(flatten)]
-    pub state: OperationState,
-    pub operation_id: String,
+/// API key dari keychain. `Ok(None)` = belum ditempel (ditolak `INVALID` oleh
+/// fase 1, bukan di sini); `Err` = keychain tidak bisa dibaca
+/// (`SECRET_UNAVAILABLE`). Nilainya tidak pernah masuk log maupun event.
+fn api_key(state: &State<'_, AppState>) -> CmdResult<Option<String>> {
+    Ok(state.secrets.get(SecretKey::RobloxApiKey)?)
 }
 
-/// Belum dikawinkan (R3). `id` tetap diterima supaya tanda tangannya sudah
-/// benar saat klien Open Cloud masuk. Saat dikawinkan: baris
-/// `Genre: <kategori> / <genre>` di akhir deskripsi ditambahkan DI SINI
-/// (`Store::upload_genre_names` + `Store::target().genre_to_description`,
-/// `open_cloud::describe_with_genre`) — TS di desktop tidak menambahkannya.
+/// Baca `tracks/<hash>`, kirim multipart ke Open Cloud, simpan `operationId`.
+/// Event `daw://roblox-progress` `{ id, sent, total }` selama mengirim.
 #[tauri::command]
 pub async fn roblox_upload_start(
-    _state: State<'_, AppState>,
+    app: AppHandle,
+    state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<UploadStarted> {
-    let _ = id;
-    Err(CmdError::new("HTTP", NOT_WIRED))
+    let key = api_key(&state)?;
+    let job = {
+        let id = id.clone();
+        with_store(&state.store, move |s| {
+            prepare_upload(s, &id, key.as_deref())
+        })
+        .await?
+    };
+    let outcome = send_upload(&job, DEFAULT_BASE, |sent, total| {
+        // Gagal memancarkan (jendela sudah ditutup) bukan alasan membatalkan
+        // unggahan yang byte-nya sedang berangkat.
+        let _ = app.emit(
+            ROBLOX_PROGRESS_EVENT,
+            RobloxProgress {
+                id: &id,
+                sent,
+                total,
+            },
+        );
+    })
+    .await;
+    with_store(&state.store, move |s| Ok(finish_upload(s, &id, outcome)))
+        .await?
+        .map_err(CmdError)
 }
 
-/// Belum dikawinkan (R3).
+/// `GET operations/{id}` untuk baris `id`, lalu perbarui barisnya.
 #[tauri::command]
 pub async fn roblox_operation_poll(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     id: String,
 ) -> CmdResult<OperationState> {
-    let _ = id;
-    Err(CmdError::new("HTTP", NOT_WIRED))
+    let key = api_key(&state)?;
+    let job = {
+        let id = id.clone();
+        with_store(&state.store, move |s| prepare_poll(s, &id, key.as_deref())).await?
+    };
+    let outcome = send_poll(&job, DEFAULT_BASE).await;
+    with_store(&state.store, move |s| Ok(finish_poll(s, &id, outcome)))
+        .await?
+        .map_err(CmdError)
 }
 
 #[tauri::command]

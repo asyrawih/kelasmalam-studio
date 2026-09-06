@@ -117,7 +117,7 @@ fn open_creates_layout_and_seeds_taxonomy() {
     assert!(tmp.path().join(DB_FILE).is_file());
     assert!(tmp.path().join(TRACKS_SUBDIR).is_dir());
     assert!(tmp.path().join(crate::MODELS_SUBDIR).is_dir());
-    assert_eq!(store.schema_version().unwrap(), 1);
+    assert_eq!(store.schema_version().unwrap(), 2);
 
     let tax = store.taxonomy().unwrap();
     assert_eq!(
@@ -135,7 +135,7 @@ fn open_creates_layout_and_seeds_taxonomy() {
 
     let info = store.info().unwrap();
     assert_eq!(info.dir, tmp.path().to_string_lossy());
-    assert_eq!((info.tracks, info.projects, info.schema_version), (0, 0, 1));
+    assert_eq!((info.tracks, info.projects, info.schema_version), (0, 0, 2));
     assert!(info.bytes > 0, "library.sqlite sendiri sudah punya ukuran");
 
     // WAL + foreign_keys memang menyala di koneksi ini.
@@ -163,7 +163,7 @@ fn reopen_keeps_data_and_does_not_reseed() {
         seed_track(&store, src.path(), "a.mp3", 1)
     };
     let store = open_at(tmp.path());
-    assert_eq!(store.schema_version().unwrap(), 1);
+    assert_eq!(store.schema_version().unwrap(), 2);
     assert!(store.has_track(&hash).unwrap());
     assert_eq!(store.taxonomy().unwrap().genres.len(), 16);
 }
@@ -565,12 +565,118 @@ fn active_roblox_upload_blocks_delete_but_settled_one_does_not() {
     assert!(!store.remove_project_track(&p.id, &a).unwrap());
     assert!(store.has_track(&a).unwrap());
 
+    // Sudah selesai: lagunya boleh dihapus, dan baris KATALOG-nya bertahan
+    // lengkap dengan `bytes` (migrasi 0002 — assetId-nya masih hidup di
+    // Creator Hub; catatan di mesin ini tidak boleh ikut lenyap).
+    let bytes_before = row.bytes;
     store.mark_failed(&row.id, "ditolak").unwrap();
     store.delete_track(&a).unwrap();
+    assert!(!store.has_track(&a).unwrap());
+    let catalog = store.catalog_list(&CatalogFilter::default()).unwrap();
+    assert_eq!(catalog.len(), 1);
+    assert_eq!(catalog[0].id, row.id);
+    assert_eq!(
+        catalog[0].hash, a,
+        "hash tetap menunjuk lagu yang sudah tiada"
+    );
+    assert_eq!(catalog[0].bytes, bytes_before);
+    assert_eq!(catalog[0].status, UploadStatus::Failed);
+
+    // Baris katalog tanpa lagu masih bisa ditulis ulang oleh TS (upsert
+    // dengan id yang sama) — `bytes` lamanya dipertahankan; baris BARU untuk
+    // lagu yang tidak ada tetap ditolak.
+    let mut again = upload_input(&a, "Lagu (ganti nama)");
+    again.id = row.id.clone();
+    again.status = UploadStatus::Failed;
+    let rewritten = store.queue_put(&again).unwrap();
+    assert_eq!(rewritten.bytes, bytes_before);
+    assert_eq!(rewritten.name, "Lagu (ganti nama)");
+    assert!(matches!(
+        store.queue_put(&upload_input(&a, "baru")),
+        Err(HostError::NotFound(_))
+    ));
+
+    // Dan barisnya tetap bisa dihapus dari katalog seperti biasa.
+    store.queue_remove(&row.id).unwrap();
     assert!(store
         .catalog_list(&CatalogFilter::default())
         .unwrap()
         .is_empty());
+}
+
+/// Folder yang dibuka versi pra-0002 (FK CASCADE, tanpa kolom `bytes`)
+/// bermigrasi tanpa kehilangan baris, `bytes` diisi dari `track`, dan FK-nya
+/// benar-benar lepas: sesudah migrasi, hapus lagu tidak menyeret barisnya.
+#[test]
+fn migration_0002_keeps_uploads_fills_bytes_and_drops_cascade() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join(DB_FILE);
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        conn.execute_batch("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+            .unwrap();
+        conn.execute_batch(include_str!("../migrations/0001_init.sql"))
+            .unwrap();
+        conn.execute("INSERT INTO schema_version (version) VALUES (1)", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO track (hash, name, bytes, mime, frames, sample_rate, created_at)
+             VALUES ('h1', 'a.mp3', 4321, 'audio/mpeg', 0, 0, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO roblox_upload (id, hash, file_name, name, category_id, genre_id,
+                creator_kind, creator_id, status, asset_id, moderation_state, created_at, updated_at, approved_at)
+             VALUES ('u1', 'h1', 'a.mp3', 'A', 'kat:musik', 'gen:musik/lo-fi',
+                'user', '1', 'done', 'asset-1', 'approved', 1, 2, 3)",
+            [],
+        )
+        .unwrap();
+        // Kolom `bytes` belum ada di 0001 — itulah yang dimigrasi.
+        assert!(conn.execute("SELECT bytes FROM roblox_upload", []).is_err());
+    }
+
+    let store = open_at(tmp.path());
+    assert_eq!(store.schema_version().unwrap(), 2);
+    let row = store.upload("u1").unwrap();
+    assert_eq!(row.bytes, 4321, "bytes disalin dari track");
+    assert_eq!(row.asset_id.as_deref(), Some("asset-1"));
+    assert_eq!(row.status, UploadStatus::Done);
+    assert_eq!(row.moderation_state, Some(ModerationState::Approved));
+    assert_eq!(row.approved_at, Some(3));
+
+    // FK sudah lepas: DELETE track langsung di SQL pun tidak menyeret baris.
+    store
+        .conn()
+        .execute("DELETE FROM track WHERE hash = 'h1'", [])
+        .unwrap();
+    assert_eq!(store.upload("u1").unwrap().bytes, 4321);
+    // Indeks dibuat ulang dengan nama yang sama.
+    let indexes: i64 = store
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index'
+               AND name IN ('roblox_upload_status', 'roblox_upload_hash', 'roblox_upload_genre', 'roblox_upload_category')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexes, 4);
+    // FK ke taksonomi tetap ditegakkan.
+    assert!(store
+        .conn()
+        .execute(
+            "UPDATE roblox_upload SET genre_id = 'gen:tidak-ada' WHERE id = 'u1'",
+            []
+        )
+        .is_err());
+    // Buka lagi: migrasi tidak dijalankan dua kali.
+    drop(store);
+    let store = open_at(tmp.path());
+    assert_eq!(store.schema_version().unwrap(), 2);
+    assert_eq!(store.upload("u1").unwrap().bytes, 4321);
 }
 
 // ------------------------------------------------------------- Taksonomi
@@ -1020,7 +1126,7 @@ fn relocate_rejects_nested_or_non_empty_targets() {
         Err(HostError::Invalid(_))
     ));
     assert_eq!(store.dir(), old.path());
-    assert_eq!(store.schema_version().unwrap(), 1);
+    assert_eq!(store.schema_version().unwrap(), 2);
 }
 
 // ------------------------------------------------------------ SecretStore

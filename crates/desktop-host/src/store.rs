@@ -37,7 +37,13 @@ pub const DB_FILE: &str = "library.sqlite";
 
 /// Migrasi, urut. Menambah migrasi = menambah satu entri di sini DAN satu
 /// berkas di `migrations/`; nomornya harus menaik tanpa lubang.
-const MIGRATIONS: &[(u32, &str)] = &[(1, include_str!("../migrations/0001_init.sql"))];
+const MIGRATIONS: &[(u32, &str)] = &[
+    (1, include_str!("../migrations/0001_init.sql")),
+    (
+        2,
+        include_str!("../migrations/0002_upload_outlives_track.sql"),
+    ),
+];
 
 /// Sumber waktu yang bisa diganti tes. Milidetik epoch, seperti Worker.
 pub type Clock = Box<dyn Fn() -> i64 + Send + Sync>;
