@@ -18,6 +18,7 @@ Dokumen ini adalah index. Detail per bagian:
 | [docs/09-roadmap.md](docs/09-roadmap.md) | Milestone M0–M9 dengan definisi "done" yang testable |
 | [docs/16-kepustakaan.md](docs/16-kepustakaan.md) | Kepustakaan & Collections — pengganti IndexedDB: Workers + R2 + D1, identitas asset lewat content hash, fase L0–L7 |
 | [docs/20-desktop-tauri.md](docs/20-desktop-tauri.md) | Desktop app Tauri 2 (macOS + Windows) — satu frontend untuk web dan desktop, audio tetap di WebView (cpal = v2), login bearer + deep link, fase D0–D6 |
+| [docs/21-desktop-lokal.md](docs/21-desktop-lokal.md) | Desktop lokal — SQLite + folder berkas di mesin user menggantikan Worker: kepustakaan lokal (K0–K3) dan revamp halaman Roblox dengan kategori/genre + katalog + unggah langsung dari Rust (R1–R5) |
 | [recordbox/00-plan.md](recordbox/00-plan.md) | Halaman `/dj` — mixer 2 deck ala rekordbox: keputusan, empat utang yang dinyatakan terbuka, fase D0–D9 |
 
 ---
