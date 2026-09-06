@@ -24,7 +24,7 @@ import {
 import { isAudible, laneHeightPx, type StudioClip, type StudioLane } from '../model';
 import { studioActions, studioStore, useStudio, type ClipOrigin, type StudioAsset } from '../store';
 import { runFileImport, runUrlImport } from './lane-import';
-import { LIBRARY_TRACK_MIME, notifyLibraryDrop } from './library-drop';
+import { registerLaneLocator } from './library-drop';
 import { LaneImportOverlay } from './LaneImportOverlay';
 import { activeLoopLen } from './clip-loop';
 import { BAND_COLORS, drawClipWave, drawLoopedClipWave } from './waveform';
@@ -948,17 +948,51 @@ export function ClipArea({
     picker.open();
   };
 
+  /** Lane di bawah titik layar (piksel CSS), atau `null` kalau bukan lane. */
+  const laneAt = (x: number, y: number): string | null => {
+    const under = document.elementFromPoint(x, y);
+    return under?.closest<HTMLElement>('[data-lane-row]')?.dataset['laneRow'] ?? null;
+  };
+
+  /** Posisi jatuh di timeline, dalam sample, dari `clientX`. */
+  const dropStartAt = (clientX: number): number => {
+    const el = scrollerRef.current;
+    if (el === null || el.scrollWidth <= 0) return 0;
+    const rect = el.getBoundingClientRect();
+    return ((el.scrollLeft + (clientX - rect.left)) / el.scrollWidth) * duration;
+  };
+
   /**
    * Drop dari Finder/Explorer di desktop: tidak ada event DOM `drop`, hanya
    * `File` + titik jatuh. Lane-nya dicari dari elemen di bawah titik itu, dan
    * posisinya dihitung dengan rumus yang SAMA dengan drop DOM (`dropStartAt`).
    */
   useNativeFileDrop(scrollerRef, (files, point) => {
-    const under = document.elementFromPoint(point.x, point.y);
-    const laneId = under?.closest<HTMLElement>('[data-lane-row]')?.dataset['laneRow'];
-    if (laneId === undefined) return;
+    const laneId = laneAt(point.x, point.y);
+    if (laneId === null) return;
     startFileImports(files, laneId, dropStartAt(point.x));
   });
+
+  /**
+   * Lagu kepustakaan yang diseret ke lane (`library-drop.ts`): gesturnya
+   * pointer event milik baris kepustakaan, dan yang diminta dari timeline
+   * hanya "titik ini lane mana, sample ke berapa" — rumusnya SAMA dengan drop
+   * berkas (`dropStartAt`) — plus sorotan lane yang dilayang-layangi. Ref-nya
+   * supaya locator yang terdaftar sekali tetap memakai `duration` terbaru.
+   */
+  const dropStartAtRef = useRef(dropStartAt);
+  dropStartAtRef.current = dropStartAt;
+  useEffect(
+    () =>
+      registerLaneLocator({
+        locate: (x, y) => {
+          const laneId = laneAt(x, y);
+          return laneId === null ? null : { laneId, startSamples: dropStartAtRef.current(x) };
+        },
+        highlight: setDropLane,
+      }),
+    [],
+  );
 
   const endGesture = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const g = gesture.current;
@@ -985,13 +1019,6 @@ export function ClipArea({
     studioActions.setClipDragging(false);
   };
 
-  /** Posisi jatuh di timeline, dalam sample, dari `clientX`. */
-  const dropStartAt = (clientX: number): number => {
-    const el = scrollerRef.current;
-    if (el === null || el.scrollWidth <= 0) return 0;
-    const rect = el.getBoundingClientRect();
-    return ((el.scrollLeft + (clientX - rect.left)) / el.scrollWidth) * duration;
-  };
   const dropStart = (e: ReactDragEvent<HTMLDivElement>): number => dropStartAt(e.clientX);
 
   const handleDrop = (e: ReactDragEvent<HTMLDivElement>, laneId: string): void => {
@@ -999,20 +1026,9 @@ export function ClipArea({
     e.stopPropagation();
     setDropLane(null);
 
-    /*
-     * Lagu dari kepustakaan diperiksa PALING DULU.
-     *
-     * Kalau tidak, hash-nya jatuh ke cabang `text/plain` di bawah dan dicoba
-     * diunduh sebagai URL — gagal dengan pesan yang tidak masuk akal, jauh dari
-     * sebabnya. Timeline sendiri tidak tahu apa arti hash itu; yang tahu
-     * kepustakaan (lihat `library-drop.ts`).
-     */
-    const libraryHash = e.dataTransfer?.getData(LIBRARY_TRACK_MIME) ?? '';
-    if (libraryHash !== '') {
-      notifyLibraryDrop({ contentHash: libraryHash, laneId, startSamples: dropStart(e) });
-      return;
-    }
-
+    // Lagu dari kepustakaan TIDAK lewat sini: gesturnya pointer event, bukan
+    // drag HTML5 (lihat `library-drop.ts`), dan ia bertanya ke locator di
+    // bawah. Yang sampai di sini hanya berkas dan URL dari luar halaman.
     const files = Array.from(e.dataTransfer?.files ?? []);
     // Link bisa datang sebagai `text/uri-list` (drag dari address bar / tab)
     // atau `text/plain` (drag teks berisi URL). Cek dua-duanya.

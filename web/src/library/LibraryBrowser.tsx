@@ -21,12 +21,13 @@
  * mengambil isinya sekali, lalu diingat.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Badge, Button, ProgressBar } from '../ui/cyber';
 import { importFileToAsset } from '../studio/timeline/audio-import';
 import { studioStore } from '../studio/store';
-import { LIBRARY_TRACK_MIME } from '../studio/timeline/library-drop';
+import { highlightLane, locateLane, notifyLibraryDrop } from '../studio/timeline/library-drop';
 import type { LibraryApi } from './api';
 import { hashesIn } from './projects';
 import { formatBytes, formatDuration, type LibraryState, type LibraryTrack } from './model';
@@ -412,6 +413,143 @@ function ProjectActions({
   );
 }
 
+/** Jarak (px) sebelum tekanan dianggap seretan — di bawah ini masih klik. */
+const DRAG_THRESHOLD_PX = 4;
+
+interface TrackDragState {
+  readonly pointerId: number;
+  readonly x0: number;
+  readonly y0: number;
+  /** `true` begitu melewati ambang: sejak itu yang dilihat lane, bukan klik. */
+  active: boolean;
+}
+
+/**
+ * Seret satu baris lagu ke lane, dengan pointer event.
+ *
+ * Bukan HTML5 drag-and-drop: di aplikasi desktop, penangan drag native Tauri
+ * menelan `drop` HTML5 sehingga lane tidak pernah tahu ada yang jatuh
+ * (`library-drop.ts` menjelaskannya). Pointer event tidak lewat OS, dan pola
+ * yang sama sudah dipakai timeline untuk menggeser clip.
+ *
+ * Tekanan pada tombol di dalam baris (MUAT, HAPUS) DIBIARKAN: itu klik, bukan
+ * seretan. Di bawah ambang jarak juga tidak ada seretan, supaya klik ceroboh
+ * tidak menaruh clip di lane yang kebetulan ada di bawah kursor.
+ */
+function useTrackDrag(contentHash: string): {
+  readonly ghost: { readonly x: number; readonly y: number } | null;
+  readonly onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  readonly onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  readonly onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  readonly onPointerCancel: (e: ReactPointerEvent<HTMLDivElement>) => void;
+} {
+  const drag = useRef<TrackDragState | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
+
+  // Baris yang hilang di tengah seretan (daftar dimuat ulang) tidak boleh
+  // meninggalkan lane tersorot.
+  useEffect(
+    () => () => {
+      if (drag.current?.active) highlightLane(null);
+    },
+    [],
+  );
+
+  const finish = (e: ReactPointerEvent<HTMLDivElement>): TrackDragState | null => {
+    const d = drag.current;
+    if (d === null || d.pointerId !== e.pointerId) return null;
+    drag.current = null;
+    if (!d.active) return null;
+    const el = e.currentTarget;
+    if (typeof el.releasePointerCapture === 'function') {
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        // Tidak pernah tertangkap (jsdom) — tidak apa-apa.
+      }
+    }
+    setGhost(null);
+    highlightLane(null);
+    return d;
+  };
+
+  return {
+    ghost,
+    onPointerDown: (e) => {
+      if (e.button !== 0) return;
+      if ((e.target as Element).closest('button, a, input') !== null) return;
+      drag.current = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, active: false };
+    },
+    onPointerMove: (e) => {
+      const d = drag.current;
+      if (d === null || d.pointerId !== e.pointerId) return;
+      if (!d.active) {
+        if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_THRESHOLD_PX) return;
+        d.active = true;
+        const el = e.currentTarget;
+        if (typeof el.setPointerCapture === 'function') {
+          try {
+            el.setPointerCapture(e.pointerId);
+          } catch {
+            // Beberapa lingkungan (jsdom) tidak mengimplementasikannya. Seretan
+            // tetap jalan lewat bubbling biasa.
+          }
+        }
+      }
+      setGhost({ x: e.clientX, y: e.clientY });
+      highlightLane(locateLane(e.clientX, e.clientY)?.laneId ?? null);
+    },
+    onPointerUp: (e) => {
+      if (finish(e) === null) return;
+      const target = locateLane(e.clientX, e.clientY);
+      if (target === null) return;
+      notifyLibraryDrop({ contentHash, laneId: target.laneId, startSamples: target.startSamples });
+    },
+    onPointerCancel: (e) => {
+      finish(e);
+    },
+  };
+}
+
+/**
+ * Label yang mengikuti kursor selama seretan — pengganti gambar hantu HTML5.
+ * Lewat portal ke `body`: dok punya `position: sticky`, dan `fixed` di dalam
+ * leluhur yang ber-`transform`/`contain` akan ikut terpotong. `pointer-events:
+ * none` supaya `elementFromPoint` di locator melihat lane, bukan label ini.
+ */
+function DragGhost({
+  name,
+  at,
+}: {
+  readonly name: string;
+  readonly at: { readonly x: number; readonly y: number };
+}): JSX.Element {
+  return createPortal(
+    <div
+      aria-hidden
+      style={{
+        position: 'fixed',
+        left: at.x + 12,
+        top: at.y + 12,
+        zIndex: 1000,
+        pointerEvents: 'none',
+        padding: '4px 8px',
+        fontSize: '11px',
+        color: 'var(--cy-text)',
+        background: 'var(--cy-surface-1)',
+        border: '1px solid var(--cy-accent)',
+        whiteSpace: 'nowrap',
+        maxWidth: '240px',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {name}
+    </div>,
+    document.body,
+  );
+}
+
 function TrackRow({
   track,
   state,
@@ -429,6 +567,7 @@ function TrackRow({
   // "Di sesi" berarti asetnya MASIH ada di store — bukan sekadar pernah dimuat.
   const inSession = assetId !== undefined && assets[assetId] !== undefined;
   const percent = state.loading[track.hash];
+  const drag = useTrackDrag(track.hash);
 
   return (
     <div
@@ -436,14 +575,13 @@ function TrackRow({
       /*
        * Diseret ke lane mana pun di timeline. Yang dibawa cuma HASH-nya —
        * bukan byte-nya: lagunya bisa 25 MB, dan yang menerima drop toh sudah
-       * tahu cara mengambilnya (atau sudah punya di sesi ini).
+       * tahu cara mengambilnya (atau sudah punya di sesi ini). Gesturnya
+       * pointer event, BUKAN `draggable` HTML5 — alasannya di `library-drop.ts`.
        */
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData(LIBRARY_TRACK_MIME, track.hash);
-        // `copy`, bukan `move`: lagunya tidak pindah dari kepustakaan.
-        e.dataTransfer.effectAllowed = 'copy';
-      }}
+      onPointerDown={drag.onPointerDown}
+      onPointerMove={drag.onPointerMove}
+      onPointerUp={drag.onPointerUp}
+      onPointerCancel={drag.onPointerCancel}
       title="seret ke lane untuk menaruhnya di timeline"
       style={{
         display: 'grid',
@@ -453,9 +591,12 @@ function TrackRow({
         padding: '6px 10px',
         border: '1px solid var(--cy-border)',
         background: 'var(--cy-surface-1)',
-        cursor: 'grab',
+        cursor: drag.ghost === null ? 'grab' : 'grabbing',
+        userSelect: 'none',
+        touchAction: 'pan-y',
       }}
     >
+      {drag.ghost === null ? null : <DragGhost name={track.name} at={drag.ghost} />}
       <span style={{ color: inSession ? 'var(--cy-accent)' : 'var(--cy-text-muted)' }}>
         <NoteIcon />
       </span>
