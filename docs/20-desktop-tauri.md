@@ -278,6 +278,7 @@ export interface PlatformHost {
 | Import lagu | `<input type=file>` | `plugin-dialog.open({multiple, filters})` + `readFile` |
 | Drag dari Finder | DataTransfer | event `tauri://drag-drop` memberi **path**, dibaca lewat fs |
 | Link keluar (SoundCloud, Roblox, kebijakan) | `window.open` | `plugin-opener` — jangan buka di WebView app |
+| Discovery SoundCloud (`/v1/search`, stream) | `fetch` ke `soundcloud.kelasmalam.app` | command `soundcloud_json`/`soundcloud_bytes` lewat Rust — WebView mati di CORS untuk origin `tauri://`; allowlist host di `crates/desktop-host/src/proxy.rs` |
 | Login | `location.href = loginUrl` | §1d |
 | Analytics Vercel | aktif | **mati** — komponen `<Analytics/>` hanya di-render saat `kind === 'web'` |
 | `hardwareConcurrency` untuk pool worker | apa adanya | apa adanya (WKWebView melaporkan benar) |

@@ -120,7 +120,7 @@ export async function callLocal<K extends JsonLocalCommandName>(
   } catch (reason: unknown) {
     throw toLocalError(reason);
   }
-  if (cmd === 'library_blob') return toArrayBuffer(raw) as LocalCommands[K]['result'];
+  if (cmd === 'library_blob' || cmd === 'soundcloud_bytes') return toArrayBuffer(raw) as LocalCommands[K]['result'];
   return raw as LocalCommands[K]['result'];
 }
 

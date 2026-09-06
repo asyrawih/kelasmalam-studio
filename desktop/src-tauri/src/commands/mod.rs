@@ -23,6 +23,7 @@ mod grant;
 mod library;
 mod model;
 mod roblox;
+mod soundcloud;
 mod store;
 
 use std::sync::{Arc, Mutex};
@@ -151,6 +152,9 @@ pub fn invoke_handler() -> impl Fn(Invoke) -> bool + Send + Sync + 'static {
         grant::roblox_experiences,
         grant::roblox_resolve_place,
         grant::roblox_grant,
+        // soundcloud — proxy lewat Rust (CORS)
+        soundcloud::soundcloud_json,
+        soundcloud::soundcloud_bytes,
         // model (docs/20 wave 1)
         model::model_download,
         model::model_read,

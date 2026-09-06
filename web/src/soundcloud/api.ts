@@ -1,3 +1,6 @@
+import { getPlatformHost } from '../platform';
+import { desktopTransport } from './desktop-transport';
+
 export interface SoundCloudTrack {
   readonly id: number;
   readonly title: string;
@@ -69,8 +72,37 @@ function profileOf(value: unknown): SoundCloudProfile | null {
   return { id, username, permalinkUrl: text(item.permalink_url), avatarUrl: text(item.avatar_url) || null, followers: number(item.followers_count), trackCount: number(item.track_count) };
 }
 
+/**
+ * Cara satu permintaan berangkat. Web: `fetch` (bawaan). Desktop: command
+ * Tauri lewat Rust (`./desktop-transport`), karena `fetch` dari WebView mati di
+ * CORS — origin `tauri://localhost` tidak dikenal server. Bentuknya sengaja
+ * sekecil ini: dua kata kerja, status diteruskan apa adanya, supaya kedua
+ * implementasi bisa diuji dengan cara yang sama.
+ */
+export interface SoundCloudTransport {
+  json(url: string, signal?: AbortSignal): Promise<{ readonly status: number; readonly body: unknown }>;
+  bytes(url: string, signal?: AbortSignal): Promise<ArrayBuffer>;
+}
+
+/** Transport web: `fetch` global — tetap bisa di-stub di tes seperti sebelumnya. */
+export const fetchTransport: SoundCloudTransport = {
+  async json(url, signal) {
+    const response = await fetch(url, { signal });
+    let body: unknown = null;
+    try { body = await response.json(); } catch { /* badan bukan JSON */ }
+    return { status: response.status, body };
+  },
+  async bytes(url, signal) {
+    const response = await fetch(url, { signal });
+    if (!response.ok) throw new Error(`Audio SoundCloud tidak tersedia (${response.status})`);
+    return response.arrayBuffer();
+  },
+};
+
+const ok = (status: number): boolean => status >= 200 && status < 300;
+
 export class SoundCloudApi {
-  constructor(private readonly baseUrl: string) {}
+  constructor(private readonly baseUrl: string, private readonly transport: SoundCloudTransport = fetchTransport) {}
 
   private url(path: string, params: Record<string, string | number | boolean>): URL {
     const url = new URL(path, this.baseUrl);
@@ -79,14 +111,14 @@ export class SoundCloudApi {
   }
 
   private async json(path: string, params: Record<string, string | number | boolean>, fallback: string, signal?: AbortSignal): Promise<unknown> {
-    const response = await fetch(this.url(path, params), { signal });
-    if (!response.ok) throw new Error(await errorMessage(response, fallback));
-    return response.json();
+    const { status, body } = await this.transport.json(this.url(path, params).toString(), signal);
+    if (!ok(status)) throw new Error(errorMessage(status, body, fallback));
+    return body;
   }
 
   async health(signal?: AbortSignal): Promise<boolean> {
-    const response = await fetch(this.url('/health', {}), { signal });
-    return response.ok;
+    try { return ok((await this.transport.json(this.url('/health', {}).toString(), signal)).status); }
+    catch (err: unknown) { if (err instanceof Error && err.name === 'AbortError') throw err; return false; }
   }
 
   async search(query: string, offset = 0, signal?: AbortSignal): Promise<SoundCloudSearchPage> {
@@ -140,15 +172,13 @@ export class SoundCloudApi {
   downloadUrl(trackUrl: string): string { return this.url('/v1/download', { url: trackUrl }).toString(); }
 
   async audio(trackUrl: string, signal?: AbortSignal): Promise<ArrayBuffer> {
-    const response = await fetch(this.streamUrl(trackUrl), { signal });
-    if (!response.ok) throw new Error(await errorMessage(response, 'Audio SoundCloud tidak tersedia'));
-    return response.arrayBuffer();
+    return this.transport.bytes(this.streamUrl(trackUrl), signal);
   }
 }
 
-async function errorMessage(response: Response, fallback: string): Promise<string> {
-  try { const body = record(await response.json()); return text(body.message) || text(body.error) || text(body.kind) || `${fallback} (${response.status})`; }
-  catch { return `${fallback} (${response.status})`; }
+function errorMessage(status: number, payload: unknown, fallback: string): string {
+  const body = record(payload);
+  return text(body.message) || text(body.error) || text(body.kind) || `${fallback} (${status})`;
 }
 
 /** Server discovery yang dipakai kalau `VITE_SOUNDCLAUDE_API` tidak diisi. */
@@ -171,7 +201,14 @@ export function soundCloudApiBase(configured = import.meta.env.VITE_SOUNDCLAUDE_
   return SOUNDCLOUD_API_DEFAULT;
 }
 
+/**
+ * Client siap pakai: transport dipilih dari platform. Desktop → Rust
+ * (`desktop-transport`), web → `fetch`. Impornya statis: pembungkus `invoke`
+ * sudah ada di bundel lewat `platform/`, jadi tidak ada byte baru untuk web.
+ */
 export function createSoundCloudApi(base = soundCloudApiBase()): SoundCloudApi {
   if (base === null) throw new Error('VITE_SOUNDCLAUDE_API belum dikonfigurasi untuk build production');
-  return new SoundCloudApi(base);
+  return getPlatformHost().kind === 'desktop'
+    ? new SoundCloudApi(base, desktopTransport)
+    : new SoundCloudApi(base);
 }
