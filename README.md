@@ -15,22 +15,22 @@ valid sebagai tes korektnes.
 - Rust nightly (otomatis lewat `rust-toolchain.toml`) + target `wasm32-unknown-unknown`
 - `wasm-bindgen-cli` 0.2.x — `cargo install wasm-bindgen-cli`
 - `binaryen` (untuk `wasm-opt`) — `brew install binaryen` / `apt install binaryen`
-- Node 20+ dan pnpm 9+
+- Node 20+ dan Bun 1.3+ (pnpm tidak dipakai lagi; skrip root memanggil `bun`)
 
 ## Quickstart
 
 ```bash
-pnpm install
-pnpm build:wasm        # build engine-mt + engine-st ke web/src/wasm/
-pnpm dev               # Vite dev server (sudah mengirim header COOP/COEP)
+bun install
+bun run build:wasm        # build engine-mt + engine-st ke web/src/wasm/
+bun run dev               # Vite dev server (sudah mengirim header COOP/COEP)
 ```
 
 Perintah lain:
 
 ```bash
-pnpm test              # cargo test --workspace + tes web
-pnpm build             # build wasm + bundle produksi ke web/dist
-pnpm size-check        # gate ukuran: engine < 300 KB gzipped
+bun run test              # cargo test --workspace + tes web
+bun run build             # build wasm + bundle produksi ke web/dist
+bun run size-check        # gate ukuran: engine < 300 KB gzipped
 cargo run -p daw-native-host --release   # putar engine lewat speaker (dev/profiling)
 ```
 
@@ -119,7 +119,7 @@ Aplikasi desktop memakai frontend yang sama (`web/dist` ditanam ke binary;
 bukan CI — sertifikat Developer ID dan kunci updater ada di sana:
 
 ```bash
-pnpm dev:desktop                                   # jendela Tauri ke Vite dev
+bun run dev:desktop                                   # jendela Tauri ke Vite dev
 scripts/release-desktop.sh --unsigned              # .dmg uji, tanpa signing
 scripts/release-desktop.sh --targets aarch64,x86_64 --publish   # draft GitHub Release + latest.json
 ```
