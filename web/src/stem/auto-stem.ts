@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
+import { prefetchModelBytes } from '../proof-stem/scnet-model';
 import type { ScnetResult, ScnetStem } from '../proof-stem/scnet-separate';
 
 const STORAGE_KEY = 'dawonweb.auto-stem.enabled.v1';
@@ -116,7 +117,24 @@ function ensureWorker(): void {
   worker.addEventListener('error', (event) => {
     failCurrent(event.message || 'Worker SCNet berhenti');
   });
-  worker.postMessage({ type: 'init' });
+  const instance = worker;
+  // Desktop: byte model datang lewat IPC yang hanya ada di main thread, jadi
+  // disiapkan di sini dan DIPINDAHKAN ke worker. Web: `null`, worker mengunduh
+  // sendiri seperti sebelumnya.
+  void prefetchModelBytes('base', (progress) =>
+    publish({
+      modelState: 'loading',
+      modelProgress: progress.total > 0 ? Math.min(1, progress.loaded / progress.total) : 0,
+    }),
+  )
+    .then((bytes) => {
+      if (worker !== instance) return;
+      if (bytes === null) instance.postMessage({ type: 'init' });
+      else instance.postMessage({ type: 'init', bytes }, [bytes.buffer]);
+    })
+    .catch((reason: unknown) => {
+      if (worker === instance) failCurrent(reason instanceof Error ? reason.message : String(reason), null);
+    });
 }
 
 function onWorkerMessage(event: MessageEvent<WorkerResponse>): void {

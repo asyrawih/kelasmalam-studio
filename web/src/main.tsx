@@ -19,6 +19,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import { AppShell } from './app-shell';
+import { getPlatformHost } from './platform';
 import type { UiEngine } from './state';
 import './index.css';
 // Suffix `?worklet&url` WAJIB: ia melewati `audioWorkletPlugin()` yang mem-build
@@ -43,6 +44,11 @@ if (container === null) throw new Error('#root tidak ditemukan di index.html');
 createRoot(container).render(
   <StrictMode>
     <AppShell createEngine={createEngine} />
-    <Analytics />
+    {/*
+      * Analytics Vercel hanya di web: di desktop tidak ada halaman Vercel yang
+      * menyajikan skripnya, dan mengirim telemetri dari app yang dipasang di
+      * mesin orang bukan sesuatu yang diputuskan diam-diam lewat bundel yang sama.
+      */}
+    {getPlatformHost().kind === 'web' ? <Analytics /> : null}
   </StrictMode>,
 );

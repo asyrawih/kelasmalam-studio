@@ -12,6 +12,8 @@
     "build": "pnpm run build:wasm && pnpm -C web build",
     "build:wasm": "./scripts/build-wasm.sh",
     "preview": "pnpm -C web preview",
+    "dev:desktop": "cd desktop/src-tauri && cargo tauri dev",
+    "build:desktop": "pnpm run build:wasm && pnpm -C web build && cd desktop/src-tauri && cargo tauri build",
     "test": "pnpm run test:rust && pnpm -C web test && pnpm -C backend test",
     "test:rust": "cargo test --workspace",
     "lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check",

@@ -14,6 +14,9 @@ import { LibraryDock } from './LibraryDock';
 import { libraryActions, libraryStore } from './store';
 import type { LibraryApi } from './api';
 import { fakeLibraryApi } from './fake-api';
+import { createWebHost } from '../platform/web';
+import { createDesktopHost } from '../platform/desktop';
+import { setPlatformHostForTests } from '../platform';
 import type { LibraryTrack } from './model';
 
 const HASH = 'a'.repeat(64);
@@ -42,7 +45,10 @@ const withTrack = (over: Partial<LibraryApi> = {}): LibraryApi =>
 const strip = (): HTMLElement => screen.getByRole('button', { name: /kepustakaan/i });
 
 beforeEach(() => libraryActions.__resetForTest());
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setPlatformHostForTests(null);
+});
 
 describe('lipat / buka', () => {
   it('mulai terlipat — permukaan kerja tidak dimakan sebelum diminta', async () => {
@@ -199,5 +205,31 @@ describe('daftar lagu', () => {
       'textContent',
       expect.stringContaining('tidak ada di kepustakaanmu'),
     );
+  });
+});
+
+describe('sesi lewat platform', () => {
+  it('web: MASUK memanggil host.login dengan base API dan path sekarang', async () => {
+    const login = vi.fn(async () => {});
+    setPlatformHostForTests({ ...createWebHost(), login });
+    render(<LibraryDock api={withTrack({ me: async () => null })} />);
+    await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
+    fireEvent.click(screen.getByRole('button', { name: /MASUK DENGAN GOOGLE/ }));
+    expect(login).toHaveBeenCalledWith({ apiBase: 'https://api.test', nextPath: window.location.pathname });
+  });
+
+  it('desktop: tidak ada tombol masuk, /me tidak ditanya, dan dok mengatakan kenapa', async () => {
+    setPlatformHostForTests(createDesktopHost());
+    const me = vi.fn(async () => null);
+    render(<LibraryDock api={withTrack({ me })} />);
+    await waitFor(() => expect(libraryStore.getState().status).toBe('tidak-tersedia'));
+    expect(me).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /MASUK/ })).toBeNull();
+    expect(screen.getByText('BELUM TERSEDIA DI DESKTOP')).toBeDefined();
+    fireEvent.click(strip());
+    expect(screen.getByText(/belum tersedia di versi desktop/i)).toBeDefined();
+    // Bukan "rusak": tidak ada badge merah, tidak ada catatan galat.
+    expect(screen.queryByText('TIDAK TERSAMBUNG')).toBeNull();
+    expect(libraryStore.getState().error).toBeNull();
   });
 });

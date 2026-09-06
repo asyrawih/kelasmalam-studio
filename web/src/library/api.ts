@@ -18,8 +18,17 @@
  * `fetch` berarti mengambil halaman Google ke dalam JavaScript — yang tidak
  * pernah berhasil dan memang tidak seharusnya. Yang benar: pindahkan seluruh
  * tab ke sana, dan biarkan Google mengembalikannya.
+ *
+ * ## Desktop: bearer di samping cookie
+ *
+ * Dari origin `tauri://` cookie itu tidak pernah ikut (docs/20 §1d), jadi
+ * setiap permintaan juga membawa apa pun yang diberikan
+ * `PlatformHost.authHeaders()` — `Authorization: Bearer` di desktop, `{}` di
+ * web. `credentials: 'include'` TETAP dikirim di keduanya: Worker menerima
+ * cookie ATAU bearer, dan klien ini tidak perlu tahu yang mana yang dipakai.
  */
 
+import { getPlatformHost } from '../platform';
 import type { LibraryTrack, LibraryUser } from './model';
 
 export class LibraryError extends Error {
@@ -113,11 +122,23 @@ export function normalizeBase(base: string): string {
   return base.replace(/\/+$/, '');
 }
 
-export function createLibraryApi(baseUrl: string, fetchImpl: typeof fetch = fetch): LibraryApi {
+export function createLibraryApi(
+  baseUrl: string,
+  fetchImpl: typeof fetch = fetch,
+  authHeaders: () => Promise<Record<string, string>> = () => getPlatformHost().authHeaders(),
+): LibraryApi {
   const base = normalizeBase(baseUrl);
 
   const call = async (path: string, init: RequestInit = {}): Promise<Response> => {
-    const res = await fetchImpl(`${base}${path}`, { credentials: 'include', ...init });
+    const auth = await authHeaders();
+    // Header permintaan menang atas header sesi: keduanya tidak pernah
+    // bertabrakan hari ini, tapi kalau suatu saat ada, yang spesifik untuk
+    // permintaan itulah yang benar.
+    const headers =
+      Object.keys(auth).length === 0
+        ? init.headers
+        : { ...auth, ...(init.headers as Record<string, string> | undefined) };
+    const res = await fetchImpl(`${base}${path}`, { credentials: 'include', ...init, headers });
     return res;
   };
 

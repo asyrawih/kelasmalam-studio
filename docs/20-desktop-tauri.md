@@ -11,8 +11,63 @@ cabang baru.
 | `web/` — React + Vite, engine WASM `mt`/`st`, AudioWorklet, worker pool | **Ya, utuh.** Satu build Vite, dua tujuan (Vercel dan bundel Tauri). |
 | `crates/*` — engine, dsp, export, timeline (Rust) | Ya, lewat WASM seperti di web. Jalur native (cpal) ditunda ke v2, lihat §1b. |
 | `crates/native-host` — host cpal dev-only | Bibit untuk v2. Tidak dipakai v1. |
-| `backend/` — Worker kepustakaan (cookie sesi) + Worker Roblox | Ya, dengan **satu tambahan**: sesi lewat bearer token untuk desktop (§1d). |
+| `backend/` — Worker kepustakaan (cookie sesi) + Worker Roblox | **Belum, untuk v1.** Desktop v1 tanpa login (§1d); kepustakaan berkata "belum tersedia di versi desktop". |
 | Toolchain: nightly-2025-06-15, `cargo-tauri` 2.11.4, Xcode | Sudah terpasang di mesin ini. |
+
+---
+
+## Hasil D0 — spike isolasi (6 Sep 2026)
+
+Diukur otomatis: halaman memanggil `invoke('report')` saat load, Rust mencetak
+JSON ke stdout lalu keluar (skrip di §6). Tauri 2.11.5 / wry 0.55.1, mesin
+macOS 26.5 arm64 (WKWebView 605.1.15, 8 core).
+
+| OS | Asal halaman | Header COOP/COEP/CORP | `crossOriginIsolated` | `SharedArrayBuffer` | `WebAssembly.Memory {shared}` | `AudioWorklet` | `hardwareConcurrency` | Varian yang dimuat Studio |
+|---|---|---|---|---|---|---|---|---|
+| macOS | `tauri://localhost` | tidak | **false** | undefined | ok | function | 8 | — |
+| macOS | `tauri://localhost` | ya, `app.security.headers` | **false** | undefined | ok | function | 8 | **`st`** (`engine_bg` st diambil) |
+| macOS | `tauri://localhost` | ya + `useHttpsScheme: true` | **false** (opsi ini hanya berlaku Windows/Android; `href` tetap `tauri://localhost`) | undefined | ok | function | 8 | — |
+| macOS | `http://localhost:5199` (server statis lokal) | tidak | false | undefined | ok | function | 8 | — |
+| macOS | `http://localhost:5199` (server statis lokal) | ya | **true** | function | ok | function | 8 | **`mt`** — Studio hidup, tanpa error console |
+| macOS | `http://localhost:5173` (`cargo tauri dev` → Vite) | ya (`vite.config.ts`) | true | function | ok | function | 8 | `mt` (dev meminta `wasm/mt/engine_bg.wasm`) |
+| Windows | — | — | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin |
+
+Yang ditetapkan dari tabel ini:
+
+1. **Header-nya sampai, WebKit-nya yang tidak peduli.** `fetch(location.href)`
+   dari dalam halaman `tauri://` membaca `coep: require-corp` — jadi §1c benar
+   soal Tauri menyisipkan header, tapi WKWebView **tidak menerapkan COOP/COEP
+   pada skema kustom**. Halaman yang sama, header yang sama, lewat
+   `http://localhost` → isolated. Ini bukan soal versi macOS (26.5) atau
+   `isSecureContext` (true di keduanya); ini perilaku WebKit untuk
+   `WKURLSchemeHandler`.
+2. **Konsekuensi untuk v1 macOS:** build produksi (`frontendDist` di
+   `tauri://`) berjalan **`st`** — degraded sesuai docs/01 §1d: command lewat
+   `postMessage`, export single-thread, ORT single-thread (§5d). Tidak crash,
+   tidak ada error. Dev (`cargo tauri dev` → Vite) justru **`mt`**, jadi
+   pengembang tidak akan pernah melihat mode `st` kecuali sengaja mencoba
+   binary produksi.
+3. **Jalan ke `mt` di produksi macOS ada, dan itu keputusan tersendiri:**
+   sajikan `web/dist` dari server HTTP lokal di dalam proses Rust
+   (`tauri-plugin-localhost` dengan `on_request` menambah tiga header, atau
+   server kecil sendiri) dan arahkan jendela ke `http://localhost:<port>`.
+   Harganya: origin app jadi `http://localhost:<port>` (daftar origin §5c
+   bertambah), aset terbaca proses lokal mana pun, dan IPC harus diizinkan
+   untuk origin remote lewat `capabilities[].remote`. **Gerbang D0 memutuskan:
+   v1 macOS menerima `st`** — kerangka D1 dibangun di atas `tauri://` apa
+   adanya. Jalur localhost ini pantas jadi butir baru di §5 (utang terbuka)
+   dan §5e harus dibaca ulang: kedua varian WASM tetap dibawa bundel macOS.
+4. `app.security.headers` **tetap dipasang** di `tauri.conf.json`: tidak
+   merugikan di macOS, dan di Windows (WebView2 = Chromium) ia justru yang
+   diharapkan membuat `mt` jalan — yang harus dibuktikan di mesin Windows.
+5. Dua hal yang ketahuan sambil lalu dan menjadi pekerjaan D2:
+   `/_vercel/insights/script.js` (komponen `<Analytics/>`) di-fallback ke
+   `index.html` oleh protokol Tauri → `SyntaxError: Unexpected token '<'` di
+   console (sudah dicatat §2c: Analytics mati saat `kind === 'desktop'`); dan
+   build produksi tanpa `VITE_LIBRARY_API` menampilkan gerbang login di
+   `/studio` — untuk mengukur varian dari `web/dist` sungguhan, spike memakai
+   `NODE_ENV=development vite build --mode development` (auth dilewati oleh
+   `import.meta.env.DEV`).
 
 ---
 
@@ -96,39 +151,30 @@ di D0 di kedua OS**, bukan dipercaya. Kalau gagal, loader
 (degraded: command lewat `postMessage`, export single-thread) tanpa crash.
 Gerbang D0 memutuskan apakah itu bisa diterima.
 
-### d) Login desktop: browser sistem + deep link + bearer token
+### d) v1 desktop TANPA login
 
-Cookie sesi tidak mungkin dari origin `tauri://`. Jalur desktop:
+Keputusan (Sep 2026, menggantikan rancangan lama): **versi desktop tidak punya
+login untuk sekarang.** Kepustakaan di desktop menampilkan "belum tersedia di
+versi desktop" alih-alih tombol masuk; Studio, DJ, dan Roblox dibuka tanpa
+gerbang sesi. Tidak ada `tauri-plugin-deep-link`, tidak ada skema
+`kelasmalam://`, tidak ada command `auth_token_*`, tidak ada perubahan di
+Worker kepustakaan.
 
-```
-Desktop                              Worker kepustakaan               Google
-  │ buat state acak                       │                              │
-  │ opener.open(/auth/google?client=desktop&state=…) ─► 302 ─────────────►│
-  │                                       │◄── /auth/callback?code ───────┤
-  │                                       │ buat sesi (tabel yang SAMA)   │
-  │◄── 302 kelasmalam://auth?code=<sekali-pakai>&state=… ─┤              │
-  │ POST /auth/desktop/exchange {code} ──►│                              │
-  │◄── {token}                            │                              │
-  │ simpan di keychain OS (crate `keyring`, sisi Rust)                   │
-  │ setiap fetch: Authorization: Bearer <token>                          │
-```
+Kenapa bukan "login dulu baru rilis": cookie `__Host-lib_session` tidak
+mungkin dari origin `tauri://` (§0 butir 2), jadi login desktop **pasti**
+berarti jalur baru di Worker (bearer token, code sekali pakai, deep link) —
+dan itu perubahan pada permukaan auth yang sama yang dipakai web produksi.
+Mengirimkannya bersamaan dengan kerangka desktop berarti dua hal berisiko
+menumpuk di satu rilis. Yang dibayar user desktop hari ini (§1b) tidak
+membutuhkan sesi sama sekali.
 
-Perubahan di Worker kecil dan tidak menyentuh jalur web:
-
-- `resolveSession()` menerima **cookie ATAU `Authorization: Bearer`**; keduanya
-  memetakan ke baris `session` yang sama.
-- `/auth/google` menerima `client=desktop`; callback-nya mengarahkan ke skema
-  deep link alih-alih `APP_ORIGIN`, membawa **code sekali pakai berumur 60 s**,
-  bukan token sesi — token tidak boleh lewat URL yang tercatat di log OS.
-- `ALLOWED_ORIGINS` (sudah ada di `wrangler.library.toml`) diisi
-  `tauri://localhost,http://tauri.localhost`.
-- Redirect URI di console Google **tidak berubah**: tetap
-  `lib.kelasmalam.app/auth/callback`. Deep link dipanggil oleh Worker, bukan
-  oleh Google.
-
-Token disimpan dan dibaca **hanya di sisi Rust** (command `auth_token_get`
-/`auth_token_set`/`auth_token_clear`) supaya tidak ada di `localStorage`
-WebView.
+Alur login desktop akan **didesain ulang** sebagai proyek sendiri. Rancangan
+lama — browser sistem → deep link `kelasmalam://auth?code=…` → `POST
+/auth/desktop/exchange` → bearer di keychain OS — tersimpan sebagai draft di
+PR #43 (backend), bukan dibuang. Kalau rancangan itu yang akhirnya dipakai,
+`resolveSession()` menerima cookie ATAU bearer, redirect URI Google tidak
+berubah, dan token hanya hidup di sisi Rust; kalau tidak, draft itu tinggal
+ditutup.
 
 ### e) Letak proyek: `desktop/src-tauri`, anggota workspace, dikecualikan di job CI Ubuntu
 
@@ -299,13 +345,13 @@ fase berikutnya tidak dimulai sebelum jawabannya ada.
 | **D0 — Spike isolasi** ⚠️ | `cargo tauri init` sementara di luar repo, `frontendDist` → `web/dist` yang ada, header §1c. Buka `/studio`, tekan Play. | Tabel **macOS dan Windows** (Windows lewat mesin/VM sungguhan, bukan runner): `crossOriginIsolated`, `caps.variant` (`mt`/`st`), worklet hidup, suara keluar, export WAV 1 menit selesai. **Gerbang berhenti:** kalau salah satu OS hanya `st`, putuskan di sini — terima degraded untuk OS itu, atau majukan §5a ke v1. Jangan menulis kode adapter sebelum ini. |
 | **D1 — Kerangka di repo** | `desktop/src-tauri` sebagai anggota workspace, skrip `dev:desktop`/`build:desktop`, `.gitignore` (`desktop/src-tauri/gen`, `target` sudah), ikon, ukuran/min-size jendela, `window-state`, `--exclude daw-desktop` di CI + job `desktop` macOS. | `pnpm run dev:desktop` membuka jendela ke Vite dev; `build:desktop` menghasilkan `.app` yang membuka `/studio`; CI hijau di kedua job. Belum ada fitur desktop apa pun — dan itu memang sengaja. |
 | **D2 — Adapter platform** | `web/src/platform/` (§2c); pindahkan `pickSaveLocation`/`downloadBlob`/input-file/`window.open`/`<Analytics/>` ke baliknya. Drag-drop dari Finder. | Export ke lokasi pilihan user (tanpa Blob 500 MB di memori); import lewat dialog dan lewat drop; link luar terbuka di browser OS; tes `encoders` & `library` yang ada tetap hijau; tes baru untuk adapter desktop dengan mock `@tauri-apps/api`. |
-| **D3 — Login desktop** | Worker: bearer di `resolveSession`, `client=desktop`, `/auth/desktop/exchange`, `ALLOWED_ORIGINS`. Desktop: deep link `kelasmalam://`, `keyring`, `authHeaders()`. | Buka app → Login → browser OS → kembali ke app dengan nama user di dock kepustakaan; tutup-buka app tetap login; logout menghapus keychain. Tes Worker untuk: code sekali pakai, kedaluwarsa 60 s, bearer salah → 401, cookie web **tidak berubah perilakunya**. |
+| **D3 — Login desktop** — **DITUNDA** | Tidak dikerjakan di v1 (§1d). Rancangan lama (bearer di `resolveSession`, `client=desktop`, `/auth/desktop/exchange`, deep link, keyring) tersimpan sebagai draft PR #43. | Tidak ada. v1 dirilis tanpa login; kepustakaan di desktop berkata "belum tersedia di versi desktop". Fase ini dibuka lagi bersama desain ulang alur login. |
 | **D4 — Model & aset besar** | `model_download`/`model_read`, `modelBytes()` di adapter, halaman proof-stem memakai adapter. Model dikeluarkan dari `dist` **hanya untuk build desktop** (web tetap seperti sekarang). | Pemisahan stem jalan di desktop dengan model yang diunduh sekali; unduhan yang putus di tengah tidak meninggalkan berkas setengah; `.app` tidak membawa `.onnx`. |
 | **D5 — Rasa desktop** | Menu native → registry command; judul jendela = nama project + tanda kotor; konfirmasi tutup; pintasan `⌘,` ke editor keymap yang sudah ada; `Cmd+Q` tidak memotong export yang sedang jalan. | Setiap item menu punya id command yang juga ada di palette `⌘K` (tes: himpunan id menu ⊆ registry). Menutup saat export berjalan → dialog, bukan proses hilang. |
 | **D6 — Rilis** | Signing + notarization macOS (Developer ID), code-signing Windows (Authenticode, atau Azure Trusted Signing) kalau sertifikatnya ada, `release-desktop.yml`, `tauri-plugin-updater` dengan kunci minisign di secrets, versi dari `workspace.package.version`. | Tag `desktop-v0.1.0` menghasilkan `.dmg` ter-notarize (aarch64 + x86_64), `.msi` + `.exe` NSIS, dan `latest.json`; build 0.1.1 memperbarui 0.1.0 yang terpasang lewat dialog updater **di kedua OS**. Tanpa sertifikat code-signing Windows, SmartScreen akan menahan installer — itu dicatat di README rilis, bukan disembunyikan. |
 
-Perkiraan: D0 satu–dua hari, D1–D2 satu minggu, D3 tiga–empat hari (setengahnya
-di Worker), D4 dua hari, D5 tiga hari, D6 bergantung antrean Apple Developer.
+Perkiraan: D0 satu–dua hari, D1–D2 satu minggu, D3 ditunda, D4 dua hari,
+D5 tiga hari, D6 bergantung antrean Apple Developer.
 
 ---
 
@@ -351,22 +397,81 @@ itu keputusan setelah tabel D0, bukan sebelumnya.
 
 ---
 
-## 6. Perintah D0
+## 6. Perintah D0 (yang benar-benar dijalankan)
+
+Bukan `cargo tauri init` + DevTools manual seperti rencana semula — hasilnya
+harus bisa diulang tanpa tangan di keyboard, jadi halaman melapor sendiri lewat
+IPC dan prosesnya keluar begitu laporan tercetak. Semuanya di luar repo
+(direktori sementara); tidak ada yang di-commit dari sini selain tabel di atas.
 
 ```bash
-# di luar repo, sekali pakai
-mkdir -p /tmp/kms-spike && cd /tmp/kms-spike
-cargo tauri init \
-  --app-name "KELAS MALAM STUDIO" \
-  --window-title "KELAS MALAM STUDIO" \
-  --frontend-dist /Users/dxh4nan/Projects/DawOnWeb/web/dist \
-  --dev-url http://localhost:5173 \
-  --before-dev-command "" --before-build-command ""
-# tambahkan app.security.headers (§1c) ke src-tauri/tauri.conf.json
-cargo tauri build --debug --no-bundle
-# jalankan binarinya, buka DevTools (⌥⌘I), lalu di console:
-#   crossOriginIsolated
-#   (await import('/src/audio/caps.ts')).detectCaps()   // di dev
+mkdir -p /tmp/kms-spike/{src,ui,capabilities} && cd /tmp/kms-spike
+cat > Cargo.toml <<'TOML'
+[package]
+name = "kms-spike"
+version = "0.0.0"
+edition = "2021"
+[build-dependencies]
+tauri-build = "2"
+[dependencies]
+tauri = "2"
+serde_json = "1"
+TOML
+printf 'fn main() { tauri_build::build() }\n' > build.rs
+cat > src/main.rs <<'RS'
+#[tauri::command]
+fn report(app: tauri::AppHandle, report: serde_json::Value) {
+    println!("D0_REPORT {report}");
+    app.exit(0);
+}
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![report])
+        .run(tauri::generate_context!())
+        .expect("spike");
+}
+RS
+cat > ui/index.html <<'HTML'
+<!doctype html><meta charset="utf-8"><script>
+(async () => {
+  const r = { href: location.href, crossOriginIsolated, sab: typeof SharedArrayBuffer,
+    audioWorklet: typeof AudioWorklet, hardwareConcurrency: navigator.hardwareConcurrency,
+    userAgent: navigator.userAgent, isSecureContext };
+  try { new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }); r.sharedWasmMemory = true }
+  catch (e) { r.sharedWasmMemory = String(e) }
+  const h = (await fetch(location.href)).headers;
+  r.selfHeaders = { coop: h.get('cross-origin-opener-policy'), coep: h.get('cross-origin-embedder-policy') };
+  await window.__TAURI__.core.invoke('report', { report: r });
+})();
+</script>
+HTML
+echo '{ "identifier": "default", "windows": ["main"], "permissions": ["core:default"] }' > capabilities/default.json
+cat > tauri.conf.json <<'JSON'
+{ "productName": "kms-spike", "version": "0.0.0", "identifier": "app.kelasmalam.spike",
+  "build": { "frontendDist": "./ui" },
+  "app": { "withGlobalTauri": true, "windows": [{ "label": "main", "title": "spike" }],
+    "security": { "csp": null,
+      "headers": { "Cross-Origin-Opener-Policy": "same-origin",
+                   "Cross-Origin-Embedder-Policy": "require-corp",
+                   "Cross-Origin-Resource-Policy": "same-origin" } } },
+  "bundle": { "active": false } }
+JSON
+cargo tauri icon /path/ke/web/public/apple-touch-icon.png -o icons   # tauri-build menuntut icons/icon.png
+cargo build && ./target/debug/kms-spike | grep D0_REPORT
+# baris kedua tabel. Hapus `headers` → baris pertama. Tambah
+# `"useHttpsScheme": true` di windows[0] → baris ketiga.
 ```
 
-Hasilnya dicatat sebagai tabel di kepala dokumen ini sebelum D1 dimulai.
+Langkah kedua, `web/dist` sungguhan (baris `st`/`mt` dengan "Varian yang
+dimuat Studio"): salin `web/dist` ke direktori sementara, sisipkan
+`<script src="/reporter.js">` setelah `<div id="root">` yang membungkus
+`fetch` dan setelah 15 detik melaporkan URL `engine_bg-*.wasm` yang diminta
+(`BN89mABI` = mt, `BWSYtPMo` = st — cocokkan ukurannya dengan
+`web/src/wasm/{mt,st}/engine_bg.wasm`), arahkan `frontendDist` ke salinan itu
+dan `windows[0].url` ke `/studio`. **Aset ditanam saat compile** — setiap
+perubahan di salinan `dist` butuh `cargo build` lagi, kalau tidak yang jalan
+adalah salinan lama. Untuk baris `http://localhost`, server statis Node
+sepuluh baris dengan tiga header yang sama, `windows[0].url` ke
+`http://localhost:5199/studio`, dan laporan dikirim lewat `fetch('/report',
+{method:'POST'})` ke server itu (IPC dari origin remote butuh
+`capabilities[].remote`, dan itu bukan yang sedang diuji).

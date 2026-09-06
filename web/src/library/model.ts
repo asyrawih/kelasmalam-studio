@@ -39,6 +39,8 @@ export interface LibraryUser {
  */
 export type LibraryStatus =
   | 'tidak-dikonfigurasi'
+  /** Platform ini tidak punya cara membangun sesi (desktop, untuk sekarang). */
+  | 'tidak-tersedia'
   | 'memeriksa'
   | 'anonim'
   | 'masuk'

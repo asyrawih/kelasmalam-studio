@@ -108,6 +108,23 @@ describe('klien', () => {
 
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(init.credentials).toBe('include');
+    // Web: tidak ada header sesi tambahan — bentuk permintaannya persis yang lama.
+    expect(init.headers).toBeUndefined();
+  });
+
+  it('header dari platform ikut di setiap permintaan, tanpa menghilangkan cookie', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit = {}) => okJson({ tracks: [] }));
+    const api = createLibraryApi('https://api.test', fetchImpl as unknown as typeof fetch, async () => ({
+      authorization: 'Bearer tok',
+    }));
+    await api.tracks();
+    await api.putMarks('a'.repeat(64), { cues: [] });
+    const [, listInit] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const [, marksInit] = fetchImpl.mock.calls[1] as unknown as [string, RequestInit];
+    expect(listInit.credentials).toBe('include');
+    expect(listInit.headers).toEqual({ authorization: 'Bearer tok' });
+    // Header permintaan (content-type) dan header sesi hidup berdampingan.
+    expect(marksInit.headers).toEqual({ authorization: 'Bearer tok', 'content-type': 'application/json' });
   });
 
   it('401 dari /me adalah JAWABAN, bukan lemparan', async () => {
