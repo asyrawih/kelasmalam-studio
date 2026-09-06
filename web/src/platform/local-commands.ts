@@ -210,7 +210,7 @@ export type RobloxGrantSubjectType = 'Universe' | 'Group' | 'User';
 
 // ── Proxy HTTP ─────────────────────────────────────────────────────────────
 
-/** Balasan `soundcloud_json`: status HTTP apa adanya + badan JSON (`null` bila bukan JSON). */
+/** Balasan `soundcloud_json`: status "seolah HTTP" + badan JSON, bentuk yang sama dengan server web. */
 export interface ProxyJsonReply {
   readonly status: number;
   readonly body: unknown;
@@ -327,15 +327,16 @@ export interface LocalCommands {
     result: number;
   };
 
-  // soundcloud — proxy HTTP dari Rust (WebView desktop mati di CORS; pola docs/21 §1e)
+  // soundcloud — discovery DI DALAM PROSES (pustaka `soundclaude` di Rust, tanpa server)
   /**
-   * `GET` ke server discovery SoundCloud. Host di-allowlist di Rust
-   * (`soundcloud.kelasmalam.app` + loopback untuk dev); host lain → `INVALID`.
-   * Status bukan-2xx TIDAK jadi galat — `body`-nya diteruskan supaya halaman
-   * bisa membaca `{ message }` server seperti di web.
+   * Rute discovery SoundCloud (`/health`, `/v1/resolve|track|set|user|likes|search|related`)
+   * dijawab in-process dengan bentuk yang sama dengan server web. `url`
+   * boleh absolut atau relatif — hanya path + query yang dibaca. Status
+   * bukan-2xx TIDAK jadi penolakan: `body.error.message` diteruskan supaya
+   * halaman membaca pesannya seperti di web.
    */
   soundcloud_json: { args: { url: string }; result: ProxyJsonReply };
-  /** Badan mentah (stream audio). Bukan-2xx → `HTTP` dengan `status`. */
+  /** `/v1/stream` | `/v1/download`: badan mentah audio satu track. Galat rute → `HTTP` dengan `status`. */
   soundcloud_bytes: { args: { url: string }; result: ArrayBuffer };
 }
 

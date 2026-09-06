@@ -11,6 +11,7 @@ publish.workspace = true
 unsafe_code = "forbid"
 
 [dependencies]
+soundclaude  = { workspace = true }
 reqwest      = { workspace = true }
 tokio        = { workspace = true }
 sha2         = { workspace = true }

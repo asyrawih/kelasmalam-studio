@@ -90,6 +90,11 @@ keyring-core                 = "1"
 apple-native-keyring-store   = { version = "1", features = ["keychain"] }
 # `search` (default) menyeret regex; kita hanya get/set/delete.
 windows-native-keyring-store = { version = "1", default-features = false }
+# Discovery SoundCloud in-process untuk desktop (crates/desktop-host/src/soundcloud.rs):
+# pustaka yang SAMA dengan yang menjalankan soundcloud.kelasmalam.app, di-pin ke
+# revisi supaya build bisa diulang. Menarik reqwest 0.12 di samping 0.13 —
+# dua salinan reqwest di binari desktop, diterima sampai soundclaude naik versi.
+soundclaude  = { git = "https://github.com/asyrawih/soundclaude", rev = "a5c3aa6005c42ad02377cf6ccb752a6e0d7560eb" }
 # Dev/test.
 criterion    = "0.5"
 proptest     = "1"

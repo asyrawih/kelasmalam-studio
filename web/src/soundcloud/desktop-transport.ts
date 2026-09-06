@@ -1,11 +1,14 @@
 /**
- * Transport SoundCloud untuk desktop: lewat Rust, bukan `fetch`.
+ * Transport SoundCloud untuk desktop: dijawab DI DALAM PROSES oleh Rust,
+ * bukan oleh server.
  *
- * Dari WebView desktop, `fetch` ke server discovery mati di CORS — origin
- * `tauri://localhost` (macOS) dan `http://tauri.localhost` (Windows) bukan
- * origin yang dikenal server, dan tidak ada log di sisi mana pun yang
- * menyebutkannya. Rust tidak punya CORS. Dua command (`soundcloud_json`,
- * `soundcloud_bytes`) meneruskan permintaan; allowlist host-nya ada di Rust.
+ * Desktop tidak butuh `soundcloud.kelasmalam.app` sama sekali: pustaka
+ * `soundclaude` yang menjalankan server itu ditanam di crate desktop
+ * (`crates/desktop-host/src/soundcloud.rs`) dan berbicara langsung dengan
+ * SoundCloud. Dua command (`soundcloud_json`, `soundcloud_bytes`) menerima
+ * URL yang sama dengan yang dipakai web — hanya path + query yang dibaca —
+ * dan menjawab dengan bentuk yang sama, jadi `SoundCloudApi` tidak tahu
+ * bedanya. Tidak ada CORS, tidak ada server yang bisa "offline".
  *
  * `AbortSignal` dihormati sebisanya: command Tauri tidak bisa dibatalkan di
  * tengah, jadi yang bisa dijanjikan adalah hasilnya DIBUANG kalau sinyal

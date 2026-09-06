@@ -50,11 +50,15 @@ fn open_state(app: &App) -> Result<AppState, Box<dyn std::error::Error>> {
         .ok()
         .map(|s| PathBuf::from(s.trim()))
         .filter(|p| p.join(daw_desktop_host::DB_FILE).is_file())
-        .unwrap_or(default_dir);
+        .unwrap_or_else(|| default_dir.clone());
     let store = Store::open(&dir)?;
+    // Cache client_id SoundCloud di app_data_dir bawaan, BUKAN di folder
+    // kepustakaan yang bisa dipindah user: ia cache, bukan data.
+    let discovery = daw_desktop_host::soundcloud::Discovery::new(&default_dir)?;
     Ok(AppState {
         store: Arc::new(Mutex::new(store)),
         secrets: SecretStore::new(&app.config().identifier),
+        discovery: Arc::new(discovery),
         location_file,
     })
 }
