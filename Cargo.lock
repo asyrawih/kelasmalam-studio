@@ -1130,6 +1130,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "tiny_http",
+ "tokio",
 ]
 
 [[package]]

@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use daw_desktop_host::{SecretStore, Store};
+use tauri::webview::{Color, PageLoadEvent};
 use tauri::{App, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
 
@@ -86,15 +87,39 @@ fn open_main_window(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         app.manage(server);
         WebviewUrl::External(url.parse()?)
     };
+    // Jendela lahir TERSEMBUNYI dan berlatar warna aplikasi (`--cy-bg`),
+    // lalu ditampilkan begitu halaman selesai dimuat. Tanpa ini yang terlihat
+    // adalah: jendela putih di ukuran bawaan → melompat ke ukuran/posisi
+    // tersimpan (window-state) → baru gambar aplikasi — dan itu terasa
+    // seperti aplikasi dimuat dua kali, padahal server loopback hanya
+    // menerima SATU permintaan `/studio`.
     let window = WebviewWindowBuilder::new(app, menu::MAIN_WINDOW, url)
         .title("KELAS MALAM STUDIO")
         .inner_size(1280.0, 800.0)
         .min_inner_size(1024.0, 640.0)
         .resizable(true)
+        .visible(false)
+        .background_color(Color(5, 5, 5, 255))
+        .on_page_load(|window, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        })
         .build()?;
     // Jendela dari kode tidak dipulihkan otomatis oleh plugin window-state;
-    // yang dari config iya. Gagal memulihkan (peluncuran pertama) bukan galat.
-    let _ = window.restore_state(StateFlags::all());
+    // yang dari config iya. VISIBLE dikecualikan: yang menampilkan adalah
+    // `on_page_load` di atas. Gagal memulihkan (peluncuran pertama) bukan galat.
+    let _ = window.restore_state(StateFlags::all().difference(StateFlags::VISIBLE));
+    // Jaring pengaman: kalau halaman tidak pernah melapor selesai (mis. JS
+    // gagal sebelum `load`), jendela tetap muncul supaya galatnya terlihat.
+    let fallback = window.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+        if !fallback.is_visible().unwrap_or(true) {
+            let _ = fallback.show();
+        }
+    });
     Ok(())
 }
 
