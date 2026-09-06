@@ -29,8 +29,12 @@ export interface CorsDecision {
  * satu, `if-match` hanya bagi yang lain, dan memisahkannya jadi dua konstanta
  * berarti dua tempat yang bisa tertinggal. Header yang diizinkan tapi tidak
  * pernah dikirim tidak merugikan siapa pun.
+ *
+ * `authorization` untuk aplikasi desktop (docs/20 §1d): sesinya dikirim
+ * sebagai `Bearer`, dan tanpa nama header ini di preflight browser WebView
+ * membuang permintaannya sebelum sampai ke Worker.
  */
-export const ALLOWED_HEADERS = 'content-type,x-roblox-api-key,if-match';
+export const ALLOWED_HEADERS = 'content-type,x-roblox-api-key,if-match,authorization';
 
 export interface CorsExtras {
   /**

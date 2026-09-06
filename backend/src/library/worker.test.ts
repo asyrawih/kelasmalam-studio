@@ -60,14 +60,18 @@ function googleFetch(profile: { sub: string; email: string; name: string }): typ
 
 const call = (
   path: string,
-  init: RequestInit & { cookie?: string } = {},
+  init: RequestInit & { cookie?: string; origin?: string; bearer?: string } = {},
   deps: Deps = {},
 ): Promise<Response> => {
   const headers = new Headers(init.headers);
-  headers.set('origin', APP);
+  headers.set('origin', init.origin ?? APP);
   if (init.cookie !== undefined) headers.set('cookie', init.cookie);
+  if (init.bearer !== undefined) headers.set('authorization', `Bearer ${init.bearer}`);
   return handleRequest(new Request(`${API}${path}`, { ...init, headers }), env, deps);
 };
+
+/** Origin aplikasi desktop — keduanya, karena bug-nya hanya muncul di OS yang tidak dipakai (docs/20 §5c). */
+const DESKTOP_ORIGINS = ['tauri://localhost', 'http://tauri.localhost'] as const;
 
 /** Jalani seluruh alur login dan kembalikan cookie sesinya. */
 async function login(profile = { sub: 'sub-1', email: 'a@test', name: 'Ana' }): Promise<string> {
@@ -86,6 +90,37 @@ async function login(profile = { sub: 'sub-1', email: 'a@test', name: 'Ana' }): 
   const session = setCookies.find((c) => c.startsWith('__Host-lib_session='));
   expect(session).toBeDefined();
   return (session ?? '').split(';')[0] ?? '';
+}
+
+/**
+ * Alur desktop sampai deep link: `/auth/google?client=desktop` → callback →
+ * `kelasmalam://auth?code&state`. Mengembalikan code + state yang dibawa deep
+ * link, TANPA menukarnya — tiap tes memutuskan sendiri apa yang terjadi
+ * sesudah itu.
+ */
+async function loginDesktop(
+  desktopState = 'state-desktop-1',
+  profile = { sub: 'sub-1', email: 'a@test', name: 'Ana' },
+): Promise<{ code: string; state: string; location: string; callback: Response }> {
+  const start = await call(`/auth/google?client=desktop&state=${encodeURIComponent(desktopState)}&next=/dj`);
+  expect(start.status).toBe(302);
+  const oauthCookie = (start.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+  const googleState = (oauthCookie.split('=')[1] ?? '').split('.')[0] ?? '';
+
+  const callback = await call(
+    `/auth/callback?code=kode&state=${googleState}`,
+    { cookie: oauthCookie },
+    { fetchImpl: googleFetch(profile) },
+  );
+  expect(callback.status).toBe(302);
+  const location = callback.headers.get('location') ?? '';
+  const q = new URL(location).searchParams;
+  return { code: q.get('code') ?? '', state: q.get('state') ?? '', location, callback };
+}
+
+/** Tukar code jadi token bearer. */
+async function exchange(code: string): Promise<Response> {
+  return call('/auth/desktop/exchange', { method: 'POST', body: JSON.stringify({ code }) });
 }
 
 /** Unggah + commit satu lagu, mengembalikan hash-nya. */
@@ -315,6 +350,200 @@ describe('login', () => {
     const second = await login({ sub: 'sub-1', email: 'baru@test', name: 'Ana Baru' });
     const list = await (await call('/tracks', { cookie: second })).json();
     expect(list.tracks).toHaveLength(1);
+  });
+});
+
+describe('login desktop', () => {
+  beforeEach(() => {
+    // Seperti produksi: daftar terisi MENGGANTIKAN APP_ORIGIN, jadi web harus
+    // ditulis ulang di dalamnya.
+    env = { ...env, ALLOWED_ORIGINS: `${APP},${DESKTOP_ORIGINS.join(',')}` };
+  });
+
+  it('alur utuh: google → callback → deep link berisi code+state → exchange → /me dengan bearer', async () => {
+    const { code, state, location, callback } = await loginDesktop('acak-123');
+
+    // Deep link, bukan APP_ORIGIN, dan state dikembalikan utuh.
+    expect(location.startsWith('kelasmalam://auth?')).toBe(true);
+    expect(state).toBe('acak-123');
+    expect(code).not.toBe('');
+
+    // Token sesi TIDAK boleh ada di URL, dan tidak ada cookie sesi yang dipasang
+    // di browser sistem.
+    const setCookies = callback.headers.getSetCookie();
+    expect(setCookies.some((c) => c.startsWith('__Host-lib_session='))).toBe(false);
+    expect(setCookies.some((c) => c.startsWith('__Host-lib_oauth=;'))).toBe(true);
+    const sessions = await db.prepare('SELECT COUNT(*) AS n FROM session').first<{ n: number }>();
+    expect(sessions?.n).toBe(0);
+
+    const res = await exchange(code);
+    expect(res.status).toBe(200);
+    const { token } = await res.json();
+    expect(typeof token).toBe('string');
+    expect(location).not.toContain(token);
+
+    const me = await call('/me', { bearer: token, origin: 'tauri://localhost' });
+    expect(me.status).toBe(200);
+    expect(await me.json()).toMatchObject({ email: 'a@test', name: 'Ana' });
+
+    // Kepustakaan yang sama dengan jalur web: user-nya satu.
+    const web = await login();
+    expect((await (await call('/me', { cookie: web })).json()).id).toBe((await (await call('/me', { bearer: token })).json()).id);
+  });
+
+  it('code yang dipakai dua kali ditolak 401 — sekali pakai berarti sekali', async () => {
+    const { code } = await loginDesktop();
+    expect((await exchange(code)).status).toBe(200);
+    const again = await exchange(code);
+    expect(again.status).toBe(401);
+    expect(await again.json()).toMatchObject({ code: 'CODE_TIDAK_SAH' });
+    // Barisnya sudah hilang, bukan sekadar ditandai.
+    const rows = await db.prepare('SELECT COUNT(*) AS n FROM desktop_auth_code').first<{ n: number }>();
+    expect(rows?.n).toBe(0);
+  });
+
+  it('code kedaluwarsa sesudah 60 detik', async () => {
+    vi.useFakeTimers();
+    try {
+      const { code } = await loginDesktop();
+      vi.setSystemTime(new Date(Date.now() + 61_000));
+      const res = await exchange(code);
+      expect(res.status).toBe(401);
+      expect((await res.json()).code).toBe('CODE_TIDAK_SAH');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('code yang masih di dalam 60 detik tetap sah', async () => {
+    vi.useFakeTimers();
+    try {
+      const { code } = await loginDesktop();
+      vi.setSystemTime(new Date(Date.now() + 59_000));
+      expect((await exchange(code)).status).toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('code acak dan badan yang salah bentuk ditolak', async () => {
+    expect((await exchange('bukan-code')).status).toBe(401);
+    const noJson = await call('/auth/desktop/exchange', { method: 'POST', body: 'x' });
+    expect(noJson.status).toBe(400);
+    const noCode = await call('/auth/desktop/exchange', { method: 'POST', body: '{}' });
+    expect(noCode.status).toBe(400);
+    expect((await call('/auth/desktop/exchange', { method: 'GET' })).status).toBe(405);
+  });
+
+  it('bearer acak → 401 di semua endpoint, sama seperti tanpa sesi', async () => {
+    for (const path of ['/me', '/tracks', '/projects']) {
+      const res = await call(path, { bearer: 'token-ngawur', origin: 'http://tauri.localhost' });
+      expect([path, res.status]).toEqual([path, 401]);
+    }
+  });
+
+  it('skema selain Bearer tidak dianggap sesi', async () => {
+    const { code } = await loginDesktop();
+    const { token } = await (await exchange(code)).json();
+    const res = await call('/me', { headers: { authorization: `Basic ${token}` } });
+    expect(res.status).toBe(401);
+  });
+
+  it('cookie + bearer sekaligus → cookie yang dipakai', async () => {
+    const cookie = await login({ sub: 'web-user', email: 'web@test', name: 'Web' });
+    const { code } = await loginDesktop('s', { sub: 'desk-user', email: 'desk@test', name: 'Desk' });
+    const { token } = await (await exchange(code)).json();
+
+    const me = await call('/me', { cookie, bearer: token });
+    expect(await me.json()).toMatchObject({ email: 'web@test' });
+
+    // Bearer basi di samping cookie yang sah juga tidak mengganggu jalur web.
+    const stale = await call('/me', { cookie, bearer: 'basi' });
+    expect(stale.status).toBe(200);
+  });
+
+  it('logout dengan bearer mencabut sesi itu, tanpa Set-Cookie yang menyesatkan', async () => {
+    const { code } = await loginDesktop();
+    const { token } = await (await exchange(code)).json();
+    expect((await call('/me', { bearer: token })).status).toBe(200);
+
+    const out = await call('/auth/logout', { method: 'POST', bearer: token });
+    expect(out.status).toBe(200);
+    expect(out.headers.get('set-cookie')).toBeNull();
+    expect((await call('/me', { bearer: token })).status).toBe(401);
+  });
+
+  it('logout web tetap membersihkan cookie — jalur lama tidak berubah', async () => {
+    const cookie = await login();
+    const out = await call('/auth/logout', { method: 'POST', cookie });
+    expect(out.headers.get('set-cookie')).toContain('__Host-lib_session=;');
+  });
+
+  it('client=desktop tanpa state ditolak — tanpa state aplikasi tidak bisa menolak deep link palsu', async () => {
+    const res = await call('/auth/google?client=desktop');
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('STATE_DESKTOP');
+  });
+
+  it('state desktop dengan karakter apa pun kembali utuh — ia numpang di cookie, bukan di URL Google', async () => {
+    const weird = 'a.b/c+d=e f&g?h#ü';
+    const { state } = await loginDesktop(weird);
+    expect(state).toBe(weird);
+  });
+
+  it('state desktop TIDAK dipakai sebagai state Google — CSRF callback tetap dijaga Worker', async () => {
+    const start = await call('/auth/google?client=desktop&state=milik-desktop');
+    const location = new URL(start.headers.get('location') ?? '');
+    expect(location.searchParams.get('state')).not.toBe('milik-desktop');
+    // Callback dengan state desktop (bukan state Worker) harus ditolak.
+    const oauthCookie = (start.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+    const res = await call('/auth/callback?code=k&state=milik-desktop', { cookie: oauthCookie });
+    expect(res.status).toBe(400);
+  });
+
+  it('alur WEB tidak tersentuh: tanpa client=desktop callback tetap ke APP_ORIGIN dengan cookie', async () => {
+    const start = await call('/auth/google?next=/dj&state=diabaikan');
+    const oauthCookie = (start.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+    const googleState = (oauthCookie.split('=')[1] ?? '').split('.')[0] ?? '';
+    const done = await call(
+      `/auth/callback?code=kode&state=${googleState}`,
+      { cookie: oauthCookie },
+      { fetchImpl: googleFetch({ sub: 's', email: 'e', name: 'n' }) },
+    );
+    expect(done.headers.get('location')).toBe(`${APP}/dj`);
+    expect(done.headers.getSetCookie().some((c) => c.startsWith('__Host-lib_session='))).toBe(true);
+  });
+
+  describe('CORS untuk origin desktop', () => {
+    for (const origin of DESKTOP_ORIGINS) {
+      it(`preflight dari ${origin} mengizinkan Authorization dan Content-Type`, async () => {
+        const res = await call('/tracks', {
+          method: 'OPTIONS',
+          origin,
+          headers: { 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' },
+        });
+        expect(res.status).toBe(204);
+        expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+        const allowed = (res.headers.get('access-control-allow-headers') ?? '').toLowerCase();
+        expect(allowed).toContain('authorization');
+        expect(allowed).toContain('content-type');
+      });
+
+      it(`balasan sungguhan untuk ${origin} membawa allow-origin`, async () => {
+        const { code } = await loginDesktop();
+        const { token } = await (await exchange(code)).json();
+        const res = await call('/me', { bearer: token, origin });
+        expect(res.status).toBe(200);
+        expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+      });
+    }
+
+    it('origin lain tetap ditolak, dan web masih diizinkan', async () => {
+      const asing = await call('/me', { method: 'OPTIONS', origin: 'https://jahat.test' });
+      expect(asing.headers.get('access-control-allow-origin')).toBeNull();
+      expect((await call('/health', { origin: 'tauri://jahat' })).status).toBe(403);
+      expect((await call('/health', { origin: APP })).status).toBe(200);
+    });
   });
 });
 
