@@ -1,0 +1,10 @@
+[package]
+name = "daw-desktop"
+description = "Aplikasi desktop Tauri 2 (macOS + Windows) di atas frontend web/ — docs/20."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]

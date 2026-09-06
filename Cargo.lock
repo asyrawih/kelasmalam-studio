@@ -421,6 +421,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "daw-desktop"
+version = "0.1.0"
+
+[[package]]
+name = "daw-desktop-host"
+version = "0.1.0"
+
+[[package]]
 name = "daw-dsp"
 version = "0.1.0"
 dependencies = [

@@ -9,6 +9,10 @@ members = [
     "crates/export",
     "crates/wasm-bridge",
     "crates/native-host",
+    # Desktop (docs/20). Keduanya native; `daw-desktop` menyeret Tauri dan
+    # dikecualikan dari job CI Ubuntu seperti native-host.
+    "crates/desktop-host",
+    "desktop/src-tauri",
 ]
 
 [workspace.package]

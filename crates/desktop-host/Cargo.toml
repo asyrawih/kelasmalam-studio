@@ -1,0 +1,10 @@
+[package]
+name = "daw-desktop-host"
+description = "Sisi Rust aplikasi desktop yang TIDAK bergantung pada Tauri: simpan token di keychain OS, unduh & baca model ONNX. Dipanggil oleh crate daw-desktop sebagai command."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
