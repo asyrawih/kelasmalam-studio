@@ -57,6 +57,10 @@ pub enum HostError {
     /// (bukan "entri tidak ada" — itu `Ok(None)`). Isinya kalimat untuk user,
     /// menyebut path berkasnya.
     SecretUnavailable(String),
+    /// yt-dlp menolak atau gagal (docs/23). Isinya kalimat yt-dlp sendiri
+    /// ("Video unavailable", "Sign in to confirm you're not a bot"), sudah
+    /// tanpa label extractor — itu yang paling berguna dipajang ke user.
+    Youtube(String),
 }
 
 impl HostError {
@@ -72,6 +76,7 @@ impl HostError {
             Self::VersionConflict { .. } => "VERSION_CONFLICT",
             Self::DiskFull { .. } => "DISK_FULL",
             Self::SecretUnavailable(_) => "SECRET_UNAVAILABLE",
+            Self::Youtube(_) => "YOUTUBE",
         }
     }
 
@@ -136,6 +141,7 @@ impl fmt::Display for HostError {
             ),
             Self::Invalid(why) => f.write_str(why),
             Self::SecretUnavailable(why) => write!(f, "berkas rahasia Roblox: {why}"),
+            Self::Youtube(why) => write!(f, "YouTube: {why}"),
         }
     }
 }

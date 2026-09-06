@@ -29,6 +29,7 @@ export interface LocalError {
     | 'INVALID'
     | 'SECRET_UNAVAILABLE' // berkas rahasia Roblox tidak bisa dibaca/ditulis
     | 'HTTP' // Open Cloud menjawab galat; `status` terisi
+    | 'YOUTUBE' // yt-dlp menolak; `message` = kalimat yt-dlp sendiri (docs/23)
     | 'IO';
   readonly message: string;
   readonly count?: number;
@@ -216,6 +217,41 @@ export interface ProxyJsonReply {
   readonly body: unknown;
 }
 
+// ── YouTube (docs/23) — HANYA desktop ──────────────────────────────────────
+
+/** `youtube_status`: apakah yt-dlp + qjs sudah ada di `<app_data_dir>/tools/`. */
+export interface YoutubeStatus {
+  /** Kedua binari ada dan yt-dlp menjawab `--version`. */
+  readonly ready: boolean;
+  /** Versi yt-dlp (`2026.08.19`); `null` kalau belum ada / tidak menjawab. */
+  readonly ytDlpVersion: string | null;
+}
+
+/** `youtube_info`: metadata satu video sebelum diunduh. */
+export interface YoutubeInfo {
+  readonly id: string;
+  readonly title: string;
+  readonly uploader: string;
+  /** Detik; 0 kalau tidak diketahui (siaran langsung). */
+  readonly durationSec: number;
+  readonly thumbnail: string | null;
+  readonly webpageUrl: string;
+  /** Ekstensi format audio yang akan diunduh (`m4a`, `webm`, …). */
+  readonly ext: string;
+  /** Perkiraan ukuran unduhan dalam byte; 0 kalau tidak diketahui. */
+  readonly bytes: number;
+}
+
+/** Payload `daw://youtube-progress`. */
+export interface YoutubeProgress {
+  /** `tools` = mengunduh yt-dlp/qjs (`name` = binarinya); `audio` = mengunduh lagu (`name` = id video). */
+  readonly phase: 'tools' | 'audio';
+  readonly name: string;
+  readonly done: number;
+  /** 0 = tidak diketahui. */
+  readonly total: number;
+}
+
 // ── Peta command → argumen → hasil ─────────────────────────────────────────
 
 /**
@@ -338,6 +374,17 @@ export interface LocalCommands {
   soundcloud_json: { args: { url: string }; result: ProxyJsonReply };
   /** `/v1/stream` | `/v1/download`: badan mentah audio satu track. Galat rute → `HTTP` dengan `status`. */
   soundcloud_bytes: { args: { url: string }; result: ArrayBuffer };
+
+  // youtube — yt-dlp + qjs sebagai subprocess (docs/23); HANYA desktop
+  youtube_status: { args: Record<string, never>; result: YoutubeStatus };
+  /** Unduh perkakas yang belum ada ke `<app_data_dir>/tools/`; progres lewat `daw://youtube-progress` (`phase: 'tools'`). Idempoten. */
+  youtube_setup: { args: Record<string, never>; result: YoutubeStatus };
+  /** Ganti yt-dlp dengan rilis terbaru kalau hash-nya berbeda. `true` = diganti. */
+  youtube_update: { args: Record<string, never>; result: boolean };
+  /** `yt-dlp --dump-single-json`, tanpa mengunduh. Galat yt-dlp → `YOUTUBE`. */
+  youtube_info: { args: { url: string }; result: YoutubeInfo };
+  /** Badan mentah audio (`bestaudio[ext=m4a]/bestaudio`); progres lewat `daw://youtube-progress` (`phase: 'audio'`). */
+  youtube_bytes: { args: { url: string }; result: ArrayBuffer };
 }
 
 export type LocalCommandName = keyof LocalCommands;
@@ -389,10 +436,16 @@ export const LOCAL_COMMAND_NAMES: readonly LocalCommandName[] = [
   'roblox_grant',
   'soundcloud_json',
   'soundcloud_bytes',
+  'youtube_status',
+  'youtube_setup',
+  'youtube_update',
+  'youtube_info',
+  'youtube_bytes',
 ];
 
 /** Nama event Tauri yang dipancarkan sisi Rust untuk kontrak ini. */
 export const LOCAL_EVENTS = {
   storeRelocate: 'daw://store-relocate',
   robloxProgress: 'daw://roblox-progress',
+  youtubeProgress: 'daw://youtube-progress',
 } as const;

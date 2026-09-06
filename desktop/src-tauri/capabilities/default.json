@@ -60,6 +60,11 @@
     "allow-soundcloud-bytes",
     "allow-model-download",
     "allow-model-read",
+    "allow-youtube-status",
+    "allow-youtube-setup",
+    "allow-youtube-update",
+    "allow-youtube-info",
+    "allow-youtube-bytes",
     "dialog:allow-open",
     "dialog:allow-save",
     {

@@ -59,6 +59,11 @@ const COMMANDS: &[&str] = &[
     "soundcloud_bytes",
     "model_download",
     "model_read",
+    "youtube_status",
+    "youtube_setup",
+    "youtube_update",
+    "youtube_info",
+    "youtube_bytes",
 ];
 
 fn main() {

@@ -151,6 +151,7 @@ fn event_names_match_the_contract() {
     for (key, name) in [
         ("storeRelocate", "daw://store-relocate"),
         ("robloxProgress", "daw://roblox-progress"),
+        ("youtubeProgress", "daw://youtube-progress"),
     ] {
         assert!(
             ts.contains(&format!("{key}: '{name}'")),
@@ -176,6 +177,26 @@ fn secret_keys_match_the_contract() {
 
 #[test]
 fn struct_shapes_match_the_contract() {
+    assert_same_shape(
+        "YoutubeStatus",
+        &crate::youtube::YoutubeStatus {
+            ready: true,
+            yt_dlp_version: Some("2026.08.19".into()),
+        },
+    );
+    assert_same_shape(
+        "YoutubeInfo",
+        &crate::youtube::YoutubeInfo {
+            id: "abc".into(),
+            title: "t".into(),
+            uploader: "u".into(),
+            duration_sec: 1,
+            thumbnail: None,
+            webpage_url: "https://youtu.be/abc".into(),
+            ext: "m4a".into(),
+            bytes: 0,
+        },
+    );
     assert_same_shape(
         "StoreInfo",
         &StoreInfo {

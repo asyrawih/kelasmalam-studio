@@ -24,6 +24,8 @@ export interface StudioHeaderProps {
   /** Buka halaman upload dan grant access Roblox. */
   readonly onOpenRoblox?: () => void;
   readonly onOpenSoundCloud?: () => void;
+  /** Buka dialog impor YouTube. HANYA diberikan di desktop (docs/23); di web tombolnya tidak ada. */
+  readonly onOpenYoutube?: () => void;
 }
 
 function HeaderDivider(): JSX.Element {
@@ -48,7 +50,7 @@ function HeaderGroup({ label, children }: { readonly label: string; readonly chi
   );
 }
 
-export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud }: StudioHeaderProps): JSX.Element {
+export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud, onOpenYoutube }: StudioHeaderProps): JSX.Element {
   const laneCount = useStudio((s) => s.lanes.length);
   const sampleRate = useStudio((s) => s.sampleRate);
   const engineReady = useStudio((s) => s.engineReady);
@@ -108,6 +110,7 @@ export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud
         <HeaderGroup label="TOOLS">
           <AutoStemToggle />
           {onOpenSoundCloud !== undefined && <Button size="sm" variant="outline" onClick={onOpenSoundCloud}>SOUNDCLOUD</Button>}
+          {onOpenYoutube !== undefined && <Button size="sm" variant="outline" onClick={onOpenYoutube}>YOUTUBE</Button>}
         </HeaderGroup>
         <HeaderDivider />
         <HeaderGroup label="STATUS">
