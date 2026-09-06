@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, ProgressBar } from '../ui/cyber';
-import { SCNET_MODELS, type ScnetModelId } from './scnet-model';
+import { prefetchModelBytes, SCNET_MODELS, type ScnetModelId } from './scnet-model';
 import type { ScnetResult, ScnetStem } from './scnet-separate';
+import { useAudioFilePicker } from '../platform/useAudioFilePicker';
 import './proof-stem.css';
 
 type StemName = 'VOCALS' | 'DRUMS' | 'BASS' | 'OTHER';
@@ -311,6 +312,14 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
     }
   }, [stop]);
 
+  const picker = useAudioFilePicker(
+    (files) => {
+      const file = files[0];
+      if (file !== undefined) void loadFile(file);
+    },
+    { multiple: false },
+  );
+
   const isolated = globalThis.crossOriginIsolated === true;
   const hasSab = typeof SharedArrayBuffer !== 'undefined';
   const hasWasm = typeof WebAssembly !== 'undefined';
@@ -389,7 +398,22 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
       };
       worker.current = instance;
     }
-    worker.current.postMessage({ type: 'init', modelId });
+    const target = worker.current;
+    // Desktop: byte model lewat IPC main thread, dipindahkan ke worker. Web:
+    // `null`, worker mengunduh sendiri (cache OPFS) seperti sebelumnya.
+    void prefetchModelBytes(modelId, (progress) => {
+      setModelDownloadProgress(progress.total > 0 ? progress.loaded / progress.total : 0);
+      setModelInfo(`DOWNLOADING ${Math.round(progress.loaded / progress.total * 100)}% · ${(progress.loaded / 1024 / 1024).toFixed(1)} / ${(progress.total / 1024 / 1024).toFixed(1)} MIB`);
+    })
+      .then((bytes) => {
+        if (worker.current !== target) return;
+        if (bytes === null) target.postMessage({ type: 'init', modelId });
+        else target.postMessage({ type: 'init', modelId, bytes }, [bytes.buffer]);
+      })
+      .catch((reason: unknown) => {
+        setModelState('error');
+        setError(reason instanceof Error ? reason.message : String(reason));
+      });
   }, [modelId, modelState]);
 
   const runSeparation = useCallback(async (): Promise<void> => {
@@ -441,15 +465,13 @@ export function ProofStemPage({ onClose }: ProofStemPageProps): JSX.Element {
       <section className="ps-grid">
         <article className="ps-panel ps-source">
           <PanelTitle index="01" title="SOURCE TRACK" status={buffer === null ? 'WAITING' : 'DECODED'} />
-          <label className="ps-drop">
-            <input
-              type="file"
-              accept="audio/*"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file !== undefined) void loadFile(file);
-              }}
-            />
+          {/*
+            * Web: label membungkus `<input type=file>` — klik di mana pun
+            * membuka picker. Desktop: input-nya tidak ada, jadi label yang
+            * memanggil dialog native.
+            */}
+          <label className="ps-drop" onClick={picker.input === null ? picker.open : undefined}>
+            {picker.input}
             <span className="ps-drop-icon">＋</span>
             <strong>{decoding ? 'DECODING…' : fileName}</strong>
             <small>{buffer === null ? 'DROP OR SELECT WAV / MP3 / FLAC' : `${formatTime(duration)} · ${buffer.sampleRate / 1000} KHZ · ${buffer.numberOfChannels} CH`}</small>
