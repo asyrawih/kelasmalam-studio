@@ -36,6 +36,7 @@ import { djStore } from '../dj/store';
 import { registerImportSink } from '../studio/timeline/import-sink';
 import { registerLibraryDropHandler } from '../studio/timeline/library-drop';
 import { placeAssetOnLane } from '../studio/timeline/audio-import';
+import { getPlatformHost } from '../platform';
 import { createLibraryApi, type LibraryApi } from './api';
 import { loadTrack } from './load-track';
 import {
@@ -95,6 +96,16 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   useEffect(() => {
     if (api === null) {
       libraryActions.setStatus('tidak-dikonfigurasi');
+      return undefined;
+    }
+    /*
+     * Tanpa cara membangun sesi, `/me` tidak ditanya sama sekali: jawabannya
+     * pasti bukan "masuk", dan dari origin desktop permintaannya bahkan gagal
+     * di CORS — yang akan terbaca sebagai "TIDAK TERSAMBUNG", seolah server
+     * yang rusak. Keadaan yang jujur: belum tersedia.
+     */
+    if (getPlatformHost().login === undefined) {
+      libraryActions.setStatus('tidak-tersedia');
       return undefined;
     }
     let alive = true;
@@ -521,6 +532,11 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
               Kepustakaan belum dipasang di build ini. Isi <code>VITE_LIBRARY_API</code> dengan
               alamat Worker kepustakaan; sampai itu ada, import berkas lokal tetap berjalan penuh.
             </Empty>
+          ) : state.status === 'tidak-tersedia' ? (
+            <Empty>
+              Kepustakaan belum tersedia di versi desktop: menyimpan lagu dan project ke
+              akun menyusul. Import berkas lokal dan export tetap berjalan penuh.
+            </Empty>
           ) : state.status === 'memeriksa' ? (
             <Empty>Memeriksa sesi…</Empty>
           ) : state.status === 'gagal' ? (
@@ -566,6 +582,7 @@ function Header({
   readonly onToggle: () => void;
   readonly api: LibraryApi | null;
 }): JSX.Element {
+  const host = getPlatformHost();
   const status = useLibrary((s) => s.status);
   const user = useLibrary((s) => s.user);
   const tracks = useLibrary((s) => s.tracks);
@@ -621,7 +638,7 @@ function Header({
         </>
       ) : null}
 
-      {status === 'anonim' && api !== null ? (
+      {status === 'anonim' && api !== null && host.login !== undefined ? (
         <Button
           size="sm"
           onClick={() => {
@@ -629,13 +646,20 @@ function Header({
              * NAVIGASI, bukan fetch: `/auth/google` membalas 302 ke layar
              * consent Google, dan mengambilnya lewat fetch tidak pernah bisa
              * berhasil. Path sekarang dititipkan supaya user kembali ke
-             * tempat ia menekan tombol.
+             * tempat ia menekan tombol. Promise-nya tidak pernah selesai —
+             * halaman ini dibongkar.
              */
-            window.location.href = api.loginUrl(window.location.pathname);
+            void host.login?.({ apiBase: api.base, nextPath: window.location.pathname });
           }}
         >
           MASUK DENGAN GOOGLE
         </Button>
+      ) : null}
+
+      {status === 'tidak-tersedia' ? (
+        <Badge tone="warning" height={22}>
+          BELUM TERSEDIA DI DESKTOP
+        </Badge>
       ) : null}
 
       {status === 'gagal' ? (
@@ -656,6 +680,8 @@ function Header({
  */
 const LABEL: Readonly<Record<string, string>> = {
   'tidak-dikonfigurasi': 'BELUM DIPASANG',
+  // Kosong: badge di kanan strip sudah mengatakannya.
+  'tidak-tersedia': '',
   memeriksa: 'MEMERIKSA…',
   anonim: 'BELUM MASUK',
   gagal: '',

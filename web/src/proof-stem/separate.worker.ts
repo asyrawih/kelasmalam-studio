@@ -4,7 +4,8 @@ import { loadScnetModel, type ScnetModelId } from './scnet-model';
 import { separateScnetPcm, type ScnetResult } from './scnet-separate';
 
 type Request =
-  | { readonly type: 'init'; readonly modelId: ScnetModelId }
+  /** `bytes` hanya dari desktop (lihat `prefetchModelBytes`); web membiarkannya kosong. */
+  | { readonly type: 'init'; readonly modelId: ScnetModelId; readonly bytes?: Uint8Array }
   | { readonly type: 'separate'; readonly left: Float32Array; readonly right: Float32Array };
 
 type Response =
@@ -21,7 +22,7 @@ scope.onmessage = (event: MessageEvent<Request>): void => {
   if (event.data.type === 'init') {
     void loadScnetModel(event.data.modelId, (progress) => {
       scope.postMessage({ type: 'model-progress', ...progress } satisfies Response);
-    })
+    }, { bytes: event.data.bytes })
       .then((info) => scope.postMessage({ type: 'ready', ...info } satisfies Response))
       .catch(reportError);
     return;

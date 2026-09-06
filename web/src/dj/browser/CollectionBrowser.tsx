@@ -23,6 +23,8 @@ import { djActions, useDj } from '../store';
 import { filterSort, rowsOf, type CollectionRow } from './collection';
 import { importFilesToDeck } from './dj-import';
 import { inspectRemoval, removeAssetFromLibrary } from './dj-remove';
+import { useAudioFilePicker } from '../../platform/useAudioFilePicker';
+import { useNativeFileDrop } from '../../platform/useNativeFileDrop';
 
 /** Berapa lama konfirmasi hapus tetap bersenjata sebelum batal sendiri. */
 const CONFIRM_MS = 5000;
@@ -143,7 +145,7 @@ export function CollectionBrowser(): JSX.Element {
    */
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const [localNotice, setLocalNotice] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const zoneRef = useRef<HTMLDivElement>(null);
 
   const rows = useMemo(
     () => filterSort(rowsOf(assets), query, sort, ascending),
@@ -159,10 +161,13 @@ export function CollectionBrowser(): JSX.Element {
     });
   };
 
-  const takeFiles = (files: FileList | null): void => {
+  const takeFiles = (files: FileList | readonly File[] | null): void => {
     if (files === null || files.length === 0) return;
     void importFilesToDeck([...files], null, sampleRate);
   };
+  const picker = useAudioFilePicker(takeFiles);
+  // Drop dari Finder/Explorer di desktop; di web `onDrop` di bawah yang bekerja.
+  useNativeFileDrop(zoneRef, takeFiles);
 
   // Konfirmasi kedaluwarsa sendiri. `pendingRemove` sengaja jadi dependensi:
   // menekan baris LAIN memasang ulang hitungannya untuk baris itu.
@@ -187,6 +192,7 @@ export function CollectionBrowser(): JSX.Element {
 
   return (
     <div
+      ref={zoneRef}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -238,7 +244,7 @@ export function CollectionBrowser(): JSX.Element {
         <button
           type="button"
           className="cy-btn-reset"
-          onClick={() => fileRef.current?.click()}
+          onClick={picker.open}
           style={{
             fontSize: '9px',
             letterSpacing: '.12em',
@@ -252,17 +258,7 @@ export function CollectionBrowser(): JSX.Element {
         >
           + TAMBAH FILE
         </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="audio/*"
-          multiple
-          onChange={(e) => {
-            takeFiles(e.target.files);
-            e.target.value = '';
-          }}
-          style={{ display: 'none' }}
-        />
+        {picker.input}
         <span
           style={{
             fontSize: '9px',

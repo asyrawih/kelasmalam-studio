@@ -6,7 +6,8 @@ import { separateScnetPcm, type ScnetResult } from '../proof-stem/scnet-separate
 const TARGET_SAMPLE_RATE = 44_100;
 
 type Request =
-  | { readonly type: 'init' }
+  /** `bytes` hanya dari desktop (lihat `prefetchModelBytes`); web membiarkannya kosong. */
+  | { readonly type: 'init'; readonly bytes?: Uint8Array }
   | {
       readonly type: 'separate';
       readonly assetId: number;
@@ -41,12 +42,12 @@ type Response =
 const scope = self as DedicatedWorkerGlobalScope;
 let modelReady: Promise<void> | null = null;
 
-function ensureModel(): Promise<void> {
+function ensureModel(bytes?: Uint8Array): Promise<void> {
   modelReady ??= loadScnetModel(
     'base',
     (progress) => scope.postMessage({ type: 'model-progress', ...progress } satisfies Response),
     // Background separation harus menyisakan CPU untuk Web Audio dan UI.
-    { maxThreads: 2 },
+    { maxThreads: 2, bytes },
   ).then((info) => {
     scope.postMessage({
       type: 'ready',
@@ -60,7 +61,7 @@ function ensureModel(): Promise<void> {
 
 scope.onmessage = (event: MessageEvent<Request>): void => {
   if (event.data.type === 'init') {
-    void ensureModel().catch((reason) => reportError(null, reason));
+    void ensureModel(event.data.bytes).catch((reason) => reportError(null, reason));
     return;
   }
 

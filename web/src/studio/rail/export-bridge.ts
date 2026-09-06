@@ -4,7 +4,8 @@
  * Jalur nyatanya, dan inilah bayaran dari seluruh arsitektur: model studio →
  * `snapshotFromStudioJson` (Rust) → `OfflineRender` yang memanggil
  * `Engine::render_block` YANG SAMA dengan playback → `encoders/` →
- * `downloadBlob()`. Tidak ada `OfflineAudioContext`, tidak ada jalur DSP kedua.
+ * `PlatformHost.pickSaveTarget()` (disk lewat File System Access / plugin-fs,
+ * atau Blob+anchor). Tidak ada `OfflineAudioContext`, tidak ada jalur DSP kedua.
  *
  * Yang tersisa sebagai prasyarat cuma satu: artefak WASM harus sudah dibangun.
  * Kalau belum, `loadWasm()` gagal dan tombol COMPILE di-*disable* dengan alasan
@@ -12,8 +13,9 @@
  */
 
 import { useEffect, useState } from 'react';
-import { createEncoder, downloadBlob, pickSaveLocation } from '../../encoders';
+import { createEncoder } from '../../encoders';
 import type { EncoderFormat } from '../../encoders';
+import { getPlatformHost } from '../../platform';
 import { loadWasm, type LoadedWasm } from '../../audio/wasm-loader';
 import {
   buildExportPayload,
@@ -27,7 +29,7 @@ import {
   type ExportEncoder,
   type ExportResult,
 } from '../export/run-export';
-import { BlobSink, FileSystemSink, type ExportSink } from '../export/sinks';
+import { BlobSink, type ExportSink } from '../export/sinks';
 import type { LoudnessAnalysis } from '../export/loudness-analyzer';
 import {
   ExportWorkerUnavailable,
@@ -286,8 +288,8 @@ export async function analyzeCompile(p: AnalyzeCompileParams = {}): Promise<Loud
 }
 
 /**
- * Jalankan export. HARUS dipanggil dari handler klik: `pickSaveLocation()`
- * membutuhkan user gesture (docs/03 §3d).
+ * Jalankan export. HARUS dipanggil dari handler klik: picker di
+ * `pickSaveTarget()` membutuhkan user gesture (docs/03 §3d).
  */
 export async function runCompile(p: CompileParams): Promise<void> {
   if (!host) throw new Error(NO_HOST);
@@ -307,18 +309,21 @@ export async function runCompile(p: CompileParams): Promise<void> {
   // dan atribut `download` anchor. Kalau keduanya dihitung terpisah, file yang
   // sama bisa mendarat dengan dua nama berbeda tergantung browser.
   const fileName = `${resolveExportName(p.fileName, state.projectName).base}.${ext}`;
-  // Picker DULU, sebelum render: ia butuh user gesture, dan gesture-nya hilang
-  // begitu kita menunggu batch pertama. `null` = browser tanpa File System
-  // Access API (atau user batal) → jalur anchor+Blob.
-  const fileHandle = await pickSaveLocation(fileName, mime, ext);
-
-  // Ke disk kalau user memilih lokasi, kalau tidak ditumpuk di memori.
-  // Perbedaannya bukan kenyamanan: lewat `FileSystemSink` byte turun ke disk
-  // begitu di-encode, jadi ukuran file tidak lagi dibatasi RAM. `BlobSink`
-  // adalah yang terbaik yang bisa dilakukan di browser tanpa File System
-  // Access (Firefox, Safari) — dan di sana batas itu memang tetap ada.
-  const blobSink = fileHandle ? null : new BlobSink();
-  const sink: ExportSink = blobSink ?? (await FileSystemSink.create(fileHandle!));
+  // Tujuan DULU, sebelum render: picker web butuh user gesture, dan gesture-nya
+  // hilang begitu kita menunggu batch pertama. Platform yang memutuskan
+  // bentuknya (`platform/host.ts`): `stream` = chunk turun ke disk begitu
+  // di-encode, jadi ukuran file tidak lagi dibatasi RAM; `blob` = ditumpuk di
+  // memori — yang terbaik yang bisa dilakukan browser tanpa File System Access
+  // (Firefox, Safari), dan di sana batas itu memang tetap ada; `cancelled` =
+  // user batal di dialog native, tidak ada yang ditulis.
+  const target = await getPlatformHost().pickSaveTarget(fileName, mime, ext);
+  if (target.kind === 'cancelled') {
+    p.onProgress?.(null);
+    return;
+  }
+  const blobSink = target.kind === 'blob' ? new BlobSink() : null;
+  const deliver = target.kind === 'blob' ? target.deliver : null;
+  const sink: ExportSink = target.kind === 'stream' ? target.sink : blobSink!;
 
   try {
     const result = await render({
@@ -338,7 +343,7 @@ export async function runCompile(p: CompileParams): Promise<void> {
     if (result.analysis !== null) p.onAnalysis?.(result.analysis);
     // Jalur mana pun sudah memanggil `sink.abort()` kalau gagal/dibatalkan,
     // jadi di sini kita hanya sampai kalau berkasnya memang lengkap.
-    if (blobSink) downloadBlob(blobSink.takeBlob(mime), fileName);
+    if (blobSink !== null && deliver !== null) deliver(blobSink.takeBlob(mime));
   } catch (e) {
     // Batal bukan kegagalan — jangan tampilkan sebagai error merah.
     if (!(e instanceof ExportCancelled)) throw e;

@@ -34,6 +34,8 @@ import { useCanvasDraw } from '../../ui/lib/canvas';
 import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
 import { clearTimelineCursor, setTimelineCursor } from './timeline-cursor';
 import { snapClipMove } from './clip-snap';
+import { useAudioFilePicker } from '../../platform/useAudioFilePicker';
+import { useNativeFileDrop } from '../../platform/useNativeFileDrop';
 
 export interface ClipAreaProps {
   readonly scrollerRef: RefObject<HTMLDivElement>;
@@ -572,12 +574,12 @@ export function ClipArea({
   const trackRef = useRef<HTMLDivElement>(null);
   const view = useTrackView(scrollerRef, trackRef);
   /**
-   * Satu `<input type="file">` tersembunyi untuk SELURUH area clip, bukan satu
-   * per lane: elemen input tidak bisa dibuka secara terprogram tanpa gestur
-   * user, jadi yang dibutuhkan hanya satu — lane dan posisi tujuannya dititip
-   * di `pendingPick` sesaat sebelum dialognya dibuka.
+   * Satu picker berkas untuk SELURUH area clip, bukan satu per lane: elemen
+   * input tidak bisa dibuka secara terprogram tanpa gestur user, jadi yang
+   * dibutuhkan hanya satu — lane dan posisi tujuannya dititip di `pendingPick`
+   * sesaat sebelum dialognya dibuka. Di desktop `picker.input` null dan
+   * dialognya native; alurnya sama.
    */
-  const fileRef = useRef<HTMLInputElement>(null);
   const pendingPick = useRef<{ laneId: string; start: number } | null>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
   /**
@@ -930,11 +932,33 @@ export function ClipArea({
     }
   };
 
+  const picker = useAudioFilePicker(
+    (files) => {
+      const target = pendingPick.current;
+      pendingPick.current = null;
+      if (target === null) return;
+      startFileImports(files, target.laneId, target.start);
+    },
+    { dataAttr: 'data-lane-file-input' },
+  );
+
   /** Ketukan pada lane kosong → dialog berkas, dengan tujuannya dititip dulu. */
   const openPicker = (laneId: string, start: number): void => {
     pendingPick.current = { laneId, start };
-    fileRef.current?.click();
+    picker.open();
   };
+
+  /**
+   * Drop dari Finder/Explorer di desktop: tidak ada event DOM `drop`, hanya
+   * `File` + titik jatuh. Lane-nya dicari dari elemen di bawah titik itu, dan
+   * posisinya dihitung dengan rumus yang SAMA dengan drop DOM (`dropStartAt`).
+   */
+  useNativeFileDrop(scrollerRef, (files, point) => {
+    const under = document.elementFromPoint(point.x, point.y);
+    const laneId = under?.closest<HTMLElement>('[data-lane-row]')?.dataset['laneRow'];
+    if (laneId === undefined) return;
+    startFileImports(files, laneId, dropStartAt(point.x));
+  });
 
   const endGesture = (e: ReactPointerEvent<HTMLDivElement>): void => {
     const g = gesture.current;
@@ -961,13 +985,14 @@ export function ClipArea({
     studioActions.setClipDragging(false);
   };
 
-  /** Posisi jatuh di timeline, dalam sample. */
-  const dropStart = (e: ReactDragEvent<HTMLDivElement>): number => {
+  /** Posisi jatuh di timeline, dalam sample, dari `clientX`. */
+  const dropStartAt = (clientX: number): number => {
     const el = scrollerRef.current;
     if (el === null || el.scrollWidth <= 0) return 0;
     const rect = el.getBoundingClientRect();
-    return ((el.scrollLeft + (e.clientX - rect.left)) / el.scrollWidth) * duration;
+    return ((el.scrollLeft + (clientX - rect.left)) / el.scrollWidth) * duration;
   };
+  const dropStart = (e: ReactDragEvent<HTMLDivElement>): number => dropStartAt(e.clientX);
 
   const handleDrop = (e: ReactDragEvent<HTMLDivElement>, laneId: string): void => {
     e.preventDefault();
@@ -1141,26 +1166,7 @@ export function ClipArea({
           }}
         />
       </div>
-      <input
-        ref={fileRef}
-        data-lane-file-input
-        type="file"
-        accept="audio/*"
-        multiple
-        onChange={(e) => {
-          const target = pendingPick.current;
-          pendingPick.current = null;
-          const files = Array.from(e.target.files ?? []);
-          // Dikosongkan SEBELUM import dimulai: tanpa ini, memilih file yang
-          // sama persis untuk kedua kalinya tidak memicu `change` sama sekali —
-          // nilainya tidak berubah — dan bagi user itu terlihat seperti klik
-          // yang tidak melakukan apa-apa.
-          e.target.value = '';
-          if (target === null || files.length === 0) return;
-          startFileImports(files, target.laneId, target.start);
-        }}
-        style={{ display: 'none' }}
-      />
+      {picker.input}
     </div>
   );
 }
