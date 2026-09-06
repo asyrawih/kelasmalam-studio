@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import type { PlatformKind } from '../../platform';
 import { Button, Card } from '../../ui/cyber';
 import type { QueueItem, RobloxTarget } from '../model';
 import { robloxActions } from '../store';
@@ -15,9 +16,10 @@ export interface GrantAccessProps {
   readonly api: GrantApi | null;
   readonly uploadTarget: RobloxTarget;
   readonly uploadItems: readonly QueueItem[];
+  readonly platform?: PlatformKind;
 }
 
-export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps): JSX.Element {
+export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }: GrantAccessProps): JSX.Element {
   const [assets, setAssets] = useState<readonly RobloxCatalogAsset[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -116,6 +118,25 @@ export function GrantAccess({ api, uploadTarget, uploadItems }: GrantAccessProps
     await load();
   };
 
+  /*
+   * Desktop (docs/21 §3f): Grant Access memakai API tidak resmi + cookie
+   * `.ROBLOSECURITY` dan dijadwalkan fase R5. Sampai saat itu tab ini berkata
+   * apa adanya — bukan formulir yang gagal saat ditekan. Katalog lokal sudah
+   * memberi sebagian nilainya (daftar asset + assetId) tanpa cookie.
+   */
+  if (platform === 'desktop') {
+    return (
+      <div style={{ padding: '16px' }}>
+        <Card title="Grant Access" subtitle="belum tersedia di versi desktop" notched>
+          <p style={{ margin: 0, fontSize: '10px', lineHeight: 1.7, color: 'var(--cy-text-muted)' }}>
+            Grant Access belum tersedia di versi desktop. Daftar asset dan asset id yang sudah
+            disetujui ada di tab KATALOG; pemberian izin ke experience masih lewat versi web
+            atau Creator Hub.
+          </p>
+        </Card>
+      </div>
+    );
+  }
   if (api === null) return <Card title="Grant Access" subtitle="Library API belum tersambung">Isi VITE_LIBRARY_API untuk memakai katalog dan grant.</Card>;
 
   return (

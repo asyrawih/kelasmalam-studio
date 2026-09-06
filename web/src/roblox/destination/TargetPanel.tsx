@@ -12,7 +12,12 @@
  * punya tombol LIHAT supaya user tetap bisa memeriksa apa yang ia tempel —
  * menyembunyikan tanpa jalan keluar hanya memindahkan salahnya ke tempat lain.
  *
- * Penyimpanan dilakukan lewat Library Worker; kunci dienkripsi sebelum masuk D1.
+ * ## Dua tempat simpan, satu kartu
+ *
+ * Web: Library Worker mengenkripsinya ke D1 per akun Google. Desktop: keychain
+ * OS lewat `secret_set` (docs/21 §1f) — kolomnya dikosongkan begitu tersimpan,
+ * dan `apiKeyStored` yang memberi tahu bahwa kuncinya ada. Kartu ini tidak
+ * tahu mana yang aktif; ia hanya menerima `onSave` dan kalimat penjelasnya.
  */
 
 import { useState } from 'react';
@@ -22,10 +27,15 @@ import { targetProblems, type CreatorKind, type RobloxTarget } from '../model';
 
 export interface TargetPanelProps {
   readonly target: RobloxTarget;
+  /** Desktop: kunci sudah ada di keychain. Web: selalu `false`. */
+  readonly apiKeyStored: boolean;
   readonly onCreatorKind: (kind: CreatorKind) => void;
   readonly onCreatorId: (id: string) => void;
   readonly onApiKey: (key: string) => void;
+  readonly onGenreToDescription: (on: boolean) => void;
   readonly onSave?: (target: RobloxTarget) => Promise<void>;
+  /** Kalimat di bawah kolom kunci: ke mana ia disimpan. */
+  readonly storageNote: string;
   /** Dikunci selama ada baris yang sedang berjalan. */
   readonly locked: boolean;
 }
@@ -54,15 +64,19 @@ const KINDS: readonly { readonly id: CreatorKind; readonly label: string }[] = [
 
 export function TargetPanel({
   target,
+  apiKeyStored,
   onCreatorKind,
   onCreatorId,
   onApiKey,
+  onGenreToDescription,
   onSave,
+  storageNote,
   locked,
 }: TargetPanelProps): JSX.Element {
   const [reveal, setReveal] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
-  const problems = targetProblems(target);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const problems = targetProblems(target, apiKeyStored);
 
   return (
     <Card
@@ -140,14 +154,14 @@ export function TargetPanel({
           type={reveal ? 'text' : 'password'}
           autoComplete="off"
           spellCheck={false}
-          placeholder="tempel kunci dari create.roblox.com"
+          placeholder={apiKeyStored ? 'tersimpan di keychain — tempel untuk mengganti' : 'tempel kunci dari create.roblox.com'}
           value={target.apiKey}
           disabled={locked}
           onChange={(e) => onApiKey(e.target.value)}
           style={FIELD}
         />
         <span style={{ fontSize: '9px', lineHeight: 1.7, color: 'var(--cy-text-muted)' }}>
-          Disimpan terenkripsi di D1 untuk akun Google yang sedang login.
+          {storageNote}
         </span>
         {onSave !== undefined ? <Button
           size="sm"
@@ -155,10 +169,36 @@ export function TargetPanel({
           disabled={locked || problems.length > 0 || saveState === 'saving'}
           onClick={() => {
             setSaveState('saving');
-            void onSave(target).then(() => setSaveState('saved')).catch(() => setSaveState('failed'));
+            setSaveError(null);
+            void onSave(target)
+              .then(() => setSaveState('saved'))
+              .catch((e: unknown) => {
+                setSaveState('failed');
+                setSaveError(e instanceof Error ? e.message : String((e as { message?: unknown })?.message ?? e));
+              });
           }}
         >{saveState === 'saving' ? 'MENYIMPAN…' : saveState === 'saved' ? 'TERSIMPAN' : saveState === 'failed' ? 'COBA LAGI' : 'SIMPAN USER + API KEY'}</Button> : null}
+        {saveError !== null ? (
+          <span role="alert" style={{ fontSize: '9px', letterSpacing: '.06em', color: 'var(--cy-warning)' }}>! {saveError}</span>
+        ) : null}
       </div>
+
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: locked ? 'not-allowed' : 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={target.genreToDescription}
+          disabled={locked}
+          onChange={(e) => onGenreToDescription(e.target.checked)}
+          style={{ marginTop: '2px' }}
+        />
+        <span style={{ display: 'grid', gap: '2px' }}>
+          <span style={{ fontSize: '10px', letterSpacing: '.08em', color: 'var(--cy-text)' }}>Genre ke deskripsi</span>
+          <span style={{ fontSize: '9px', lineHeight: 1.6, color: 'var(--cy-text-muted)' }}>
+            Tulis baris <code>Genre: Musik / Lo-fi</code> di akhir deskripsi asset — satu-satunya cara
+            genre terlihat di Creator Hub. Roblox sendiri tidak punya kolom genre.
+          </span>
+        </span>
+      </label>
 
       {problems.length > 0 ? (
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: '3px' }}>

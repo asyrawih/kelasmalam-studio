@@ -52,3 +52,11 @@
   background: var(--cy-bg);
   color: var(--cy-accent);
 }
+
+/* Penyaring katalog: dua kolom (kategori/genre + cari) jadi satu di layar
+ * sempit, dengan alasan yang sama seperti `.rbx-body`. */
+@media (max-width: 700px) {
+  .rbx-catalog-filter {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
