@@ -29,6 +29,7 @@
  */
 
 import { getPlatformHost } from '../platform';
+import type { ImportedTrack, StoreInfo } from '../platform/local-commands';
 import type { LibraryTrack, LibraryUser } from './model';
 
 export class LibraryError extends Error {
@@ -116,6 +117,19 @@ export interface LibraryApi {
   logout(): Promise<void>;
   /** URL yang harus dibuka sebagai NAVIGASI, bukan di-fetch. */
   loginUrl(nextPath: string): string;
+
+  // ── Hanya implementasi LOKAL (docs/21). Web tidak punya keduanya. ──────────
+
+  /**
+   * Jalur cepat berkas yang sudah ada di disk: Rust menyalin + meng-hash
+   * sendiri, byte-nya tidak dikirim balik lewat IPC. Pemanggil WAJIB memeriksa
+   * `hash` hasilnya sama dengan hash yang ia hitung — kalau berkas di disk
+   * berubah di antaranya (atau ia gzip yang dibuka di WebView), jatuhkan ke
+   * `initTrack`/`putUpload` biasa.
+   */
+  importPath?(path: string): Promise<ImportedTrack>;
+  /** Folder, ukuran di disk, jumlah — untuk strip dok. */
+  storeInfo?(): Promise<StoreInfo>;
 }
 
 export function normalizeBase(base: string): string {

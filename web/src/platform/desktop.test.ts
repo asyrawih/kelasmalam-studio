@@ -58,7 +58,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   },
 }));
 
-import { baseName, createDesktopHost } from './desktop';
+import { baseName, createDesktopHost, DroppedPathRegistry } from './desktop';
 
 beforeEach(() => {
   invoke.mockReset();
@@ -98,6 +98,67 @@ describe('sesi', () => {
     expect(host.login).toBeUndefined();
     expect(await host.authHeaders()).toEqual({});
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('libraryApi() = kepustakaan LOKAL, satu objek yang sama tiap panggilan, tanpa sesi', async () => {
+    const host = createDesktopHost();
+    const api = host.libraryApi();
+    expect(api).not.toBeNull();
+    expect(host.libraryApi()).toBe(api);
+    await expect(api!.me()).resolves.toMatchObject({ id: 'lokal', name: 'KEPUSTAKAAN LOKAL' });
+    expect(invoke).not.toHaveBeenCalled();
+    invoke.mockResolvedValueOnce([]);
+    await expect(api!.tracks()).resolves.toEqual([]);
+    expect(invoke).toHaveBeenCalledWith('library_tracks', {});
+  });
+});
+
+describe('path berkas yang baru masuk (jalur cepat library_import_path)', () => {
+  it('drop OS: path-nya bisa diklaim SEKALI lewat (name, size), lalu habis', async () => {
+    readFile.mockResolvedValue(new Uint8Array([1, 2]));
+    const host = createDesktopHost();
+    const off = host.onFilesDropped!(() => {});
+    for (let i = 0; i < 10 && dropHandler === null; i++) await Promise.resolve();
+    dropHandler!({ payload: { type: 'drop', paths: ['/a/x.wav'], position: { x: 1, y: 1 } } });
+    // Klaim pertama yang berhasil ada di dalam waitFor; sesudahnya kosong.
+    await vi.waitFor(() => expect(host.droppedPathFor!('x.wav', 2)).toBe('/a/x.wav'));
+    expect(host.droppedPathFor!('x.wav', 2)).toBeNull();
+    // Ukuran lain = berkas lain.
+    dropHandler!({ payload: { type: 'drop', paths: ['/b/x.wav'], position: { x: 1, y: 1 } } });
+    await vi.waitFor(() => expect(readFile).toHaveBeenCalledTimes(2));
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(host.droppedPathFor!('x.wav', 3)).toBeNull();
+    expect(host.droppedPathFor!('x.wav', 2)).toBe('/b/x.wav');
+    off();
+  });
+
+  it('dialog native juga mengingat path — berkas dari "buka…" tidak perlu lewat IPC dua kali', async () => {
+    dialogOpen.mockResolvedValue(['/a/lagu.flac']);
+    readFile.mockResolvedValue(new Uint8Array(7));
+    const host = createDesktopHost();
+    await host.openAudioFiles!();
+    expect(host.droppedPathFor!('lagu.flac', 7)).toBe('/a/lagu.flac');
+  });
+
+  it('registry: FIFO untuk nama+ukuran sama, kedaluwarsa, dan dibatasi jumlahnya', () => {
+    let now = 0;
+    const reg = new DroppedPathRegistry(3, 1000, () => now);
+    reg.remember('x.wav', 1, '/1/x.wav');
+    reg.remember('x.wav', 1, '/2/x.wav');
+    expect(reg.take('x.wav', 1)).toBe('/1/x.wav');
+    expect(reg.take('x.wav', 1)).toBe('/2/x.wav');
+    expect(reg.take('x.wav', 1)).toBeNull();
+
+    reg.remember('tua.wav', 1, '/tua');
+    now = 1001;
+    expect(reg.take('tua.wav', 1)).toBeNull();
+
+    reg.remember('a', 1, '/a');
+    reg.remember('b', 1, '/b');
+    reg.remember('c', 1, '/c');
+    reg.remember('d', 1, '/d');
+    expect(reg.take('a', 1)).toBeNull();
+    expect(reg.take('d', 1)).toBe('/d');
   });
 });
 

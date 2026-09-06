@@ -13,6 +13,7 @@
  * `guard.test.ts` menjaga itu.
  */
 
+import { createLibraryApi, type LibraryApi } from '../library/api';
 import { assertModelSize, SCNET_MODELS, type ScnetModelDefinition, type ScnetModelDownloadProgress } from '../proof-stem/scnet-catalog';
 import { FileSystemSink } from '../studio/export/sinks';
 import type { ModelBytes, PlatformHost, SaveTarget } from './host';
@@ -175,9 +176,29 @@ async function fetchModel(model: ScnetModelDefinition): Promise<Response> {
 
 // ── Host ────────────────────────────────────────────────────────────────────
 
-export function createWebHost(): PlatformHost {
+/**
+ * Basis Worker kepustakaan dari env build. Kosong = build tanpa backend, dan
+ * itu keadaan yang sah (docs/16 §6) — bukan galat.
+ */
+export function libraryApiBaseFromEnv(): string {
+  return (import.meta.env.VITE_LIBRARY_API ?? '').trim();
+}
+
+export function createWebHost(opts: { readonly libraryApiBase?: string } = {}): PlatformHost {
+  // Dibuat SEKALI per host, malas: dok memakai objek ini sebagai kunci
+  // effect-nya, dan klien baru tiap panggilan berarti boot ulang tiap render.
+  let library: LibraryApi | null | undefined;
+
   return {
     kind: 'web',
+
+    libraryApi(): LibraryApi | null {
+      if (library === undefined) {
+        const base = (opts.libraryApiBase ?? libraryApiBaseFromEnv()).trim();
+        library = base === '' ? null : createLibraryApi(base);
+      }
+      return library;
+    },
 
     async pickSaveTarget(fileName, mime, ext): Promise<SaveTarget> {
       // Picker DULU, sebelum render: ia butuh user gesture, dan gesture-nya

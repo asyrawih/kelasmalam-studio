@@ -129,3 +129,18 @@ describe('modelBytes (tanpa OPFS)', () => {
     }
   });
 });
+
+describe('libraryApi', () => {
+  it('basis kosong = build tanpa backend → null, bukan klien yang menunjuk ke mana-mana', () => {
+    expect(createWebHost({ libraryApiBase: '' }).libraryApi()).toBeNull();
+    expect(createWebHost({ libraryApiBase: '   ' }).libraryApi()).toBeNull();
+  });
+
+  it('dengan basis: klien Worker, satu objek yang sama tiap panggilan', () => {
+    const host = createWebHost({ libraryApiBase: 'https://api.test/' });
+    const api = host.libraryApi();
+    expect(api?.base).toBe('https://api.test');
+    expect(host.libraryApi()).toBe(api);
+    expect(api?.loginUrl('/studio')).toBe('https://api.test/auth/google?next=%2Fstudio');
+  });
+});
