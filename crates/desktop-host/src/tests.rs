@@ -14,67 +14,8 @@ use sha2::{Digest, Sha256};
 use crate::model::{part_path_for_test, to_hex};
 use crate::{
     download_model, model_is_ready, model_path, model_specs, read_model, HostError, ModelId,
-    ModelSpec, TokenStore, MODELS_SUBDIR,
+    ModelSpec, MODELS_SUBDIR,
 };
-
-// ---------------------------------------------------------------- TokenStore
-
-#[test]
-fn token_in_memory_roundtrip() {
-    let store = TokenStore::in_memory("app.kelasmalam.test");
-    assert!(!store.is_persistent());
-    assert_eq!(store.service(), "app.kelasmalam.test");
-    assert_eq!(
-        store.get().unwrap(),
-        None,
-        "belum pernah set = None, bukan error"
-    );
-
-    store.set("tok-1").unwrap();
-    assert_eq!(store.get().unwrap().as_deref(), Some("tok-1"));
-
-    store.set("tok-2").unwrap();
-    assert_eq!(
-        store.get().unwrap().as_deref(),
-        Some("tok-2"),
-        "set menimpa"
-    );
-
-    store.clear().unwrap();
-    assert_eq!(store.get().unwrap(), None);
-    store
-        .clear()
-        .unwrap_or_else(|e| panic!("clear kedua harus idempoten: {e}"));
-}
-
-#[test]
-fn token_in_memory_instances_are_independent() {
-    let a = TokenStore::in_memory("svc");
-    let b = TokenStore::in_memory("svc");
-    a.set("milik-a").unwrap();
-    assert_eq!(b.get().unwrap(), None, "store in-memory tidak berbagi isi");
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-#[test]
-fn token_new_falls_back_to_memory_on_unsupported_os() {
-    // Di Linux (CI Ubuntu) `new` harus tetap bisa dipakai tanpa dbus.
-    let store = TokenStore::new("app.kelasmalam.test");
-    assert!(!store.is_persistent());
-    assert_eq!(store.get().unwrap(), None);
-    store.set("x").unwrap();
-    assert_eq!(store.get().unwrap().as_deref(), Some("x"));
-}
-
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-#[test]
-fn token_new_uses_native_store_without_touching_it() {
-    // Hanya konstruksi: tidak ada get/set supaya tes tidak memicu prompt
-    // Keychain di mesin pengembang atau runner.
-    let store = TokenStore::new("app.kelasmalam.test");
-    assert!(store.is_persistent());
-    assert!(format!("{store:?}").contains("app.kelasmalam.test"));
-}
 
 // ------------------------------------------------------------------- Model
 

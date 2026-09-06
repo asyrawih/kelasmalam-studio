@@ -1,6 +1,6 @@
 [package]
 name = "daw-desktop-host"
-description = "Sisi Rust aplikasi desktop yang TIDAK bergantung pada Tauri: simpan token di keychain OS, unduh & baca model ONNX. Dipanggil oleh crate daw-desktop sebagai command."
+description = "Sisi Rust aplikasi desktop yang TIDAK bergantung pada Tauri: unduh, verifikasi & baca model ONNX. Dipanggil oleh crate daw-desktop sebagai command."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,20 +11,9 @@ publish.workspace = true
 unsafe_code = "forbid"
 
 [dependencies]
-keyring-core = { workspace = true }
-reqwest      = { workspace = true }
-tokio        = { workspace = true }
-sha2         = { workspace = true }
-
-# Store keychain per-OS. Di OS lain (Linux CI) tidak ada store native sama
-# sekali — `TokenStore::new` jatuh ke store in-memory keyring-core (lihat
-# src/token.rs). Ini disengaja: menyeret Secret Service/dbus hanya supaya
-# Ubuntu bisa `cargo test` adalah biaya tanpa manfaat.
-[target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store = { workspace = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows-native-keyring-store = { workspace = true }
+reqwest = { workspace = true }
+tokio   = { workspace = true }
+sha2    = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

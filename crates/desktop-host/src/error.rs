@@ -13,10 +13,6 @@ use std::fmt;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum HostError {
-    /// Keychain OS menolak atau gagal (bukan "entri tidak ada" — itu `Ok(None)`).
-    Keyring(keyring_core::Error),
-    /// Store keychain native tidak bisa dibuat di proses ini.
-    KeyringUnavailable(String),
     /// Berkas/direktori di `data_dir`.
     Io(std::io::Error),
     /// Transport HTTP (DNS, TLS, koneksi putus di tengah body).
@@ -35,8 +31,6 @@ pub enum HostError {
 impl fmt::Display for HostError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Keyring(e) => write!(f, "keychain OS: {e}"),
-            Self::KeyringUnavailable(why) => write!(f, "keychain OS tidak tersedia: {why}"),
             Self::Io(e) => write!(f, "I/O: {e}"),
             Self::Http(e) => write!(f, "HTTP: {e}"),
             Self::HttpStatus { status, url } => write!(f, "HTTP {status} untuk {url}"),
@@ -52,7 +46,6 @@ impl fmt::Display for HostError {
 impl std::error::Error for HostError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Keyring(e) => Some(e),
             Self::Io(e) => Some(e),
             Self::Http(e) => Some(e),
             _ => None,
