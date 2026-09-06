@@ -206,3 +206,108 @@ describe('antrean', () => {
     expect(initTrack).not.toHaveBeenCalled();
   });
 });
+
+describe('jalur cepat kepustakaan lokal (path di disk)', () => {
+  const importedTrack = (over: Partial<{ hash: string; frames: number; existed: boolean }> = {}) => ({
+    hash: HASH,
+    name: 'Kelas Malam',
+    bytes: 2048,
+    mime: 'audio/mpeg',
+    frames: 0,
+    sampleRate: 0,
+    marks: null,
+    createdAt: 1,
+    existed: false,
+    ...over,
+  });
+
+  it('dengan path: importPath dipanggil, init/put TIDAK, dan barisnya dilengkapi durasi lewat commit', async () => {
+    const importPath = vi.fn(async () => importedTrack());
+    const initTrack = vi.fn(async () => ({ exists: false, uploadUrl: 'x' }));
+    const putUpload = vi.fn(async () => {});
+    const commitTrack = vi.fn(async (_meta: TrackMeta) => {});
+    const api = fakeLibraryApi({ importPath, initTrack, putUpload, commitTrack });
+
+    const out = await uploadImported(api, imported({ frames: 48_000 * 90 }), '/Users/a/Music/kelas.mp3');
+
+    expect(out).toEqual({ ok: true, skipped: false, deduped: false });
+    expect(importPath).toHaveBeenCalledWith('/Users/a/Music/kelas.mp3');
+    expect(initTrack).not.toHaveBeenCalled();
+    expect(putUpload).not.toHaveBeenCalled();
+    // Rust tidak tahu durasinya (frames 0); sesi ini tahu — barisnya dilengkapi.
+    expect(commitTrack).toHaveBeenCalledTimes(1);
+    expect(commitTrack.mock.calls[0]?.[0]).toMatchObject({ hash: HASH, frames: 48_000 * 90 });
+    expect(uploads()[HASH]).toBeUndefined();
+  });
+
+  it('Rust sudah tahu durasinya → tidak ada commit susulan; existed → deduped', async () => {
+    const commitTrack = vi.fn(async () => {});
+    const api = fakeLibraryApi({
+      importPath: async () => importedTrack({ frames: 100, existed: true }),
+      commitTrack,
+    });
+    const out = await uploadImported(api, imported({ frames: 100 }), '/a/x.mp3');
+    expect(out).toEqual({ ok: true, skipped: false, deduped: true });
+    expect(commitTrack).not.toHaveBeenCalled();
+  });
+
+  it('hash Rust ≠ hash sesi (gzip, berkas berubah) → jatuh ke init/put/commit dengan byte di memori', async () => {
+    const urutan: string[] = [];
+    const api = fakeLibraryApi({
+      importPath: async () => {
+        urutan.push('path');
+        return importedTrack({ hash: 'b'.repeat(64) });
+      },
+      initTrack: async () => {
+        urutan.push('init');
+        return { exists: false, uploadUrl: 'https://r2.test/put' };
+      },
+      putUpload: async () => {
+        urutan.push('put');
+      },
+      commitTrack: async () => {
+        urutan.push('commit');
+      },
+    });
+    const out = await uploadImported(api, imported(), '/a/x.mp3.gz');
+    expect(out).toEqual({ ok: true, skipped: false, deduped: false });
+    expect(urutan).toEqual(['path', 'init', 'put', 'commit']);
+  });
+
+  it('Rust menolak path-nya → jalur biasa mencoba, dan bar unggahan TIDAK memerah kalau itu berhasil', async () => {
+    const api = fakeLibraryApi({
+      importPath: async () => {
+        throw new Error('path sudah tidak ada');
+      },
+    });
+    const out = await uploadImported(api, imported(), '/a/hilang.mp3');
+    expect(out).toEqual({ ok: true, skipped: false, deduped: false });
+    expect(uploads()[HASH]).toBeUndefined();
+  });
+
+  it('tanpa path, atau API tanpa importPath (web): jalur biasa, importPath tidak disentuh', async () => {
+    const importPath = vi.fn(async () => importedTrack());
+    const initTrack = vi.fn(async () => ({ exists: true, uploadUrl: null }));
+    await uploadImported(fakeLibraryApi({ importPath, initTrack }), imported(), null);
+    expect(importPath).not.toHaveBeenCalled();
+    expect(initTrack).toHaveBeenCalledTimes(1);
+
+    const initWeb = vi.fn(async () => ({ exists: true, uploadUrl: null }));
+    await uploadImported(fakeLibraryApi({ initTrack: initWeb }), imported(), '/a/x.mp3');
+    expect(initWeb).toHaveBeenCalledTimes(1);
+  });
+
+  it('antrean menanyakan path SAAT push dan meneruskannya ke gilirannya', async () => {
+    const importPath = vi.fn(async () => importedTrack({ frames: 1 }));
+    const api = fakeLibraryApi({ importPath });
+    const pathOf = vi.fn((i: ImportedForLibrary) => (i.name === 'Kelas Malam' ? '/a/kelas.mp3' : null));
+    const queue = createUploadQueue(api, { pathOf });
+    queue.push(imported({ frames: 1 }));
+    queue.push(imported({ contentHash: 'c'.repeat(64), name: 'Lain', frames: 1 }));
+    // Keduanya sudah ditanya sebelum satu pun unggahan selesai.
+    expect(pathOf).toHaveBeenCalledTimes(2);
+    await queue.idle();
+    expect(importPath).toHaveBeenCalledTimes(1);
+    expect(importPath).toHaveBeenCalledWith('/a/kelas.mp3');
+  });
+});

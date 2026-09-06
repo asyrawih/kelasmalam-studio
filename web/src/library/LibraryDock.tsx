@@ -25,6 +25,15 @@
  * Bukan disembunyikan: build tanpa backend adalah keadaan yang sah (seluruh
  * aplikasi berjalan penuh tanpa akun — docs/16 §6), dan dock yang lenyap tanpa
  * kata membuat orang mencari bug di tempat yang salah.
+ *
+ * ## Dari mana kepustakaannya: tanya host, bukan env
+ *
+ * `getPlatformHost().libraryApi()` — web memberi klien Worker dari env (atau
+ * `null`), desktop memberi kepustakaan LOKAL di atas SQLite + folder (docs/21).
+ * Dock tidak tahu bedanya dan memang tidak boleh tahu: kedua implementasi
+ * memenuhi `LibraryApi` yang sama, dan yang membedakan hanyalah dua hal yang
+ * memang soal sesi — tombol MASUK/KELUAR (ada kalau host punya `login`) dan
+ * kalimat di strip.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -45,14 +54,14 @@ import {
   saveProject,
   unsavedAssets,
 } from './projects';
-import { summarize, type LibraryTrack, type UploadState } from './model';
+import { formatBytes, summarize, type LibraryTrack, type UploadState } from './model';
 import { libraryActions, libraryStore, useLibrary } from './store';
 import { createMarksSync } from './marks';
 import { createUploadQueue } from './upload';
 import { LibraryBrowser } from './LibraryBrowser';
 
 export interface LibraryDockProps {
-  /** Ditimpa di tes. Default dari `import.meta.env.VITE_LIBRARY_API`. */
+  /** Ditimpa di tes. Default: `getPlatformHost().libraryApi()`. `''` = tanpa kepustakaan. */
   readonly apiBase?: string;
   /** Ditimpa di tes supaya tidak ada HTTP sungguhan. */
   readonly api?: LibraryApi;
@@ -68,11 +77,18 @@ export interface LibraryDockProps {
 
 
 export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockProps): JSX.Element {
-  const base = (apiBase ?? import.meta.env.VITE_LIBRARY_API ?? '').trim();
-  const api = useMemo<LibraryApi | null>(
-    () => injected ?? (base === '' ? null : createLibraryApi(base)),
-    [base, injected],
-  );
+  const host = getPlatformHost();
+  const api = useMemo<LibraryApi | null>(() => {
+    if (injected !== undefined) return injected;
+    if (apiBase !== undefined) return apiBase.trim() === '' ? null : createLibraryApi(apiBase);
+    return host.libraryApi();
+  }, [apiBase, injected, host]);
+  /*
+   * Ada tidaknya sesi = ada tidaknya `login` di host. Kepustakaan lokal tidak
+   * punya sesi sama sekali: tidak ada yang bisa dimasuki maupun ditinggalkan,
+   * jadi kedua tombolnya tidak dirender — bukan dinonaktifkan.
+   */
+  const hasSession = host.login !== undefined;
 
   const state = useLibrary();
   const assets = useStudio((s) => s.assets);
@@ -98,16 +114,6 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       libraryActions.setStatus('tidak-dikonfigurasi');
       return undefined;
     }
-    /*
-     * Tanpa cara membangun sesi, `/me` tidak ditanya sama sekali: jawabannya
-     * pasti bukan "masuk", dan dari origin desktop permintaannya bahkan gagal
-     * di CORS — yang akan terbaca sebagai "TIDAK TERSAMBUNG", seolah server
-     * yang rusak. Keadaan yang jujur: belum tersedia.
-     */
-    if (getPlatformHost().login === undefined) {
-      libraryActions.setStatus('tidak-tersedia');
-      return undefined;
-    }
     let alive = true;
     libraryActions.setStatus('memeriksa');
 
@@ -116,7 +122,14 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
         const user = await api.me();
         if (!alive) return;
         if (user === null) {
-          libraryActions.setStatus('anonim');
+          /*
+           * "Belum masuk" hanya berguna kalau ada cara untuk masuk. Tanpa
+           * `login` di host (desktop yang diberi klien Worker), ajakan MASUK
+           * adalah tombol yang tidak bisa berbuat apa-apa — keadaan yang jujur
+           * adalah "belum tersedia". Kepustakaan lokal tidak pernah lewat sini:
+           * `me()`-nya tidak pernah `null`.
+           */
+          libraryActions.setStatus(hasSession ? 'anonim' : 'tidak-tersedia');
           return;
         }
         libraryActions.setStatus('masuk', user);
@@ -125,6 +138,12 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
         if (!alive) return;
         libraryActions.setTracks(tracks);
         libraryActions.setProjects(projects);
+        if (api.storeInfo !== undefined) {
+          // Hanya kepustakaan lokal yang punya folder. Gagal di sini tidak
+          // meruntuhkan dok: daftarnya sudah tampil, yang hilang cuma angka.
+          const info = await api.storeInfo().catch(() => null);
+          if (alive && info !== null) libraryActions.setStoreInfo({ dir: info.dir, bytes: info.bytes });
+        }
       } catch (err: unknown) {
         if (alive) libraryActions.fail(err instanceof Error ? err.message : String(err));
       }
@@ -133,7 +152,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     return () => {
       alive = false;
     };
-  }, [api]);
+  }, [api, hasSession]);
 
   /*
    * Unggah otomatis, TAPI hanya saat sudah login.
@@ -150,7 +169,14 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   useEffect(() => {
     if (api === null || state.status !== 'masuk') return undefined;
 
-    const queue = createUploadQueue(api);
+    /*
+     * Berkas yang datang dari Finder/dialog native punya path, dan host masih
+     * mengingatnya: kepustakaan lokal menyalin dari path itu di Rust alih-alih
+     * menerima byte-nya lewat IPC untuk kedua kalinya (docs/21 §1c).
+     */
+    const queue = createUploadQueue(api, {
+      pathOf: (imported) => host.droppedPathFor?.(imported.name, imported.bytes.byteLength) ?? null,
+    });
     const detach = registerImportSink((imported) => {
       // Pilihan ditangkap saat file dijatuhkan. User boleh pindah folder saat
       // unggahan masih berjalan tanpa membuat lagunya mendarat di folder lain.
@@ -172,7 +198,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
       });
     });
     return detach;
-  }, [api, state.status]);
+  }, [api, host, state.status]);
 
   /*
    * Cue DJ + koreksi grid ikut tersimpan (L5).
@@ -504,6 +530,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
         collapsed={collapsed}
         onToggle={() => libraryActions.toggleCollapsed()}
         api={api}
+        hasSession={hasSession}
       />
 
       {collapsed ? null : (
@@ -525,6 +552,30 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
             </p>
           )}
 
+          {state.store === null ? null : (
+            /*
+             * Folder dan ukurannya DI DISK — termasuk basis datanya, dan
+             * termasuk salinan lagu yang mungkin juga masih disimpan user di
+             * tempat lain. Itu harga yang jujur (docs/21 §1b), dan backup-nya
+             * adalah menyalin folder ini.
+             */
+            <p
+              data-testid="library-store"
+              title={state.store.dir}
+              style={{
+                margin: 0,
+                fontSize: '10px',
+                letterSpacing: '.08em',
+                color: 'var(--cy-text-muted)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              KEPUSTAKAAN LOKAL · {formatBytes(state.store.bytes)} di disk · {state.store.dir}
+            </p>
+          )}
+
           <Uploads uploads={state.uploads} />
 
           {api === null ? (
@@ -534,8 +585,8 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
             </Empty>
           ) : state.status === 'tidak-tersedia' ? (
             <Empty>
-              Kepustakaan belum tersedia di versi desktop: menyimpan lagu dan project ke
-              akun menyusul. Import berkas lokal dan export tetap berjalan penuh.
+              Kepustakaan ini butuh akun, dan versi ini tidak punya cara masuk. Import berkas
+              lokal dan export tetap berjalan penuh.
             </Empty>
           ) : state.status === 'memeriksa' ? (
             <Empty>Memeriksa sesi…</Empty>
@@ -577,15 +628,19 @@ function Header({
   collapsed,
   onToggle,
   api,
+  hasSession,
 }: {
   readonly collapsed: boolean;
   readonly onToggle: () => void;
   readonly api: LibraryApi | null;
+  /** Host punya `login` → ada MASUK saat anonim dan KELUAR saat masuk. */
+  readonly hasSession: boolean;
 }): JSX.Element {
   const host = getPlatformHost();
   const status = useLibrary((s) => s.status);
   const user = useLibrary((s) => s.user);
   const tracks = useLibrary((s) => s.tracks);
+  const store = useLibrary((s) => s.store);
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 12px' }}>
@@ -623,22 +678,27 @@ function Header({
 
       {status === 'masuk' && user !== null ? (
         <>
-          <Badge tone="success" height={22} dot>
-            {user.name}
-          </Badge>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              void api?.logout().then(() => libraryActions.signedOut());
-            }}
-          >
-            KELUAR
-          </Button>
+          {/* Lokal: nama user-nya "KEPUSTAKAAN LOKAL", dan folder-nya di tooltip. */}
+          <span title={store?.dir}>
+            <Badge tone="success" height={22} dot>
+              {user.name}
+            </Badge>
+          </span>
+          {hasSession ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void api?.logout().then(() => libraryActions.signedOut());
+              }}
+            >
+              KELUAR
+            </Button>
+          ) : null}
         </>
       ) : null}
 
-      {status === 'anonim' && api !== null && host.login !== undefined ? (
+      {status === 'anonim' && api !== null && hasSession ? (
         <Button
           size="sm"
           onClick={() => {
@@ -658,7 +718,7 @@ function Header({
 
       {status === 'tidak-tersedia' ? (
         <Badge tone="warning" height={22}>
-          BELUM TERSEDIA DI DESKTOP
+          TIDAK ADA CARA MASUK
         </Badge>
       ) : null}
 

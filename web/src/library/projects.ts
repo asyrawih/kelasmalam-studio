@@ -19,7 +19,7 @@
 
 import { restoreProject, serialize, type StoredAssetBytes } from '../studio/persist/persistence';
 import { importBytesToAsset } from '../studio/timeline/audio-import';
-import { studioStore } from '../studio/store';
+import { studioActions, studioStore } from '../studio/store';
 import type { LibraryApi } from './api';
 import { libraryActions, libraryStore } from './store';
 
@@ -62,14 +62,25 @@ export async function saveProject(
   api: LibraryApi,
   opts: { readonly id: string | null; readonly name: string; readonly version: number },
 ): Promise<SaveOutcome> {
-  const json: unknown = JSON.parse(serialize(studioStore.getState()));
+  /*
+   * Serial dibaca SEBELUM serialisasi, dan diserahkan ke `markSaved` sesudah
+   * server/Rust menjawab. Simpan itu asinkron: user boleh terus mengedit
+   * selama unggahan berjalan, dan edit itu TIDAK ikut tersimpan. `markSaved()`
+   * tanpa argumen akan menandai keadaan sesudah edit sebagai "sudah aman" —
+   * dan penjaga tutup jendela di app-shell akan diam saat seharusnya bertanya.
+   */
+  const state = studioStore.getState();
+  const serial = state.projectSerial;
+  const json: unknown = JSON.parse(serialize(state));
 
   try {
     if (opts.id === null) {
       const made = await api.createProject(opts.name, json);
+      studioActions.markSaved(serial);
       return { ok: true, id: made.id, version: made.version };
     }
     const version = await api.updateProject(opts.id, opts.name, json, opts.version);
+    studioActions.markSaved(serial);
     return { ok: true, id: opts.id, version };
   } catch (err: unknown) {
     const conflict = err instanceof Error && err.name === 'VersionConflict';

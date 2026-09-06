@@ -18,7 +18,7 @@ import { hashesIn, saveProject, unsavedAssets } from './projects';
 import { VersionConflict, type LibraryApi } from './api';
 import { fakeLibraryApi } from './fake-api';
 import { libraryActions } from './store';
-import { studioActions, studioStore } from '../studio/store';
+import { selectProjectDirty, studioActions, studioStore } from '../studio/store';
 
 const HASH = 'a'.repeat(64);
 const SR = 48_000;
@@ -171,5 +171,59 @@ describe('hashesIn', () => {
 
   it('mengabaikan string kosong', () => {
     expect(hashesIn({ lanes: [{ clips: [{ contentHash: '' }] }] })).toEqual([]);
+  });
+});
+
+describe('penanda kotor (docs/21 K2, PR #45 butir 1)', () => {
+  const knownTrack = (): void =>
+    libraryActions.setTracks([
+      { hash: HASH, name: 'Kelas Malam', bytes: 1, mime: 'audio/mpeg', frames: SR, sampleRate: SR, marks: null },
+    ]);
+  const dirty = (): boolean => selectProjectDirty(studioStore.getState());
+
+  it('simpan yang berhasil menandai project bersih — buat baru maupun timpa', async () => {
+    seedProject(HASH);
+    knownTrack();
+    expect(dirty()).toBe(true);
+
+    const out = await saveProject(fakeLibraryApi(), { id: null, name: 'Mix', version: 0 });
+    expect(out.ok).toBe(true);
+    expect(dirty()).toBe(false);
+
+    seedProject(HASH); // edit lagi
+    expect(dirty()).toBe(true);
+    await saveProject(fakeLibraryApi(), { id: 'p1', name: 'Mix', version: 1 });
+    expect(dirty()).toBe(false);
+  });
+
+  it('edit yang terjadi SELAMA simpan berjalan tetap terhitung belum tersimpan', async () => {
+    seedProject(HASH);
+    knownTrack();
+    let selesai: (v: { id: string; version: number }) => void = () => {};
+    const api = fakeLibraryApi({
+      createProject: () => new Promise((resolve) => (selesai = resolve)),
+    });
+
+    const simpan = saveProject(api, { id: null, name: 'Mix', version: 0 });
+    // Server masih berpikir; user menambah clip.
+    seedProject(HASH);
+    selesai({ id: 'p1', version: 1 });
+    await simpan;
+
+    // Serial yang ditandai adalah serial PRA-serialisasi, bukan yang sekarang.
+    expect(dirty()).toBe(true);
+  });
+
+  it('simpan yang gagal tidak menandai apa pun', async () => {
+    seedProject(HASH);
+    knownTrack();
+    const api = fakeLibraryApi({
+      createProject: async () => {
+        throw new VersionConflict('kalah', 2);
+      },
+    });
+    const out = await saveProject(api, { id: null, name: 'Mix', version: 0 });
+    expect(out.ok).toBe(false);
+    expect(dirty()).toBe(true);
   });
 });

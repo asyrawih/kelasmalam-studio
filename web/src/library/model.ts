@@ -39,7 +39,14 @@ export interface LibraryUser {
  */
 export type LibraryStatus =
   | 'tidak-dikonfigurasi'
-  /** Platform ini tidak punya cara membangun sesi (desktop, untuk sekarang). */
+  /**
+   * Kepustakaannya butuh sesi, tapi platform ini tidak punya cara membangun
+   * sesi (`PlatformHost.login` tidak ada). Desktop normal TIDAK pernah ke sini
+   * — kepustakaannya lokal dan `me()` selalu menjawab. Yang bisa: build
+   * desktop yang diberi klien Worker (prop `apiBase`/`api`), dan untuk itu
+   * tombol MASUK yang tidak bisa berbuat apa-apa lebih buruk daripada satu
+   * kalimat yang jujur.
+   */
   | 'tidak-tersedia'
   | 'memeriksa'
   | 'anonim'
@@ -81,9 +88,18 @@ export interface ProjectRow {
   readonly version: number;
 }
 
+/** Folder & ukuran kepustakaan LOKAL (docs/21 §1b). `null` di web. */
+export interface LocalStoreSummary {
+  readonly dir: string;
+  /** Ukuran di disk termasuk basis datanya — angka yang jujur untuk strip. */
+  readonly bytes: number;
+}
+
 export interface LibraryState {
   readonly status: LibraryStatus;
   readonly user: LibraryUser | null;
+  /** Diisi hanya oleh kepustakaan lokal; web tidak punya folder. */
+  readonly store: LocalStoreSummary | null;
   readonly tracks: readonly LibraryTrack[];
   /** Pesan galat terakhir, apa adanya. `null` kalau tidak ada. */
   readonly error: string | null;
@@ -142,6 +158,7 @@ export function createInitialLibrary(): LibraryState {
   return {
     status: 'tidak-dikonfigurasi',
     user: null,
+    store: null,
     tracks: [],
     error: null,
     // Terlipat saat pertama muncul: ini permukaan kerja DAW, dan panel yang

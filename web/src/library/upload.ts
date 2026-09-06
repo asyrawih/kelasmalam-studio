@@ -25,7 +25,7 @@
 
 import { MIME_OF_FORMAT } from '../studio/timeline/content-hash';
 import type { ImportedForLibrary } from '../studio/timeline/import-sink';
-import type { LibraryApi } from './api';
+import type { LibraryApi, TrackMeta } from './api';
 import { libraryActions, libraryStore } from './store';
 
 export type UploadOutcome =
@@ -33,9 +33,52 @@ export type UploadOutcome =
   | { readonly ok: true; readonly skipped: true; readonly reason: string }
   | { readonly ok: false; readonly message: string };
 
+/**
+ * Jalur cepat kepustakaan LOKAL (docs/21 §1c, §2c): berkas yang dijatuhkan
+ * dari Finder sudah ada di disk, jadi Rust menyalin + meng-hash-nya sendiri
+ * lewat `library_import_path`. Yang dihindari adalah `library_put_bytes` —
+ * mengirim balik lewat IPC byte yang baru saja dibaca dari berkas yang sama.
+ *
+ * Hasilnya `null` kalau jalur ini tidak berlaku, dan pemanggil jatuh ke
+ * init/put/commit biasa. Itu terjadi kalau:
+ *   - hash yang dihitung Rust ≠ hash sesi — berkas gzip yang dibuka WebView
+ *     (yang di-hash adalah isi sesudah gunzip), atau berkas di disk berubah
+ *     di antara baca dan import. Baris yang Rust tulis untuk hash lain itu
+ *     dibiarkan: ia lagu yang sah di kepustakaan, cuma bukan yang ini.
+ *   - Rust menolak (path sudah hilang, disk penuh): jalur biasa mencoba lagi
+ *     dengan byte yang sudah ada di memori, dan kalau ITU juga gagal, barulah
+ *     bar unggahan memerah — satu kegagalan yang bisa diperbaiki jalur lain
+ *     bukan kegagalan yang perlu diumumkan.
+ */
+async function importViaPath(
+  api: LibraryApi,
+  path: string,
+  imported: ImportedForLibrary,
+  meta: TrackMeta,
+): Promise<UploadOutcome | null> {
+  if (api.importPath === undefined) return null;
+  libraryActions.setUploadPhase(imported.contentHash, 'mencatat');
+  let got;
+  try {
+    got = await api.importPath(path);
+  } catch {
+    return null;
+  }
+  if (got.hash !== imported.contentHash) return null;
+  if (got.frames === 0 && meta.frames > 0) {
+    // Rust belum tentu bisa membaca durasi dari header (docs/21 §5); sesi ini
+    // sudah men-decode-nya, jadi barisnya dilengkapi lewat commit biasa.
+    await api.commitTrack(meta);
+  }
+  libraryActions.endUpload(imported.contentHash);
+  return { ok: true, skipped: false, deduped: got.existed };
+}
+
 export async function uploadImported(
   api: LibraryApi,
   imported: ImportedForLibrary,
+  /** Path asli di disk kalau host tahu (`PlatformHost.droppedPathFor`). */
+  localPath: string | null = null,
 ): Promise<UploadOutcome> {
   const { contentHash, name, bytes, format, frames, sampleRate } = imported;
 
@@ -62,6 +105,12 @@ export async function uploadImported(
 
   libraryActions.beginUpload(contentHash, name);
   try {
+    if (localPath !== null) {
+      const fast = await importViaPath(api, localPath, imported, meta);
+      if (fast !== null) return fast;
+      libraryActions.setUploadPhase(contentHash, 'memeriksa');
+    }
+
     const init = await api.initTrack(meta);
 
     if (!init.exists) {
@@ -102,8 +151,18 @@ export interface UploadQueue {
   idle(): Promise<void>;
 }
 
-export function createUploadQueue(api: LibraryApi): UploadQueue {
-  const pending: ImportedForLibrary[] = [];
+export interface UploadQueueOptions {
+  /**
+   * Path asli berkas yang baru diimpor, kalau host tahu. Ditanya SAAT `push`,
+   * bukan saat gilirannya tiba: entri path di host dipakai sekali dan
+   * kedaluwarsa, dan antrean yang panjang tidak boleh membuat berkas kelima
+   * kehilangan jalur cepatnya.
+   */
+  readonly pathOf?: (imported: ImportedForLibrary) => string | null;
+}
+
+export function createUploadQueue(api: LibraryApi, opts: UploadQueueOptions = {}): UploadQueue {
+  const pending: { imported: ImportedForLibrary; path: string | null }[] = [];
   let running: Promise<void> | null = null;
 
   const drain = async (): Promise<void> => {
@@ -112,7 +171,7 @@ export function createUploadQueue(api: LibraryApi): UploadQueue {
       if (next === undefined) return;
       // Hasilnya sudah tercatat ke store oleh `uploadImported`; di sini ia
       // sengaja diabaikan supaya satu kegagalan tidak menghentikan antrean.
-      await uploadImported(api, next);
+      await uploadImported(api, next.imported, next.path);
     }
   };
 
@@ -123,7 +182,7 @@ export function createUploadQueue(api: LibraryApi): UploadQueue {
       // tidak akan mengirim balik byte yang baru saja diunduh dari sana.
       if (libraryStore.getState().loaded[imported.contentHash] !== undefined) return;
 
-      pending.push(imported);
+      pending.push({ imported, path: opts.pathOf?.(imported) ?? null });
       if (running !== null) return;
       running = drain().finally(() => {
         running = null;
