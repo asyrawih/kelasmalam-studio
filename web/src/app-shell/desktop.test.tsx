@@ -503,6 +503,9 @@ describe('login lewat adapter platform', () => {
       openExternal: vi.fn(),
       authHeaders: async () => ({}),
       modelBytes: vi.fn(),
+      // Tes ini tidak menyentuh kepustakaan; `null` = "tidak dikonfigurasi",
+      // sama dengan build web tanpa VITE_LIBRARY_API.
+      libraryApi: () => null,
       ...(login === undefined ? {} : { login }),
     };
   }
