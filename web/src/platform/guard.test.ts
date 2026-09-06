@@ -74,10 +74,22 @@ describe('pintu platform hanya di platform/', () => {
     }
   });
 
+  /**
+   * `app-shell/desktop.ts` boleh meng-import `isTauri` secara statis — modul
+   * itu adalah satu-satunya pintu desktop milik app-shell (menu native, judul
+   * jendela, penjaga tutup), dan `@tauri-apps/api/core` hanya beberapa byte;
+   * plugin lainnya ia impor dinamis, sama seperti `platform/desktop.ts`.
+   */
+  const STATIC_CORE_ALLOWED: ReadonlySet<string> = new Set(['app-shell/desktop.ts']);
+
   it('bundel web tidak meng-import plugin Tauri secara statis di luar platform/', () => {
-    const hits = files.filter((rel) =>
-      /^\s*import\s[^;]*from\s+['"]@tauri-apps\//m.test(readFileSync(join(SRC, rel), 'utf8')),
-    );
+    const hits = files.filter((rel) => {
+      const src = readFileSync(join(SRC, rel), 'utf8');
+      const statik = src.match(/^\s*import\s[^;]*from\s+['"](@tauri-apps\/[^'"]+)['"]/gm) ?? [];
+      return statik.some(
+        (line) => !(STATIC_CORE_ALLOWED.has(rel) && line.includes("'@tauri-apps/api/core'")),
+      );
+    });
     expect(hits).toEqual([]);
   });
 });
