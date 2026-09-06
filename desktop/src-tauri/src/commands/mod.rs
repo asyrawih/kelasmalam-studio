@@ -52,6 +52,9 @@ pub const MODEL_BASE_URL: &str = "https://studio.kelasmalam.app";
 pub struct AppState {
     pub store: Arc<Mutex<Store>>,
     pub secrets: SecretStore,
+    /// Discovery SoundCloud in-process (pustaka `soundclaude`); cache
+    /// `client_id`-nya di folder data aplikasi.
+    pub discovery: Arc<daw_desktop_host::soundcloud::Discovery>,
     /// Ditulis `store_relocate` supaya peluncuran berikutnya membuka folder
     /// yang baru (lihat `lib.rs`).
     pub location_file: std::path::PathBuf,
