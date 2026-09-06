@@ -33,11 +33,11 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 # Plugin sesuai docs/20 §2d. Semuanya HANYA didaftarkan di D1; adapter web yang
-# memakainya digarap di D2–D4.
+# memakainya digarap di D2–D4. Tidak ada deep-link: v1 desktop tanpa login
+# (docs/20 §1d), dan skema `kelasmalam://` hanya ada untuk alur login itu.
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-deep-link = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 # Fitur `std` sengaja penuh (bukan `workspace = true` yang no_std-oriented):

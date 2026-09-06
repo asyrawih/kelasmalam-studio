@@ -57,13 +57,6 @@
     }
   },
   "plugins": {
-    "deep-link": {
-      "desktop": {
-        "schemes": [
-          "kelasmalam"
-        ]
-      }
-    },
     "updater": {
       "endpoints": [
         "https://github.com/asyrawih/kelasmalam-studio/releases/latest/download/latest.json"

@@ -11,7 +11,7 @@ cabang baru.
 | `web/` — React + Vite, engine WASM `mt`/`st`, AudioWorklet, worker pool | **Ya, utuh.** Satu build Vite, dua tujuan (Vercel dan bundel Tauri). |
 | `crates/*` — engine, dsp, export, timeline (Rust) | Ya, lewat WASM seperti di web. Jalur native (cpal) ditunda ke v2, lihat §1b. |
 | `crates/native-host` — host cpal dev-only | Bibit untuk v2. Tidak dipakai v1. |
-| `backend/` — Worker kepustakaan (cookie sesi) + Worker Roblox | Ya, dengan **satu tambahan**: sesi lewat bearer token untuk desktop (§1d). |
+| `backend/` — Worker kepustakaan (cookie sesi) + Worker Roblox | **Belum, untuk v1.** Desktop v1 tanpa login (§1d); kepustakaan berkata "belum tersedia di versi desktop". |
 | Toolchain: nightly-2025-06-15, `cargo-tauri` 2.11.4, Xcode | Sudah terpasang di mesin ini. |
 
 ---
@@ -151,39 +151,30 @@ di D0 di kedua OS**, bukan dipercaya. Kalau gagal, loader
 (degraded: command lewat `postMessage`, export single-thread) tanpa crash.
 Gerbang D0 memutuskan apakah itu bisa diterima.
 
-### d) Login desktop: browser sistem + deep link + bearer token
+### d) v1 desktop TANPA login
 
-Cookie sesi tidak mungkin dari origin `tauri://`. Jalur desktop:
+Keputusan (Sep 2026, menggantikan rancangan lama): **versi desktop tidak punya
+login untuk sekarang.** Kepustakaan di desktop menampilkan "belum tersedia di
+versi desktop" alih-alih tombol masuk; Studio, DJ, dan Roblox dibuka tanpa
+gerbang sesi. Tidak ada `tauri-plugin-deep-link`, tidak ada skema
+`kelasmalam://`, tidak ada command `auth_token_*`, tidak ada perubahan di
+Worker kepustakaan.
 
-```
-Desktop                              Worker kepustakaan               Google
-  │ buat state acak                       │                              │
-  │ opener.open(/auth/google?client=desktop&state=…) ─► 302 ─────────────►│
-  │                                       │◄── /auth/callback?code ───────┤
-  │                                       │ buat sesi (tabel yang SAMA)   │
-  │◄── 302 kelasmalam://auth?code=<sekali-pakai>&state=… ─┤              │
-  │ POST /auth/desktop/exchange {code} ──►│                              │
-  │◄── {token}                            │                              │
-  │ simpan di keychain OS (crate `keyring`, sisi Rust)                   │
-  │ setiap fetch: Authorization: Bearer <token>                          │
-```
+Kenapa bukan "login dulu baru rilis": cookie `__Host-lib_session` tidak
+mungkin dari origin `tauri://` (§0 butir 2), jadi login desktop **pasti**
+berarti jalur baru di Worker (bearer token, code sekali pakai, deep link) —
+dan itu perubahan pada permukaan auth yang sama yang dipakai web produksi.
+Mengirimkannya bersamaan dengan kerangka desktop berarti dua hal berisiko
+menumpuk di satu rilis. Yang dibayar user desktop hari ini (§1b) tidak
+membutuhkan sesi sama sekali.
 
-Perubahan di Worker kecil dan tidak menyentuh jalur web:
-
-- `resolveSession()` menerima **cookie ATAU `Authorization: Bearer`**; keduanya
-  memetakan ke baris `session` yang sama.
-- `/auth/google` menerima `client=desktop`; callback-nya mengarahkan ke skema
-  deep link alih-alih `APP_ORIGIN`, membawa **code sekali pakai berumur 60 s**,
-  bukan token sesi — token tidak boleh lewat URL yang tercatat di log OS.
-- `ALLOWED_ORIGINS` (sudah ada di `wrangler.library.toml`) diisi
-  `tauri://localhost,http://tauri.localhost`.
-- Redirect URI di console Google **tidak berubah**: tetap
-  `lib.kelasmalam.app/auth/callback`. Deep link dipanggil oleh Worker, bukan
-  oleh Google.
-
-Token disimpan dan dibaca **hanya di sisi Rust** (command `auth_token_get`
-/`auth_token_set`/`auth_token_clear`) supaya tidak ada di `localStorage`
-WebView.
+Alur login desktop akan **didesain ulang** sebagai proyek sendiri. Rancangan
+lama — browser sistem → deep link `kelasmalam://auth?code=…` → `POST
+/auth/desktop/exchange` → bearer di keychain OS — tersimpan sebagai draft di
+PR #43 (backend), bukan dibuang. Kalau rancangan itu yang akhirnya dipakai,
+`resolveSession()` menerima cookie ATAU bearer, redirect URI Google tidak
+berubah, dan token hanya hidup di sisi Rust; kalau tidak, draft itu tinggal
+ditutup.
 
 ### e) Letak proyek: `desktop/src-tauri`, anggota workspace, dikecualikan di job CI Ubuntu
 
@@ -354,13 +345,13 @@ fase berikutnya tidak dimulai sebelum jawabannya ada.
 | **D0 — Spike isolasi** ⚠️ | `cargo tauri init` sementara di luar repo, `frontendDist` → `web/dist` yang ada, header §1c. Buka `/studio`, tekan Play. | Tabel **macOS dan Windows** (Windows lewat mesin/VM sungguhan, bukan runner): `crossOriginIsolated`, `caps.variant` (`mt`/`st`), worklet hidup, suara keluar, export WAV 1 menit selesai. **Gerbang berhenti:** kalau salah satu OS hanya `st`, putuskan di sini — terima degraded untuk OS itu, atau majukan §5a ke v1. Jangan menulis kode adapter sebelum ini. |
 | **D1 — Kerangka di repo** | `desktop/src-tauri` sebagai anggota workspace, skrip `dev:desktop`/`build:desktop`, `.gitignore` (`desktop/src-tauri/gen`, `target` sudah), ikon, ukuran/min-size jendela, `window-state`, `--exclude daw-desktop` di CI + job `desktop` macOS. | `pnpm run dev:desktop` membuka jendela ke Vite dev; `build:desktop` menghasilkan `.app` yang membuka `/studio`; CI hijau di kedua job. Belum ada fitur desktop apa pun — dan itu memang sengaja. |
 | **D2 — Adapter platform** | `web/src/platform/` (§2c); pindahkan `pickSaveLocation`/`downloadBlob`/input-file/`window.open`/`<Analytics/>` ke baliknya. Drag-drop dari Finder. | Export ke lokasi pilihan user (tanpa Blob 500 MB di memori); import lewat dialog dan lewat drop; link luar terbuka di browser OS; tes `encoders` & `library` yang ada tetap hijau; tes baru untuk adapter desktop dengan mock `@tauri-apps/api`. |
-| **D3 — Login desktop** | Worker: bearer di `resolveSession`, `client=desktop`, `/auth/desktop/exchange`, `ALLOWED_ORIGINS`. Desktop: deep link `kelasmalam://`, `keyring`, `authHeaders()`. | Buka app → Login → browser OS → kembali ke app dengan nama user di dock kepustakaan; tutup-buka app tetap login; logout menghapus keychain. Tes Worker untuk: code sekali pakai, kedaluwarsa 60 s, bearer salah → 401, cookie web **tidak berubah perilakunya**. |
+| **D3 — Login desktop** — **DITUNDA** | Tidak dikerjakan di v1 (§1d). Rancangan lama (bearer di `resolveSession`, `client=desktop`, `/auth/desktop/exchange`, deep link, keyring) tersimpan sebagai draft PR #43. | Tidak ada. v1 dirilis tanpa login; kepustakaan di desktop berkata "belum tersedia di versi desktop". Fase ini dibuka lagi bersama desain ulang alur login. |
 | **D4 — Model & aset besar** | `model_download`/`model_read`, `modelBytes()` di adapter, halaman proof-stem memakai adapter. Model dikeluarkan dari `dist` **hanya untuk build desktop** (web tetap seperti sekarang). | Pemisahan stem jalan di desktop dengan model yang diunduh sekali; unduhan yang putus di tengah tidak meninggalkan berkas setengah; `.app` tidak membawa `.onnx`. |
 | **D5 — Rasa desktop** | Menu native → registry command; judul jendela = nama project + tanda kotor; konfirmasi tutup; pintasan `⌘,` ke editor keymap yang sudah ada; `Cmd+Q` tidak memotong export yang sedang jalan. | Setiap item menu punya id command yang juga ada di palette `⌘K` (tes: himpunan id menu ⊆ registry). Menutup saat export berjalan → dialog, bukan proses hilang. |
 | **D6 — Rilis** | Signing + notarization macOS (Developer ID), code-signing Windows (Authenticode, atau Azure Trusted Signing) kalau sertifikatnya ada, `release-desktop.yml`, `tauri-plugin-updater` dengan kunci minisign di secrets, versi dari `workspace.package.version`. | Tag `desktop-v0.1.0` menghasilkan `.dmg` ter-notarize (aarch64 + x86_64), `.msi` + `.exe` NSIS, dan `latest.json`; build 0.1.1 memperbarui 0.1.0 yang terpasang lewat dialog updater **di kedua OS**. Tanpa sertifikat code-signing Windows, SmartScreen akan menahan installer — itu dicatat di README rilis, bukan disembunyikan. |
 
-Perkiraan: D0 satu–dua hari, D1–D2 satu minggu, D3 tiga–empat hari (setengahnya
-di Worker), D4 dua hari, D5 tiga hari, D6 bergantung antrean Apple Developer.
+Perkiraan: D0 satu–dua hari, D1–D2 satu minggu, D3 ditunda, D4 dua hari,
+D5 tiga hari, D6 bergantung antrean Apple Developer.
 
 ---
 

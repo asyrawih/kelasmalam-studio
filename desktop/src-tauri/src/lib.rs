@@ -26,7 +26,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // window-state: ukuran/posisi jendela dipulihkan saat dibuka lagi.
         // Tanpa ini tiap peluncuran kembali ke 1280×800 di tengah layar —
