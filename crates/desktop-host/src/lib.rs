@@ -24,6 +24,7 @@
 mod error;
 mod library;
 mod model;
+mod roblox_db;
 mod store;
 mod tracks;
 pub mod types;
