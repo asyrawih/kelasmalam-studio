@@ -25,7 +25,7 @@ afterEach(() => {
 
 describe('sanitizeFileName', () => {
   const table: readonly [label: string, input: string, expected: string][] = [
-    ['nama bersih dibiarkan apa adanya', 'NEON_DRIFT', 'NEON_DRIFT'],
+    ['nama bersih dibiarkan apa adanya', 'KELAS_MALAM', 'KELAS_MALAM'],
     ['pemisah path diganti, bukan dibiarkan', 'a/b\\c', 'a-b-c'],
     ['seluruh karakter ilegal Windows diganti', 'a:b*c?d"e<f>g|h', 'a-b-c-d-e-f-g-h'],
     ['control char dibuang total', 'mi\u0000x\u001fdown\u007f', 'mixdown'],
@@ -74,13 +74,13 @@ describe('sanitizeFileName', () => {
 
 describe('resolveExportName', () => {
   it('field menang kalau ada isinya', () => {
-    const r = resolveExportName('MIXDOWN A', 'NEON_DRIFT.STUDIO');
+    const r = resolveExportName('MIXDOWN A', 'KELAS_MALAM.STUDIO');
     expect(r).toEqual({ base: 'MIXDOWN A', source: 'field', changed: false });
   });
 
   it('field kosong jatuh ke nama project, tanpa pseudo-ekstensinya', () => {
-    const r = resolveExportName('', 'NEON_DRIFT.STUDIO');
-    expect(r.base).toBe('NEON_DRIFT');
+    const r = resolveExportName('', 'KELAS_MALAM.STUDIO');
+    expect(r.base).toBe('KELAS_MALAM');
     expect(r.source).toBe('project');
     expect(r.changed).toBe(false);
   });
@@ -92,8 +92,8 @@ describe('resolveExportName', () => {
   });
 
   it('field yang habis dibersihkan jatuh ke project dan MENANDAI perubahan', () => {
-    const r = resolveExportName('...', 'NEON_DRIFT.STUDIO');
-    expect(r.base).toBe('NEON_DRIFT');
+    const r = resolveExportName('...', 'KELAS_MALAM.STUDIO');
+    expect(r.base).toBe('KELAS_MALAM');
     expect(r.source).toBe('project');
     // User mengetik sesuatu dan tidak mendapatkannya — itu wajib dikatakan.
     expect(r.changed).toBe(true);
@@ -129,21 +129,21 @@ describe('field nama berkas di kartu Compile', () => {
 
   it('placeholder menampilkan nama fallback (nama project)', () => {
     renderCompile();
-    expect(field().placeholder).toBe('NEON_DRIFT');
+    expect(field().placeholder).toBe('PROJECT_BARU');
   });
 
   it('nama final ditampilkan lengkap dengan ekstensi format aktif', () => {
     const { container } = renderCompile();
     // Format default demo = AUTO → WAV.
-    expect(container.textContent).toContain('NEON_DRIFT.wav');
+    expect(container.textContent).toContain('PROJECT_BARU.wav');
   });
 
   it('mengganti format mengganti ekstensi yang ditampilkan', () => {
     const { container } = renderCompile();
     fireEvent.click(screen.getByText('MP3'));
-    expect(container.textContent).toContain('NEON_DRIFT.mp3');
+    expect(container.textContent).toContain('PROJECT_BARU.mp3');
     fireEvent.click(screen.getByText('FLAC'));
-    expect(container.textContent).toContain('NEON_DRIFT.flac');
+    expect(container.textContent).toContain('PROJECT_BARU.flac');
   });
 
   it('nilai diterapkan saat blur, bukan tiap ketikan', () => {

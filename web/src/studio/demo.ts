@@ -91,7 +91,7 @@ export function createInitialStudio(): StudioState {
 /** Seed berisi clip mock. HANYA untuk tes — lihat catatan di createInitialStudio. */
 export function createDemoStudio(): StudioState {
   return {
-    projectName: 'NEON_DRIFT.STUDIO',
+    projectName: 'PROJECT_BARU.STUDIO',
     sampleRate: DEMO_SAMPLE_RATE,
     duration: sec(120),
     lanes: createDemoLanes(),
