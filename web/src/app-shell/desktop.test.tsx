@@ -129,8 +129,8 @@ afterEach(cleanup);
 
 describe('windowTitle', () => {
   it('nama project — aplikasi, dengan • di depan saat kotor', () => {
-    expect(windowTitle('NEON_DRIFT.STUDIO', false)).toBe('NEON_DRIFT.STUDIO — KELAS MALAM STUDIO');
-    expect(windowTitle('NEON_DRIFT.STUDIO', true)).toBe('• NEON_DRIFT.STUDIO — KELAS MALAM STUDIO');
+    expect(windowTitle('KELAS_MALAM.STUDIO', false)).toBe('KELAS_MALAM.STUDIO — KELAS MALAM STUDIO');
+    expect(windowTitle('KELAS_MALAM.STUDIO', true)).toBe('• KELAS_MALAM.STUDIO — KELAS MALAM STUDIO');
   });
 
   it('nama kosong tidak menghasilkan judul yang dimulai dengan tanda pisah', () => {

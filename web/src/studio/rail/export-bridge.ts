@@ -213,8 +213,8 @@ export function resolveExportName(field: string, projectName: string): ResolvedE
   if (fromField !== '') {
     return { base: fromField, source: 'field', changed: fromField !== wanted };
   }
-  // Nama project membawa pseudo-ekstensi sendiri (`NEON_DRIFT.STUDIO`), jadi
-  // segmen terakhirnya dibuang — `NEON_DRIFT.STUDIO.wav` bukan nama yang dicari
+  // Nama project membawa pseudo-ekstensi sendiri (`KELAS_MALAM.STUDIO`), jadi
+  // segmen terakhirnya dibuang — `KELAS_MALAM.STUDIO.wav` bukan nama yang dicari
   // siapa pun. Aturan ini SENGAJA tidak berlaku untuk field: kalau user mengetik
   // "Mix v1.2", angka di belakang titik itu bagian dari nama, bukan ekstensi.
   const fromProject = sanitizeFileName(projectName.replace(/\.[^.]*$/, ''));
