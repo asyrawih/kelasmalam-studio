@@ -5,8 +5,8 @@
 //! registry, dan shell di sisi web men-dispatch-nya persis seperti ketukan
 //! keyboard atau palette ⌘K. Konsekuensinya:
 //!
-//!   - id di sini HARUS ada di registry (`apps/desktop/src/window/menu-ids.ts`
-//!     + halaman).
+//!   - id di sini HARUS ada di registry
+//!     (`apps/desktop/src/window/menu-ids.ts` + halaman).
 //!     Id yang tidak ada bukan error di Rust — ia cuma item menu yang diam
 //!     saat diklik, dan itu lebih buruk daripada error. Daftar di `MENUS`
 //!     sengaja disalin dari registrasi yang sungguhan ada, bukan dari apa
