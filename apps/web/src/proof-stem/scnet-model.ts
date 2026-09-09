@@ -75,14 +75,14 @@ export async function loadScnetModel(
   // Wrapper `.mjs` di-dynamic-import oleh ORT, jadi ia tidak boleh berada di
   // Vite `public/`. `new URL(..., import.meta.url)` membuat Vite menerbitkan
   // keduanya sebagai asset ber-hash dan memberi URL dev/build yang valid.
-  const mjs = new URL(
-    '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs',
-    import.meta.url,
-  ).href;
-  const wasm = new URL(
-    '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
-    import.meta.url,
-  ).href;
+  //
+  // `@ort-dist` adalah alias Vite (`apps/web/ort-dist.ts`) ke
+  // `onnxruntime-web/dist/` — BUKAN path relatif ke `node_modules`, karena
+  // letak folder itu bergantung pada pengelola paket (workspace bun meng-hoist
+  // ke root repo) dan Vite tidak menganggap `new URL` yang tidak ketemu sebagai
+  // galat. `__tests__/ort-dist.test.ts` menjaga berkasnya benar-benar ada.
+  const mjs = new URL('@ort-dist/ort-wasm-simd-threaded.mjs', import.meta.url).href;
+  const wasm = new URL('@ort-dist/ort-wasm-simd-threaded.wasm', import.meta.url).href;
   ort.env.wasm.wasmPaths = {
     mjs,
     wasm,
