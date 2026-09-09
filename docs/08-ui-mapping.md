@@ -221,6 +221,10 @@ sudah ada supaya tetap konsisten dengan design.
 
 ### Piano Roll & Step Sequencer — DITUNDA
 
+> **Pembaruan:** rencana untuk mengaktifkan keduanya — dan mengganti
+> paradigma lane dengan Channel Rack / Pattern / Playlist ala FL Studio — ada
+> di [docs/24-studio-fl.md](24-studio-fl.md). Bagian ini dihapus di fase F8.
+
 Kedua panel ini ada di design dan menyiratkan fitur **MIDI**, yang berada di
 luar lingkup DAW berbasis audio-clip yang sedang dibangun (BAGIAN 6–8 semuanya
 tentang clip audio).

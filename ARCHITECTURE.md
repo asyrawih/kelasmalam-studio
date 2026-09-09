@@ -23,6 +23,7 @@ Dokumen ini adalah index. Detail per bagian:
 | [docs/20-desktop-tauri.md](docs/20-desktop-tauri.md) | Desktop app Tauri 2 (macOS + Windows) — satu frontend untuk web dan desktop, audio tetap di WebView (cpal = v2), login bearer + deep link, fase D0–D6 |
 | [docs/21-desktop-lokal.md](docs/21-desktop-lokal.md) | Desktop lokal — SQLite + folder berkas di mesin user menggantikan Worker: kepustakaan lokal (K0–K3) dan revamp halaman Roblox dengan kategori/genre + katalog + unggah langsung dari Rust (R1–R5) |
 | [docs/22-rilis-desktop.md](docs/22-rilis-desktop.md) | Rilis desktop (D6) dari mesin lokal — `scripts/release-desktop.sh`: kunci updater minisign, Developer ID + notarization, Windows di mesin Windows, `latest.json` GitHub Releases, penggabungan lintas mesin, gejala kegagalan; status yang sudah/belum terbukti |
+| [docs/24-studio-fl.md](docs/24-studio-fl.md) | Revamp Studio ala FL Studio — lane dihapus; Channel Rack, Pattern, Playlist (tick, PPQ 960), Piano Roll, Mixer insert; sequencer di engine Rust menggantikan preview Web Audio; migrasi skema 1→2; fase F0–F8 |
 | [docs/25-pisah-web-desktop.md](docs/25-pisah-web-desktop.md) | Memisahkan ulang komponen web dan desktop — `apps/web` + `apps/desktop` di atas `packages/*` (engine, ui, shell, platform, studio, studio-core, dj, library); aturan impor ditegakkan tes; fase P0–P4; merevisi docs/20 §1a |
 | [recordbox/00-plan.md](recordbox/00-plan.md) | Halaman `/dj` — mixer 2 deck ala rekordbox: keputusan, empat utang yang dinyatakan terbuka, fase D0–D9 |
 
