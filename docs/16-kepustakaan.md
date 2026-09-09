@@ -205,9 +205,10 @@ Tiga hal yang sengaja begitu:
 
 | Metode | Rute | Isi |
 |---|---|---|
-| `GET` | `/auth/google` | Redirect ke consent (PKCE) |
-| `GET` | `/auth/callback` | Tukar code → sesi, set cookie, redirect balik ke app |
-| `POST` | `/auth/logout` | Cabut sesi |
+| `GET` | `/auth/google` | Redirect ke consent (PKCE). `?client=desktop&state=…` membelokkan callback ke deep link (§9) |
+| `GET` | `/auth/callback` | Tukar code → sesi, set cookie, redirect balik ke app — atau ke `kelasmalam://auth?code&state` untuk desktop |
+| `POST` | `/auth/desktop/exchange` | `{code}` → `{token}`; code sekali pakai, 60 s (§9) |
+| `POST` | `/auth/logout` | Cabut sesi (cookie atau bearer) |
 | `GET` | `/me` | `{ id, email, name }` atau 401 |
 | `GET` | `/tracks` | Daftar kepustakaan: hash, nama, frames, sampleRate, marks |
 | `POST` | `/tracks/init` | `{hash,name,bytes,mime}` → `{exists:true}` **atau** `{uploadUrl}` |
@@ -223,6 +224,10 @@ Tiga hal yang sengaja begitu:
 `/tracks/init` yang menjawab `{exists:true}` adalah inti dedup: **file yang
 sudah ada di R2 tidak pernah di-upload ulang**, oleh user mana pun. Import lagu
 yang sudah pernah dikirim orang lain selesai tanpa satu byte pun naik.
+
+Semua rute ber-sesi (mulai `/me` ke bawah) menerima cookie `__Host-lib_session`
+**atau** `Authorization: Bearer <token>` (§9). Kalau keduanya ada, cookie yang
+dipakai — jalur web tidak boleh berubah perilaku karena ada header nyasar.
 
 ---
 
@@ -398,3 +403,86 @@ project tersimpan yang merujuk asset hasil bake yang tidak ada di mana pun.
 Belum ada. Satu user dengan seratus lagu WAV bisa menghabiskan tier gratis R2
 sendirian. Batas per user ditegakkan di `/tracks/init` — tempat yang tahu ukuran
 berkas **sebelum** byte-nya naik.
+
+---
+
+## 9. Desktop: bearer token lewat code sekali pakai
+
+Aplikasi desktop Tauri (docs/20) memakai Worker yang sama, tapi §5b tidak
+berlaku untuknya: origin WebView-nya `tauri://localhost` (macOS) atau
+`http://tauri.localhost` (Windows) — **bukan satu site** dengan API — jadi
+cookie `__Host-lib_session` tidak akan pernah ikut terkirim. Sesinya harus
+dibawa dengan cara lain, dan sesi itu harus sampai ke aplikasi dengan cara
+lain pula, karena login-nya terjadi di **browser sistem**, bukan di WebView.
+
+### Alur
+
+```
+Desktop                          Worker                             Google
+  │ state acak S                    │                                  │
+  │ buka /auth/google?client=desktop&state=S ─► 302 (state Google G) ──►│
+  │   cookie __Host-lib_oauth = G.verifier.next.S                      │
+  │                                 │◄── /auth/callback?code&state=G ──┤
+  │                                 │ tukar code Google → profil       │
+  │                                 │ upsert user; buat CODE (60 s)    │
+  │◄── 302 kelasmalam://auth?code=CODE&state=S ──┤                     │
+  │ cocokkan S                      │                                  │
+  │ POST /auth/desktop/exchange {code:CODE} ──►│ hapus CODE, buat sesi │
+  │◄── 200 {token}                  │                                  │
+  │ simpan di keychain OS; setiap fetch: Authorization: Bearer <token> │
+```
+
+Tabel `session`-nya sama dengan web. Yang berbeda hanya cara token sampai ke
+Worker — dan itu satu baris di `currentUser()`.
+
+### Kenapa code sekali pakai, bukan token di deep link
+
+Deep link adalah URL, dan URL **tercatat**: di log OS, di riwayat browser
+sistem, dan — yang paling menentukan — bisa **ditangkap aplikasi lain** yang
+mendaftarkan skema `kelasmalam://` di mesin yang sama. Token sesi berumur 30
+hari di sana adalah token sesi milik siapa pun yang pertama membacanya.
+
+Code memutus itu dari tiga arah:
+
+- **Umur 60 detik** — cukup bagi OS untuk membuka aplikasi dan aplikasi
+  menukarnya, tidak cukup bagi siapa pun yang menemukannya di log belakangan.
+- **Sekali pakai** — penukaran menghapus barisnya dalam satu pernyataan
+  `DELETE … RETURNING`, jadi dua penukaran bersamaan hanya dimenangkan satu.
+  Aplikasi yang menerima 401 tahu code-nya sudah diambil orang.
+- **Hash di D1** — seperti `session.token_hash`: bocornya tabel tidak memberi
+  siapa pun code yang bisa ditukar.
+
+`state` ikut dikembalikan supaya aplikasi bisa menolak deep link yang bukan
+jawaban dari login yang ia mulai. Ia **bukan** state yang dikirim ke Google —
+state Google tetap milik Worker dan dicocokkan dengan cookie untuk CSRF
+callback. State desktop hanya menumpang di cookie yang sama, seperti
+`verifier` (alasan tidak di D1: oauth.ts).
+
+### Sesi baru lahir saat penukaran, bukan di callback
+
+Kalau sesi dibuat di callback, tabel code harus menyimpan **token sesi
+mentah** supaya bisa dikembalikan saat ditukar — dan itu membatalkan alasan
+token disimpan sebagai hash. Menunda pembuatan sesi ke `/auth/desktop/exchange`
+membuat tabel code hanya berisi `user_id`, dan deep link yang tidak pernah
+ditangkap (browser ditutup, skema belum terdaftar) tidak meninggalkan sesi 30
+hari yang tidak dipegang siapa pun.
+
+### Yang TIDAK berubah
+
+- **Redirect URI di console Google.** Google tetap mengembalikan ke
+  `${API_ORIGIN}/auth/callback`; Worker-lah yang meneruskannya ke deep link.
+  Tidak ada yang perlu disentuh di Google Cloud Console.
+- **Jalur web.** Tanpa `client=desktop`, callback dan cookie persis seperti
+  sebelumnya; cookie tetap menang atas bearer bila keduanya ada.
+
+### CORS
+
+`ALLOWED_ORIGINS` di `wrangler.library.toml` memuat `tauri://localhost` dan
+`http://tauri.localhost` (docs/20 §5c — keduanya, karena yang hilang hanya
+terasa di OS yang tidak dipakai pengembang). Preflight mengizinkan header
+`Authorization`. `Access-Control-Allow-Credentials` tetap dikirim untuk origin
+desktop walau bearer tidak membutuhkannya: klien di `web/src/library/api.ts`
+mengirim `credentials: 'include'` di setiap permintaan, dan balasan tanpa
+header itu untuk permintaan ber-`include` dibuang browser tanpa pesan. Yang
+dilonggarkan tidak ada — cookie `SameSite=Lax` tidak pernah ikut ke permintaan
+lintas-site dari WebView.

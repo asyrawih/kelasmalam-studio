@@ -145,6 +145,46 @@ export class Store {
     await this.db.prepare('DELETE FROM session WHERE token_hash = ?').bind(tokenHash).run();
   }
 
+  // ── Code sekali pakai login desktop (migrasi 0006) ────────────────────────
+
+  /**
+   * Simpan code yang akan dibawa deep link ke aplikasi desktop.
+   *
+   * Baris yang sudah kedaluwarsa disapu di sini, bukan oleh cron: tabel ini
+   * hanya diisi oleh percobaan login desktop, jadi satu `DELETE` berindeks
+   * per login sudah cukup untuk menjaganya tetap kecil tanpa pembersih
+   * terpisah yang harus diingat orang berikutnya.
+   */
+  async createDesktopCode(codeHash: string, userId: string, ttlMs: number): Promise<void> {
+    const t = this.now();
+    await this.db.prepare('DELETE FROM desktop_auth_code WHERE expires_at <= ?').bind(t).run();
+    await this.db
+      .prepare(
+        'INSERT INTO desktop_auth_code (code_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)',
+      )
+      .bind(codeHash, userId, t, t + ttlMs)
+      .run();
+  }
+
+  /**
+   * Tukar code jadi `user_id`, atau `null` kalau tidak ada / kedaluwarsa.
+   *
+   * `DELETE … RETURNING` dalam SATU pernyataan, bukan `SELECT` lalu `DELETE`:
+   * dua penukaran yang datang bersamaan untuk code yang sama hanya boleh
+   * dimenangkan satu. Dengan dua pernyataan terpisah, keduanya bisa membaca
+   * baris yang sama sebelum salah satunya sempat menghapus — dan "sekali
+   * pakai" tinggal niat. Barisnya dihapus walau sudah kedaluwarsa; code basi
+   * tidak punya alasan untuk tetap tinggal.
+   */
+  async consumeDesktopCode(codeHash: string): Promise<string | null> {
+    const row = await this.db
+      .prepare('DELETE FROM desktop_auth_code WHERE code_hash = ? RETURNING user_id, expires_at')
+      .bind(codeHash)
+      .first<{ user_id: string; expires_at: number }>();
+    if (row === null || row.expires_at <= this.now()) return null;
+    return row.user_id;
+  }
+
   // ── Roblox asset catalog & grant history ─────────────────────────────────
 
   async putRobloxAsset(userId: string, asset: RobloxAssetInput): Promise<void> {

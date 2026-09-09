@@ -30,7 +30,15 @@ API_ORIGIN = "https://lib.kelasmalam.app"
 
 # Kosongkan untuk memakai APP_ORIGIN saja. Dikosongkan berarti DIKOSONGKAN:
 # Worker memperlakukan string kosong sama dengan tidak diisi (lihat worker.ts).
-ALLOWED_ORIGINS = ""
+#
+# Diisi berarti MENGGANTIKAN, bukan menambahi: APP_ORIGIN harus ditulis ulang
+# di sini, kalau tidak aplikasi web-nya sendiri yang ditolak.
+#
+# Dua origin terakhir milik aplikasi desktop Tauri (docs/20 §5c): WKWebView di
+# macOS memakai `tauri://localhost`, WebView2 di Windows `http://tauri.localhost`.
+# Keduanya harus ada — yang hilang hanya terasa di OS yang tidak dipakai
+# pengembang.
+ALLOWED_ORIGINS = "https://studio.kelasmalam.app,tauri://localhost,http://tauri.localhost"
 
 GOOGLE_CLIENT_ID = "481640866366-qpgi7prr1bqp7sshhbf0599ls4f0qoo6.apps.googleusercontent.com"
 

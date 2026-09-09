@@ -2,8 +2,10 @@
  * Worker KEPUSTAKAAN — implementasi `docs/16 §4`.
  *
  *   GET    /health
- *   GET    /auth/google            redirect ke consent (PKCE)
+ *   GET    /auth/google            redirect ke consent (PKCE); `client=desktop`
+ *                                  membelokkan callback-nya ke deep link
  *   GET    /auth/callback          tukar code → sesi → redirect balik ke app
+ *   POST   /auth/desktop/exchange  code sekali pakai → {token} (docs/16 §9)
  *   POST   /auth/logout
  *   GET    /me
  *   GET    /tracks
@@ -28,6 +30,16 @@
  * menyebut CORP sama sekali. Unduhan karena itu harus lewat sesuatu yang bisa
  * menambahkan header itu. Upload tidak punya masalah yang sama, dan punya
  * masalah lain (batas badan permintaan Worker) yang membuatnya harus langsung.
+ *
+ * ## Dua cara membawa sesi: cookie ATAU bearer
+ *
+ * Web memakai cookie `__Host-lib_session` (§5b). Aplikasi desktop (docs/20
+ * §1d) tidak bisa: origin-nya `tauri://localhost`, bukan satu site dengan API,
+ * jadi cookie itu tidak pernah ikut terkirim. Ia memegang token yang sama di
+ * keychain OS dan mengirimnya sebagai `Authorization: Bearer`. Keduanya
+ * menunjuk baris `session` yang sama; yang berbeda hanya cara token sampai.
+ * Kalau keduanya ada, cookie yang dipakai — jalur web tidak boleh berubah
+ * perilakunya hanya karena ada header nyasar.
  */
 
 import { decideCors, parseOrigins, preflight, withCors } from '../http/cors';
@@ -37,6 +49,7 @@ import { presignPut } from './presign';
 import {
   OAUTH_COOKIE,
   SESSION_COOKIE,
+  base64url,
   buildCookie,
   clearCookie,
   hashToken,
@@ -57,6 +70,21 @@ const MIME_ALLOW = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/x-wav
 const DEFAULT_MAX_TRACK_BYTES = 100 * 1024 * 1024;
 const DEFAULT_SESSION_TTL_DAYS = 30;
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+/**
+ * Umur code sekali pakai login desktop. Cukup untuk OS membuka aplikasi dari
+ * deep link dan aplikasi menukarnya; terlalu pendek untuk berguna bagi siapa
+ * pun yang menemukannya di log belakangan.
+ */
+const DESKTOP_CODE_TTL_MS = 60_000;
+/**
+ * Tujuan callback untuk `client=desktop`. Skema ini didaftarkan aplikasi Tauri
+ * (docs/20 §1d). Redirect URI yang terdaftar di Google TIDAK berubah — Google
+ * tetap mengembalikan ke `/auth/callback`; Worker-lah yang meneruskannya ke
+ * sini, jadi tidak ada yang perlu disentuh di console Google.
+ */
+export const DESKTOP_REDIRECT = 'kelasmalam://auth';
+/** Batas panjang `state` kiriman desktop; ia ikut naik ke cookie OAuth. */
+const MAX_DESKTOP_STATE_CHARS = 256;
 /** Cue + grid satu lagu. Longgar, tapi bukan tanpa batas. */
 const MAX_MARKS_BYTES = 256 * 1024;
 const MAX_PROJECT_BYTES = 8 * 1024 * 1024;
@@ -110,6 +138,19 @@ export async function handleRequest(request: Request, env: Env, deps: Deps = {})
   const allowed = configured.length > 0 ? configured : parseOrigins(env.APP_ORIGIN);
   const cors = decideCors(request.headers.get('origin'), allowed);
 
+  /*
+   * `credentials: true` juga untuk origin desktop (`tauri://localhost`,
+   * `http://tauri.localhost`), padahal permintaan bearer tidak membutuhkannya.
+   *
+   * Keputusan, bukan kelalaian. Klien di `web/src/library/api.ts` mengirim
+   * `credentials: 'include'` di setiap permintaan, dan aplikasi desktop memakai
+   * klien yang sama dengan header Authorization di atasnya. Balasan tanpa
+   * `Allow-Credentials` untuk permintaan ber-`include` DIBUANG browser — dan
+   * yang terlihat adalah galat jaringan tanpa sebab, hanya di desktop. Yang
+   * dilonggarkan oleh header ini pun tidak ada: cookie sesi `SameSite=Lax`
+   * tidak pernah ikut ke permintaan lintas-site dari WebView, jadi tidak ada
+   * kredensial yang bisa "bocor" karena diizinkan.
+   */
   if (request.method === 'OPTIONS') return preflight(cors.allowOrigin, { credentials: true });
   if (cors.rejected) return fail(403, 'ORIGIN_DITOLAK', 'origin ini tidak diizinkan');
 
@@ -204,6 +245,32 @@ async function route(
     // redirect, dan open redirect di alur OAuth adalah cara code dicuri.
     const back = safePath(url.searchParams.get('next'));
 
+    /*
+     * `client=desktop`: callback nanti berakhir di deep link, bukan di
+     * APP_ORIGIN. `state` milik desktop ikut naik ke cookie OAuth — bukan
+     * dipakai sebagai `state` untuk Google, dan bukan disimpan di D1.
+     *
+     * Bukan sebagai state Google: state yang dikirim ke Google dicocokkan
+     * dengan cookie untuk menangkal CSRF pada callback, dan nilainya harus
+     * milik Worker. State desktop punya tugas lain — aplikasi mencocokkannya
+     * dengan yang ia buat sendiri supaya deep link palsu dari aplikasi lain
+     * tidak bisa menyuntikkan code — jadi keduanya dibawa terpisah.
+     *
+     * Bukan di D1: umurnya hanya satu putaran redirect, sama dengan
+     * `verifier`, dan alasannya sama dengan yang tertulis di oauth.ts.
+     */
+    const desktopState = url.searchParams.get('client') === 'desktop'
+      ? url.searchParams.get('state') ?? ''
+      : null;
+    if (desktopState !== null && (desktopState === '' || desktopState.length > MAX_DESKTOP_STATE_CHARS)) {
+      return fail(400, 'STATE_DESKTOP', `client=desktop butuh state 1–${MAX_DESKTOP_STATE_CHARS} karakter`);
+    }
+
+    // Segmen dipisah titik; base64 tidak pernah menghasilkan titik, jadi
+    // isinya boleh sembarang tanpa merusak pemisahan.
+    const segments = [state, verifier, btoa(back)];
+    if (desktopState !== null) segments.push(encodeSegment(desktopState));
+
     return new Response(null, {
       status: 302,
       headers: {
@@ -213,7 +280,7 @@ async function route(
           state,
           challenge,
         }),
-        'set-cookie': buildCookie(OAUTH_COOKIE, `${state}.${verifier}.${btoa(back)}`, {
+        'set-cookie': buildCookie(OAUTH_COOKIE, segments.join('.'), {
           maxAgeSeconds: 600,
         }),
       },
@@ -225,7 +292,7 @@ async function route(
     const cookie = readCookie(request.headers.get('cookie'), OAUTH_COOKIE);
     if (cookie === null) return fail(400, 'STATE_HILANG', 'alur login kedaluwarsa — ulangi');
 
-    const [state, verifier, backB64] = cookie.split('.');
+    const [state, verifier, backB64, desktopB64] = cookie.split('.');
     if (state === undefined || verifier === undefined) {
       return fail(400, 'STATE_RUSAK', 'alur login tidak bisa dilanjutkan — ulangi');
     }
@@ -251,8 +318,32 @@ async function route(
     if (!exchanged.ok) return fail(401, 'LOGIN_GAGAL', exchanged.message);
 
     const user = await store.upsertUser(exchanged.profile);
-    const token = newToken();
     const ttlMs = num(env.SESSION_TTL_DAYS, DEFAULT_SESSION_TTL_DAYS) * 86_400_000;
+
+    if (desktopB64 !== undefined) {
+      /*
+       * Jalur desktop. Yang dibawa deep link adalah CODE sekali pakai, bukan
+       * token sesi: URL deep link tercatat di log OS dan riwayat browser, dan
+       * bisa ditangkap aplikasi lain yang mendaftarkan skema yang sama. Code
+       * ini mati dalam 60 detik dan setelah satu kali tukar. Sesinya sendiri
+       * baru lahir di `/auth/desktop/exchange` — alasannya di migrasi 0006.
+       *
+       * Tidak ada cookie sesi yang dipasang: browser sistem yang menjalani
+       * alur ini bukan tempat user akan memakai aplikasinya.
+       */
+      const code = newToken();
+      await store.createDesktopCode(await hashToken(code), user.id, DESKTOP_CODE_TTL_MS);
+      const q = new URLSearchParams({ code, state: decodeSegment(desktopB64) });
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: `${DESKTOP_REDIRECT}?${q.toString()}`,
+          'set-cookie': clearCookie(OAUTH_COOKIE),
+        },
+      });
+    }
+
+    const token = newToken();
     await store.createSession(await hashToken(token), user.id, ttlMs);
 
     const back = backB64 === undefined ? '/' : safePath(safeAtob(backB64));
@@ -262,11 +353,38 @@ async function route(
     return new Response(null, { status: 302, headers });
   }
 
+  if (path === '/auth/desktop/exchange') {
+    if (method !== 'POST') return fail(405, 'METODE', 'pakai POST');
+    const body = await readJson<{ code?: unknown }>(request);
+    if (body === null || typeof body.code !== 'string' || body.code === '') {
+      return fail(400, 'JSON', 'badan permintaan harus JSON berisi `code`');
+    }
+    // Satu pesan untuk tidak ada / kedaluwarsa / sudah dipakai: membedakannya
+    // hanya memberi tahu penebak mana code yang pernah sah.
+    const userId = await store.consumeDesktopCode(await hashToken(body.code));
+    if (userId === null) return fail(401, 'CODE_TIDAK_SAH', 'code tidak sah, kedaluwarsa, atau sudah dipakai — ulangi login');
+
+    const token = newToken();
+    const ttlMs = num(env.SESSION_TTL_DAYS, DEFAULT_SESSION_TTL_DAYS) * 86_400_000;
+    await store.createSession(await hashToken(token), userId, ttlMs);
+    // Token dikirim di BADAN, bukan di cookie: pemanggilnya aplikasi desktop
+    // yang akan menaruhnya di keychain OS, dan cookie untuk origin `tauri://`
+    // tidak akan pernah kembali ke sini.
+    return json({ token });
+  }
+
   if (path === '/auth/logout') {
     if (method !== 'POST') return fail(405, 'METODE', 'pakai POST');
-    const token = readCookie(request.headers.get('cookie'), SESSION_COOKIE);
+    const fromCookie = readCookie(request.headers.get('cookie'), SESSION_COOKIE);
+    const token = fromCookie ?? readBearer(request.headers.get('authorization'));
     if (token !== null) await store.revokeSession(await hashToken(token));
-    return json({ ok: true }, 200, { 'set-cookie': clearCookie(SESSION_COOKIE) });
+    // `Set-Cookie` hanya kalau sesinya memang datang lewat cookie (atau tidak
+    // ada sama sekali — membersihkan cookie kosong tidak merugikan). Pemanggil
+    // bearer tidak punya cookie yang perlu dihapus, dan header itu hanya akan
+    // menyesatkan siapa pun yang membaca balasannya di DevTools.
+    return fromCookie === null && token !== null
+      ? json({ ok: true })
+      : json({ ok: true }, 200, { 'set-cookie': clearCookie(SESSION_COOKIE) });
   }
 
   // ── Mulai dari sini semuanya butuh sesi ───────────────────────────────────
@@ -813,10 +931,39 @@ function objectKey(hash: string): string {
   return `tracks/${hash}`;
 }
 
+/**
+ * Sesi dari cookie, atau dari `Authorization: Bearer` kalau cookie tidak ada.
+ * Urutannya disengaja (lihat kepala berkas): cookie menang supaya jalur web
+ * tidak pernah berubah perilaku, bearer hanya mengisi kekosongan.
+ */
 async function currentUser(request: Request, store: Store): Promise<UserRow | null> {
-  const token = readCookie(request.headers.get('cookie'), SESSION_COOKIE);
+  const token =
+    readCookie(request.headers.get('cookie'), SESSION_COOKIE) ??
+    readBearer(request.headers.get('authorization'));
   if (token === null) return null;
   return await store.userForSession(await hashToken(token));
+}
+
+/** Token dari `Authorization: Bearer <token>`; `null` untuk skema lain. */
+function readBearer(header: string | null): string | null {
+  if (header === null) return null;
+  const m = /^Bearer\s+(\S+)$/i.exec(header.trim());
+  return m?.[1] ?? null;
+}
+
+/** Sembarang string → base64url, aman untuk jadi satu segmen cookie OAuth. */
+function encodeSegment(value: string): string {
+  return base64url(new TextEncoder().encode(value));
+}
+
+function decodeSegment(value: string): string {
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='));
+    return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+  } catch {
+    return '';
+  }
 }
 
 async function readJson<T>(request: Request): Promise<T | null> {
