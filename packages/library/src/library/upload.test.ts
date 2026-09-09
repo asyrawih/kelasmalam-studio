@@ -15,7 +15,7 @@ import type { LibraryApi, TrackMeta } from './api';
 import { LibraryError } from './api';
 import { fakeLibraryApi } from './fake-api';
 import { libraryActions, libraryStore } from './store';
-import type { ImportedForLibrary } from '../studio/timeline/import-sink';
+import type { ImportedForLibrary } from '@kelasmalam/studio/studio/timeline/import-sink';
 
 const HASH = 'a'.repeat(64);
 

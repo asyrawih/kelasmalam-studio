@@ -8,7 +8,8 @@
 
 export { LibraryDock, type LibraryDockProps } from './LibraryDock';
 export { libraryActions, libraryStore, useLibrary } from './store';
-export { createLibraryApi, LibraryError, type LibraryApi } from './api';
+export { createLibraryApi, LibraryError, normalizeBase, type LibraryApi } from './api';
+export { getLibraryApi, registerLibraryApi } from './registry';
 export { loadTrack, type LoadOutcome } from './load-track';
 export {
   createInitialLibrary,

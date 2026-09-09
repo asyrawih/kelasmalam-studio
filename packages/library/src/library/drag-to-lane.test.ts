@@ -15,9 +15,9 @@ import {
   notifyLibraryDrop,
   registerLaneLocator,
   registerLibraryDropHandler,
-} from '../studio/timeline/library-drop';
-import { placeAssetOnLane } from '../studio/timeline/audio-import';
-import { studioActions, studioStore } from '../studio/store';
+} from '@kelasmalam/studio/studio/timeline/library-drop';
+import { placeAssetOnLane } from '@kelasmalam/studio/studio/timeline/audio-import';
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 const SR = 48_000;
 

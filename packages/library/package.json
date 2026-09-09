@@ -1,0 +1,26 @@
+{
+  "name": "@kelasmalam/library",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kepustakaan (docs/16, docs/21): kontrak LibraryApi + DTO, klien Worker, dok/browser, dan registry `registerLibraryApi` yang diisi app (web: klien Worker; desktop: implementasi lokal). `local-error.ts` = bentuk galat lokal yang dipakai dua penyimpanan.",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@kelasmalam/dj": "workspace:*",
+    "@kelasmalam/platform": "workspace:*",
+    "@kelasmalam/shell": "workspace:*",
+    "@kelasmalam/studio": "workspace:*",
+    "@kelasmalam/ui": "workspace:*",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.3.12",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

@@ -27,9 +27,9 @@ import {
   runCommand,
 } from '@kelasmalam/shell/command';
 import { useCommands } from '@kelasmalam/shell/useCommands';
-import { setPlatformHostForTests } from '../platform';
-import { studioCommands } from '../studio/commands';
-import { selectProjectDirty, studioActions, studioStore } from '../studio/store';
+import { setPlatformHostForTests } from '@kelasmalam/platform';
+import { studioCommands } from '@kelasmalam/studio/studio/commands';
+import { selectProjectDirty, studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 const HASH = 'a'.repeat(64);
 const SR = 48_000;

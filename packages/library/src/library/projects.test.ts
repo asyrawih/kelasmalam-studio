@@ -18,7 +18,7 @@ import { hashesIn, saveProject, unsavedAssets } from './projects';
 import { VersionConflict, type LibraryApi } from './api';
 import { fakeLibraryApi } from './fake-api';
 import { libraryActions } from './store';
-import { selectProjectDirty, studioActions, studioStore } from '../studio/store';
+import { selectProjectDirty, studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 const HASH = 'a'.repeat(64);
 const SR = 48_000;

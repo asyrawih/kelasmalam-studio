@@ -25,8 +25,8 @@
  * salinan itu akan salah diam-diam begitu salah satunya berubah.
  */
 
-import { importBytesToAsset } from '../studio/timeline/audio-import';
-import { studioStore } from '../studio/store';
+import { importBytesToAsset } from '@kelasmalam/studio/studio/timeline/audio-import';
+import { studioStore } from '@kelasmalam/studio/studio/store';
 import type { LibraryApi } from './api';
 import { applyMarks } from './marks';
 import { libraryActions, libraryStore } from './store';

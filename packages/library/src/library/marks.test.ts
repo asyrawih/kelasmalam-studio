@@ -12,9 +12,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyMarks, collectMarks, createMarksSync } from './marks';
 import { fakeLibraryApi } from './fake-api';
-import { djActions, djStore } from '../dj/store';
-import { studioActions, studioStore } from '../studio/store';
-import { EMPTY_TRACK_CUES } from '../dj/model';
+import { djActions, djStore } from '@kelasmalam/dj/dj/store';
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
+import { EMPTY_TRACK_CUES } from '@kelasmalam/dj/dj/model';
 
 const SR = 48_000;
 const HASH = 'a'.repeat(64);

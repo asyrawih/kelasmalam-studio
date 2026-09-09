@@ -14,8 +14,7 @@ import { LibraryDock } from './LibraryDock';
 import { libraryActions, libraryStore } from './store';
 import type { LibraryApi } from './api';
 import { fakeLibraryApi } from './fake-api';
-import { createWebHost } from '../platform/web';
-import { setPlatformHostForTests } from '../platform';
+import { getPlatformHost, setPlatformHostForTests } from '@kelasmalam/platform';
 import type { LibraryTrack } from './model';
 
 const HASH = 'a'.repeat(64);
@@ -213,7 +212,8 @@ describe('daftar lagu', () => {
 describe('sesi lewat platform', () => {
   it('web: MASUK memanggil host.login dengan base API dan path sekarang', async () => {
     const login = vi.fn(async () => {});
-    setPlatformHostForTests({ ...createWebHost(), login });
+    // Host bawaan (web, dari setup.ts app) + `login` yang dimata-matai.
+    setPlatformHostForTests({ ...getPlatformHost(), login });
     render(<LibraryDock api={withTrack({ me: async () => null })} />);
     await waitFor(() => expect(libraryStore.getState().status).toBe('anonim'));
     fireEvent.click(screen.getByRole('button', { name: /MASUK DENGAN GOOGLE/ }));

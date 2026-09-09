@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LandingPage } from '../LandingPage';
 import { AppShell } from '../../app-shell';
 import { routeOf } from '../../app-shell/routes';
-import { libraryActions } from '../../library/store';
+import { libraryActions } from '@kelasmalam/library/library/store';
 
 afterEach(() => {
   cleanup();

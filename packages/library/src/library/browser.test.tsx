@@ -18,7 +18,7 @@ import { fakeLibraryApi } from './fake-api';
 import { libraryActions, libraryStore } from './store';
 import type { LibraryApi } from './api';
 import type { LibraryTrack } from './model';
-import { registerLaneLocator, registerLibraryDropHandler } from '../studio/timeline/library-drop';
+import { registerLaneLocator, registerLibraryDropHandler } from '@kelasmalam/studio/studio/timeline/library-drop';
 
 const H1 = 'a'.repeat(64);
 const H2 = 'b'.repeat(64);

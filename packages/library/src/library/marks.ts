@@ -21,9 +21,9 @@
  * pernah jadi masalah.
  */
 
-import { EMPTY_TRACK_CUES, type TrackCues } from '../dj/model';
-import { djActions, djStore } from '../dj/store';
-import { studioActions, studioStore } from '../studio/store';
+import { EMPTY_TRACK_CUES, type TrackCues } from '@kelasmalam/dj/dj/model';
+import { djActions, djStore } from '@kelasmalam/dj/dj/store';
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 import type { LibraryApi } from './api';
 
 /** Bentuk yang diserahkan ke `PUT /tracks/:hash/marks`. */

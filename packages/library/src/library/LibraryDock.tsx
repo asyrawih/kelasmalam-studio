@@ -26,27 +26,29 @@
  * aplikasi berjalan penuh tanpa akun — docs/16 §6), dan dock yang lenyap tanpa
  * kata membuat orang mencari bug di tempat yang salah.
  *
- * ## Dari mana kepustakaannya: tanya host, bukan env
+ * ## Dari mana kepustakaannya: yang didaftarkan app, bukan env
  *
- * `getPlatformHost().libraryApi()` — web memberi klien Worker dari env (atau
- * `null`), desktop memberi kepustakaan LOKAL di atas SQLite + folder (docs/21).
- * Dock tidak tahu bedanya dan memang tidak boleh tahu: kedua implementasi
- * memenuhi `LibraryApi` yang sama, dan yang membedakan hanyalah dua hal yang
- * memang soal sesi — tombol MASUK/KELUAR (ada kalau host punya `login`) dan
- * kalimat di strip.
+ * `getLibraryApi()` (`registry.ts`) — app web mendaftarkan klien Worker dari
+ * env (atau `null`), app desktop mendaftarkan kepustakaan LOKAL di atas
+ * SQLite + folder (docs/21). Dock tidak tahu bedanya dan memang tidak boleh
+ * tahu: kedua implementasi memenuhi `LibraryApi` yang sama, dan yang
+ * membedakan hanyalah dua hal yang memang soal sesi — tombol MASUK/KELUAR
+ * (ada kalau host platform punya `login`) dan kalimat di strip.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { useCommands } from '../app-shell';
+import { useCommands } from '@kelasmalam/shell/useCommands';
+import { registerSaveFallback } from '@kelasmalam/studio/studio/commands';
 import { Badge, Button, ProgressBar } from '@kelasmalam/ui/cyber';
-import { studioStore, useStudio } from '../studio/store';
-import { djStore } from '../dj/store';
-import { registerImportSink } from '../studio/timeline/import-sink';
-import { registerLibraryDropHandler } from '../studio/timeline/library-drop';
-import { placeAssetOnLane } from '../studio/timeline/audio-import';
-import { getPlatformHost } from '../platform';
+import { studioStore, useStudio } from '@kelasmalam/studio/studio/store';
+import { djStore } from '@kelasmalam/dj/dj/store';
+import { registerImportSink } from '@kelasmalam/studio/studio/timeline/import-sink';
+import { registerLibraryDropHandler } from '@kelasmalam/studio/studio/timeline/library-drop';
+import { placeAssetOnLane } from '@kelasmalam/studio/studio/timeline/audio-import';
+import { getPlatformHost } from '@kelasmalam/platform';
 import { createLibraryApi, type LibraryApi } from './api';
+import { getLibraryApi } from './registry';
 import { loadTrack } from './load-track';
 import {
   currentProjectName,
@@ -62,7 +64,7 @@ import { createUploadQueue } from './upload';
 import { LibraryBrowser } from './LibraryBrowser';
 
 export interface LibraryDockProps {
-  /** Ditimpa di tes. Default: `getPlatformHost().libraryApi()`. `''` = tanpa kepustakaan. */
+  /** Ditimpa di tes. Default: `getLibraryApi()` yang didaftarkan app. `''` = tanpa kepustakaan. */
   readonly apiBase?: string;
   /** Ditimpa di tes supaya tidak ada HTTP sungguhan. */
   readonly api?: LibraryApi;
@@ -77,13 +79,37 @@ export interface LibraryDockProps {
 
 
 
+/*
+ * ⌘S yang tidak bisa dijalankan (`studio/commands.ts` → `openSave`) berakhir
+ * di sini: dok terbuka, tombol SIMPAN PROJECT fokus, Enter menekan; kalau
+ * belum ada project yang dibuka, yang difokuskan kotak nama. Didaftarkan ke
+ * Studio saat MODUL ini dimuat, bukan saat dok mount: "dok terbuka" adalah
+ * state store yang sah walau doknya belum dirender (ia mount dalam keadaan
+ * terbuka), dan yang menentukan app ini punya kepustakaan adalah app
+ * mengimpor dok ini — bukan render ke berapa. Studio sendiri tidak mengimpor
+ * kepustakaan (docs/25 P3).
+ */
+registerSaveFallback(() => {
+  libraryActions.setCollapsed(false);
+  // Isi dok baru ada di DOM pada render sesudah `collapsed` berubah.
+  setTimeout(() => {
+    const dock = document.querySelector('[data-testid="library-dock"]');
+    if (dock === null) return;
+    const save = [...dock.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === 'SIMPAN PROJECT',
+    );
+    const target = save ?? dock.querySelector<HTMLElement>('input[aria-label="nama project baru"]');
+    target?.focus();
+  }, 0);
+});
+
 export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockProps): JSX.Element {
   const host = getPlatformHost();
   const api = useMemo<LibraryApi | null>(() => {
     if (injected !== undefined) return injected;
     if (apiBase !== undefined) return apiBase.trim() === '' ? null : createLibraryApi(apiBase);
-    return host.libraryApi();
-  }, [apiBase, injected, host]);
+    return getLibraryApi();
+  }, [apiBase, injected]);
   /*
    * Ada tidaknya sesi = ada tidaknya `login` di host. Kepustakaan lokal tidak
    * punya sesi sama sekali: tidak ada yang bisa dimasuki maupun ditinggalkan,

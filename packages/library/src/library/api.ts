@@ -28,7 +28,7 @@
  * cookie ATAU bearer, dan klien ini tidak perlu tahu yang mana yang dipakai.
  */
 
-import { getPlatformHost } from '../platform';
+import { getPlatformHost } from '@kelasmalam/platform';
 import type { ImportedTrack, LibraryTrack, LibraryUser, StoreInfo } from './model';
 
 export class LibraryError extends Error {

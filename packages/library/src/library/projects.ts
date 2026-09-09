@@ -17,9 +17,9 @@
  * kemajuan yang terlihat, dan baru sesudah itu state-nya dipasang.
  */
 
-import { restoreProject, serialize, type StoredAssetBytes } from '../studio/persist/persistence';
-import { importBytesToAsset } from '../studio/timeline/audio-import';
-import { studioActions, studioStore } from '../studio/store';
+import { restoreProject, serialize, type StoredAssetBytes } from '@kelasmalam/studio/studio/persist/persistence';
+import { importBytesToAsset } from '@kelasmalam/studio/studio/timeline/audio-import';
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 import type { LibraryApi } from './api';
 import { libraryActions, libraryStore } from './store';
 
