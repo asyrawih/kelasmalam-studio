@@ -21,6 +21,7 @@ sini selesai.
 | P0 | #78 | Selesai di branch. Dua hal yang baru ketahuan saat verifikasi dan masuk PR: (1) linker bun harus `hoisted` (`bunfig.toml`), karena linker `isolated` bawaan bun 1.3 membuat `tsc` tidak menemukan types `onnxruntime-web/wasm`; (2) `scnet-model.ts` menunjuk `../../node_modules/onnxruntime-web/dist` dan `vite build` tetap hijau saat path itu tidak ada — `ort-wasm-simd-threaded.{mjs,wasm}` lenyap dari `dist`. Kini alias `@ort-dist` lewat `require.resolve` + tes `ort-dist.test.ts`. Dua tes Rust yang membaca berkas frontend (`contract_tests.rs`, `local_server.rs`) ikut dipindah path-nya. |
 | P1 | #79 | Selesai di branch, ditumpuk di atas #78. Bentuk aktual sedikit berbeda dari rencana awal — lihat §1a (letak wasm), §1d (resolver platform), §2 (lingkup `shell`), §1h (vitest). 156 berkas / 1817 tes; gzip JS +0,05%. |
 | P2 | #80 | Selesai di branch, ditumpuk di atas #79. `apps/desktop` lahir (port dev 5174), `src-tauri` pindah, bundel web bebas Tauri (gzip −3,1%), Vite base bersama `packages/engine/vite/base.ts` (`defineDawApp`). Registry host **dua tingkat** (web mendaftar bawaan, desktop menang) karena modul `apps/web` yang ditarik desktop ikut mendaftar host web. 28 berkas `apps/desktop/src` masih memakai `@app-web` (allowlist `app-web-imports.test.ts`) — P3 menurunkannya ke nol. Uji manual docs/22 dan job CI `desktop` di runner macOS/Windows belum dijalankan. |
+| P3 | branch `feat/p3-paket-halaman` | Enam paket halaman lahir (`studio` berikut `stem/` dan `StudioPage`, `dj`, `library` berikut `local-error`, `roblox`, `soundcloud`, `proof-stem`); alias `@app-web/*` dihapus total dan dijaga tidak kembali (`app-web-imports.test.ts` kini memindai seluruh repo). Graf paket jadi DAG yang ditegakkan tes (`no-package-cycles.test.ts`, §1b). Cicilan P4 ikut masuk: pipeline export (`run-export`, `sinks`, `wasm-engine`, `loudness-analyzer`, bentuk payload) pindah ke `packages/engine/src/export/` supaya `export-worker` tidak mengimpor studio. Kontrak host kehilangan `libraryApi()` (diganti `registerLibraryApi` di paket library) dan `modelBytes` jadi opsional; NOL cabang `kind === 'desktop'` di `packages/*` dan `apps/web`. Detail di §1c, §1d, §2, P3. |
 
 ---
 
@@ -84,11 +85,13 @@ packages/
   ui/                  ← ui/cyber, ui/lib, ui/panels
   shell/               ← app-shell tanpa desktop.ts: registry command, keymap, palette, VersionTag
   platform/            ← KONTRAK saja: host.ts, hooks (useAudioFilePicker, useNativeFileDrop)
-  studio/              ← studio/ (lane) — dipakai apps/web selamanya, apps/desktop sampai docs/24 F8
-  studio-core/         ← (P4) bagian studio yang tidak tahu lane: peaks, waveform, import/decode, analysis, fade, snap, export pipeline, stem
+  studio/              ← studio/ (lane) + stem/ + StudioPage — dipakai apps/web selamanya, apps/desktop sampai docs/24 F8
+  studio-core/         ← (P4) bagian studio yang tidak tahu lane: peaks, waveform, import/decode, analysis, fade, snap, stem. Pipeline export sudah di engine/src/export (cicilan P4 di P3)
   dj/                  ← dj/
-  library/             ← kontrak LibraryApi + UI dock/browser; implementasi Worker dan lokal disuntik apps
-  proof-stem/          ← model SCNet + halaman
+  library/             ← kontrak LibraryApi + DTO + local-error, klien Worker, dok/browser, registry `registerLibraryApi`; implementasi lokal di apps/desktop
+  roblox/              ← model, store, UI, transport Worker; backend lokal di apps/desktop, disuntik `registerRobloxBackend`
+  soundcloud/          ← klien + dialog + `useSoundCloudImport()` (tombol/dialog yang disuntik ke StudioPage); transport in-process di apps/desktop
+  proof-stem/          ← katalog + pemuat model SCNet + halaman
 backend/               ← tetap
 ```
 
@@ -131,8 +134,8 @@ Pola yang dipakai untuk 46 file yang bercabang:
 
 | Bentuk cabang hari ini | Bentuk sesudahnya |
 |---|---|
-| `StudioHeader` menampilkan tombol YOUTUBE kalau desktop | `StudioHeader` menerima prop `importActions: readonly ImportAction[]`; `apps/desktop` menyuntik YouTube, `apps/web` tidak |
-| `LibraryDock` memilih `createLocalLibraryApi` vs Worker | `packages/library` mengekspor `LibraryApi` + UI; `apps/*` memanggil `createLibraryApi()` miliknya dan memberikannya lewat provider |
+| `StudioHeader` menampilkan tombol YOUTUBE kalau desktop | `StudioHeader` menerima prop `importActions: readonly ImportAction[]`; `apps/desktop` menyuntik YouTube, `apps/web` tidak. **P3:** SoundCloud pun begitu — `useSoundCloudImport()` dari paket soundcloud dipasang kedua app, karena `soundcloud → studio` dan `StudioPage` tidak boleh mengimpor balik |
+| `LibraryDock` memilih `createLocalLibraryApi` vs Worker | `packages/library` mengekspor `LibraryApi` + UI; `apps/*` mendaftarkan factory-nya lewat `registerLibraryApi()` (web: klien Worker dari env; desktop: lokal) dan `StudioPage` menerima `<LibraryDock/>` sebagai prop `dock` |
 | `RobloxPage` memilih transport Worker vs lokal | `packages/roblox` berisi model + UI + `RobloxTransport` (kontrak); `apps/web` menyuntik `worker-transport`, `apps/desktop` menyuntik `desktop-transport` + `queue-persistence` SQLite |
 | `soundcloud/api.ts` memilih fetch vs `soundcloud_json` | `packages/soundcloud` mengekspor kontrak `SoundCloudTransport`; implementasi di masing-masing app |
 | `main.tsx` merender `<Analytics/>` kalau web | hanya ada di `apps/web/src/main.tsx` |
@@ -150,13 +153,13 @@ dipanggil `apps/desktop` lewat alias `@app-web/*` dengan `TODO(P3)`):
 |---|---|---|
 | `App.tsx` (halaman Studio) | `useMemo(() => getPlatformHost().kind === 'desktop')`, mengimpor `./youtube/YouTubeDialog` | prop `extras` / `importActions` — desktop menyuntik tombol + dialog YouTube; web tidak tahu YouTube ada |
 | `studio/timeline/url-to-lane.ts` | cabang `kind === 'desktop'` + impor `../../youtube` | registry `registerUrlImporter({ matches, import })`; desktop mendaftarkan importer YouTube |
-| `library/api.ts` + `platform/{web,desktop}.ts` | host memilih `createLibraryApi` (Worker) vs `createLocalLibraryApi` (SQLite) | tetap lewat `PlatformHost.libraryApi()`; `local-api.ts`, `store-settings.ts`, `StoreSettings.tsx` pindah ke `apps/desktop`; `KeymapEditor` menerima slot `storeSettings?: ReactNode` |
+| `library/api.ts` + `platform/{web,desktop}.ts` | host memilih `createLibraryApi` (Worker) vs `createLocalLibraryApi` (SQLite) | P2: lewat `PlatformHost.libraryApi()`; `local-api.ts`, `store-settings.ts`, `StoreSettings.tsx` pindah ke `apps/desktop`; `KeymapEditor` menerima slot `storeSettings?: ReactNode`. **P3:** `libraryApi()` DIHAPUS dari kontrak (platform tidak boleh mengimpor paket halaman); `registerLibraryApi(factory)`/`getLibraryApi()` di `packages/library/src/library/registry.ts`, dipanggil `main.tsx` tiap app |
 | `roblox/store.ts` | `persistence ??= kind === 'desktop' ? createLocalQueuePersistence() : createWebPersistence()` | `registerRobloxPersistence(factory)`; bawaan web |
 | `roblox/RobloxRoute.tsx` | memilih `createDesktopTransport`/`createLocalGrantApi`/`localInvoke` dari `kind` | prop/registry `RobloxBackend { transport, grantApi, saveTarget }`; implementasi desktop pindah ke `apps/desktop/src/roblox-local/` |
 | `soundcloud/api.ts` | `kind === 'desktop' ? desktopTransport : fetch` | `registerSoundCloudTransport(transport)`; bawaan `fetch` |
 | `main.tsx` | `kind === 'web' ? <Analytics/>` | hanya ada di `apps/web` |
 | `app-shell/AppShell.tsx` + `desktop.ts` | `isDesktop()` untuk judul jendela, tutup, menu native, gerbang login | `apps/desktop/src/app-shell/AppShell.tsx` sendiri (rute tanpa landing/legal, tanpa gerbang login) + `window.ts`; `apps/web` kehilangan seluruh cabang itu |
-| `proof-stem/scnet-model.ts` | `host.kind !== 'desktop'` untuk prefetch model di main thread | tetap: ini pertanyaan ke KONTRAK host (`modelBytes` ada/tidak), bukan `isTauri`; diganti `host.modelBytes === undefined` bila kontraknya dibuat opsional |
+| `proof-stem/scnet-model.ts` | `host.kind !== 'desktop'` untuk prefetch model di main thread | **P3:** `modelBytes` OPSIONAL di kontrak dan `prefetchModelBytes` memeriksa `host.modelBytes === undefined`. Host web tidak punya `modelBytes` lagi: fetch + cache OPFS adalah jalur browser umum, pindah kembali ke `scnet-model.ts` (`fetchModelBytesInBrowser`) dan berjalan di worker — worker memang tidak punya host (§1d). Cabang serupa di `SoundCloudDialog` (DOWNLOAD: `<a download>` vs browser OS) jadi `host.downloadUrl` opsional |
 
 ### d) `PlatformHost` tetap, tapi menjadi milik tiap app
 
@@ -171,9 +174,21 @@ membuat worker tetap benar: worker tidak menjalankan `main.tsx`, tapi modul
 yang butuh host di worker (`proof-stem/scnet-model.ts` lewat
 `auto-stem.worker.ts`) mengimpor `../platform` milik app, yang mendaftarkan
 resolvernya sendiri. Hook (`useAudioFilePicker`, `useNativeFileDrop`) hidup
-di paket dan diekspor ke app lewat `apps/web/src/platform/hooks.ts`, BUKAN
-lewat index, supaya worker yang mengimpor `../platform` tidak menarik React
-(terukur +2,7 KB gzip per worker kalau lewat index).
+di paket dan diekspor lewat `@kelasmalam/platform/hooks`, BUKAN lewat index,
+supaya pemilih yang dimuat worker tidak menarik React (terukur +2,7 KB gzip
+per worker kalau lewat index).
+
+**P3 mengubah bagian worker.** Begitu `scnet-model.ts` jadi paket ia tidak
+boleh mengimpor `../platform` milik app, jadi di worker TIDAK ADA host sama
+sekali. Itu ternyata benar: satu-satunya yang worker minta ke host adalah
+byte model, dan host yang punya cara istimewa (desktop, IPC) memang hanya bisa
+dipanggil dari main thread. Maka `modelBytes` jadi opsional — main thread
+memanggilnya bila ada dan mengirim byte-nya ke worker; bila tidak ada, worker
+mengambil sendiri lewat jalur browser umum (fetch + OPFS) di `proof-stem`.
+Host web tidak mendaftarkan apa-apa di worker, dan tidak perlu. Di tes, host
+untuk komponen paket dipasang `apps/web/src/__tests__/setup.ts` (memuat
+`../platform` → resolver bawaan web); setup desktop mengimpornya dan resolver
+app desktop tetap menang.
 
 ### e) Studio web tidak berubah; Studio desktop boleh berbeda
 
@@ -229,21 +244,21 @@ menyebut path lama diperbarui dalam PR yang sama — daftar lengkapnya dari
 
 | Dari `web/src/` | Ke | Catatan |
 |---|---|---|
-| `audio/`, `encoders/`, `state/`, `wasm/`, `worklet.d.ts` | `packages/engine/src/` | nol cabang platform; `export-worker` mengimpor `studio/export` → pindah bersama ke `studio-core` di P4, sementara alias |
+| `audio/`, `encoders/`, `state/`, `wasm/`, `worklet.d.ts` | `packages/engine/src/` | nol cabang platform. **P3 (cicilan P4):** `studio/export/{run-export,sinks,wasm-engine,loudness-analyzer}` + tesnya dan BENTUK payload (`ExportPayload`, `ExportAssetSource`, `PCM_CHUNK_FRAMES`, `pcmFromChannels`, `audioBufferPcmSource`) → `packages/engine/src/export/`; `buildExportPayload` (butuh `StudioState`) tetap di studio. `ExportSink` (antarmuka) → `packages/platform/src/export-sink.ts` karena ia bagian `SaveTarget`; engine mengimpor tipenya (`engine → platform`, tipe saja) |
 | `ui/` | `packages/ui/src/` | `ui/panels` mengimpor `state/` → dependensi `ui → engine` (searah, boleh) |
-| `app-shell/{command,keymap,keys,useCommands,CommandPalette,useKeyDispatch}` | `packages/shell/src/` | **P1 (aktual):** hanya registry + keymap + dispatch + palette. `AppShell.tsx`, `routes.ts`, `VersionTag.tsx` (build-info), `KeymapEditor.tsx` (StoreSettings) tetap di app — komposisi halaman adalah urusan P2, dan tiap app punya `AppShell`-nya sendiri |
+| `app-shell/{command,keymap,keys,useCommands,CommandPalette,useKeyDispatch}` | `packages/shell/src/` | **P1 (aktual):** hanya registry + keymap + dispatch + palette. **P3:** `VersionTag.tsx` + `build-info.ts` (dibaca dj/roblox/studio), `KeymapEditor.tsx` (dipakai kedua AppShell), dan `routes.ts` (konstanta path, `Route`, `pathOf`, `makeRouteOf`) ikut ke shell; TABEL route tetap per app (`apps/*/src/app-shell/routes.ts` membangunnya dari daftar route yang ia punya). `AppShell.tsx` tetap milik tiap app |
 | `app-shell/desktop.ts`, `menu-ids.ts` | `apps/desktop/src/window/` | menu native = pintu ketiga registry (docs/15), tetap |
 | `platform/host.ts`, `useAudioFilePicker`, `useNativeFileDrop` | `packages/platform/src/` | kontrak |
 | `platform/web.ts` | `apps/web/src/platform/` | |
 | `platform/desktop.ts`, `local-invoke.ts`, `local-commands.ts` | `apps/desktop/src/platform/` | `local-commands` = tipe 50 command Tauri; tesnya (`contract_tests.rs` ↔ `LOCAL_COMMAND_NAMES`) ikut |
-| `library/` | `packages/library/src/` + `apps/web/src/library-worker/` + `apps/desktop/src/library-local/` | `api.ts` dipecah: kontrak + Worker impl; `local-api.ts`, `store-settings.ts`, `StoreSettings.tsx` ke desktop |
-| `roblox/` | `packages/roblox/src/` + `apps/*/src/roblox-*/` | `backend/desktop-transport.ts`, `local/`, `grant/local-api.ts`, `persistence` SQLite ke desktop; Worker transport ke web |
-| `soundcloud/` | `packages/soundcloud/src/` + transport per app | |
-| `youtube/` | `apps/desktop/src/youtube/` | seluruhnya desktop |
-| `studio/` | `packages/studio/src/` | tiga file bercabang dibersihkan lewat §1c |
-| `dj/` | `packages/dj/src/` | `CollectionBrowser` memakai hook kontrak, sudah benar |
-| `proof-stem/`, `stem/` | `packages/proof-stem/src/`, `packages/studio-core` (P4) | |
-| `landing/`, `App.tsx`, `main.tsx`, `index.css`, `public/` | `apps/web/src/` | |
+| `library/`, `local-error.ts` | `packages/library/src/library/`, `packages/library/src/local-error.ts` (**P3 aktual**) + `apps/desktop/src/library-local/` | `api.ts` utuh (kontrak + klien Worker: fetch ke Worker itu netral); `registry.ts` baru; `local-api.ts`, `store-settings.ts`, `StoreSettings.tsx` di desktop sejak P2. Tidak ada `apps/web/src/library-worker/` — klien Worker cukup didaftarkan `main.tsx` |
+| `roblox/` | `packages/roblox/src/roblox/` + `apps/desktop/src/roblox-local/` | prop `platform: PlatformKind` yang hanya memilih TEKS jadi `variant: 'web' \| 'local'` (`ui-variant.ts`) — sifat backend yang disuntik, bukan platform |
+| `soundcloud/` | `packages/soundcloud/src/soundcloud/` + `apps/desktop/src/soundcloud/desktop-transport.ts` | `studio-import.tsx` baru: `useSoundCloudImport()` untuk `extras` StudioPage |
+| `youtube/` | `apps/desktop/src/youtube/` | seluruhnya desktop; mengimpor `@kelasmalam/studio` |
+| `studio/`, `stem/`, `App.tsx` | `packages/studio/src/studio/`, `packages/studio/src/stem/`, `packages/studio/src/StudioPage.tsx` | `stem/` ikut studio, bukan proof-stem: `AutoStemToggle` menulis ke store studio dan `audio-preview` membaca `auto-stem` — dua arah, satu paket. `StudioPage` menerima `dock` + `extras`; `commands.ts` menerima `registerSaveFallback` dari dok (studio tidak mengimpor library). CSS Studio → `packages/studio/src/studio.css` |
+| `dj/` | `packages/dj/src/dj/` | `CollectionBrowser` memakai hook kontrak, sudah benar; masih `dj → studio` sampai P4 |
+| `proof-stem/` | `packages/proof-stem/src/proof-stem/` | satu paket (tanpa `stem/`, lihat baris studio); `onnxruntime-web.d.ts` ikut ke sini |
+| `landing/`, `main.tsx`, `index.css`, `public/` | `apps/web/src/` | `index.css` app-level saja + `@import` CSS ui dan studio |
 | `desktop/src-tauri/` (di luar `web/`) | `apps/desktop/src-tauri/` | utuh, `git mv`; rujukan path di §1g |
 
 ---
@@ -348,26 +363,54 @@ src-tauri/          ← desktop/src-tauri (git mv), lihat §1g
 ### P3 — `studio`, `dj`, `library`, `roblox`, `soundcloud`, `proof-stem` jadi paket
 
 Cabang platform dibersihkan menurut §1c. `LibraryApi` dan `RobloxTransport`
-menjadi kontrak yang disuntik. `AppShell` menerima provider untuk
-`libraryApi`, `importActions`, `urlImporters`.
+menjadi kontrak yang disuntik. `AppShell` tiap app menyusun `StudioPage`
+dengan `dock` (LibraryDock), `extras` (SoundCloud; desktop + YouTube), dan
+`main.tsx`-nya mendaftarkan `registerLibraryApi`, `registerRobloxBackend`,
+`registerSoundCloudTransport`, `registerUrlImporter`.
 
-**Done:**
+Graf dependensi paket (dari `package.json`, dijaga `no-package-cycles`):
+
+```
+platform, ui → engine, engine → platform (tipe ExportSink saja)
+shell → ui
+proof-stem → platform, ui
+studio → engine, ui, shell, platform, proof-stem
+dj → studio, proof-stem, engine, ui, shell, platform
+library → studio, dj, ui, shell, platform
+roblox → ui, shell, platform, library (local-error)
+soundcloud → studio, ui, platform
+```
+
+Penyimpangan dari sasaran awal yang dicatat: `engine → platform` (tipe) ada
+karena `ExportSink` adalah bagian `SaveTarget`; membaliknya berarti platform
+bergantung pada engine, dan platform harus tinggal di dasar.
+
+**Done (aktual, branch):**
 1. `grep -rE "kind === 'desktop'|isTauri|localInvoke|@tauri-apps" packages/`
-   kosong; tes `no-platform-leak` hijau untuk semua paket.
-2. Alias `@app-web/*` dihapus dari `apps/desktop`.
-3. Tes 84 file di `studio/` + `dj/__tests__` + `library/*.test` + `roblox`
-   lolos di lokasi baru; tes yang dulu mem-mock `@tauri-apps/api` kini
-   mem-mock kontrak (lebih kecil) — dan yang menguji implementasi desktop
-   pindah ke `apps/desktop`.
-4. Web: perilaku identik (uji manual docs/09 M5–M8 + smoke test).
+   kosong; `no-platform-leak` hijau untuk sepuluh paket; allowlist cabang
+   `kind` di `no-desktop-leak` KOSONG (kini memindai `packages/*` juga).
+2. Alias `@app-web/*` dihapus dari `tsconfig.base.json`, `workspace-aliases`,
+   dan `dawAliases`; `app-web-imports.test.ts` menjaga string itu tidak ada
+   di berkas ts/tsx/json/css mana pun di repo.
+3. Semua tes lolos di lokasi baru; `export/*.test.ts` terbagi: yang murni
+   pipeline ke engine, yang butuh `StudioState` (`run-export.test`, `parity`,
+   `wasm-integration`, `worker-host`) tetap di studio. Tes `libraryApi` host
+   → `registry.test.ts` (library); tes `modelBytes` host web →
+   `model-bytes.test.ts` (proof-stem). `contract_tests.rs` membaca DTO dari
+   path paket.
+4. Web: perilaku identik (smoke test + tes shell); uji manual docs/09 M5–M8
+   belum dijalankan ulang di branch ini.
 
 ### P4 — `studio-core`: lapisan yang tidak tahu lane
 
 Dari `packages/studio` diekstrak: `model.ts` bagian asset/peaks, `timeline/`
 non-lane (`waveform`, `wave-window`, `fade`, `clip-trim`, `clip-snap`,
 `normalize`, `content-hash`, `sniff`, `audio-import`, `url-import`,
-`import-sink`, `beat-*`, `envelope`, `stem*`), `analysis/`, `export/`,
+`import-sink`, `beat-*`, `envelope`, `stem*`), `analysis/`,
 `persist/decode-asset`, dan `stem/`. `dj/` dialihkan ke `studio-core`.
+Pipeline export (`run-export`, `sinks`, `wasm-engine`, `loudness-analyzer`,
+bentuk payload) SUDAH di `packages/engine/src/export/` sejak P3 — yang
+tersisa di `studio/export/` hanya `buildExportPayload` dan `worker-host`.
 
 **Done:**
 1. `packages/dj` tidak mengimpor `@kelasmalam/studio` sama sekali (hanya

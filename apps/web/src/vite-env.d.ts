@@ -1,26 +1,12 @@
 /// <reference types="vite/client" />
 
 /**
- * Variabel build yang di-inject `buildInfoDefines()` di `web/vite.config.ts`.
- *
- * Semuanya opsional dengan sengaja: vitest tidak memuat `vite.config.ts`, jadi
- * di tes nilainya memang tidak ada — dan tipe yang berpura-pura selalu ada akan
- * menyembunyikan itu (lihat `src/build-info.ts`).
+ * Variabel env yang dibaca APP ini (`AppShell.tsx`, `platform/web.ts`).
+ * Variabel yang dibaca paket dideklarasikan paketnya sendiri
+ * (`packages/{shell,roblox,soundcloud}/src/vite-env.d.ts`); augmentasi
+ * `ImportMetaEnv` digabung TypeScript.
  */
 interface ImportMetaEnv {
-  readonly VITE_APP_VERSION?: string;
-  readonly VITE_BUILD_COMMIT?: string;
-  readonly VITE_BUILD_BRANCH?: string;
-  readonly VITE_BUILD_TIME?: string;
-  /**
-   * Basis URL Worker unggah Roblox (`backend/`), mis.
-   * `https://dawonweb-roblox.contoh.workers.dev`.
-   *
-   * TIDAK ada nilai bawaan, dengan sengaja: halaman `/roblox` hanya menyalakan
-   * tombol UNGGAH kalau ini diisi DAN Worker-nya menjawab. Lihat
-   * `roblox/RobloxRoute.tsx`.
-   */
-  readonly VITE_ROBLOX_API?: string;
   /**
    * Basis URL Worker kepustakaan (`backend/`, `wrangler.library.toml`).
    *
@@ -29,6 +15,4 @@ interface ImportMetaEnv {
    * seluruh aplikasi berjalan penuh tanpa akun (docs/16 §6).
    */
   readonly VITE_LIBRARY_API?: string;
-  /** Basis URL soundclaude-server. Default pengembangan: http://localhost:8080. */
-  readonly VITE_SOUNDCLAUDE_API?: string;
 }

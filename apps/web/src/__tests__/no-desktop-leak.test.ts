@@ -18,9 +18,9 @@
  *      `desktop-transport`, `window/desktop`).
  *   2. Tidak ada pemanggilan `isTauri(` / `localInvoke(` di kode (komentar
  *      boleh menyebutnya — sejarahnya tercatat di sana).
- *   3. Cabang `kind === 'desktop'` yang TERSISA dikunci dalam allowlist: tiap
- *      entri adalah pertanyaan ke KONTRAK host (bukan `isTauri`) dan sudah
- *      berkomentar `TODO(P3)` atau alasan tetapnya (docs/25 §1c).
+ *   3. Tidak ada cabang `kind === 'desktop'` sama sekali — sejak docs/25 P3
+ *      dua yang tersisa (prefetch model, unduhan SoundCloud) menjadi
+ *      pertanyaan ke KONTRAK host (`modelBytes`/`downloadUrl` ada atau tidak).
  *   4. `apps/web/package.json` tidak mendeklarasikan `@tauri-apps/*`.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -31,6 +31,7 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = fileURLToPath(new URL('..', import.meta.url));
 const APP = fileURLToPath(new URL('../..', import.meta.url));
+const PACKAGES = fileURLToPath(new URL('../../../../packages', import.meta.url));
 
 /** Specifier modul yang berarti "desktop". Dicocokkan pada SPECIFIER impor, bukan teks bebas. */
 const FORBIDDEN_SPECIFIERS: readonly RegExp[] = [
@@ -52,15 +53,10 @@ const FORBIDDEN_CALLS: readonly RegExp[] = [/\bisTauri\s*\(/, /\blocalInvoke\s*\
 
 /**
  * Cabang `kind === 'desktop'` / `kind !== 'desktop'` yang masih boleh ada,
- * relatif terhadap `apps/web/src`. Harus SAMA PERSIS dengan kenyataan.
- *
- *   - `proof-stem/scnet-model.ts`: tetap — pertanyaan ke kontrak host
- *     (`modelBytes` dijalankan di main thread karena IPC tidak ada di worker),
- *     bukan `isTauri` (docs/25 §1c baris terakhir).
- *   - `soundcloud/SoundCloudDialog.tsx`: `TODO(P3)` — tombol DOWNLOAD memilih
- *     `openExternal` vs `<a download>`; ikut disuntik saat soundcloud jadi paket.
+ * relatif terhadap `apps/web/src`. KOSONG sejak docs/25 P3 — dan `packages/*`
+ * dijaga `no-platform-leak.test.ts` dengan aturan yang sama.
  */
-const KIND_BRANCH_ALLOWLIST: readonly string[] = ['proof-stem/scnet-model.ts', 'soundcloud/SoundCloudDialog.tsx'];
+const KIND_BRANCH_ALLOWLIST: readonly string[] = [];
 
 function* sources(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
@@ -89,11 +85,18 @@ function specifiers(code: string): string[] {
   return out;
 }
 
-const FILES = [...sources(SRC)];
+/*
+ * Sejak P3 hampir seluruh kode halaman adalah paket, jadi yang dipindai
+ * adalah `apps/web/src` DAN `packages/<paket>/src`: keduanya masuk bundel web, dan
+ * satu impor modul desktop di paket sama bocornya dengan di app.
+ */
+const FILES = [...sources(SRC), ...sources(PACKAGES)];
+const label = (f: string): string => (f.startsWith(SRC) ? relative(SRC, f) : 'packages/' + relative(PACKAGES, f));
 
-describe('apps/web/src tidak membawa desktop (docs/25 P2)', () => {
+describe('apps/web/src + packages/* tidak membawa desktop (docs/25 P2, P3)', () => {
   it('ada berkas yang diperiksa', () => {
-    expect(FILES.length).toBeGreaterThan(100);
+    expect(FILES.filter((f) => f.startsWith(SRC)).length).toBeGreaterThan(15);
+    expect(FILES.length).toBeGreaterThan(300);
   });
 
   it('tidak ada impor ke @tauri-apps/* maupun modul milik apps/desktop', () => {
@@ -101,20 +104,20 @@ describe('apps/web/src tidak membawa desktop (docs/25 P2)', () => {
     for (const f of FILES) {
       const code = stripComments(readFileSync(f, 'utf8'));
       for (const spec of specifiers(code)) {
-        if (FORBIDDEN_SPECIFIERS.some((re) => re.test(spec))) hits.push(`${relative(SRC, f)} → ${spec}`);
+        if (FORBIDDEN_SPECIFIERS.some((re) => re.test(spec))) hits.push(`${label(f)} → ${spec}`);
       }
     }
     expect(hits).toEqual([]);
   });
 
   it.each(FORBIDDEN_CALLS)('tidak memanggil %s', (re) => {
-    const hits = FILES.filter((f) => re.test(stripComments(readFileSync(f, 'utf8')))).map((f) => relative(SRC, f));
+    const hits = FILES.filter((f) => re.test(stripComments(readFileSync(f, 'utf8')))).map(label);
     expect(hits).toEqual([]);
   });
 
   it("cabang kind === 'desktop' yang tersisa sama persis dengan allowlist", () => {
     const actual = FILES.filter((f) => /\bkind\s*[!=]==\s*'desktop'/.test(stripComments(readFileSync(f, 'utf8'))))
-      .map((f) => relative(SRC, f))
+      .map(label)
       .sort();
     expect(actual).toEqual([...KIND_BRANCH_ALLOWLIST].sort());
   });

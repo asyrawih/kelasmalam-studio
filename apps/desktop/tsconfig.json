@@ -1,11 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   /* `packages/*\/src` ikut supaya SATU `tsc --noEmit` memeriksa semua sumber
-     yang masuk bundel desktop — paket dikonsumsi sebagai sumber. `../web/src`
-     ikut karena alias `@app-web/*` (TODO(P3)) masih menarik sumber app web
-     (studio, dj, library, roblox, …) berikut deklarasi ambient-nya
-     (`vite-env.d.ts`, `onnxruntime-web.d.ts`). Hilang bersama alias itu.
-     `engine/src/wasm` dikecualikan: artefak build wasm-bindgen, bukan sumber. */
-  "include": ["src", "vite.config.ts", "../../packages/*/src", "../web/src"],
+     yang masuk bundel desktop — paket dikonsumsi sebagai sumber. Sejak docs/25
+     P3 tidak ada lagi sumber `apps/web` yang ditarik. `engine/src/wasm`
+     dikecualikan: artefak build wasm-bindgen, bukan sumber. */
+  "include": ["src", "vite.config.ts", "../../packages/*/src"],
   "exclude": ["dist", "../../packages/engine/src/wasm"]
 }

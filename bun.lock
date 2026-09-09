@@ -10,9 +10,15 @@
       "version": "0.1.0",
       "dependencies": {
         "@breezystack/lamejs": "^1.2.7",
+        "@kelasmalam/dj": "workspace:*",
         "@kelasmalam/engine": "workspace:*",
+        "@kelasmalam/library": "workspace:*",
         "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/proof-stem": "workspace:*",
+        "@kelasmalam/roblox": "workspace:*",
         "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/soundcloud": "workspace:*",
+        "@kelasmalam/studio": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "@tauri-apps/api": "^2.11.1",
         "@tauri-apps/plugin-deep-link": "^2.4.10",
@@ -20,7 +26,6 @@
         "@tauri-apps/plugin-fs": "^2.5.2",
         "@tauri-apps/plugin-opener": "^2.5.5",
         "@tauri-apps/plugin-updater": "^2.11.0",
-        "onnxruntime-web": "1.21.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "vorbis-encoder-js": "^1.0.2",
@@ -46,12 +51,17 @@
       "version": "0.1.0",
       "dependencies": {
         "@breezystack/lamejs": "^1.2.7",
+        "@kelasmalam/dj": "workspace:*",
         "@kelasmalam/engine": "workspace:*",
+        "@kelasmalam/library": "workspace:*",
         "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/proof-stem": "workspace:*",
+        "@kelasmalam/roblox": "workspace:*",
         "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/soundcloud": "workspace:*",
+        "@kelasmalam/studio": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "@vercel/analytics": "^2.0.1",
-        "onnxruntime-web": "1.21.0",
         "react": "^18.3.1",
         "react-dom": "^18.3.1",
         "vorbis-encoder-js": "^1.0.2",
@@ -81,11 +91,33 @@
         "vitest": "^2.1.4",
       },
     },
+    "packages/dj": {
+      "name": "@kelasmalam/dj",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/engine": "workspace:*",
+        "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/proof-stem": "workspace:*",
+        "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
     "packages/engine": {
       "name": "@kelasmalam/engine",
       "version": "0.1.0",
       "dependencies": {
         "@breezystack/lamejs": "^1.2.7",
+        "@kelasmalam/platform": "workspace:*",
         "react": "^18.3.1",
         "vorbis-encoder-js": "^1.0.2",
         "wasm-feature-detect": "^1.6.2",
@@ -96,6 +128,26 @@
         "@vitejs/plugin-react": "^4.3.3",
         "typescript": "^5.6.3",
         "vite": "^5.4.10",
+        "vitest": "^2.1.4",
+      },
+    },
+    "packages/library": {
+      "name": "@kelasmalam/library",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/dj": "workspace:*",
+        "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
         "vitest": "^2.1.4",
       },
     },
@@ -112,6 +164,43 @@
         "vitest": "^2.1.4",
       },
     },
+    "packages/proof-stem": {
+      "name": "@kelasmalam/proof-stem",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "onnxruntime-web": "1.21.0",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
+    "packages/roblox": {
+      "name": "@kelasmalam/roblox",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/library": "workspace:*",
+        "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
     "packages/shell": {
       "name": "@kelasmalam/shell",
       "version": "0.1.0",
@@ -119,6 +208,44 @@
         "react": "^18.3.1",
       },
       "devDependencies": {
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
+    "packages/soundcloud": {
+      "name": "@kelasmalam/soundcloud",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
+    "packages/studio": {
+      "name": "@kelasmalam/studio",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/engine": "workspace:*",
+        "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/proof-stem": "workspace:*",
+        "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.2",
         "@types/react": "^18.3.12",
         "typescript": "^5.6.3",
         "vitest": "^2.1.4",
@@ -264,11 +391,23 @@
 
     "@kelasmalam/desktop": ["@kelasmalam/desktop@workspace:apps/desktop"],
 
+    "@kelasmalam/dj": ["@kelasmalam/dj@workspace:packages/dj"],
+
     "@kelasmalam/engine": ["@kelasmalam/engine@workspace:packages/engine"],
+
+    "@kelasmalam/library": ["@kelasmalam/library@workspace:packages/library"],
 
     "@kelasmalam/platform": ["@kelasmalam/platform@workspace:packages/platform"],
 
+    "@kelasmalam/proof-stem": ["@kelasmalam/proof-stem@workspace:packages/proof-stem"],
+
+    "@kelasmalam/roblox": ["@kelasmalam/roblox@workspace:packages/roblox"],
+
     "@kelasmalam/shell": ["@kelasmalam/shell@workspace:packages/shell"],
+
+    "@kelasmalam/soundcloud": ["@kelasmalam/soundcloud@workspace:packages/soundcloud"],
+
+    "@kelasmalam/studio": ["@kelasmalam/studio@workspace:packages/studio"],
 
     "@kelasmalam/ui": ["@kelasmalam/ui@workspace:packages/ui"],
 

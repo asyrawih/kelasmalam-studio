@@ -10,11 +10,11 @@
  * yang boleh diimpor dua app hanya berguna kalau ia benar-benar netral, dan
  * "benar-benar" berarti merah di CI, bukan catatan di PR.
  *
- * Alias `@app-web/*` adalah utang yang DINYATAKAN: tiap pemakaiannya wajib
- * berkomentar `TODO(P3)`/`TODO(P4)` di baris impornya, dan daftar berkasnya
- * dikunci di `APP_WEB_ALLOWLIST`. Menambah pengecualian baru berarti mengubah
- * daftar itu dengan sadar — dan menghapus yang sudah bersih juga, supaya
- * daftar ini tidak jadi museum.
+ * Sejak docs/25 P3 tidak ada lagi alias ke `apps/*`; penjaga bahwa alias
+ * sementara P2 itu tidak kembali ada di
+ * `apps/desktop/src/__tests__/app-web-imports.test.ts`, dan graf dependensi
+ * antar-paket (tanpa siklus, `package.json` = kenyataan) dijaga
+ * `no-package-cycles.test.ts`.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -27,17 +27,6 @@ const PACKAGES = join(ROOT, 'packages');
 
 /** String yang berarti "tahu platformnya" — dilarang di paket, apa pun konteksnya. */
 const FORBIDDEN: readonly string[] = ['@tauri-apps', '@vercel', 'isTauri', "kind === 'desktop'", 'localInvoke'];
-
-/**
- * Berkas paket yang masih mengimpor kode app lewat `@app-web/*`, relatif
- * terhadap `packages/`. Harus SAMA PERSIS dengan kenyataan.
- *
- *   - `engine/src/audio/export-worker.ts`: pipeline export (`studio/export`)
- *     pindah ke `studio-core` di P4.
- *   - `platform/src/host.ts`: tipe `LibraryApi`, `ExportSink`, katalog SCNet
- *     pindah ke paketnya masing-masing di P3.
- */
-const APP_WEB_ALLOWLIST: readonly string[] = ['engine/src/audio/export-worker.ts', 'platform/src/host.ts'];
 
 function* sources(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
@@ -59,8 +48,21 @@ const FILES = packageDirs().flatMap((p) => [...sources(join(PACKAGES, p, 'src'))
 
 describe('packages/* tidak tahu platformnya (docs/25 §1b)', () => {
   it('ada paket dan berkas yang diperiksa', () => {
-    expect(packageDirs()).toEqual(expect.arrayContaining(['engine', 'ui', 'shell', 'platform']));
-    expect(FILES.length).toBeGreaterThan(40);
+    expect(packageDirs()).toEqual(
+      expect.arrayContaining([
+        'engine',
+        'ui',
+        'shell',
+        'platform',
+        'studio',
+        'dj',
+        'library',
+        'roblox',
+        'soundcloud',
+        'proof-stem',
+      ]),
+    );
+    expect(FILES.length).toBeGreaterThan(300);
   });
 
   it.each(FORBIDDEN)('tidak memuat %s', (needle) => {
@@ -73,26 +75,6 @@ describe('packages/* tidak tahu platformnya (docs/25 §1b)', () => {
       relative(PACKAGES, f),
     );
     expect(hits).toEqual([]);
-  });
-
-  it('tiap impor @app-web/* berkomentar TODO(P3)/TODO(P4) di baris yang sama', () => {
-    const bad: string[] = [];
-    for (const f of FILES) {
-      const lines = readFileSync(f, 'utf8').split('\n');
-      lines.forEach((line, i) => {
-        if (line.includes("from '@app-web/") && !/TODO\(P[34]\)/.test(line)) {
-          bad.push(`${relative(PACKAGES, f)}:${i + 1}`);
-        }
-      });
-    }
-    expect(bad).toEqual([]);
-  });
-
-  it('daftar berkas pemakai @app-web/* sama persis dengan allowlist', () => {
-    const actual = FILES.filter((f) => readFileSync(f, 'utf8').includes("from '@app-web/"))
-      .map((f) => relative(PACKAGES, f))
-      .sort();
-    expect(actual).toEqual([...APP_WEB_ALLOWLIST].sort());
   });
 
   it('package.json paket tidak mendeklarasikan dependensi @tauri-apps/* atau @vercel/*', () => {
