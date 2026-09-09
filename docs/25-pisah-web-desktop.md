@@ -70,6 +70,7 @@ Yang ditemukan dari angka itu:
 apps/
   web/                 ← `web/` hari ini, dipindah (git mv), Vercel
   desktop/             ← frontend Tauri: entry, routes, komposisi halaman, adapter desktop
+    src-tauri/         ← `desktop/src-tauri` hari ini, dipindah (git mv); frontendDist → ../dist
 packages/
   engine/              ← audio/ (EngineClient, worklet, SAB), encoders/, state/, wasm/ (artefak build)
   ui/                  ← ui/cyber, ui/lib, ui/panels
@@ -80,12 +81,14 @@ packages/
   dj/                  ← dj/
   library/             ← kontrak LibraryApi + UI dock/browser; implementasi Worker dan lokal disuntik apps
   proof-stem/          ← model SCNet + halaman
-desktop/src-tauri/     ← tetap (Rust); frontendDist → ../../apps/desktop/dist
 backend/               ← tetap
 ```
 
 `package.json` root memakai `"workspaces": ["apps/*", "packages/*", "backend"]`.
-`pnpm-workspace.yaml` dan `pnpm-lock.yaml` dihapus; `bun.lock` yang dipegang.
+`pnpm-workspace.yaml` dan `pnpm-lock.yaml` dihapus; `bun.lock` yang dipegang
+(diputuskan 9 Sep 2026). Folder `desktop/` di root hilang: seluruh isinya
+adalah `src-tauri`, dan tempat yang benar untuknya adalah di samping frontend
+yang ia bungkus.
 
 ### b) Aturan impor, ditegakkan tes
 
@@ -147,12 +150,23 @@ menambah `_headers`/Analytics; desktop menambah `envPrefix: ['VITE_',
 'TAURI_']` dan `clearScreen: false`. Artefak WASM ditulis
 `scripts/build-wasm.sh` ke `packages/engine/wasm/` (dari `web/src/wasm/`).
 
-### g) Rust tidak disentuh, kecuali dua path
+### g) Kode Rust tidak berubah; `src-tauri` pindah folder
 
-`desktop/src-tauri` tetap di tempatnya (anggota workspace Cargo, dikecualikan
-CI Ubuntu, docs/20 §1e). Yang berubah: `frontendDist` → `../../apps/desktop/dist`,
-`beforeDevCommand` → `cd ../../apps/desktop && bun run dev`. `crates/*`,
-`backend/`, skema, dan `scripts/release-desktop.sh` (path dist) mengikuti.
+`crates/*` dan isi `src-tauri` tidak disentuh. `desktop/src-tauri` dipindah
+utuh (`git mv`) ke `apps/desktop/src-tauri`, tetap anggota workspace Cargo
+dan tetap dikecualikan dari job CI Ubuntu (docs/20 §1e). Semua yang
+menyebut path lama diperbarui dalam PR yang sama — daftar lengkapnya dari
+`grep -rn "desktop/src-tauri"`:
+
+| Berkas | Yang berubah |
+|---|---|
+| `Cargo.toml` (root) | anggota workspace `"apps/desktop/src-tauri"` |
+| `package.json` (root) | `dev:desktop`, `build:desktop` → `cd apps/desktop/src-tauri` |
+| `apps/desktop/src-tauri/tauri.conf.json` | `frontendDist: "../dist"`, `beforeDevCommand: "cd .. && bun run dev"` |
+| `.github/workflows/ci.yml` | `working-directory: apps/desktop/src-tauri` |
+| `scripts/release-desktop.sh` | `TAURI_DIR="$ROOT/apps/desktop/src-tauri"` |
+| `scripts/desktop-version.sh` | `TAURI_CONF` path baru |
+| docs/20 §1e, §1c, §2d; docs/21 §0; docs/22; docs/23 | path baru, satu kalimat "dipindah oleh docs/25" |
 
 ---
 
@@ -175,6 +189,7 @@ CI Ubuntu, docs/20 §1e). Yang berubah: `frontendDist` → `../../apps/desktop/d
 | `dj/` | `packages/dj/src/` | `CollectionBrowser` memakai hook kontrak, sudah benar |
 | `proof-stem/`, `stem/` | `packages/proof-stem/src/`, `packages/studio-core` (P4) | |
 | `landing/`, `App.tsx`, `main.tsx`, `index.css`, `public/` | `apps/web/src/` | |
+| `desktop/src-tauri/` (di luar `web/`) | `apps/desktop/src-tauri/` | utuh, `git mv`; rujukan path di §1g |
 
 ---
 
@@ -182,8 +197,6 @@ CI Ubuntu, docs/20 §1e). Yang berubah: `frontendDist` → `../../apps/desktop/d
 
 ```
 P0 workspace ─► P1 paket netral ─► P2 apps/desktop lahir ─► P3 studio/dj/library jadi paket ─► P4 studio-core ─► docs/24 F0…
-                                          │
-                                          └─► (P2b, opsional) desktop/src-tauri → apps/desktop/src-tauri
 ```
 
 P1 dan P2 bisa dikerjakan paralel setelah P0, asal P2 memakai alias ke folder
@@ -194,7 +207,8 @@ lama untuk paket yang belum diekstrak. P3 menunggu keduanya.
 Perubahan tanpa perilaku baru: `git mv web apps/web`, `workspaces` di root,
 hapus `pnpm-*`, perbarui skrip root, `vercel.json`, `deploy.yml`, `ci.yml`
 (artefak `web-dist`), `scripts/build-wasm.sh`, `scripts/size-check.sh`,
-`scripts/release-desktop.sh`, `tauri.conf.json`, docs/04 dan docs/20 §2a.
+`scripts/release-desktop.sh`, `tauri.conf.json` (`frontendDist` sementara
+→ `../../apps/web/dist`), docs/04 dan docs/20 §2a.
 
 **Done:**
 1. `bun install` bersih dari root; `bun run build`, `bun run test`,
@@ -225,7 +239,10 @@ melepas `desktop.ts`). Tiap paket punya `package.json` (`name`,
 Entry sendiri, `AppShell` dengan tabel route sendiri (tanpa `landing`,
 `privacy-policy`, `terms-of-service`; buka langsung `/studio`), host desktop
 dipasang di `main.tsx`, `window.ts` untuk judul/tutup/menu, `youtube/`,
-kepustakaan lokal, roblox lokal, soundcloud in-process. Untuk folder yang
+kepustakaan lokal, roblox lokal, soundcloud in-process. Dalam PR yang sama,
+`desktop/src-tauri` dipindah ke `apps/desktop/src-tauri` dengan semua
+rujukan path §1g — supaya `tauri.conf.json` hanya diubah sekali, bukan dua
+kali (P0 lalu P2). Untuk folder yang
 belum jadi paket (`studio`, `dj`, `library`, `roblox`), `apps/desktop`
 memakai alias sementara `@app-web/*` → `apps/web/src/*`, dan cabang
 `kind === 'desktop'` di dalamnya **belum** dibersihkan — itu P3.
@@ -235,7 +252,9 @@ folder-nya sudah paket dibersihkan sekarang, sisanya diberi `TODO(P3)` yang
 dihitung tes.
 
 **Done:**
-1. `cargo tauri dev` dan `cargo tauri build` memakai `apps/desktop`; Studio
+1. `bun run dev:desktop` dan `bun run build:desktop` berjalan dari
+   `apps/desktop/src-tauri`; `git log --follow apps/desktop/src-tauri/src/lib.rs`
+   menampilkan riwayat lama; folder `desktop/` di root tidak ada lagi. Studio
    memutar, export menulis berkas, drop dari Finder, YouTube, kepustakaan
    lokal, Roblox lokal, SoundCloud in-process — semua alur docs/20–23
    yang sudah terbukti tetap lolos (daftar uji manual di docs/22 dijalankan).
@@ -247,13 +266,10 @@ dihitung tes.
 4. `main.tsx` desktop tidak memanggil `isTauri()`; `getPlatformHost()` di
    paket tidak lagi mengimpor `@tauri-apps/api/core`.
 5. Tes `desktop.test.tsx`, `local-invoke.test.ts`, `contract_tests.rs` pindah
-   dan lolos.
-
-### P2b — (opsional) `desktop/src-tauri` → `apps/desktop/src-tauri`
-
-Hanya kerapian. Menyentuh `Cargo.toml` workspace, `ci.yml` (pengecualian
-Ubuntu), `scripts/release-desktop.sh`, docs/20 §1e, docs/22. Boleh ditunda
-tanpa memblokir apa pun.
+   dan lolos; `cargo test --workspace` dan job `native` CI hijau dengan
+   anggota workspace di path baru.
+6. `scripts/release-desktop.sh` dan `scripts/desktop-version.sh` dijalankan
+   sekali sampai tahap build (tanpa notarisasi) untuk membuktikan path.
 
 ### P3 — `studio`, `dj`, `library`, `roblox`, `soundcloud`, `proof-stem` jadi paket
 
@@ -291,8 +307,9 @@ non-lane (`waveform`, `wave-window`, `fade`, `clip-trim`, `clip-snap`,
 
 ## 4. Yang tidak berubah
 
-- `crates/*`, `backend/`, `schema/`, kontrak event/command Tauri
-  (`LOCAL_COMMAND_NAMES` ↔ `contract_tests.rs`), format project (`SCHEMA_VERSION`).
+- `crates/*`, `backend/`, `schema/`, isi `src-tauri` (hanya foldernya yang
+  pindah), kontrak event/command Tauri (`LOCAL_COMMAND_NAMES` ↔
+  `contract_tests.rs`), format project (`SCHEMA_VERSION`).
 - Design system `cyber` dan `design/*.dc.html`.
 - Alur rilis desktop docs/22, kecuali path `dist`.
 - URL publik web, routing `/studio`, `/dj`, `/roblox`, `/proof-stem`.
