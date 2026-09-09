@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import type { BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import {
   DEFAULT_TEMPO,
   EQ_KILL_DB,

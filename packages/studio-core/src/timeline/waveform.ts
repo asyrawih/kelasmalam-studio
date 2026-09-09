@@ -30,8 +30,7 @@
  * alasan tiap pita punya penguatan tampilannya sendiri.
  */
 
-import type { StudioAsset } from '../store';
-import { loopTileCount } from './clip-loop';
+import type { Samples, StudioAsset } from '../assets/model';
 import { allocColumns, readEnvelope, type EnvelopeColumns } from './envelope';
 import type { WaveWindow } from './wave-window';
 
@@ -314,6 +313,15 @@ export function drawClipWave(
     return;
   }
   drawAssetWave(ctx, asset, sourceStart, sourceLen, width, height, dpr, style, win);
+}
+
+/**
+ * Berapa putaran region loop yang dibutuhkan untuk mengisi `sourceLen`.
+ * Matematika murni; `timeline/clip-loop.ts` di studio mengekspornya ulang.
+ */
+export function loopTileCount(sourceLen: Samples, loopLen: Samples): number {
+  if (!(loopLen > 0) || !(sourceLen > 0)) return 1;
+  return Math.max(1, Math.ceil(sourceLen / loopLen));
 }
 
 /**

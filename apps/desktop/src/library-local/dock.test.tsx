@@ -28,7 +28,7 @@ import { fakeLibraryApi } from '@kelasmalam/library/library/fake-api';
 import { LibraryDock } from '@kelasmalam/library/library/LibraryDock';
 import type { LibraryTrack } from '@kelasmalam/library/library/model';
 import { libraryActions, libraryStore } from '@kelasmalam/library/library/store';
-import { notifyImported } from '@kelasmalam/studio/studio/timeline/import-sink';
+import { notifyImported } from '@kelasmalam/studio-core/timeline/import-sink';
 
 const HASH = 'a'.repeat(64);
 

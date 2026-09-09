@@ -22,8 +22,8 @@
  */
 
 import { EMPTY_TRACK_CUES, type TrackCues } from '@kelasmalam/dj/dj/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 import { djActions, djStore } from '@kelasmalam/dj/dj/store';
-import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 import type { LibraryApi } from './api';
 
 /** Bentuk yang diserahkan ke `PUT /tracks/:hash/marks`. */
@@ -46,7 +46,7 @@ export interface Marks {
  */
 export function collectMarks(assetId: number): Marks | null {
   const cues = djStore.getState().cues[assetId];
-  const asset = studioStore.getState().assets[assetId];
+  const asset = assetStore.getState().assets[assetId];
 
   const adaCue =
     cues !== undefined &&
@@ -99,12 +99,12 @@ export function applyMarks(assetId: number, raw: unknown): void {
     // Grid DULU, kunci belakangan: `setAssetBeatGrid` menolak asset yang
     // terkunci, jadi urutan terbalik memulihkan kuncinya dan membuang justru
     // koreksi yang dikunci itu. Catatan yang sama ada di `persistence.ts`.
-    studioActions.setAssetBeatGrid(assetId, {
+    assetActions.setAssetBeatGrid(assetId, {
       bpm: grid.bpm ?? null,
       offsetSec: grid.offsetSec ?? null,
     });
-    studioActions.setAssetBeatAnchors(assetId, grid.anchors ?? null);
-    if (grid.lock === true) studioActions.setAnalysisLock(assetId, true);
+    assetActions.setAssetBeatAnchors(assetId, grid.anchors ?? null);
+    if (grid.lock === true) assetActions.setAnalysisLock(assetId, true);
   }
 }
 

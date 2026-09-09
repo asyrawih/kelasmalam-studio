@@ -18,7 +18,7 @@ import { DEFAULT_FADE_CURVE, defaultEq, type StudioLane, type StudioState } from
 
 const created: { chain: readonly { kind: string }[] }[] = [];
 
-vi.mock('./fx-node', () => ({
+vi.mock('@kelasmalam/studio-core/preview/fx-node', () => ({
   ensureFxRuntime: () => Promise.resolve(true),
   fxCatalog: () => null,
   fxPreviewStatus: () => ({ ready: true, error: null }),

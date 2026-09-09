@@ -36,7 +36,7 @@
  * DILIHAT (phase meter) alih-alih baru terdengar dua lagu kemudian.
  */
 
-import { beatIndexAt, type BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import { beatIndexAt, type BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { TEMPO_RANGES, faderForBpm, tempoRatio, type DeckTempo, type Samples, type TempoRange } from './model';
 
 /** Satu deck sebagaimana dibutuhkan perhitungan sync. */

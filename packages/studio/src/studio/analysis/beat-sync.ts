@@ -1,5 +1,6 @@
 /** Matematika tempo/beat/bar sync, dipisah dari store dan React agar teruji. */
 
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
 import {
   MAX_LANE_SPEED,
   MIN_LANE_SPEED,
@@ -7,14 +8,14 @@ import {
   type StudioClip,
   type StudioLane,
 } from '../model';
-import type { StudioAsset } from '../store';
+
 import {
   beatIndexAt,
   nearestTrackedBeat,
   resolveBeatGridAt,
   sourceAtBeat,
   type BeatDivision,
-} from './beat-grid';
+} from '@kelasmalam/studio-core/analysis/beat-grid';
 
 export type SyncAlignment = 'tempo' | BeatDivision;
 

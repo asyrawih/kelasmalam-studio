@@ -18,7 +18,9 @@
  */
 
 import { restoreProject, serialize, type StoredAssetBytes } from '@kelasmalam/studio/studio/persist/persistence';
-import { importBytesToAsset } from '@kelasmalam/studio/studio/timeline/audio-import';
+import { importBytesToAsset } from '@kelasmalam/studio-core/timeline/audio-import';
+import { assetStore } from '@kelasmalam/studio-core/assets/store';
+
 import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 import type { LibraryApi } from './api';
 import { libraryActions, libraryStore } from './store';
@@ -37,13 +39,14 @@ export type SaveOutcome =
  */
 export function unsavedAssets(): readonly string[] {
   const state = studioStore.getState();
+  const assets = assetStore.getState().assets;
   const library = libraryStore.getState();
   const known = new Set(library.tracks.map((t) => t.hash));
 
   const missing: string[] = [];
   for (const lane of state.lanes) {
     for (const clip of lane.clips) {
-      const asset = state.assets[clip.assetId];
+      const asset = assets[clip.assetId];
       if (asset === undefined) continue;
       const nama = asset.name;
       if (asset.contentHash === '') {
@@ -189,7 +192,7 @@ export async function openProject(
     .filter((x) => !bytes.some((b) => b.contentHash === x.hash))
     .map((x) => ({
       id: x.id,
-      name: studioStore.getState().assets[x.id]?.name ?? '',
+      name: assetStore.getState().assets[x.id]?.name ?? '',
       bytes: new ArrayBuffer(0),
       contentHash: x.hash,
     }));
@@ -197,7 +200,7 @@ export async function openProject(
   const result = await restoreProject(json, [...bytes, ...already], async (id2) =>
     // Sudah terdaftar lewat `importBytesToAsset` di atas; yang tersisa hanya
     // menjawab "asset ini ada", supaya ia masuk peta hash → id.
-    studioStore.getState().assets[id2] !== undefined,
+    assetStore.getState().assets[id2] !== undefined,
   );
 
   return result.restored

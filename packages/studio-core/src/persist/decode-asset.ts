@@ -14,8 +14,8 @@
  */
 
 import { requestAssetTempo } from '../analysis/tempo-client';
-import { ensureContext, registerBuffer } from '../preview/audio-preview';
-import { studioActions } from '../store';
+import { assetActions } from '../assets/store';
+import { ensureContext, registerBuffer } from '../preview/audio-context';
 import { assetFromBuffer } from '../timeline/audio-import';
 
 export async function decodeStoredAsset(
@@ -31,7 +31,7 @@ export async function decodeStoredAsset(
     // jadi salin dulu — kalau tidak, percobaan berikutnya dapat buffer kosong.
     const buffer = await ctx.decodeAudioData(bytes.slice(0));
     registerBuffer(id, buffer);
-    studioActions.registerAsset(assetFromBuffer(id, name, buffer));
+    assetActions.registerAsset(assetFromBuffer(id, name, buffer));
     // Tempo dianalisis ulang di sini, tidak ikut disimpan bersama byte-nya:
     // hasil turunan yang ikut tersimpan adalah satu bentuk data lagi yang bisa
     // basi terhadap perbaikan algoritma, dan analisisnya hanya ratusan

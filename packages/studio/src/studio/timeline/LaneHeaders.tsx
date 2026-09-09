@@ -24,6 +24,7 @@ import {
   samplesToSec,
   type StudioLane,
 } from '../model';
+import { assetStore } from '@kelasmalam/studio-core/assets/store';
 import { studioActions, studioStore, useStudio } from '../store';
 import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-preview';
 import { lanePulse } from './beat-pulse';
@@ -409,7 +410,7 @@ function useLanePulses(active: boolean): void {
       paint((id) => {
         const lane = s.lanes.find((l) => l.id === id);
         if (lane === undefined) return 0;
-        return lanePulse(lane, s.lanes, s.assets, s.sampleRate, timelineSec, audition);
+        return lanePulse(lane, s.lanes, assetStore.getState().assets, s.sampleRate, timelineSec, audition);
       });
       raf = requestAnimationFrame(frame);
     });

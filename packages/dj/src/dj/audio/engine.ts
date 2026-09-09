@@ -3,7 +3,7 @@
  *
  * ## Kenapa `AudioContext`-nya DIPINJAM, bukan dibuat sendiri
  *
- * `studio/preview/audio-preview.ts` sudah memiliki satu `AudioContext` dan satu
+ * `studio-core/preview/audio-context.ts` sudah memiliki satu `AudioContext` dan satu
  * cache `AudioBuffer` yang dipakai bersama oleh import, waveform, dan playback.
  * Membuat context kedua berarti men-decode ulang setiap lagu — puluhan megabyte
  * dan beberapa detik per lagu — untuk mendapatkan buffer yang isinya persis
@@ -34,17 +34,17 @@
  * "user melompat", persis seperti di `usePreviewPlayback`.
  */
 
-import { resolveBeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { ensureContext, getBuffer, previewSampleRate } from '@kelasmalam/studio/studio/preview/audio-preview';
-import { ensureFxRuntime, fxCatalog } from '@kelasmalam/studio/studio/preview/fx-node';
-import { studioStore } from '@kelasmalam/studio/studio/store';
+import { resolveBeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { assetStore } from '@kelasmalam/studio-core/assets/store';
+import { ensureContext, getBuffer, previewSampleRate } from '@kelasmalam/studio-core/preview/audio-context';
+import { ensureFxRuntime, fxCatalog } from '@kelasmalam/studio-core/preview/fx-node';
 import { djStore as djStoreRef } from '../store';
 import {
   autoStemMaskKey,
   getAutoStemAudio,
   getAutoStemMask,
   isFullStemMask,
-} from '@kelasmalam/studio/stem/auto-stem';
+} from '@kelasmalam/studio-core/stem/auto-stem';
 import {
   DECK_IDS,
   effectiveRate,
@@ -173,7 +173,7 @@ export class DjAudio {
 
     const level = s.gridEdit.metroLevel;
     const deck = s.decks[id];
-    const asset = deck.assetId === null ? undefined : studioStore.getState().assets[deck.assetId];
+    const asset = deck.assetId === null ? undefined : assetStore.getState().assets[deck.assetId];
     const grid = asset === undefined ? null : resolveBeatGrid(asset);
     const player = this.graph.channels[id].player;
     const pos = this.positionSamples(id);
@@ -364,7 +364,7 @@ function framesPerBeatFor(s: DjState): number | null {
   if (pick === null) return null;
   const deck = s.decks[pick];
   if (deck.assetId === null) return null;
-  const asset = studioStore.getState().assets[deck.assetId];
+  const asset = assetStore.getState().assets[deck.assetId];
   const grid = asset === undefined ? null : resolveBeatGrid(asset);
   if (grid === null) return null;
   const bpm = grid.bpm * tempoRatio(deck.tempo);
@@ -384,7 +384,7 @@ let failure: string | null = null;
  */
 export function ensureDjAudio(): DjAudio | null {
   if (instance !== null) return instance;
-  const sr = previewSampleRate() || studioStore.getState().sampleRate;
+  const sr = previewSampleRate();
   const ctx = ensureContext(sr);
   if (ctx === null) {
     failure = 'Web Audio tidak tersedia di lingkungan ini';

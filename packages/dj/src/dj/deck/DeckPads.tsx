@@ -13,7 +13,7 @@
 
 import { useRef } from 'react';
 
-import type { BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import type { BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { quantized } from '../model';
 import {
   BEAT_LOOP_PRESETS,

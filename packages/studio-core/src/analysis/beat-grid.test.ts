@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { StudioAsset } from '../store';
+import type { StudioAsset } from '../assets/model';
 import {
   BEATS_PER_BAR,
   MAX_GRID_BPM,

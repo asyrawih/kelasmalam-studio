@@ -11,14 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StudioPage } from '../../StudioPage';
 import { DEFAULT_FADE_CURVE, findClip, samplesToSec } from '../model';
 import { studioActions, studioStore } from '../store';
-import {
-  BeatProvider,
-  ClipEditPanel,
-  ClipWavePanel,
-  LaneHeaders,
-  OverviewStrip,
-  TimelinePanel,
-} from '../timeline';
+import { BeatProvider, ClipEditPanel, ClipWavePanel, LaneHeaders, OverviewStrip, TimelinePanel } from '../timeline';
 import { MenuBar, ReadoutStrip, STUDIO_MENUS, StudioHeader, TransportButtons } from '../shell';
 
 const RECT = {

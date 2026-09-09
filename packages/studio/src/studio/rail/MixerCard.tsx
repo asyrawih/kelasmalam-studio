@@ -9,7 +9,7 @@
 import { Card } from '@kelasmalam/ui/cyber';
 import type { StudioLane } from '../model';
 import { isAudible } from '../model';
-import { dbToFader, faderToDb, formatDb } from './fader';
+import { dbToFader, faderToDb, formatDb } from '@kelasmalam/ui/lib/fader';
 import { useLaneMeters } from './useLaneMeters';
 import { studioActions, useLanes, useSelectedLaneId } from './store-adapter';
 import { useDragFraction } from './useDragFraction';

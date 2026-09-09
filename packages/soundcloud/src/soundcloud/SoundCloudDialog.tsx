@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { studioActions, studioStore, useStudio } from '@kelasmalam/studio/studio/store';
-import { ensureContext } from '@kelasmalam/studio/studio/preview/audio-preview';
+import { ensureContext } from '@kelasmalam/studio-core/preview/audio-context';
 import { importBytesToLane } from '@kelasmalam/studio/studio/timeline/audio-import';
 import { Button } from '@kelasmalam/ui/cyber';
 import { getPlatformHost } from '@kelasmalam/platform';

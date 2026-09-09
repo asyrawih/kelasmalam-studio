@@ -10,12 +10,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../analysis/tempo-client', () => ({ requestAssetTempo: () => undefined }));
+vi.mock('@kelasmalam/studio-core/analysis/tempo-client', () => ({ requestAssetTempo: () => undefined }));
 
 /** Penahan decode: tes yang menentukan kapan tiap file selesai. */
 const pending: ((buffer: AudioBuffer) => void)[] = [];
 
-vi.mock('../preview/audio-preview', () => ({
+vi.mock('@kelasmalam/studio-core/preview/audio-context', () => ({
   ensureContext: () => ({
     sampleRate: 48_000,
     decodeAudioData: () => new Promise<AudioBuffer>((resolve) => pending.push(resolve)),

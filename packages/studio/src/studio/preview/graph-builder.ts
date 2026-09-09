@@ -34,12 +34,12 @@ import {
   type StudioState,
 } from '../model';
 import { activeLoopLen, loopSourceOffset } from '../timeline/clip-loop';
-import { createFxNode } from './fx-node';
-import { fadeCurveArray, fadeOutGain } from '../timeline/fade';
+import { createFxNode } from '@kelasmalam/studio-core/preview/fx-node';
+import { fadeCurveArray, fadeOutGain } from '@kelasmalam/studio-core/timeline/fade';
 import { stemOf } from '../timeline/stem';
 import { buildStemChain, type StemNodes } from './stem-chain';
 import type { ScnetStem } from '@kelasmalam/proof-stem/proof-stem/scnet-separate';
-import type { AutoStemAudio, AutoStemMask } from '../../stem/auto-stem';
+import type { AutoStemAudio, AutoStemMask } from '@kelasmalam/studio-core/stem/auto-stem';
 
 /** Ramp pendek supaya perubahan parameter tidak menimbulkan klik. */
 export const PARAM_RAMP_SEC = 0.02;

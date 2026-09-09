@@ -37,13 +37,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { assetStore, useAssets } from '@kelasmalam/studio-core/assets/store';
 
 import { useCommands } from '@kelasmalam/shell/useCommands';
 import { registerSaveFallback } from '@kelasmalam/studio/studio/commands';
 import { Badge, Button, ProgressBar } from '@kelasmalam/ui/cyber';
-import { studioStore, useStudio } from '@kelasmalam/studio/studio/store';
 import { djStore } from '@kelasmalam/dj/dj/store';
-import { registerImportSink } from '@kelasmalam/studio/studio/timeline/import-sink';
+import { registerImportSink } from '@kelasmalam/studio-core/timeline/import-sink';
 import { registerLibraryDropHandler } from '@kelasmalam/studio/studio/timeline/library-drop';
 import { placeAssetOnLane } from '@kelasmalam/studio/studio/timeline/audio-import';
 import { getPlatformHost } from '@kelasmalam/platform';
@@ -118,7 +118,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
   const hasSession = host.login !== undefined;
 
   const state = useLibrary();
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const [busy, setBusy] = useState(false);
   /*
    * Nama untuk project BARU, hidup selama dok terbuka.
@@ -251,12 +251,12 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     };
 
     let prevCues = djStore.getState().cues;
-    let prevAssets = studioStore.getState().assets;
+    let prevAssets = assetStore.getState().assets;
 
     const onChange = (): void => {
       const map = known();
       const cues = djStore.getState().cues;
-      const assets = studioStore.getState().assets;
+      const assets = assetStore.getState().assets;
 
       if (cues !== prevCues) {
         for (const [id, hash] of map) {
@@ -273,7 +273,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
     };
 
     const offDj = djStore.subscribe(onChange);
-    const offStudio = studioStore.subscribe(onChange);
+    const offStudio = assetStore.subscribe(onChange);
     return () => {
       offDj();
       offStudio();
@@ -307,7 +307,7 @@ export function LibraryDock({ apiBase, api: injected, onLoaded }: LibraryDockPro
           libraryActions.setNotice(`${track.name}: ${out.message}`);
           return;
         }
-        const asset = studioStore.getState().assets[out.assetId];
+        const asset = assetStore.getState().assets[out.assetId];
         placeAssetOnLane(
           out.assetId,
           track.name,

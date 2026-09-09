@@ -4,7 +4,7 @@ import {
   hasPlayableAutoStem,
   setAutoStemPart,
   useAutoStem,
-} from '@kelasmalam/studio/stem/auto-stem';
+} from '@kelasmalam/studio-core/stem/auto-stem';
 import { DECK_ACCENT, type DeckId } from '../model';
 
 const STEMS: readonly ScnetStem[] = ['vocals', 'drums', 'bass', 'other'];

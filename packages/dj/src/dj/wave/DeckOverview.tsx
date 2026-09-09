@@ -4,7 +4,7 @@
  * Memakai `drawAssetWave` — penggambar yang SAMA dengan timeline Studio — bukan
  * penggambar kedua. Waveform yang berubah bentuk hanya karena dilihat dari
  * halaman lain adalah cacat yang mustahil dilacak dari layar; alasan yang sama
- * sudah ditulis panjang di kepala `studio/timeline/waveform.ts`.
+ * sudah ditulis panjang di kepala `studio-core/timeline/waveform.ts`.
  *
  * `OverviewStrip.tsx` milik Studio TIDAK dipakai: ia membaca `studioStore`
  * secara langsung dan menggambar lane, bukan satu lagu.
@@ -13,7 +13,7 @@
 import { useRef } from 'react';
 
 import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
-import { BAND_COLORS, drawAssetWave, drawPlaceholderWave } from '@kelasmalam/studio/studio/timeline/waveform';
+import { BAND_COLORS, drawAssetWave, drawPlaceholderWave } from '@kelasmalam/studio-core/timeline/waveform';
 import type { DeckView } from '../deck-view';
 import { HOT_CUE_SLOTS, type DeckId, type TrackCues } from '../model';
 import { djActions } from '../store';

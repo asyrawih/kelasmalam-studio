@@ -10,9 +10,10 @@
  */
 
 import { useRef } from 'react';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 import { useStudio } from '../store';
 import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
-import { BAND_COLORS, drawClipWave } from './waveform';
+import { BAND_COLORS, drawClipWave } from '@kelasmalam/studio-core/timeline/waveform';
 
 export interface OverviewStripProps {
   /** Posisi kiri viewport dalam persen. */
@@ -23,7 +24,7 @@ export interface OverviewStripProps {
 
 export function OverviewStrip({ viewLeftPct, viewWidthPct }: OverviewStripProps): JSX.Element {
   const lanes = useStudio((s) => s.lanes);
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const duration = useStudio((s) => s.duration);
   const playhead = useStudio((s) => s.playhead);
 

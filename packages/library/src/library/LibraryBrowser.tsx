@@ -22,10 +22,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { importFileToAsset } from '@kelasmalam/studio-core/timeline/audio-import';
 import { createPortal } from 'react-dom';
 
 import { Badge, Button, ProgressBar } from '@kelasmalam/ui/cyber';
-import { importFileToAsset } from '@kelasmalam/studio/studio/timeline/audio-import';
+
 import { studioStore } from '@kelasmalam/studio/studio/store';
 import { highlightLane, locateLane, notifyLibraryDrop } from '@kelasmalam/studio/studio/timeline/library-drop';
 import type { LibraryApi } from './api';

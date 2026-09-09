@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_FADE_CURVE, type StudioClip } from '../model';
-import { normalizeLanes } from '../persist/persistence';
+import { DEFAULT_FADE_CURVE, type FadeCurve } from '../assets/model';
 import {
   clampFadeMs,
   fadeCurveArray,
@@ -15,23 +14,21 @@ import {
 
 const SR = 48_000;
 
-function clip(over: Partial<StudioClip> = {}): StudioClip {
-  return {
-    id: 'c1',
-    assetId: 1,
-    chain: [],
-    start: 0,
-    len: 10 * SR,
-    sourceStart: 0,
-    sourceLen: 10 * SR,
-    label: 'C',
-    gainDb: 0,
-    fadeInMs: 0,
-    fadeOutMs: 0,
-    fadeCurve: DEFAULT_FADE_CURVE,
-    seed: 1,
-    ...over,
-  };
+/**
+ * Hanya field fade yang dilihat `normalizeClipFade` — ia generik atas bentuk
+ * itu, jadi tes ini tidak perlu tahu `StudioClip` (yang milik studio lane).
+ * Kasus "lane hasil restore dinormalkan sampai ke tiap clip" ada di
+ * `studio/persist/persistence.test.ts`.
+ */
+interface FadeClip {
+  readonly len: number;
+  readonly fadeInMs: number;
+  readonly fadeOutMs: number;
+  readonly fadeCurve: FadeCurve;
+}
+
+function clip(over: Partial<FadeClip> = {}): FadeClip {
+  return { len: 10 * SR, fadeInMs: 0, fadeOutMs: 0, fadeCurve: DEFAULT_FADE_CURVE, ...over };
 }
 
 describe('bentuk kurva fade', () => {
@@ -147,30 +144,13 @@ describe('clamp durasi fade', () => {
 
 describe('project lama tanpa fadeCurve', () => {
   it('clip mendapat kurva default, bukan undefined', () => {
-    const old = { ...clip(), fadeCurve: undefined } as unknown as StudioClip;
+    const old = { ...clip(), fadeCurve: undefined } as unknown as FadeClip;
     expect(normalizeClipFade(old).fadeCurve).toBe(DEFAULT_FADE_CURVE);
   });
 
   it('nilai linear yang tersimpan tidak ikut diubah', () => {
     const c = clip({ fadeCurve: 'linear' });
     expect(normalizeClipFade(c)).toBe(c);
-  });
-
-  it('lane hasil restore ikut dinormalkan sampai ke tiap clip', () => {
-    const lanes = [
-      {
-        id: 'l1',
-        name: 'A',
-        color: '#ffd400',
-        mute: false,
-        solo: false,
-        gainDb: 0,
-        speedRatio: 1,
-        eq: { bands: [] },
-        clips: [{ ...clip(), fadeCurve: undefined }],
-      },
-    ] as never;
-    expect(normalizeLanes(lanes)[0]?.clips[0]?.fadeCurve).toBe(DEFAULT_FADE_CURVE);
   });
 
   it('fade rusak (NaN / negatif) dibersihkan jadi 0', () => {

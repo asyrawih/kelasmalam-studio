@@ -12,8 +12,9 @@
  * dari luar deck, turunkan — jangan simpan.**
  */
 
-import { resolveBeatGridAt, type BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { TEMPO_UNCERTAIN, type StudioAsset } from '@kelasmalam/studio/studio/store';
+import { resolveBeatGridAt, type BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { TEMPO_UNCERTAIN, type StudioAsset } from '@kelasmalam/studio-core/assets/model';
+
 import {
   deckPositionSec,
   deckRemainingSec,

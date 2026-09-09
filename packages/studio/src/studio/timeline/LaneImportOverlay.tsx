@@ -10,7 +10,8 @@
  * dijatuhkan ke lane yang sama tetap terlihat tiga.
  */
 
-import type { ImportJob, ImportStage } from '../store';
+import type { ImportJob } from '../store';
+import type { ImportStage } from '@kelasmalam/studio-core/assets/model';
 
 /** Nama tahap di layar. Sengaja pendek: ruangnya setinggi satu lane. */
 const STAGE_LABEL: Record<ImportStage, string> = {

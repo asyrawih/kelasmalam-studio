@@ -13,6 +13,7 @@
     "@kelasmalam/platform": "workspace:*",
     "@kelasmalam/proof-stem": "workspace:*",
     "@kelasmalam/shell": "workspace:*",
+    "@kelasmalam/studio-core": "workspace:*",
     "@kelasmalam/ui": "workspace:*",
     "react": "^18.3.1"
   },

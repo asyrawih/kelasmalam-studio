@@ -12,7 +12,7 @@
  *    untuk memilih lagu berikutnya.
  */
 
-import { studioActions } from '@kelasmalam/studio/studio/store';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 import { formatDeckTime, formatTempoPct, type DeckId } from '../model';
 import { djActions, useDj } from '../store';
 import { toggleGridEditFor } from '../grid/grid-ops';
@@ -42,7 +42,7 @@ function OctaveButton({
       className="cy-btn-reset"
       disabled={disabled || assetId === null}
       onClick={() => {
-        if (assetId !== null) studioActions.shiftAssetTempoOctave(assetId, delta);
+        if (assetId !== null) assetActions.shiftAssetTempoOctave(assetId, delta);
       }}
       title={`${label} BPM — koreksi oktaf tempo, tersimpan pada lagunya`}
       style={{

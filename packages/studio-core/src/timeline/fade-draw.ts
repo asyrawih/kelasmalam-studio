@@ -18,7 +18,7 @@
  */
 
 import { fadeInGain, fadeOutGain } from './fade';
-import type { FadeCurve, Samples } from '../model';
+import type { FadeCurve, Samples } from '../assets/model';
 
 export interface FadeRegions {
   /** Batas clip di SOURCE-space. */

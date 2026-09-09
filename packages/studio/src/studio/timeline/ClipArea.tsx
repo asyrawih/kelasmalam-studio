@@ -12,6 +12,8 @@
  * dan capture-nya akan hilang di tengah drag. Scroller tidak pernah remount.
  */
 
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 import {
   useEffect,
   useRef,
@@ -22,14 +24,14 @@ import {
   type RefObject,
 } from 'react';
 import { isAudible, laneHeightPx, type StudioClip, type StudioLane } from '../model';
-import { studioActions, studioStore, useStudio, type ClipOrigin, type StudioAsset } from '../store';
+import { studioActions, studioStore, useStudio, type ClipOrigin } from '../store';
 import { runFileImport, runUrlImport } from './lane-import';
 import { registerLaneLocator } from './library-drop';
 import { LaneImportOverlay } from './LaneImportOverlay';
 import { activeLoopLen } from './clip-loop';
-import { BAND_COLORS, drawClipWave, drawLoopedClipWave } from './waveform';
-import { visibleWindow, type WaveWindow } from './wave-window';
-import { fadeOverlayGradient } from './fade';
+import { BAND_COLORS, drawClipWave, drawLoopedClipWave } from '@kelasmalam/studio-core/timeline/waveform';
+import { visibleWindow, type WaveWindow } from '@kelasmalam/studio-core/timeline/wave-window';
+import { fadeOverlayGradient } from '@kelasmalam/studio-core/timeline/fade';
 import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
 import { clearTimelineCursor, setTimelineCursor } from './timeline-cursor';
@@ -561,7 +563,7 @@ export function ClipArea({
   onOpenDetail,
 }: ClipAreaProps): JSX.Element {
   const lanes = useStudio((s) => s.lanes);
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const duration = useStudio((s) => s.duration);
   const playhead = useStudio((s) => s.playhead);
   const sampleRate = useStudio((s) => s.sampleRate);

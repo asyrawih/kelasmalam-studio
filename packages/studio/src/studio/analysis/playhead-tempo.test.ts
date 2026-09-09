@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 
-import { studioActions, studioStore, type StudioAsset } from '../store';
+import { studioActions, studioStore } from '../store';
 import { DEFAULT_FADE_CURVE, type StudioClip } from '../model';
 import { selectPlayheadTempo } from './playhead-tempo';
 
@@ -62,7 +64,7 @@ describe('tempo di playhead', () => {
 
   it('mengambil BPM asset dari clip di bawah playhead', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(1, 128));
+    assetActions.registerAsset(asset(1, 128));
     studioActions.addClip(laneId, clip('a', 1, 0, 30));
     studioActions.setPlayhead(10 * SR);
 
@@ -73,7 +75,7 @@ describe('tempo di playhead', () => {
 
   it('mengalikan dengan kecepatan lane — itu inti pitch fader DJ', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(1, 128));
+    assetActions.registerAsset(asset(1, 128));
     studioActions.addClip(laneId, clip('a', 1, 0, 30));
     studioActions.setPlayhead(10 * SR);
     studioActions.setLaneSpeed(laneId, 1.05);
@@ -86,23 +88,23 @@ describe('tempo di playhead', () => {
 
   it('koreksi oktaf user menggandakan / membagi dua', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(1, 85));
+    assetActions.registerAsset(asset(1, 85));
     studioActions.addClip(laneId, clip('a', 1, 0, 30));
     studioActions.setPlayhead(10 * SR);
 
-    studioActions.shiftAssetTempoOctave(1, 1);
+    assetActions.shiftAssetTempoOctave(1, 1);
     expect(selectPlayheadTempo(studioStore.getState()).primary?.bpm).toBeCloseTo(170, 4);
-    studioActions.shiftAssetTempoOctave(1, -1);
+    assetActions.shiftAssetTempoOctave(1, -1);
     expect(selectPlayheadTempo(studioStore.getState()).primary?.bpm).toBeCloseTo(85, 4);
     // Dibatasi ±2 oktaf supaya tidak bisa digeser sampai angka tak berarti.
-    for (let i = 0; i < 6; i++) studioActions.shiftAssetTempoOctave(1, 1);
+    for (let i = 0; i < 6; i++) assetActions.shiftAssetTempoOctave(1, 1);
     expect(selectPlayheadTempo(studioStore.getState()).primary?.bpm).toBeCloseTo(85 * 4, 3);
   });
 
   it('lane yang di-mute tidak ikut dihitung', () => {
     const lanes = studioStore.getState().lanes;
-    studioActions.registerAsset(asset(1, 128));
-    studioActions.registerAsset(asset(2, 100));
+    assetActions.registerAsset(asset(1, 128));
+    assetActions.registerAsset(asset(2, 100));
     studioActions.addClip(lanes[0]!.id, clip('a', 1, 0, 30));
     studioActions.addClip(lanes[1]!.id, clip('b', 2, 0, 30));
     studioActions.setPlayhead(10 * SR);
@@ -115,8 +117,8 @@ describe('tempo di playhead', () => {
 
   it('dua lane berbunyi bersamaan: yang kedua masuk ke others', () => {
     const lanes = studioStore.getState().lanes;
-    studioActions.registerAsset(asset(1, 128));
-    studioActions.registerAsset(asset(2, 124));
+    assetActions.registerAsset(asset(1, 128));
+    assetActions.registerAsset(asset(2, 124));
     studioActions.addClip(lanes[0]!.id, clip('a', 1, 0, 30));
     studioActions.addClip(lanes[1]!.id, clip('b', 2, 0, 30));
     studioActions.setPlayhead(10 * SR);
@@ -128,7 +130,7 @@ describe('tempo di playhead', () => {
 
   it('membedakan "sedang dianalisis" dari "tidak ada tempo"', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(1, null, { tempoPending: true }));
+    assetActions.registerAsset(asset(1, null, { tempoPending: true }));
     studioActions.addClip(laneId, clip('a', 1, 0, 30));
     studioActions.setPlayhead(10 * SR);
     expect(selectPlayheadTempo(studioStore.getState())).toMatchObject({
@@ -137,7 +139,7 @@ describe('tempo di playhead', () => {
       idle: false,
     });
 
-    studioActions.setAssetTempo(1, null);
+    assetActions.setAssetTempo(1, null);
     expect(selectPlayheadTempo(studioStore.getState())).toMatchObject({
       pending: false,
       unknown: true,
@@ -151,7 +153,7 @@ describe('tempo di playhead', () => {
    */
   it('mengembalikan REFERENSI yang sama selama isinya tidak berubah', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(1, 128));
+    assetActions.registerAsset(asset(1, 128));
     studioActions.addClip(laneId, clip('a', 1, 0, 30));
     studioActions.setPlayhead(10 * SR);
 
@@ -169,7 +171,7 @@ describe('tempo di playhead', () => {
 
   it('batas akhir clip bersifat setengah-terbuka', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(1, 128));
+    assetActions.registerAsset(asset(1, 128));
     studioActions.addClip(laneId, clip('a', 1, 0, 30));
 
     studioActions.setPlayhead(30 * SR - 1);

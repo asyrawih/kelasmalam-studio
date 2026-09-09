@@ -32,7 +32,7 @@
  */
 
 import type { RobloxUploadRow } from '../platform/local-commands';
-import { sha256Hex } from '@kelasmalam/studio/studio/timeline/content-hash';
+import { sha256Hex } from '@kelasmalam/studio-core/timeline/content-hash';
 import { extOf, fromUploadRow, toUploadRow, type UploadStatus } from '@kelasmalam/roblox/roblox/model';
 import { isLocalError, type PersistedRobloxQueue, type PersistenceAdapter } from '@kelasmalam/roblox/roblox/persistence';
 import { localInvoke, localPutBytes } from './invoke';

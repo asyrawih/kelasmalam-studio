@@ -6,17 +6,23 @@
  * menunjuk asset hantu tidak melempar apa pun — ia hanya menggambar placeholder
  * dan diam saat diputar. Penyebabnya terjadi di halaman lain, beberapa menit
  * sebelumnya, jadi praktis tidak bisa dilacak dari layar.
+ *
+ * Sejak docs/25 P4 paket ini tidak tahu lane: pemakaian dijawab lewat registry
+ * `assets/usage.ts` core, dan di sini penyedianya dipalsukan. Bahwa Studio
+ * benar-benar mendaftarkan penghitung berbasis lane dibuktikan di
+ * `packages/studio/src/studio/asset-usage.test.ts`.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
+import { __clearAssetUsageForTest, registerAssetUsage } from '@kelasmalam/studio-core/assets/usage';
 
 const unregistered: number[] = [];
-vi.mock('@kelasmalam/studio/studio/preview/audio-preview', () => ({
+vi.mock('@kelasmalam/studio-core/preview/audio-context', () => ({
   unregisterBuffer: (id: number) => void unregistered.push(id),
 }));
 
-import { DEFAULT_FADE_CURVE, type StudioClip, type StudioLane } from '@kelasmalam/studio/studio/model';
-import { studioActions, studioStore, type StudioAsset } from '@kelasmalam/studio/studio/store';
 import { djActions, djStore } from '../store';
 import { inspectRemoval, removeAssetFromLibrary } from './dj-remove';
 
@@ -36,56 +42,42 @@ const asset = (id: number): StudioAsset =>
     beatOffsetOverride: null,
   }) as unknown as StudioAsset;
 
-const clip = (assetId: number): StudioClip => ({
-  id: `c${assetId}`,
-  assetId,
-  chain: [],
-  start: 0,
-  len: SR,
-  sourceStart: 0,
-  sourceLen: SR,
-  label: 'X',
-  gainDb: 0,
-  fadeInMs: 0,
-  fadeOutMs: 0,
-  fadeCurve: DEFAULT_FADE_CURVE,
-  seed: 1,
-});
-
-/** Sisipkan lane berisi clip ke store Studio tanpa lewat jalur import. */
-function laneWith(assetId: number): StudioLane {
-  const lanes = studioStore.getState().lanes;
-  const first = lanes[0];
-  if (first === undefined) throw new Error('store Studio tanpa lane');
-  return { ...first, name: 'LANE UJI', clips: [clip(assetId)] };
+/** Nyatakan `assetId` dipakai satu clip di lane bernama `LANE UJI`. */
+function usedInStudio(assetId: number): void {
+  registerAssetUsage((id) => (id === assetId ? { count: 1, where: ['LANE UJI'] } : { count: 0, where: [] }));
 }
 
 beforeEach(() => {
   unregistered.length = 0;
+  __clearAssetUsageForTest();
   djActions.__resetForTest();
-  studioActions.__resetForTest?.();
-  studioActions.registerAsset(asset(1));
-  studioActions.registerAsset(asset(2));
+  assetActions.__resetForTest();
+  assetActions.registerAsset(asset(1));
+  assetActions.registerAsset(asset(2));
 });
 
 describe('menolak yang masih dipakai Studio', () => {
   it('lagu yang dipakai clip TIDAK dihapus, dan alasannya menyebut jumlahnya', async () => {
-    studioActions.hydrate({ lanes: [laneWith(1)] });
+    usedInStudio(1);
     const r = await removeAssetFromLibrary(1);
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/1 clip/);
     expect(r.reason).toMatch(/LANE UJI/);
     // Dan benar-benar tidak tersentuh: bukan "ditolak lalu dihapus juga".
-    expect(studioStore.getState().assets[1]).toBeDefined();
+    expect(assetStore.getState().assets[1]).toBeDefined();
     expect(unregistered).toEqual([]);
   });
 
   it('inspectRemoval melaporkan pemakaian tanpa mengubah apa pun', () => {
-    studioActions.hydrate({ lanes: [laneWith(1)] });
+    usedInStudio(1);
     const r = inspectRemoval(1);
     expect(r.clips).toBe(1);
     expect(r.lanes).toEqual(['LANE UJI']);
-    expect(studioStore.getState().assets[1]).toBeDefined();
+    expect(assetStore.getState().assets[1]).toBeDefined();
+  });
+
+  it('tanpa penyedia yang terdaftar, tidak ada yang dianggap dipakai', () => {
+    expect(inspectRemoval(1).clips).toBe(0);
   });
 });
 
@@ -93,10 +85,10 @@ describe('menghapus yang tidak dipakai', () => {
   it('lenyap dari registry DAN dari cache PCM — keduanya', async () => {
     const r = await removeAssetFromLibrary(2);
     expect(r.ok).toBe(true);
-    expect(studioStore.getState().assets[2]).toBeUndefined();
+    expect(assetStore.getState().assets[2]).toBeUndefined();
     expect(unregistered).toEqual([2]);
     // Lagu lain tidak ikut terbawa.
-    expect(studioStore.getState().assets[1]).toBeDefined();
+    expect(assetStore.getState().assets[1]).toBeDefined();
   });
 
   it('deck yang memegangnya DIKOSONGKAN lebih dulu', async () => {

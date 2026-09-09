@@ -19,7 +19,9 @@
 
 import { useSyncExternalStore } from 'react';
 
-import { clampGridBpm, MAX_BEAT_ANCHORS, type BeatAnchor } from './analysis/beat-grid';
+import type { AssetMap, ImportStage } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
+import { registerAssetUsage, type AssetUsage } from '@kelasmalam/studio-core/assets/usage';
 import { computeClipSync, type SyncAlignment } from './analysis/beat-sync';
 import { MIN_MASTER_GAIN_DB, MAX_MASTER_GAIN_DB, MIN_RENDER_SPEED, MAX_RENDER_SPEED, type EqMode, timelineLenFor, MAX_LANE_SPEED, MIN_LANE_SPEED,
   EQ_PRESETS,
@@ -53,131 +55,16 @@ import { applyLoopCut, type LoopCutSpec } from './timeline/beat-cut';
 import { activeLoopLen, applyClipLoop, clearClipLoop, MIN_LOOP_LEN } from './timeline/clip-loop';
 import { slipClip, trimLeft, trimRight } from './timeline/clip-trim';
 import { normalizeClipStem } from './timeline/stem';
-import type { Envelope } from './timeline/envelope';
 
-/**
- * Tempo hasil analisis WASM (`daw-analysis`, lewat `audio/tempo-worker.ts`).
- *
- * Disimpan pada ASSET, bukan pada clip: BPM adalah sifat materi sumbernya.
- * Dua clip dari lagu yang sama punya BPM sumber yang sama; yang membedakannya
- * adalah kecepatan lane tempat mereka duduk — dan itu dihitung saat dipakai
- * (`selectPlayheadTempo`), bukan disalin ke tiap clip.
+/*
+ * ASET TIDAK LAGI DI SINI (docs/25 P4). `StudioAsset`, `AssetTempo`,
+ * `TEMPO_UNCERTAIN`, dan seluruh aksi aset (`registerAsset`, `setAssetBeatGrid`,
+ * …) hidup di `@kelasmalam/studio-core/assets/{model,store}` — registry yang
+ * dibagi Studio lane, Studio FL, dan `/dj`. Store ini MEMBACA `assetStore`
+ * (lihat `assetStore.getState().assets[...]` di aksi clip) dan BERLANGGANAN
+ * padanya untuk dua hal yang tetap milik project: riwayat undo dan penanda
+ * kotor — lihat `assetStore.subscribe` di bawah.
  */
-export interface AssetTempo {
-  readonly bpm: number;
-  /** 0..1. Di bawah `TEMPO_UNCERTAIN` angka BPM tidak layak dipajang polos. */
-  readonly confidence: number;
-  readonly beatOffsetSec: number;
-  /** Posisi beat individual hasil tracker. Opsional untuk asset/project lama. */
-  readonly beatTimesSec?: readonly number[];
-}
-
-/**
- * Ambang "tidak yakin". Di bawah ini UI menandai angkanya, bukan
- * menyembunyikannya — materi tanpa ketukan jelas tetap punya jawaban paling
- * mungkin, dan menyembunyikannya sama menyesatkannya dengan memajangnya polos.
- *
- * Nilainya DIUKUR, bukan ditebak. `detectTempo` dijalankan atas materi nyata
- * lewat artefak WASM yang sama dengan yang dipakai aplikasi:
- *
- *   derau putih                    0.015
- *   pad ambient (tanpa transien)   0.017
- *   burst mirip bicara             0.046
- *   lagu nyata #1 (155 BPM)        0.191
- *   lagu nyata #2 (135 BPM)        0.224
- *   groove sintetis (tes Rust)     0.45 – 0.60
- *
- * 0.1 duduk di celah antara dua kelompok itu. Angka pertama yang dipakai di
- * sini adalah 0.2, dan itu SALAH: kedua lagu nyata di atas — yang BPM-nya
- * terbukti benar karena tiap potongan 25 detiknya memberi angka yang sama —
- * akan ditandai "tidak yakin". Musik nyata punya banyak isi ODF yang bukan
- * ketukan, jadi periodisitasnya wajar lebih rendah dari materi sintetis.
- */
-export const TEMPO_UNCERTAIN = 0.1;
-
-/** Asset audio yang sudah di-decode. Peak nyata, bukan mock. */
-export interface StudioAsset {
-  readonly id: number;
-  readonly name: string;
-  /**
-   * SHA-256 berkas asalnya — identitas yang BERTAHAN melewati sesi (docs/16 §2).
-   *
-   * `''` berarti tidak punya berkas asal: hasil `bakeClipStem` lahir dari
-   * render, bukan dari file. Itu keadaan yang sah, dan sengaja dibedakan dari
-   * "belum dihitung" — asset tanpa hash tidak bisa diunggah ke kepustakaan,
-   * dan project yang merujuknya akan ditolak server (docs/16 §8e).
-   */
-  readonly contentHash: string;
-  /**
-   * Peak pyramid multi-resolusi (min/max/rms per bucket, 64/512/4096 sample).
-   * Menggantikan `peaks: Float32Array` beresolusi tunggal: dengan satu
-   * resolusi tetap, waveform lagu panjang mentok jadi persegi panjang rata.
-   * Lihat `timeline/envelope.ts`.
-   */
-  readonly envelope: Envelope;
-  readonly frames: Samples;
-  readonly sampleRate: number;
-  /**
-   * `null` selama analisis belum selesai ATAU kalau materinya tidak bisa
-   * dianalisis (< 8 detik, senyap). Dua keadaan itu sengaja tidak dibedakan di
-   * sini; yang membedakannya adalah `tempoPending`.
-   */
-  readonly tempo: AssetTempo | null;
-  /** true selama worker masih bekerja. Memisahkan "belum tahu" dari "tidak ada". */
-  readonly tempoPending: boolean;
-  /**
-   * Koreksi oktaf dari user: BPM efektif = `tempo.bpm * 2 ** tempoOctave`.
-   *
-   * Ada karena oktaf tempo memang tidak selalu bisa diputuskan oleh mesin —
-   * lagu 170 BPM dengan backbeat sama sahnya didengar sebagai 85. Setiap
-   * perkakas DJ menyediakan ×2 / ÷2 untuk alasan yang sama.
-   */
-  readonly tempoOctave: number;
-  /**
-   * BPM yang DIKETIK user. null = pakai hasil deteksi (× koreksi oktaf).
-   *
-   * Terpisah dari `tempo.bpm` dan bukan menimpanya: deteksi tetap tersimpan
-   * supaya tombol AUTO benar-benar bisa mengembalikan keadaan semula. Dibaca
-   * lewat `resolveBeatGrid` di `analysis/beat-grid.ts` — jangan dibaca langsung.
-   */
-  readonly bpmOverride: number | null;
-  /**
-   * Posisi ketukan pertama (detik, SOURCE-space) menurut user. null = pakai
-   * `tempo.beatOffsetSec`.
-   *
-   * Ada karena yang dideteksi mesin adalah fase KETUKAN, bukan fase birama —
-   * tidak ada cara otomatis untuk tahu ketukan mana yang "satu", dan grid yang
-   * downbeat-nya meleset tidak bisa dipakai memotong apa pun.
-   */
-  readonly beatOffsetOverride: number | null;
-  /**
-   * `[Analysis Lock]` rekordbox: *"Set to disable re-analysis and grid edit."*
-   *
-   * Di rekordbox kunci ini ada karena analisis ulang MENIMPA koreksi grid
-   * manual. Di sini tidak: `resolveBeatGrid` membaca `bpmOverride ?? deteksi`,
-   * jadi override user sudah kebal dengan sendirinya. Yang tersisa untuk
-   * dijaga kunci ini adalah jalan HILANGNYA koreksi itu — tombol AUTO, yang
-   * satu klik salahnya membuang kerja sepuluh menit — dan mencegah lagu ini
-   * ikut antre analisis batch yang tidak akan mengubah apa pun untuknya.
-   *
-   * Penjagaannya ada di `setAssetBeatGrid`, `resetAssetBeatGrid`, dan
-   * `markAssetTempoPending`. Ketiganya adalah CADANGAN, bukan jalur utama: UI
-   * mematikan kontrolnya lebih dulu, karena setter yang diam-diam mengabaikan
-   * tulisan adalah bentuk kegagalan yang paling sulit dilacak dari layar.
-   */
-  /**
-   * Anchor tempo TAMBAHAN, urut menaik — `[Dynamic]` rekordbox.
-   *
-   * `null` (yang biasa) berarti satu tempo untuk seluruh lagu, dan seluruh
-   * jalur lama berjalan persis seperti sebelumnya. Begitu ada isinya, grid
-   * lagu ini dibaca per posisi lewat `resolveBeatGridAt`.
-   *
-   * Disimpan di ASSET, bukan di deck, karena ia koreksi atas MATERI — sama
-   * dengan `bpmOverride` di atasnya, dan dengan alasan yang sama.
-   */
-  readonly beatAnchors?: readonly BeatAnchor[] | null;
-  readonly analysisLock: boolean;
-}
 
 /**
  * Satu clip di papan salin, beserta lane-nya RELATIF terhadap clip paling kiri.
@@ -194,18 +81,6 @@ export interface ClipboardEntry {
 }
 
 /**
- * Tahap yang sedang dikerjakan satu import. Urutannya = urutan kejadiannya.
- *
- * Tiga, bukan satu bar "loading", karena ketiganya punya perilaku waktu yang
- * berbeda dan user perlu tahu bedanya: `reading` bisa diukur persis (ukuran
- * file diketahui), `decoding` dikerjakan browser di luar kendali kita dan
- * TIDAK bisa diukur, `analyzing` (peak pyramid) singkat tapi sinkron. Satu bar
- * tanpa nama tahap akan terlihat menggantung di 60% selama decode berjalan,
- * dan itu terbaca sebagai macet.
- */
-export type ImportStage = 'reading' | 'decoding' | 'analyzing';
-
-/**
  * Satu import yang sedang berjalan.
  *
  * DAFTAR, bukan satu slot: user boleh menjatuhkan tiga lagu ke tiga lane
@@ -214,7 +89,9 @@ export type ImportStage = 'reading' | 'decoding' | 'analyzing';
  * keduanya benar-benar sedang berjalan bersamaan.
  *
  * `laneId` null berarti import tanpa lane (mis. dari halaman lain); UI lane
- * hanya menampilkan yang laneId-nya cocok.
+ * hanya menampilkan yang laneId-nya cocok. Tahapnya (`ImportStage`) milik core
+ * karena jalur decode-nya di sana; DAFTAR job-nya milik lane, jadi tetap di
+ * sini.
  */
 export interface ImportJob {
   readonly id: string;
@@ -254,8 +131,6 @@ export interface ClipLoopRange extends ClipLoop {
  * asset ter-decode dan status engine.
  */
 export interface StudioAppState extends StudioState {
-  /** assetId → asset. Clip tanpa entri di sini digambar dari `seed` (mock). */
-  readonly assets: Readonly<Record<number, StudioAsset>>;
   /**
    * Import yang SEDANG berjalan, urut sesuai waktu mulai.
    *
@@ -437,7 +312,6 @@ export const TAIL_ROOM_SEC = 30;
 
 let state: StudioAppState = withDerived({
   ...createInitialStudio(),
-  assets: {},
   importJobs: [],
   engineReady: false,
   seekEpoch: 0,
@@ -465,15 +339,30 @@ let state: StudioAppState = withDerived({
 type Listener = () => void;
 const listeners = new Set<Listener>();
 const MAX_UNDO_HISTORY = 100;
-const undoStack: StudioAppState[] = [];
-const redoStack: StudioAppState[] = [];
+
+/**
+ * Satu langkah riwayat = project DAN peta aset pada saat itu.
+ *
+ * Aset tidak lagi field store ini (docs/25 P4), tapi ia tetap bagian KARYA:
+ * mengimpor lagu, mengetik BPM, menggeser downbeat — semuanya tersimpan bersama
+ * project dan semuanya bisa di-undo, persis seperti sebelum registry-nya
+ * dipisah. Snapshot gabungan inilah yang mempertahankan itu: ⌘Z sesudah import
+ * mengembalikan daftar lagu, bukan hanya clip-nya.
+ */
+interface HistoryEntry {
+  readonly project: StudioAppState;
+  readonly assets: AssetMap;
+}
+const undoStack: HistoryEntry[] = [];
+const redoStack: HistoryEntry[] = [];
 let restoringHistory = false;
 let dragHistoryRecorded = false;
 
 /** Field yang benar-benar mengubah karya. State transport/seleksi/UI tidak
- * masuk riwayat, jadi Undo tidak meloncatkan playhead atau membuka popup lama. */
+ * masuk riwayat, jadi Undo tidak meloncatkan playhead atau membuka popup lama.
+ * Peta aset ikut dihitung karya lewat langganan `assetStore` di bawah. */
 const EDIT_KEYS: readonly (keyof StudioAppState)[] = [
-  'lanes', 'assets', 'masterGainDb', 'masterChain', 'renderSpeed',
+  'lanes', 'masterGainDb', 'masterChain', 'renderSpeed',
   'exportFileName', 'minDurationSec', 'maxDurationSec',
 ];
 
@@ -485,8 +374,23 @@ function notify(): void {
   for (const fn of [...listeners]) fn();
 }
 
-function restoreProject(snapshot: StudioAppState): void {
-  const patch = Object.fromEntries(EDIT_KEYS.map((key) => [key, snapshot[key]])) as Partial<StudioAppState>;
+/** Simpan keadaan SEBELUM sebuah edit. Pointermove selama drag dirapatkan jadi satu. */
+function recordHistory(entry: HistoryEntry): void {
+  if (!state.draggingClip || !dragHistoryRecorded) {
+    undoStack.push(entry);
+    if (undoStack.length > MAX_UNDO_HISTORY) undoStack.shift();
+    redoStack.length = 0;
+  }
+  if (state.draggingClip) dragHistoryRecorded = true;
+}
+
+function restoreProject(snapshot: HistoryEntry): void {
+  const patch = Object.fromEntries(
+    EDIT_KEYS.map((key) => [key, snapshot.project[key]]),
+  ) as Partial<StudioAppState>;
+  // Aset dipulihkan DULU, di bawah `restoringHistory`, supaya langganan di
+  // bawah tidak merekamnya sebagai edit baru; lalu project-nya.
+  assetActions.restoreAssets(snapshot.assets);
   // Undo/redo mengubah karya relatif terhadap yang tersimpan, jadi ia juga
   // mengotori — walaupun secara kebetulan kembali ke bentuk yang sama persis
   // dengan yang disimpan. Membandingkan isi untuk mendeteksi kasus itu berarti
@@ -494,6 +398,33 @@ function restoreProject(snapshot: StudioAppState): void {
   state = withDerived({ ...state, ...patch, draggingClip: false, projectSerial: state.projectSerial + 1 });
   notify();
 }
+
+/** Keadaan sekarang sebagai satu langkah riwayat. */
+function currentEntry(): HistoryEntry {
+  return { project: state, assets: assetStore.getState().assets };
+}
+
+/*
+ * LANGGANAN KE REGISTRY ASET.
+ *
+ * Perubahan aset adalah edit karya: ia masuk riwayat undo (dengan peta aset
+ * SEBELUM perubahan) dan menaikkan `projectSerial` — definisi "karya berubah"
+ * yang sama dengan `set()` di bawah, supaya tidak ada edit yang bisa di-undo
+ * tapi tidak membuat judul jendela bertanda. Selama `restoringHistory`
+ * (undo/redo/hydrate) perubahan itu justru DATANG dari riwayat, jadi tidak
+ * direkam lagi.
+ */
+let lastAssets: AssetMap = assetStore.getState().assets;
+assetStore.subscribe(() => {
+  const next = assetStore.getState().assets;
+  if (next === lastAssets) return;
+  const prev = lastAssets;
+  lastAssets = next;
+  if (restoringHistory) return;
+  recordHistory({ project: state, assets: prev });
+  state = { ...state, projectSerial: state.projectSerial + 1 };
+  notify();
+});
 
 function subscribe(fn: Listener): () => void {
   listeners.add(fn);
@@ -515,12 +446,7 @@ function set(patch: (s: StudioAppState) => Partial<StudioAppState> | null): void
   if (!restoringHistory && hasProjectEdit(state, merged)) {
     // Pointermove bisa memanggil store puluhan kali. Selama drag aktif hanya
     // keadaan sebelum gerakan pertama yang disimpan.
-    if (!state.draggingClip || !dragHistoryRecorded) {
-      undoStack.push(state);
-      if (undoStack.length > MAX_UNDO_HISTORY) undoStack.shift();
-      redoStack.length = 0;
-    }
-    if (state.draggingClip) dragHistoryRecorded = true;
+    recordHistory(currentEntry());
     // Satu definisi "karya berubah" untuk riwayat undo DAN penanda kotor —
     // kalau keduanya punya daftar field sendiri, suatu hari ada edit yang bisa
     // di-undo tapi tidak membuat judul jendela bertanda.
@@ -664,18 +590,6 @@ function mapLane(
   return { lanes: s.lanes.map((l) => (l.id === laneId ? fn(l) : l)) };
 }
 
-/**
- * BPM manual → nilai yang sah, atau null untuk "kembali ke deteksi".
- *
- * Dibatasi DI STORE, bukan hanya di field input: nilai bisa datang dari project
- * lama atau dari kode lain, dan BPM 0 membuat `samplesPerBeat` jadi Infinity —
- * satu grid rusak sudah cukup untuk membekukan penggambarnya.
- */
-function clampGridBpmOrNull(bpm: number | null | undefined): number | null {
-  if (bpm === null || bpm === undefined || !Number.isFinite(bpm)) return null;
-  return clampGridBpm(bpm);
-}
-
 let idCounter = 0;
 function nextId(prefix: string): string {
   idCounter += 1;
@@ -714,7 +628,7 @@ export const studioActions = {
   undo(): boolean {
     const previous = undoStack.pop();
     if (previous === undefined) return false;
-    redoStack.push(state);
+    redoStack.push(currentEntry());
     restoringHistory = true;
     restoreProject(previous);
     restoringHistory = false;
@@ -724,7 +638,7 @@ export const studioActions = {
   redo(): boolean {
     const next = redoStack.pop();
     if (next === undefined) return false;
-    undoStack.push(state);
+    undoStack.push(currentEntry());
     restoringHistory = true;
     restoreProject(next);
     restoringHistory = false;
@@ -1003,7 +917,7 @@ export const studioActions = {
       const hit = findClip(s.lanes, clipId);
       if (hit === null) return null;
       const { lane, clip } = hit;
-      const frames = s.assets[clip.assetId]?.frames;
+      const frames = assetStore.getState().assets[clip.assetId]?.frames;
       const next =
         edge === 'right'
           ? trimRight(clip, lane.speedRatio, at, frames)
@@ -1024,7 +938,7 @@ export const studioActions = {
       const hit = findClip(s.lanes, clipId);
       if (hit === null) return null;
       const { lane, clip } = hit;
-      const next = slipClip(clip, originSourceStart, deltaSource, s.assets[clip.assetId]?.frames);
+      const next = slipClip(clip, originSourceStart, deltaSource, assetStore.getState().assets[clip.assetId]?.frames);
       if (next === clip) return null;
       return {
         lanes: s.lanes.map((l) =>
@@ -1236,7 +1150,7 @@ export const studioActions = {
       const hit = findClip(s.lanes, clipId);
       if (hit === null || hit.clip.loopLen === undefined) return null;
       const bare = clearClipLoop(hit.clip);
-      const frames = s.assets[bare.assetId]?.frames;
+      const frames = assetStore.getState().assets[bare.assetId]?.frames;
       const room = frames === undefined ? bare.sourceLen : Math.max(1, frames - bare.sourceStart);
       const sourceLen = Math.min(bare.sourceLen, room);
       const next: StudioClip =
@@ -1263,198 +1177,6 @@ export const studioActions = {
       selectedClipIds: [clip.id],
       selectedLaneId: laneId,
     }));
-  },
-  /**
-   * Buang asset dari registry.
-   *
-   * Sengaja TIDAK memeriksa apakah ada clip yang memakainya: penjaganya hidup
-   * di pemanggil (`assetUsage`), karena hanya pemanggil yang tahu apa yang
-   * harus terjadi kalau ternyata dipakai — menolak, atau menghapus clip-nya
-   * lebih dulu. Aksi store yang diam-diam menolak akan terlihat seperti tidak
-   * melakukan apa-apa.
-   */
-  removeAsset(id: number): void {
-    set((s) => {
-      if (s.assets[id] === undefined) return {};
-      const next = { ...s.assets };
-      delete next[id];
-      return { assets: next };
-    });
-  },
-
-  registerAsset(asset: StudioAsset): void {
-    set((s) => ({ assets: { ...s.assets, [asset.id]: asset } }));
-  },
-  /**
-   * Hasil dari worker tempo. `tempo === null` berarti sudah dianalisis dan
-   * memang tidak ada jawabannya — `tempoPending` tetap dimatikan supaya UI
-   * berhenti menampilkan "menganalisis".
-   */
-  setAssetTempo(id: number, tempo: AssetTempo | null): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined) return {};
-      return { assets: { ...s.assets, [id]: { ...asset, tempo, tempoPending: false } } };
-    });
-  },
-  /** Tandai bahwa analisis sedang berjalan (dipanggil saat worker di-post). */
-  markAssetTempoPending(id: number): void {
-    set((s) => {
-      const asset = s.assets[id];
-      // Lagu terkunci dilewati analisis batch: hasilnya tidak akan dipakai
-      // (`bpmOverride` menang) dan `tempoPending` hanya membuat UI menulis
-      // "ANALISIS…" pada grid yang justru sudah final.
-      if (asset === undefined || asset.tempoPending || asset.analysisLock) return {};
-      return { assets: { ...s.assets, [id]: { ...asset, tempoPending: true } } };
-    });
-  },
-  /** ×2 (`+1`) atau ÷2 (`-1`) pada BPM asset. Dibatasi ±2 oktaf. */
-  shiftAssetTempoOctave(id: number, delta: number): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined) return {};
-      const next = Math.max(-2, Math.min(2, asset.tempoOctave + delta));
-      if (next === asset.tempoOctave) return {};
-      return { assets: { ...s.assets, [id]: { ...asset, tempoOctave: next } } };
-    });
-  },
-  /**
-   * Koreksi grid manual. Field yang tidak disebut TIDAK diubah, sehingga
-   * mengetik BPM tidak diam-diam membuang offset yang sudah disetel dengan
-   * susah payah (dan sebaliknya).
-   */
-  setAssetBeatGrid(id: number, patch: { bpm?: number | null; offsetSec?: number | null }): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined || asset.analysisLock) return {};
-      const bpmOverride = 'bpm' in patch ? clampGridBpmOrNull(patch.bpm) : asset.bpmOverride;
-      const nextOffset = patch.offsetSec ?? null;
-      const beatOffsetOverride =
-        'offsetSec' in patch
-          ? nextOffset !== null && Number.isFinite(nextOffset)
-            ? nextOffset
-            : null
-          : asset.beatOffsetOverride;
-      if (bpmOverride === asset.bpmOverride && beatOffsetOverride === asset.beatOffsetOverride) {
-        return {};
-      }
-      return { assets: { ...s.assets, [id]: { ...asset, bpmOverride, beatOffsetOverride } } };
-    });
-  },
-  /**
-   * Pasang (atau ganti) satu anchor tempo di `atSec` — `[Dynamic]` rekordbox.
-   *
-   * Anchor yang jatuh di detik yang sama dengan yang sudah ada DIGANTI, bukan
-   * ditumpuk: dua anchor di satu titik berarti ruas selebar nol, dan yang
-   * terlihat user adalah tombol yang tidak melakukan apa-apa pada tekanan
-   * kedua. `EPS_SEC` sengaja sekasar 1 ms — itu langkah terkecil yang bisa
-   * dihasilkan panel grid, jadi tidak ada anchor sah yang lebih rapat.
-   */
-  setAssetBeatAnchor(id: number, at: BeatAnchor): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined || asset.analysisLock) return {};
-      if (!Number.isFinite(at.atSec) || !Number.isFinite(at.bpm) || at.bpm <= 0) return {};
-      const bpm = clampGridBpm(at.bpm);
-      const EPS_SEC = 0.001;
-      const kept = (asset.beatAnchors ?? []).filter((a) => Math.abs(a.atSec - at.atSec) > EPS_SEC);
-      if (kept.length >= MAX_BEAT_ANCHORS) return {};
-      const beatAnchors = [...kept, { atSec: at.atSec, bpm }].sort((a, b) => a.atSec - b.atSec);
-      return { assets: { ...s.assets, [id]: { ...asset, beatAnchors } } };
-    });
-  },
-  /**
-   * Ganti SELURUH daftar anchor sekaligus.
-   *
-   * Ada demi undo/redo, yang harus bisa mengembalikan keadaan apa pun dalam
-   * satu langkah — memulihkannya lewat `setAssetBeatAnchor` satu per satu
-   * berarti keadaan setengah jadi yang sempat terlihat dan sempat terdengar.
-   */
-  setAssetBeatAnchors(id: number, anchors: readonly BeatAnchor[] | null): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined || asset.analysisLock) return {};
-      const next =
-        anchors === null || anchors.length === 0
-          ? null
-          : anchors
-              .filter((a) => Number.isFinite(a.atSec) && Number.isFinite(a.bpm) && a.bpm > 0)
-              .slice(0, MAX_BEAT_ANCHORS)
-              .map((a) => ({ atSec: a.atSec, bpm: clampGridBpm(a.bpm) }))
-              .sort((a, b) => a.atSec - b.atSec);
-      return { assets: { ...s.assets, [id]: { ...asset, beatAnchors: next } } };
-    });
-  },
-  /** Buang anchor ruas TERDEKAT dari `atSec`, kalau ada yang cukup dekat. */
-  removeAssetBeatAnchorNear(id: number, atSec: number, withinSec: number): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined || asset.analysisLock) return {};
-      const anchors = asset.beatAnchors ?? null;
-      if (anchors === null || anchors.length === 0) return {};
-      let bestI = -1;
-      let bestD = Infinity;
-      anchors.forEach((a, i) => {
-        const d = Math.abs(a.atSec - atSec);
-        if (d < bestD) {
-          bestD = d;
-          bestI = i;
-        }
-      });
-      if (bestI < 0 || bestD > withinSec) return {};
-      const rest = anchors.filter((_, i) => i !== bestI);
-      return {
-        assets: { ...s.assets, [id]: { ...asset, beatAnchors: rest.length === 0 ? null : rest } },
-      };
-    });
-  },
-  /**
-   * Buang SEMUA koreksi manual dan kembali ke hasil deteksi — termasuk
-   * `tempoOctave`.
-   *
-   * Oktafnya dulu TIDAK ikut, dan itu adalah cacat: ada dua jalan menuju
-   * "BPM-nya separuh" (`tempoOctave` lewat tombol ×2/÷2, dan `bpmOverride`
-   * lewat angka yang diketik), keduanya terlihat sama di layar, dan AUTO hanya
-   * membersihkan salah satunya. Akibatnya user menekan AUTO, BPM-nya tetap
-   * salah oktaf, dan tidak ada satu kontrol pun yang terlihat menjelaskan
-   * kenapa. Tombol yang bernama AUTO harus mengembalikan SEMUA yang manual.
-   */
-  resetAssetBeatGrid(id: number): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined || asset.analysisLock) return {};
-      if (
-        asset.bpmOverride === null &&
-        asset.beatOffsetOverride === null &&
-        (asset.beatAnchors ?? null) === null &&
-        asset.tempoOctave === 0
-      ) {
-        return {};
-      }
-      return {
-        assets: {
-          ...s.assets,
-          [id]: {
-            ...asset,
-            bpmOverride: null,
-            beatOffsetOverride: null,
-            beatAnchors: null,
-            tempoOctave: 0,
-          },
-        },
-      };
-    });
-  },
-  /**
-   * Kunci/buka `[Analysis Lock]`. Sengaja TIDAK ikut terkunci oleh dirinya
-   * sendiri — kunci yang tidak bisa dibuka bukan kunci, melainkan kerusakan.
-   */
-  setAnalysisLock(id: number, locked: boolean): void {
-    set((s) => {
-      const asset = s.assets[id];
-      if (asset === undefined || asset.analysisLock === locked) return {};
-      return { assets: { ...s.assets, [id]: { ...asset, analysisLock: locked } } };
-    });
   },
   /** Batas panjang timeline manual. `max === null` = kembali otomatis. */
   /**
@@ -1598,8 +1320,9 @@ export const studioActions = {
       const target = findClip(s.lanes, targetClipId);
       const reference = findClip(s.lanes, referenceClipId);
       if (target === null || reference === null || target.lane.id === reference.lane.id) return null;
-      const targetAsset = s.assets[target.clip.assetId];
-      const referenceAsset = s.assets[reference.clip.assetId];
+      const assets = assetStore.getState().assets;
+      const targetAsset = assets[target.clip.assetId];
+      const referenceAsset = assets[reference.clip.assetId];
       if (targetAsset === undefined || referenceAsset === undefined) return null;
 
       const result = computeClipSync({
@@ -1729,24 +1452,6 @@ export const studioActions = {
   newClipId(): string {
     return nextId('clip-');
   },
-  /**
-   * Id asset baru. WAJIB muat di `u32`: engine memakainya sebagai index tabel
-   * asset (`AssetId = u32`), dan id berbasis timestamp (~1.7e15) ditolak saat
-   * snapshot dideserialisasi.
-   *
-   * Di-seed dari id terbesar yang sudah ada supaya tidak bentrok dengan project
-   * yang dipulihkan; id lama yang terlalu besar diabaikan saat menghitung seed,
-   * jadi rentangnya tidak pernah bertabrakan.
-   */
-  newAssetId(): number {
-    const existing = Object.keys(state.assets)
-      .map(Number)
-      .filter((n) => Number.isFinite(n) && n >= 0 && n <= 0xffff_ffff);
-    const floor = existing.length > 0 ? Math.max(...existing) : 0;
-    idCounter = Math.max(idCounter + 1, floor + 1);
-    return idCounter;
-  },
-
   /**
    * Id job import. Cukup unik dalam satu sesi — job tidak pernah disimpan
    * maupun dikirim ke engine, jadi ia tidak punya syarat rentang seperti
@@ -1929,9 +1634,14 @@ export const studioActions = {
     undoStack.length = 0;
     redoStack.length = 0;
     dragHistoryRecorded = false;
+    // Registry aset ikut dikosongkan — di bawah `restoringHistory` supaya
+    // pengosongan itu tidak tercatat sebagai edit pada state yang justru
+    // sedang direset.
+    restoringHistory = true;
+    assetActions.__resetForTest();
+    restoringHistory = false;
     state = withDerived({
       ...(seed === 'empty' ? createInitialStudio() : createDemoStudio()),
-      assets: {},
       importJobs: [],
       engineReady: false,
       engineError: null,
@@ -1978,18 +1688,23 @@ export function selectProjectDirty(s: StudioAppState): boolean {
  * clip yang menunjuk asset hantu. Clip seperti itu tidak melempar — ia hanya
  * menggambar placeholder dan diam saat diputar, dan penyebabnya terjadi di
  * halaman lain beberapa menit sebelumnya.
+ *
+ * Yang bertanya (`/dj`) tidak tahu lane, jadi jawabannya DIDAFTARKAN ke
+ * `assets/usage.ts` core saat modul ini dimuat — lihat di bawah.
  */
-export function assetUsage(s: StudioAppState, id: number): { clips: number; lanes: string[] } {
-  const lanes: string[] = [];
-  let clips = 0;
+export function laneAssetUsage(s: StudioAppState, id: number): AssetUsage {
+  const where: string[] = [];
+  let count = 0;
   for (const lane of s.lanes) {
     const n = lane.clips.filter((c) => c.assetId === id).length;
     if (n === 0) continue;
-    clips += n;
-    lanes.push(lane.name);
+    count += n;
+    where.push(lane.name);
   }
-  return { clips, lanes };
+  return { count, where };
 }
+
+registerAssetUsage((id) => laneAssetUsage(state, id));
 
 export const selectLanes = (s: StudioAppState): readonly StudioLane[] => s.lanes;
 export const selectDurationSec = (s: StudioAppState): number =>

@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 
-import { studioActions, studioStore, type StudioAsset } from '../store';
-import { buildEnvelope } from '../timeline/envelope';
+import { studioActions, studioStore } from '../store';
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
+import { DEFAULT_FADE_CURVE } from '../model';
 import { deserialize, normalizeLanes, serialize } from './persistence';
 
 const SR = 48_000;
@@ -62,9 +65,9 @@ describe('serialisasi project', () => {
   });
 
   it('menyimpan koreksi beat grid, tapi HANYA asset yang benar-benar dikoreksi', () => {
-    studioActions.registerAsset(asset(1));
-    studioActions.registerAsset(asset(2));
-    studioActions.setAssetBeatGrid(1, { bpm: 128, offsetSec: 0.25 });
+    assetActions.registerAsset(asset(1));
+    assetActions.registerAsset(asset(2));
+    assetActions.setAssetBeatGrid(1, { bpm: 128, offsetSec: 0.25 });
 
     const back = deserialize(serialize(studioStore.getState()));
     expect(back!.assetGrids).toEqual({ 1: { bpm: 128, offsetSec: 0.25, lock: false } });
@@ -74,8 +77,8 @@ describe('serialisasi project', () => {
     // Mengunci tanpa mengoreksi adalah keadaan yang sah — artinya "hasil
     // deteksinya sudah benar, jangan disentuh lagi". Kalau syarat penyimpanan
     // hanya melihat kedua override, kunci itu hilang tiap refresh.
-    studioActions.registerAsset(asset(1));
-    studioActions.setAnalysisLock(1, true);
+    assetActions.registerAsset(asset(1));
+    assetActions.setAnalysisLock(1, true);
 
     const back = deserialize(serialize(studioStore.getState()));
     expect(back!.assetGrids).toEqual({ 1: { bpm: null, offsetSec: null, lock: true } });
@@ -84,9 +87,9 @@ describe('serialisasi project', () => {
   it('ruas tempo ikut tersimpan, dan lagu tanpa ruas tidak menumbuhkan JSON', () => {
     // Ruas adalah keputusan user atas MATERI — kalau ia tidak bertahan, koreksi
     // lagu bertempo goyah harus diulang tiap kali tab dibuka.
-    studioActions.registerAsset(asset(1));
-    studioActions.registerAsset(asset(2));
-    studioActions.setAssetBeatAnchor(1, { atSec: 120, bpm: 96 });
+    assetActions.registerAsset(asset(1));
+    assetActions.registerAsset(asset(2));
+    assetActions.setAssetBeatAnchor(1, { atSec: 120, bpm: 96 });
 
     const back = deserialize(serialize(studioStore.getState()));
     expect(back!.assetGrids).toEqual({
@@ -135,5 +138,29 @@ describe('serialisasi project', () => {
     studioActions.hydrate({ playing: true, playhead: 1000 });
     expect(studioStore.getState().playing).toBe(false);
     expect(studioStore.getState().playhead).toBe(1000);
+  });
+});
+
+describe('normalizeLanes', () => {
+  it('lane hasil restore ikut dinormalkan sampai ke tiap clip — fadeCurve yang hilang diisi', () => {
+    const lanes = [
+      {
+        id: 'l1',
+        name: 'A',
+        color: '#ffd400',
+        mute: false,
+        solo: false,
+        gainDb: 0,
+        speedRatio: 1,
+        eq: { bands: [] },
+        clips: [
+          {
+            id: 'c1', assetId: 1, chain: [], start: 0, len: SR, sourceStart: 0, sourceLen: SR,
+            label: 'C', gainDb: 0, fadeInMs: 0, fadeOutMs: 0, fadeCurve: undefined, seed: 1,
+          },
+        ],
+      },
+    ] as never;
+    expect(normalizeLanes(lanes)[0]?.clips[0]?.fadeCurve).toBe(DEFAULT_FADE_CURVE);
   });
 });

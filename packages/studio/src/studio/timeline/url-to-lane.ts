@@ -20,7 +20,7 @@
  */
 
 import { importBytesToLane, type DropResult, type LaneImportOptions } from './audio-import';
-import { classifyUrl, fetchAudioUrl, type UrlKind } from './url-import';
+import { classifyUrl, fetchAudioUrl, type UrlKind } from '@kelasmalam/studio-core/timeline/url-import';
 
 /** Satu jalur khusus untuk sebagian URL — didaftarkan app (docs/25 §1c). */
 export interface UrlImporter {

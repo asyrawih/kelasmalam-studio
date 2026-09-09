@@ -7,8 +7,9 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 
-import { studioActions, type StudioAsset } from '@kelasmalam/studio/studio/store';
 import { djActions, djStore } from './store';
 import { phaseErrorOf, startSyncFollow, toggleSyncFor } from './sync-ops';
 
@@ -32,7 +33,7 @@ const asset = (id: number, bpm: number, offsetSec = 0): StudioAsset =>
   }) as unknown as StudioAsset;
 
 function load(deck: 'A' | 'B', assetId: number, bpm: number, offsetSec = 0): void {
-  studioActions.registerAsset(asset(assetId, bpm, offsetSec));
+  assetActions.registerAsset(asset(assetId, bpm, offsetSec));
   djActions.loadDeck(deck, { assetId, frames: SR * 300, name: `LAGU ${assetId}`, sampleRate: SR });
 }
 
@@ -47,7 +48,7 @@ const heardBpm = (deck: 'A' | 'B', gridBpm: number): number => {
 
 beforeEach(() => {
   djActions.__resetForTest();
-  studioActions.__resetForTest?.();
+  assetActions.__resetForTest();
 });
 
 describe('memilih leader', () => {
@@ -80,7 +81,7 @@ describe('memilih leader', () => {
 
   it('menolak dengan kalimat kalau materinya belum punya grid', () => {
     load('A', 1, 128);
-    studioActions.registerAsset({ ...asset(2, 128), tempo: null } as StudioAsset);
+    assetActions.registerAsset({ ...asset(2, 128), tempo: null } as StudioAsset);
     djActions.loadDeck('B', { assetId: 2, frames: SR * 300, name: 'B', sampleRate: SR });
     const r = toggleSyncFor('A');
     expect(r.ok).toBe(false);

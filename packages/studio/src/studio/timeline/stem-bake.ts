@@ -15,11 +15,13 @@
  */
 
 import { STEM_BYPASS, isStemBypass, samplesToSec, type StudioClip } from '../model';
-import { resolveBeatGrid } from '../analysis/beat-grid';
+import { assetFromBuffer } from '@kelasmalam/studio-core/timeline/audio-import';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
+import { resolveBeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { getBuffer, registerBuffer } from '../preview/audio-preview';
 import { buildStemChain } from '../preview/stem-chain';
 import { studioActions, studioStore } from '../store';
-import { assetFromBuffer } from './audio-import';
+
 import { stemOf } from './stem';
 
 export interface BakeResult {
@@ -80,10 +82,10 @@ export async function bakeClipStem(clipId: string): Promise<BakeResult> {
     return { ok: false, reason: err instanceof Error ? err.message : 'render gagal' };
   }
 
-  const source = state.assets[clip.assetId];
-  const assetId = studioActions.newAssetId();
+  const source = assetStore.getState().assets[clip.assetId];
+  const assetId = assetActions.newAssetId();
   const name = `${source?.name ?? 'clip'} [stem]`;
-  studioActions.registerAsset(assetFromBuffer(assetId, name, rendered));
+  assetActions.registerAsset(assetFromBuffer(assetId, name, rendered));
   registerBuffer(assetId, rendered);
 
   // Grid ikut pindah, digeser sesuai potongan yang diambil. Tanpa ini, downbeat
@@ -91,7 +93,7 @@ export async function bakeClipStem(clipId: string): Promise<BakeResult> {
   // dan asset baru tidak akan dianalisis ulang (tempo-nya null).
   const grid = resolveBeatGrid(source);
   if (grid !== null) {
-    studioActions.setAssetBeatGrid(assetId, {
+    assetActions.setAssetBeatGrid(assetId, {
       bpm: grid.bpm,
       offsetSec: grid.offsetSec - samplesToSec(clip.sourceStart, sr),
     });

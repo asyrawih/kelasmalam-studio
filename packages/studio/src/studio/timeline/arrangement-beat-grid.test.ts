@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
 
-import type { StudioAsset } from '../store';
+
 import { arrangementGridLines } from './arrangement-beat-grid';
 
 const SR = 48_000;

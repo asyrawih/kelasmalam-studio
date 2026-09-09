@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Halaman DJ (docs/25 P3): deck, mixer, grid, browser koleksi. Bergantung pada studio (model, store, peaks, waveform, stem) sampai studio-core lahir di P4.",
+  "description": "Halaman DJ (docs/25 P3): deck, mixer, grid, browser koleksi. Bergantung pada studio-core (registry aset, beat grid, waveform, stem, cache PCM) — TIDAK pada studio lane (docs/25 P4).",
   "exports": {
     "./*": "./src/*"
   },
@@ -12,7 +12,7 @@
     "@kelasmalam/platform": "workspace:*",
     "@kelasmalam/proof-stem": "workspace:*",
     "@kelasmalam/shell": "workspace:*",
-    "@kelasmalam/studio": "workspace:*",
+    "@kelasmalam/studio-core": "workspace:*",
     "@kelasmalam/ui": "workspace:*",
     "react": "^18.3.1"
   },

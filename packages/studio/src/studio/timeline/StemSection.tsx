@@ -35,7 +35,7 @@ import {
   hasPlayableAutoStem,
   setAutoStemPart,
   useAutoStem,
-} from '../../stem/auto-stem';
+} from '@kelasmalam/studio-core/stem/auto-stem';
 
 const ROW: React.CSSProperties = {
   display: 'flex',

@@ -32,7 +32,7 @@
  * adalah `panjang_ketukan / rate`.
  */
 
-import { beatIndexAt, samplesPerBeat, sourceAtBeat, type BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import { beatIndexAt, samplesPerBeat, sourceAtBeat, type BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 
 /** Mati, lalu tiga tingkat — persis rekordbox. */
 export type MetroLevel = 0 | 1 | 2 | 3;

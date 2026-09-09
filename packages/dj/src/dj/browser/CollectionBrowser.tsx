@@ -16,8 +16,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { TEMPO_UNCERTAIN } from '@kelasmalam/studio-core/assets/model';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
+import { previewSampleRate } from '@kelasmalam/studio-core/preview/audio-context';
 
-import { TEMPO_UNCERTAIN, useStudio } from '@kelasmalam/studio/studio/store';
 import { formatDeckTime, type DeckId } from '../model';
 import { djActions, useDj } from '../store';
 import { filterSort, rowsOf, type CollectionRow } from './collection';
@@ -112,8 +114,11 @@ function RemoveCell({
 }
 
 export function CollectionBrowser(): JSX.Element {
-  const assets = useStudio((s) => s.assets);
-  const sampleRate = useStudio((s) => s.sampleRate);
+  const assets = useAssets((s) => s.assets);
+  // Sample rate untuk decode: milik AudioContext kalau sudah ada, kalau belum
+  // bawaan core. Halaman ini tidak punya project, jadi tidak ada `sampleRate`
+  // project untuk dibaca (docs/25 P4).
+  const sampleRate = previewSampleRate();
   const query = useDj((s) => s.browse.query);
   const sort = useDj((s) => s.browse.sort);
   const ascending = useDj((s) => s.browse.ascending);

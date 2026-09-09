@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildEnvelope } from './envelope';
 import { drawAssetWave, drawLoopedClipWave } from './waveform';
-import type { StudioAsset } from '../store';
+import type { StudioAsset } from '../assets/model';
 
 interface Pt {
   readonly x: number;

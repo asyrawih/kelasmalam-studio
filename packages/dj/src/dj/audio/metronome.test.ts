@@ -11,7 +11,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BEATS_PER_BAR, type BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import { BEATS_PER_BAR, type BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { Metronome, type MetroLevel } from './metronome';
 
 const SR = 48_000;

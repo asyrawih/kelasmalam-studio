@@ -22,6 +22,10 @@
  * Impor ke paket sendiri (`@kelasmalam/y/…` dari dalam `y`) tidak dihitung
  * sebagai dependensi dan juga TIDAK dilarang di sini — tapi di dalam paket
  * tulislah relatif; alias ke diri sendiri hanya membingungkan `git mv`.
+ *
+ * P4 menambah satu sisi yang dijaga secara eksplisit: `dj` TIDAK bergantung
+ * pada `studio` (lane) — hanya pada `studio-core`. Itulah gerbang docs/24:
+ * begitu `studio-fl` lahir, DJ tidak boleh ikut terikat pada salah satunya.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -147,6 +151,27 @@ describe('graf paket @kelasmalam/* (docs/25 P3)', () => {
     for (const target of declared(dir)) {
       expect(DIRS, `${dir} → ${target}`).toContain(target);
       expect(MANIFESTS.get(dir)!.dependencies![SCOPE + target]).toBe('workspace:*');
+    }
+  });
+});
+
+describe('dj hanya bergantung pada studio-core (docs/25 P4)', () => {
+  it('package.json dj tidak memuat @kelasmalam/studio, dan memuat studio-core', () => {
+    expect(declared('dj')).not.toContain('studio');
+    expect(declared('dj')).toContain('studio-core');
+  });
+
+  it('tidak ada satu pun impor @kelasmalam/studio/ di packages/dj/src', () => {
+    const hits = [...sources(join(PACKAGES, 'dj', 'src'))]
+      .filter((f) => readFileSync(f, 'utf8').includes(`${SCOPE}studio/`))
+      .map((f) => relative(PACKAGES, f));
+    expect(hits).toEqual([]);
+  });
+
+  it('studio-core sendiri tidak tahu lane: tidak mengimpor studio, dj, library', () => {
+    for (const forbidden of ['studio', 'dj', 'library', 'soundcloud', 'roblox']) {
+      expect(declared('studio-core')).not.toContain(forbidden);
+      expect([...(IMPORTS.get('studio-core')?.keys() ?? [])]).not.toContain(forbidden);
     }
   });
 });

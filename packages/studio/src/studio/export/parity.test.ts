@@ -16,9 +16,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildExportPayload, payloadFeatures } from './payload';
 import { DEFAULT_FADE_CURVE, defaultEq, type StudioLane, type StudioState } from '../model';
-import type { AutoStemAudio } from '../../stem/auto-stem';
+import type { AutoStemAudio } from '@kelasmalam/studio-core/stem/auto-stem';
 
-vi.mock('../preview/fx-node', () => ({
+vi.mock('@kelasmalam/studio-core/preview/fx-node', () => ({
   ensureFxRuntime: () => Promise.resolve(false),
   fxCatalog: () => null,
   fxPreviewStatus: () => ({ ready: false, error: null }),

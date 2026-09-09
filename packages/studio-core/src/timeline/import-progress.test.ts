@@ -13,7 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../preview/audio-preview', () => ({
+vi.mock('../preview/audio-context', () => ({
   ensureContext: () => ({
     sampleRate: 48_000,
     decodeAudioData: () => {
@@ -71,8 +71,8 @@ function streamingFile(bytes: Uint8Array, chunks: number, name = 'lagu.wav'): Fi
 describe('kemajuan import', () => {
   it('melaporkan rasio pembacaan yang naik, lalu decode & analisis tanpa rasio', async () => {
     const { importFileToAsset } = await import('./audio-import');
-    const { studioActions } = await import('../store');
-    studioActions.__resetForTest('empty');
+    const { assetActions } = await import('../assets/store');
+    assetActions.__resetForTest();
 
     const seen: { stage: string; ratio: number | null }[] = [];
     const r = await importFileToAsset(streamingFile(wavBytes(400), 4), 48_000, (p) =>
@@ -95,21 +95,21 @@ describe('kemajuan import', () => {
 
   it('membaca seluruh byte lewat stream — hasilnya identik dengan file aslinya', async () => {
     const { importFileToAsset } = await import('./audio-import');
-    const { studioActions, studioStore } = await import('../store');
-    studioActions.__resetForTest('empty');
+    const { assetActions, assetStore } = await import('../assets/store');
+    assetActions.__resetForTest();
 
-    const before = Object.keys(studioStore.getState().assets).length;
+    const before = Object.keys(assetStore.getState().assets).length;
     const r = await importFileToAsset(streamingFile(wavBytes(999), 7), 48_000, () => undefined);
     expect(r.ok).toBe(true);
     // Asset benar-benar terdaftar: potongan yang salah sambung akan gagal di
     // `sniff` atau `decodeAudioData` sebelum sampai ke sini.
-    expect(Object.keys(studioStore.getState().assets).length).toBe(before + 1);
+    expect(Object.keys(assetStore.getState().assets).length).toBe(before + 1);
   });
 
   it('tanpa pendengar, jalurnya tetap `arrayBuffer()` (browser lama / jsdom)', async () => {
     const { importFileToAsset } = await import('./audio-import');
-    const { studioActions } = await import('../store');
-    studioActions.__resetForTest('empty');
+    const { assetActions } = await import('../assets/store');
+    assetActions.__resetForTest();
 
     const bytes = wavBytes(128);
     let streamed = false;

@@ -1,8 +1,9 @@
 /** Beat-grid ringan untuk waveform clip di arrangement. */
 
-import { beatLinesIn, gridSegments, samplesPerBeat, trackedBeatSamples } from '../analysis/beat-grid';
-import type { StudioAsset } from '../store';
-import type { WaveWindow } from './wave-window';
+import { beatLinesIn, gridSegments, samplesPerBeat, trackedBeatSamples } from '@kelasmalam/studio-core/analysis/beat-grid';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+
+import type { WaveWindow } from '@kelasmalam/studio-core/timeline/wave-window';
 
 export interface ArrangementGridLine {
   /** Posisi dalam CSS pixel, relatif terhadap canvas yang terlihat. */

@@ -13,12 +13,13 @@
  */
 
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DjPage } from '../DjPage';
 import { djActions, djStore } from '../store';
-import { studioActions, type StudioAsset } from '@kelasmalam/studio/studio/store';
-import { buildEnvelope } from '@kelasmalam/studio/studio/timeline/envelope';
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
 
 const SR = 48_000;
 const FRAMES = SR * 4;
@@ -57,7 +58,7 @@ const RECT = {
 beforeEach(() => {
   Element.prototype.getBoundingClientRect = () => RECT as DOMRect;
   djActions.__resetForTest();
-  studioActions.__resetForTest?.();
+  assetActions.__resetForTest();
 });
 
 afterEach(cleanup);
@@ -153,7 +154,7 @@ describe('DjPage', () => {
     // Menghapus lagu tidak bisa dibatalkan — lagunya lenyap dari sesi ini
     // beserta cue-nya. Satu klik yang langsung menghapus adalah satu salah-klik
     // yang membuang pekerjaan tanpa langkah kedua.
-    act(() => studioActions.registerAsset(fakeAsset(9)));
+    act(() => assetActions.registerAsset(fakeAsset(9)));
     render(<DjPage />);
 
     const row = screen.getByTitle(/hapus "LAGU 9"/);

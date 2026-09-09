@@ -14,8 +14,8 @@ export {
   type BeatState,
   type BeatZoom,
 } from './BeatSection';
-export { ScrollingWave, type ScrollingWaveProps } from './ScrollingWave';
-export { drawBeatGrid, drawPlayhead } from './beat-draw';
+export { ScrollingWave, type ScrollingWaveProps } from '@kelasmalam/studio-core/timeline/ScrollingWave';
+export { drawBeatGrid, drawPlayhead } from '@kelasmalam/studio-core/timeline/beat-draw';
 export { StemSection } from './StemSection';
 export { bakeClipStem, type BakeResult } from './stem-bake';
 export { normalizeClipStem, stemOf, stemSummary, STEM_LABELS } from './stem';
@@ -40,15 +40,12 @@ export { OverviewStrip, type OverviewStripProps } from './OverviewStrip';
 export { LaneHeaders } from './LaneHeaders';
 export { TimelineRuler, markStepFor, type TimelineRulerProps } from './TimelineRuler';
 export { ClipArea, type ClipAreaProps } from './ClipArea';
+export { importFileToLane, laneContentEnd, type DropResult, type LaneImportOptions } from './audio-import';
 export {
-  importFileToLane,
   assetFromBuffer,
-  laneContentEnd,
-  type DropResult,
   type ImportProgress,
   type ImportProgressFn,
-  type LaneImportOptions,
-} from './audio-import';
+} from '@kelasmalam/studio-core/timeline/audio-import';
 export { runFileImport, runUrlImport } from './lane-import';
 export { LaneImportOverlay, type LaneImportOverlayProps } from './LaneImportOverlay';
 export {
@@ -60,7 +57,7 @@ export {
   BAND_COLORS,
   type BandColors,
   type WaveStyle,
-} from './waveform';
+} from '@kelasmalam/studio-core/timeline/waveform';
 export {
   fadeInGain,
   fadeOutGain,
@@ -74,7 +71,7 @@ export {
   secToMs,
   FADE_PRESET_SEC,
   type FadeSide,
-} from './fade';
+} from '@kelasmalam/studio-core/timeline/fade';
 export {
   BUCKET_SIZES,
   LOW_HZ,
@@ -89,4 +86,4 @@ export {
   type EnvelopeColumns,
   type EnvelopeLevel,
   type PcmSource,
-} from './envelope';
+} from '@kelasmalam/studio-core/timeline/envelope';

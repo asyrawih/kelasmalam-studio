@@ -16,7 +16,9 @@
  */
 
 import { effectiveSpeed, isAudible } from '../model';
-import type { StudioAppState, StudioAsset } from '../store';
+import type { AssetMap, StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetStore } from '@kelasmalam/studio-core/assets/store';
+import type { StudioAppState } from '../store';
 
 export interface ActiveTempo {
   readonly laneId: string;
@@ -99,11 +101,22 @@ export function correctedBpm(asset: StudioAsset): number | null {
  * memang alasan tambahan untuk tidak pernah memutasinya.
  */
 let memoKey: StudioAppState | null = null;
+let memoAssets: AssetMap | null = null;
 let memoValue: PlayheadTempo | null = null;
 
-export function selectPlayheadTempo(s: StudioAppState): PlayheadTempo {
-  if (memoKey === s && memoValue !== null) return memoValue;
-  const next = computePlayheadTempo(s);
+/**
+ * `assets` adalah argumen KEDUA, bukan dibaca dari `s`: registry aset hidup di
+ * `studio-core` (docs/25 P4), terpisah dari state lane. Default-nya registry
+ * itu sendiri, jadi pemanggil `useStudio(selectPlayheadTempo)` tetap bekerja —
+ * asalkan komponennya JUGA berlangganan `useAssets`, supaya render ulang
+ * terjadi saat tempo sebuah aset datang.
+ */
+export function selectPlayheadTempo(
+  s: StudioAppState,
+  assets: AssetMap = assetStore.getState().assets,
+): PlayheadTempo {
+  if (memoKey === s && memoAssets === assets && memoValue !== null) return memoValue;
+  const next = computePlayheadTempo(s, assets);
   // Referensi LAMA dipertahankan kalau isinya sama persis.
   //
   // Kunci berbasis referensi state saja tidak cukup: SETIAP aksi membuat state
@@ -114,6 +127,7 @@ export function selectPlayheadTempo(s: StudioAppState): PlayheadTempo {
   // apa-apa yang dipajang. Perbandingan isi di bawah yang menghentikannya.
   const value = memoValue !== null && sameTempo(memoValue, next) ? memoValue : next;
   memoKey = s;
+  memoAssets = assets;
   memoValue = value;
   return value;
 }
@@ -123,17 +137,23 @@ export function selectPlayheadTempo(s: StudioAppState): PlayheadTempo {
  * Tanpa pilihan, perilakunya kembali persis ke pelacak playhead lama.
  */
 let displayedMemoKey: StudioAppState | null = null;
+let displayedMemoAssets: AssetMap | null = null;
 let displayedMemoValue: PlayheadTempo | null = null;
 
-export function selectDisplayedTempo(s: StudioAppState): PlayheadTempo {
-  if (displayedMemoKey === s && displayedMemoValue !== null) return displayedMemoValue;
+export function selectDisplayedTempo(
+  s: StudioAppState,
+  assets: AssetMap = assetStore.getState().assets,
+): PlayheadTempo {
+  if (displayedMemoKey === s && displayedMemoAssets === assets && displayedMemoValue !== null) {
+    return displayedMemoValue;
+  }
 
   let next: PlayheadTempo | null = null;
   if (s.selectedClipId !== null) {
     for (const lane of s.lanes) {
       const clip = lane.clips.find((entry) => entry.id === s.selectedClipId);
       if (clip === undefined) continue;
-      const asset = s.assets[clip.assetId];
+      const asset = assets[clip.assetId];
       if (asset === undefined) break;
       if (asset.tempoPending) {
         next = { primary: null, others: [], pending: true, unknown: false, idle: false };
@@ -163,12 +183,13 @@ export function selectDisplayedTempo(s: StudioAppState): PlayheadTempo {
       break;
     }
   }
-  next ??= selectPlayheadTempo(s);
+  next ??= selectPlayheadTempo(s, assets);
 
   const value = displayedMemoValue !== null && sameTempo(displayedMemoValue, next)
     ? displayedMemoValue
     : next;
   displayedMemoKey = s;
+  displayedMemoAssets = assets;
   displayedMemoValue = value;
   return value;
 }
@@ -202,7 +223,7 @@ function sameTempo(a: PlayheadTempo, b: PlayheadTempo): boolean {
   });
 }
 
-function computePlayheadTempo(s: StudioAppState): PlayheadTempo {
+function computePlayheadTempo(s: StudioAppState, assets: AssetMap): PlayheadTempo {
   const found: ActiveTempo[] = [];
   let pending = false;
   let unknown = false;
@@ -219,7 +240,7 @@ function computePlayheadTempo(s: StudioAppState): PlayheadTempo {
       if (s.playhead < clip.start || s.playhead >= clip.start + clip.len) continue;
       anyClip = true;
 
-      const asset = s.assets[clip.assetId];
+      const asset = assets[clip.assetId];
       if (asset === undefined) continue;
       if (asset.tempoPending) {
         pending = true;

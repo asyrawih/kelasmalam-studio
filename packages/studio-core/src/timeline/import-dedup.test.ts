@@ -15,7 +15,7 @@ const SR = 48_000;
 /** Berapa kali `decodeAudioData` benar-benar dipanggil. */
 let decodeCount = 0;
 
-vi.mock('../preview/audio-preview', () => ({
+vi.mock('../preview/audio-context', () => ({
   ensureContext: () => ({
     sampleRate: SR,
     decodeAudioData: async (bytes: ArrayBuffer): Promise<AudioBuffer> => {
@@ -39,7 +39,7 @@ vi.mock('../analysis/tempo-client', () => ({ requestAssetTempo: () => {} }));
 import { importBytesToAsset } from './audio-import';
 import { sha256Hex } from './content-hash';
 import { notifyImported, registerImportSink, type ImportedForLibrary } from './import-sink';
-import { studioActions, studioStore } from '../store';
+import { assetActions, assetStore } from '../assets/store';
 
 /** WAV mono 8-bit — cukup untuk lolos `sniff()`. Isi berubah menurut `seed`. */
 function wavBytes(seed = 1): ArrayBuffer {
@@ -66,11 +66,11 @@ function wavBytes(seed = 1): ArrayBuffer {
   return buf;
 }
 
-const assets = () => Object.values(studioStore.getState().assets);
+const assets = () => Object.values(assetStore.getState().assets);
 
 beforeEach(() => {
   decodeCount = 0;
-  studioActions.__resetForTest?.();
+  assetActions.__resetForTest?.();
   registerImportSink(null);
 });
 

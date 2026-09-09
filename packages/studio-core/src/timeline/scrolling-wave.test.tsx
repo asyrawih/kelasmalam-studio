@@ -1,17 +1,17 @@
 /**
  * Penjaga prop `positionSourceSec`.
  *
- * `ScrollingWave` sekarang punya DUA pemakai: panel Clip Detail di Studio dan
- * deck di halaman `/dj`. Yang pertama tidak boleh bergeser perilakunya sedikit
- * pun karena yang kedua ditambahkan — dan "tidak bergeser" adalah hal yang
- * harus DIBUKTIKAN, bukan diasumsikan.
+ * `ScrollingWave` punya DUA pemakai: panel Clip Detail di Studio dan deck di
+ * halaman `/dj`. Sejak docs/25 P4 komponen ini hidup di `studio-core` dan tidak
+ * tahu pemutar mana pun — jamnya DISUNTIKKAN. Yang harus dibuktikan: jam yang
+ * disuntikkan benar-benar dipakai, dan tanpa jam ia jatuh ke `playhead` (tidak
+ * diam-diam mengimpor pemutar Studio kembali).
  */
 
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ScrollingWave } from './ScrollingWave';
-import * as preview from '../preview/audio-preview';
 
 /**
  * jsdom melaporkan ukuran nol untuk setiap elemen, dan `fitCanvas` keluar lebih
@@ -55,21 +55,28 @@ const base = {
 } as const;
 
 describe('ScrollingWave: sumber posisi', () => {
-  it('memakai jam yang disuntikkan, dan TIDAK memanggil jam preview Studio', () => {
-    const spy = vi.spyOn(preview, 'previewPositionSec');
+  it('memakai jam yang disuntikkan', () => {
     const mine = vi.fn(() => 1.25);
-
     render(<ScrollingWave {...base} positionSourceSec={mine} />);
-
     expect(mine).toHaveBeenCalled();
-    expect(spy).not.toHaveBeenCalled();
   });
 
-  it('tanpa prop, perilaku lama tidak bergeser: jam preview Studio yang dipakai', () => {
-    const spy = vi.spyOn(preview, 'previewPositionSec').mockReturnValue(0.5);
+  it('saat audisi, jam audisi yang disuntikkan yang dibaca', () => {
+    const transport = vi.fn(() => 1.25);
+    const audition = vi.fn(() => 0.5);
+    render(
+      <ScrollingWave
+        {...base}
+        auditioning
+        positionSourceSec={transport}
+        auditionSourceSec={audition}
+      />,
+    );
+    expect(audition).toHaveBeenCalled();
+    expect(transport).not.toHaveBeenCalled();
+  });
 
-    render(<ScrollingWave {...base} />);
-
-    expect(spy).toHaveBeenCalled();
+  it('tanpa jam, tetap menggambar dari `playhead` — tidak melempar', () => {
+    expect(() => render(<ScrollingWave {...base} />)).not.toThrow();
   });
 });

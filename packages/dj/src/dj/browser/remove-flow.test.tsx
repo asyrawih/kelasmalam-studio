@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { CollectionBrowser } from './CollectionBrowser';
 import { djActions, djStore } from '../store';
-import { studioActions, studioStore, type StudioAsset } from '@kelasmalam/studio/studio/store';
-import { buildEnvelope } from '@kelasmalam/studio/studio/timeline/envelope';
+import { __clearAssetUsageForTest, registerAssetUsage } from '@kelasmalam/studio-core/assets/usage';
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
 
 const SR = 48_000;
 const FRAMES = SR * 4;
@@ -18,9 +20,10 @@ const asset = (id: number): StudioAsset =>
 
 beforeEach(() => {
   cleanup();
+  __clearAssetUsageForTest();
   djActions.__resetForTest();
-  studioActions.__resetForTest?.();
-  act(() => studioActions.registerAsset(asset(5)));
+  assetActions.__resetForTest();
+  act(() => assetActions.registerAsset(asset(5)));
 });
 
 /**
@@ -44,7 +47,7 @@ describe('alur hapus dari UI', () => {
       fireEvent.click(btn());
       await Promise.resolve();
     });
-    expect(studioStore.getState().assets[5]).toBeUndefined();
+    expect(assetStore.getState().assets[5]).toBeUndefined();
   });
 
   it('pointer yang bergeser keluar-masuk TIDAK membatalkan konfirmasi', async () => {
@@ -60,7 +63,7 @@ describe('alur hapus dari UI', () => {
       fireEvent.click(btn());
       await Promise.resolve();
     });
-    expect(studioStore.getState().assets[5]).toBeUndefined();
+    expect(assetStore.getState().assets[5]).toBeUndefined();
   });
 
   it('konfirmasi batal sendiri setelah beberapa detik', () => {
@@ -85,27 +88,10 @@ describe('alur hapus dari UI', () => {
   });
 
   it('penolakan dilaporkan DI Collection, bukan hanya di baris FX yang jauh', async () => {
-    // Lagu yang dipakai clip Studio tidak boleh terhapus dari sini.
-    const lanes = studioStore.getState().lanes;
-    const first = lanes[0];
-    if (first === undefined) throw new Error('tanpa lane');
-    act(() =>
-      studioActions.hydrate({
-        lanes: [
-          {
-            ...first,
-            name: 'LANE UJI',
-            clips: [
-              {
-                id: 'c1', assetId: 5, chain: [], start: 0, len: 10, sourceStart: 0,
-                sourceLen: 10, label: 'X', gainDb: 0, fadeInMs: 0, fadeOutMs: 0,
-                fadeCurve: 'equalPower', seed: 1,
-              },
-            ],
-          },
-        ],
-      }),
-    );
+    // Lagu yang dipakai clip Studio tidak boleh terhapus dari sini. Halaman
+    // ini tidak tahu lane (docs/25 P4): pemakaiannya datang dari registry
+    // core, dan di sini penyedianya dipalsukan.
+    registerAssetUsage((id) => (id === 5 ? { count: 1, where: ['LANE UJI'] } : { count: 0, where: [] }));
 
     render(<CollectionBrowser />);
     // Judulnya sudah berubah jadi penjelasan "tidak bisa dihapus", jadi
@@ -117,7 +103,7 @@ describe('alur hapus dari UI', () => {
       await Promise.resolve();
     });
 
-    expect(studioStore.getState().assets[5]).toBeDefined();
+    expect(assetStore.getState().assets[5]).toBeDefined();
     expect(screen.getByText(/dipakai 1 clip di Studio/)).toBeTruthy();
     expect(djStore.getState().notice).toMatch(/dipakai 1 clip/);
   });

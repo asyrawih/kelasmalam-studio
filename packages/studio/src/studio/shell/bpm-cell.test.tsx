@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BpmCell, tempoNote } from './BpmCell';
 import { bpmSyncPlan, type PlayheadTempo } from '../analysis/playhead-tempo';
-import { studioActions, studioStore, type StudioAsset } from '../store';
+import { studioActions, studioStore } from '../store';
 import { DEFAULT_FADE_CURVE, type StudioClip } from '../model';
 
 const SR = 48_000;
@@ -151,7 +153,7 @@ describe('sel BPM', () => {
 
   it('menampilkan BPM dan tombol oktaf saat ada clip aktif', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(7, 128, 0.6));
+    assetActions.registerAsset(asset(7, 128, 0.6));
     studioActions.addClip(laneId, clip('c1', 7));
     studioActions.setPlayhead(5 * SR);
 
@@ -162,8 +164,8 @@ describe('sel BPM', () => {
 
   it('clip terpilih menentukan BPM walau playhead berada di clip lain', () => {
     const [lane1, lane2] = studioStore.getState().lanes;
-    studioActions.registerAsset(asset(72, 111, 0.8));
-    studioActions.registerAsset(asset(73, 128, 0.8));
+    assetActions.registerAsset(asset(72, 111, 0.8));
+    assetActions.registerAsset(asset(73, 128, 0.8));
     studioActions.addClip(lane1!.id, clip('under-playhead', 72));
     studioActions.addClip(lane2!.id, clip('selected-clip', 73));
     studioActions.setPlayhead(5 * SR);
@@ -176,7 +178,7 @@ describe('sel BPM', () => {
 
   it('double-click angka BPM mengedit BPM clip aktif', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(70, 111, 0.8));
+    assetActions.registerAsset(asset(70, 111, 0.8));
     studioActions.addClip(laneId, clip('editable', 70));
     studioActions.setPlayhead(5 * SR);
 
@@ -186,15 +188,15 @@ describe('sel BPM', () => {
     fireEvent.change(input, { target: { value: '126.5' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(studioStore.getState().assets[70]!.bpmOverride).toBe(126.5);
-    expect(studioStore.getState().assets[70]!.analysisLock).toBe(true);
+    expect(assetStore.getState().assets[70]!.bpmOverride).toBe(126.5);
+    expect(assetStore.getState().assets[70]!.analysisLock).toBe(true);
     expect(screen.getByText('126.5')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Buka kunci BPM' })).toBeTruthy();
   });
 
   it('BPM yang sudah dikunci tidak bisa diedit sampai kuncinya dibuka', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset({ ...asset(74, 111, 0.8), bpmOverride: 126, analysisLock: true });
+    assetActions.registerAsset({ ...asset(74, 111, 0.8), bpmOverride: 126, analysisLock: true });
     studioActions.addClip(laneId, clip('locked-bpm', 74));
     studioActions.setPlayhead(5 * SR);
 
@@ -203,14 +205,14 @@ describe('sel BPM', () => {
     expect(screen.queryByRole('textbox', { name: 'BPM clip' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Buka kunci BPM' }));
-    expect(studioStore.getState().assets[74]!.analysisLock).toBe(false);
+    expect(assetStore.getState().assets[74]!.analysisLock).toBe(false);
     fireEvent.doubleClick(screen.getByText('126.0'));
     expect(screen.getByRole('textbox', { name: 'BPM clip' })).toBeTruthy();
   });
 
   it('Escape membatalkan edit BPM', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(71, 120, 0.8));
+    assetActions.registerAsset(asset(71, 120, 0.8));
     studioActions.addClip(laneId, clip('cancel-bpm', 71));
     studioActions.setPlayhead(5 * SR);
 
@@ -220,7 +222,7 @@ describe('sel BPM', () => {
     fireEvent.change(input, { target: { value: '140' } });
     fireEvent.keyDown(input, { key: 'Escape' });
 
-    expect(studioStore.getState().assets[71]!.bpmOverride).toBeNull();
+    expect(assetStore.getState().assets[71]!.bpmOverride).toBeNull();
     expect(screen.getByText('120.0')).toBeTruthy();
   });
 
@@ -239,7 +241,7 @@ describe('sel BPM', () => {
 
   it('menandai angka yang tidak diyakini dengan "?"', () => {
     const laneId = studioStore.getState().lanes[0]!.id;
-    studioActions.registerAsset(asset(8, 96, 0.04));
+    assetActions.registerAsset(asset(8, 96, 0.04));
     studioActions.addClip(laneId, clip('c1', 8));
     studioActions.setPlayhead(5 * SR);
 
@@ -249,8 +251,8 @@ describe('sel BPM', () => {
 
   it('MATCH membuat lane selected clip mengikuti BPM lane lain', () => {
     const [lane1, lane2] = studioStore.getState().lanes;
-    studioActions.registerAsset(asset(9, 128, 0.8));
-    studioActions.registerAsset(asset(10, 120, 0.8));
+    assetActions.registerAsset(asset(9, 128, 0.8));
+    assetActions.registerAsset(asset(10, 120, 0.8));
     studioActions.addClip(lane1!.id, clip('master', 9));
     studioActions.addClip(lane2!.id, clip('target', 10));
     studioActions.selectClip('target');
@@ -266,8 +268,8 @@ describe('sel BPM', () => {
 
   it('BEAT menyamakan tempo sekaligus menggeser fase selected clip', () => {
     const [lane1, lane2] = studioStore.getState().lanes;
-    studioActions.registerAsset(asset(11, 128, 0.8));
-    studioActions.registerAsset({
+    assetActions.registerAsset(asset(11, 128, 0.8));
+    assetActions.registerAsset({
       ...asset(12, 120, 0.8),
       tempo: { bpm: 120, confidence: 0.8, beatOffsetSec: 0.25 },
     });

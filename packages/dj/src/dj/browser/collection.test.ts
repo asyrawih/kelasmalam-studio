@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
 
-import type { StudioAsset } from '@kelasmalam/studio/studio/store';
+
 import { filterSort, rowsOf, type CollectionRow } from './collection';
 
 const asset = (id: number, name: string, bpm: number | null, frames: number): StudioAsset =>

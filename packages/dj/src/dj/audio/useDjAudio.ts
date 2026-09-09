@@ -25,7 +25,7 @@ import { useEffect, type RefObject } from 'react';
 import { DECK_IDS } from '../model';
 import { djActions, djStore } from '../store';
 import { djAudio, djAudioError, ensureDjAudio } from './engine';
-import { subscribeAutoStem } from '@kelasmalam/studio/stem/auto-stem';
+import { subscribeAutoStem } from '@kelasmalam/studio-core/stem/auto-stem';
 
 /** Sekitar 16 kiriman posisi per detik — sama dengan tick UI lama. */
 const POSITION_INTERVAL_MS = 60;

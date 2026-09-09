@@ -4,15 +4,17 @@
  */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerBuffer } from '../preview/audio-preview';
-import { studioActions, studioStore, type StudioAsset } from '../store';
+import { studioActions, studioStore } from '../store';
 import { ClipWavePanel } from './ClipPanels';
 import { BeatProvider, useBeatShared } from './beat-context';
 import { StemSection } from './StemSection';
-import { buildEnvelope } from './envelope';
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
 
 const SR = 48_000;
 const FRAMES = 4 * SR;
@@ -58,7 +60,7 @@ function selected() {
 
 function setup(channels = 2): void {
   studioActions.__resetForTest();
-  studioActions.registerAsset(asset());
+  assetActions.registerAsset(asset());
   registerBuffer(ASSET_ID, fakeBuffer(channels));
   const lane = studioStore.getState().lanes[0]!;
   const clip = lane.clips[0]!;
@@ -209,7 +211,7 @@ describe('BAKE', () => {
     const clip = selected();
     expect(clip.stem).toBeUndefined(); // tidak diterapkan dua kali
     expect(clip.sourceStart).toBe(0);
-    const fresh = studioStore.getState().assets[clip.assetId]!;
+    const fresh = assetStore.getState().assets[clip.assetId]!;
     expect(fresh.name).toContain('[stem]');
     // Grid ikut pindah, bukan hilang: asset baru tidak akan dianalisis ulang.
     expect(fresh.bpmOverride).toBe(120);

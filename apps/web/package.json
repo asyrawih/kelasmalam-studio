@@ -22,6 +22,7 @@
     "@kelasmalam/shell": "workspace:*",
     "@kelasmalam/soundcloud": "workspace:*",
     "@kelasmalam/studio": "workspace:*",
+    "@kelasmalam/studio-core": "workspace:*",
     "@kelasmalam/ui": "workspace:*",
     "@vercel/analytics": "^2.0.1",
     "react": "^18.3.1",

@@ -32,7 +32,7 @@
  */
 
 import { effectiveSpeed, isAudible } from '../model';
-import { clipLoopRange, studioStore, type StudioAppState } from '../store';
+import { clipLoopRange, type StudioAppState } from '../store';
 import { stemOf } from '../timeline/stem';
 import {
   PARAM_RAMP_SEC,
@@ -43,29 +43,40 @@ import {
   type LaneNodes,
   type MlStemNodes,
 } from './graph-builder';
-import { pushFxParams, registerFxWorklet } from './fx-node';
+import { pushFxParams } from '@kelasmalam/studio-core/preview/fx-node';
 import { updateStemNodes, type StemNodes } from './stem-chain';
-import { enqueueAutoStem, getAutoStemAudio, getAutoStemMask } from '../../stem/auto-stem';
+import { getAutoStemAudio, getAutoStemMask } from '@kelasmalam/studio-core/stem/auto-stem';
+import {
+  audioContextCtor,
+  currentContext,
+  ensureContext,
+  getBuffer,
+  hasAnyBuffer,
+  hasBuffer,
+} from '@kelasmalam/studio-core/preview/audio-context';
 
 /**
  * Perakitan grafnya sendiri TIDAK ada di sini — lihat `graph-builder.ts`.
- * Modul ini hanya memiliki AudioContext, cache buffer, dan siklus play/stop.
- * Export offline memakai pembangun graf yang SAMA, dan itu disengaja.
+ * Modul ini hanya memiliki siklus play/stop, audisi, dan scrub; AudioContext
+ * dan cache buffer milik `studio-core/preview/audio-context`. Export offline
+ * memakai pembangun graf yang SAMA, dan itu disengaja.
  */
 export { applyClipGainEnvelope } from './graph-builder';
-
-type AudioCtor = typeof AudioContext;
-
-function audioContextCtor(): AudioCtor | null {
-  const w = globalThis as unknown as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
-  return w.AudioContext ?? w.webkitAudioContext ?? null;
-}
-
-let ctx: AudioContext | null = null;
-let ctxSampleRate = 48_000;
-
-/** PCM hasil decode, dipakai bersama oleh import (waveform) dan preview (suara). */
-const buffers = new Map<number, AudioBuffer>();
+/*
+ * Kepemilikan AudioContext dan cache PCM pindah ke
+ * `@kelasmalam/studio-core/preview/audio-context` (docs/25 P4) — halaman `/dj`
+ * dan jalur import memakainya tanpa pemutar lane ini. Diekspor ulang supaya
+ * pemakai lama di studio (rail, timeline) tetap satu pintu.
+ */
+export {
+  bufferLookup,
+  ensureContext,
+  getBuffer,
+  hasBuffer,
+  previewSampleRate,
+  registerBuffer,
+  unregisterBuffer,
+} from '@kelasmalam/studio-core/preview/audio-context';
 
 /**
  * Satu GENERASI graf: seluruh voice dari satu kali penjadwalan, plus bus gain
@@ -160,75 +171,17 @@ let masterTap: AnalyserNode | null = null;
  *  SharedArrayBuffer, dan `Float32Array` polos ikut memuat kemungkinan itu. */
 let masterTapBuf: Float32Array<ArrayBuffer> | null = null;
 
-/**
- * AudioContext dibuat malas (lazy) karena browser mewajibkan user gesture.
- * Dipanggil dari handler drop dan dari tombol PLAY — keduanya gesture.
- */
-export function ensureContext(sampleRate: number): AudioContext | null {
-  if (ctx !== null) return ctx;
-  const Ctor = audioContextCtor();
-  if (Ctor === null) return null;
-  try {
-    ctx = new Ctor({ sampleRate });
-    // Fire-and-forget: `addModule` asinkron sementara perakitan graf sinkron.
-    // Sampai ia selesai, `createFxNode` mengembalikan null dan chain tidak
-    // terdengar — sidik jari mix ikut menyertakan kesiapan ini, jadi begitu
-    // siap, penjadwalan ulang berikutnya memasangnya.
-    void registerFxWorklet(ctx);
-  } catch {
-    // Safari menolak sampleRate tertentu — biarkan browser memilih.
-    ctx = new Ctor();
-    void registerFxWorklet(ctx);
-  }
-  ctxSampleRate = ctx.sampleRate;
-  return ctx;
-}
-
-export function previewSampleRate(): number {
-  return ctx?.sampleRate ?? ctxSampleRate;
-}
-
-export function registerBuffer(assetId: number, buffer: AudioBuffer): void {
-  buffers.set(assetId, buffer);
-  const name = studioStore.getState().assets[assetId]?.name ?? `TRACK ${assetId}`;
-  enqueueAutoStem(assetId, name, buffer);
-}
-
-export function hasBuffer(assetId: number): boolean {
-  return buffers.has(assetId);
-}
-
-/**
- * Lepas PCM dari cache.
- *
- * Dipanggil saat asset benar-benar dihapus. Tanpa ini, satu lagu lima menit
- * (~115 MB f32 stereo) tetap tertahan di memori sampai halaman ditutup —
- * padahal tidak ada lagi yang bisa memutarnya.
- */
-export function unregisterBuffer(assetId: number): void {
-  buffers.delete(assetId);
-}
-
-export function getBuffer(assetId: number): AudioBuffer | undefined {
-  return buffers.get(assetId);
-}
-
-/** Akses cache PCM untuk konsumen lain (export offline memakai yang SAMA). */
-export function bufferLookup(): (assetId: number) => AudioBuffer | undefined {
-  return (id) => buffers.get(id);
-}
-
 /** Apakah ada minimal satu clip terdengar yang PCM-nya sudah ada. */
 export function hasRenderableAudio(state: StudioAppState): boolean {
   for (const lane of state.lanes) {
     if (!isAudible(lane, state.lanes)) continue;
-    for (const c of lane.clips) if (buffers.has(c.assetId)) return true;
+    for (const c of lane.clips) if (hasBuffer(c.assetId)) return true;
   }
   return false;
 }
 
 export function isPreviewAvailable(): boolean {
-  return buffers.size > 0 && audioContextCtor() !== null;
+  return hasAnyBuffer() && audioContextCtor() !== null;
 }
 
 /**
@@ -281,7 +234,7 @@ function retireGeneration(gen: Generation, at: number, fadeSec: number): void {
       // belum start / sudah berhenti — abaikan
     }
   }
-  const waitMs = Math.max(0, (end - (ctx?.currentTime ?? end)) * 1000) + 60;
+  const waitMs = Math.max(0, (end - (currentContext()?.currentTime ?? end)) * 1000) + 60;
   setTimeout(() => {
     if (!generations.includes(gen)) return; // sudah dibongkar `stop()`
     generations = generations.filter((g) => g !== gen);
@@ -358,6 +311,7 @@ function ensureMaster(audio: BaseAudioContext, state: StudioAppState): GainNode 
  */
 export function previewPositionSec(): number | null {
   const a = anchor;
+  const ctx = currentContext();
   if (a === null || ctx === null) return null;
   // Sebelum `startAt` (ada lookahead 50 ms) belum ada sample yang keluar;
   // jangan mundur ke belakang posisi awal.
@@ -376,6 +330,7 @@ export function previewPositionSec(): number | null {
  */
 export function auditionPositionSourceSec(): number | null {
   const v = auditionVoice;
+  const ctx = currentContext();
   if (v === null || ctx === null) return null;
   const span = v.loopEndSec - v.loopStartSec;
   if (span <= 0) return v.loopStartSec;
@@ -412,7 +367,7 @@ export function startAudition(state: StudioAppState): void {
   stopAudition();
   const range = clipLoopRange(state);
   if (range === null) return;
-  const buffer = buffers.get(range.clip.assetId);
+  const buffer = getBuffer(range.clip.assetId);
   if (buffer === undefined) return;
   const audio = ensureContext(state.sampleRate);
   if (audio === null) return;
@@ -457,6 +412,7 @@ export function readMasterPeak(): number | null {
  * store berubah — murah, dan TIDAK menyentuh penjadwalan voice.
  */
 export function updateLaneParams(state: StudioAppState): void {
+  const ctx = currentContext();
   if (ctx === null) return;
   if (laneNodes.size === 0 && auditionVoice === null) return;
   const at = ctx.currentTime;
@@ -563,7 +519,7 @@ function startGeneration(
   const graph = buildProjectGraph(audio, state, {
     playheadSec: opts.timelineSec,
     startAt: opts.startAt,
-    getBuffer: (id) => buffers.get(id),
+    getBuffer,
     getSeparated: getAutoStemAudio,
     getStemMask: (clipId) => getAutoStemMask(`studio:${clipId}`),
     destination: bus,
@@ -629,7 +585,7 @@ export function play(state: StudioAppState): void {
  * terus berjalan. Di sini titiknya dihitung dari jam audio.
  */
 export function reschedule(state: StudioAppState): void {
-  const audio = ctx;
+  const audio = currentContext();
   const a = anchor;
   if (audio === null || a === null || generations.length === 0) {
     play(state);
@@ -725,7 +681,7 @@ export function scrubTo(state: StudioAppState): void {
       // Setengah-terbuka, sama dengan `selectPlayheadTempo`: di batas akhir,
       // yang berbunyi clip berikutnya.
       if (state.playhead < clip.start || state.playhead >= clip.start + clip.len) continue;
-      const buffer = buffers.get(clip.assetId);
+      const buffer = getBuffer(clip.assetId);
       if (buffer === undefined) continue;
 
       // KONVERSI RUANG sama dengan `buildProjectGraph`: jarak diukur di

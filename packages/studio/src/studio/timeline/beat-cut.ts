@@ -20,7 +20,7 @@
  */
 
 import { timelineLenFor, type Samples, type StudioClip, type StudioLane } from '../model';
-import { clampFadeMs } from './fade';
+import { clampFadeMs } from '@kelasmalam/studio-core/timeline/fade';
 
 /** Batas atas pengulangan. 64 bar loop 1-bar sudah lebih panjang dari lagunya. */
 export const MAX_LOOP_REPEAT = 64;

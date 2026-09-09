@@ -29,7 +29,7 @@
 
 import { PFLAG, type EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
 import { Button } from '@kelasmalam/ui/cyber';
-import { sortedEffects, useFxCatalog } from '@kelasmalam/studio/studio/fx/useFxCatalog';
+import { sortedEffects, useFxCatalog } from '@kelasmalam/studio-core/fx/useFxCatalog';
 import { FX_BEAT_DIVS, type FxTargetDj } from '../model';
 import { djActions, useDj } from '../store';
 import { Knob } from '../mixer/Knob';

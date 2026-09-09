@@ -8,7 +8,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { StudioRail } from './index';
-import { dbToFader, faderToDb, formatDb } from './fader';
+import { dbToFader, faderToDb, formatDb } from '@kelasmalam/ui/lib/fader';
 import { computeStats, resolveFormat } from './CompileCard';
 import { studioActions, studioStore } from './store-adapter';
 import { defaultEq, DEFAULT_FADE_CURVE, type StudioState } from '../model';

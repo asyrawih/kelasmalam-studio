@@ -18,6 +18,8 @@
  */
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 
 import { Button } from '@kelasmalam/ui/cyber';
 import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
@@ -29,21 +31,22 @@ import {
   type Samples,
   type StudioClip,
 } from '../model';
-import { studioActions, useStudio, type StudioAsset } from '../store';
+import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-preview';
+import { studioActions, useStudio } from '../store';
 import {
   clampFadeMs,
   FADE_PRESET_SEC,
   msToSec,
   secToMs,
   type FadeSide,
-} from './fade';
+} from '@kelasmalam/studio-core/timeline/fade';
 import { BeatOverlay, LoopRegionPicker, formatBars } from './BeatSection';
 import { useBeatShared } from './beat-context';
 import { activeLoopLen } from './clip-loop';
-import { drawFadeCurves, fadeSourceLen, type FadeRegions } from './fade-draw';
-import { computeNormalizeGain, NORMALIZE_TARGET_DB } from './normalize';
-import { ScrollingWave } from './ScrollingWave';
-import { BAND_COLORS, clipDetailGradient, drawClipWave, drawLoopedClipWave } from './waveform';
+import { drawFadeCurves, fadeSourceLen, type FadeRegions } from '@kelasmalam/studio-core/timeline/fade-draw';
+import { computeNormalizeGain, NORMALIZE_TARGET_DB } from '@kelasmalam/studio-core/timeline/normalize';
+import { ScrollingWave } from '@kelasmalam/studio-core/timeline/ScrollingWave';
+import { BAND_COLORS, clipDetailGradient, drawClipWave, drawLoopedClipWave } from '@kelasmalam/studio-core/timeline/waveform';
 
 /** Tinggi kotak waveform; handle diletakkan relatif terhadap ini. */
 const WAVE_HEIGHT = 150;
@@ -605,7 +608,7 @@ export function ClipHeader(): JSX.Element {
  * dipasang di dalam popup menu LOOP tanpa satu pun prop.
  */
 export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: number }): JSX.Element {
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const sampleRate = useStudio((s) => s.sampleRate);
   const playhead = useStudio((s) => s.playhead);
   const playing = useStudio((s) => s.playing);
@@ -792,6 +795,10 @@ export function ClipWavePanel({ height = WAVE_HEIGHT }: { readonly height?: numb
           playhead={playhead}
           playing={playing}
           auditioning={beat.looping}
+          // Jam Studio disuntikkan (docs/25 P4): komponennya hidup di
+          // studio-core dan tidak tahu pemutar mana pun.
+          positionSourceSec={previewPositionSec}
+          auditionSourceSec={auditionPositionSourceSec}
           center={dragCenter}
           bands={BAND_COLORS}
           // Region SELALU digambar, bukan hanya saat berbunyi: seluruh gunanya

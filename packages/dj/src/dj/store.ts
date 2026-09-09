@@ -35,9 +35,9 @@
 
 import { useSyncExternalStore } from 'react';
 
-import type { BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { samplesPerBeat } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { trimTapRun } from '@kelasmalam/studio/studio/analysis/tap-tempo';
+import type { BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { samplesPerBeat } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { trimTapRun } from '@kelasmalam/studio-core/analysis/tap-tempo';
 import type { SyncPlan } from './sync';
 import {
   EMPTY_TRACK_CUES,
@@ -1085,7 +1085,7 @@ export const selectTrackCues =
 /**
  * Id asset yang dipegang deck ATAU yang punya cue tersimpan.
  *
- * Dipakai sebagai AKAR RETENSI oleh `studio/persist/asset-roots.ts`: tanpa ini,
+ * Dipakai sebagai AKAR RETENSI oleh `studio-core/persist/asset-roots.ts`: tanpa ini,
  * autosave Studio berikutnya menghapus byte lagu yang sedang duduk di deck,
  * karena definisi "terpakai" di sana hanya membaca clip di lane.
  */

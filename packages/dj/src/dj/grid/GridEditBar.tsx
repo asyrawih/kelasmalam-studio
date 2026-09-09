@@ -38,11 +38,11 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 
 import { Button } from '@kelasmalam/ui/cyber';
-import { MAX_GRID_BPM, MIN_GRID_BPM, gridSegments } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { MIN_FIT_BARS, barsBetween, currentBpm, rawAnchorSec } from '@kelasmalam/studio/studio/analysis/grid-edit';
-import { useStudio } from '@kelasmalam/studio/studio/store';
+import { MAX_GRID_BPM, MIN_GRID_BPM, gridSegments } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { MIN_FIT_BARS, barsBetween, currentBpm, rawAnchorSec } from '@kelasmalam/studio-core/analysis/grid-edit';
 import { DECK_ACCENT, GRID_ZOOMS, METRO_LEVELS, type DeckId, type GridZoom } from '../model';
 import { djActions, useDj } from '../store';
 import { useGridHistoryVersion } from './grid-history';
@@ -200,7 +200,7 @@ export function GridEditBar({ id }: GridEditBarProps): JSX.Element | null {
   const scope = useDj((s) => s.gridEdit.scope);
   const metroLevel = useDj((s) => s.gridEdit.metroLevel);
   const deck = useDj((s) => s.decks[id]);
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   // Riwayat hidup di luar React (lihat `grid-history.ts`); ini yang membuat
   // tombol UNDO/REDO ikut redup pada saat yang tepat.
   useGridHistoryVersion();

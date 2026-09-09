@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_FADE_CURVE, type StudioLane } from '../model';
 import type { StudioAppState } from '../store';
-import { __clearAssetRootsForTest, registerAssetRoot } from './asset-roots';
+import { __clearAssetRootsForTest, registerAssetRoot } from '@kelasmalam/studio-core/persist/asset-roots';
 import { assetsInUse } from './persistence';
 
 const lane = (assetId: number): StudioLane => ({

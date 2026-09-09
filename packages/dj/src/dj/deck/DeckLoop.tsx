@@ -10,7 +10,7 @@
  * membuat orang mengira alatnya rusak.
  */
 
-import type { BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import type { BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { Button } from '@kelasmalam/ui/cyber';
 import { loopLen, type DeckId, type DeckState } from '../model';
 import { djActions } from '../store';
