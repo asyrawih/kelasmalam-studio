@@ -9,7 +9,8 @@
  * pekerjaan interaktif, jadi antrean tidak terasa.
  */
 
-import { studioActions, type AssetTempo } from '../store';
+import type { AssetTempo } from '../assets/model';
+import { assetActions } from '../assets/store';
 
 let worker: Worker | null = null;
 /** Asset yang sedang/sudah diminta, supaya tidak dianalisis dua kali. */
@@ -30,7 +31,7 @@ function ensureWorker(): Worker | null {
       | { type: 'tempo-result'; id: number; tempo: AssetTempo | null }
       | { type: 'tempo-error'; id: number; message: string };
     if (m.type === 'tempo-result') {
-      studioActions.setAssetTempo(m.id, m.tempo);
+      assetActions.setAssetTempo(m.id, m.tempo);
       advance(m.id);
       return;
     }
@@ -38,7 +39,7 @@ function ensureWorker(): Worker | null {
     // audionya sendiri sudah masuk dan bisa diputar. Jadi: catat, lalu tandai
     // asset ini "tidak ada tempo" supaya UI berhenti menunggu selamanya.
     console.warn(`[tempo] asset ${m.id}: ${m.message}`);
-    studioActions.setAssetTempo(m.id, null);
+    assetActions.setAssetTempo(m.id, null);
     requested.delete(m.id);
     advance(m.id);
   };
@@ -87,7 +88,7 @@ export function requestAssetTempo(assetId: number, buffer: AudioBuffer): void {
   const w = ensureWorker();
   if (w === null) return;
   requested.add(assetId);
-  studioActions.markAssetTempoPending(assetId);
+  assetActions.markAssetTempoPending(assetId);
   queue.push({ id: assetId, buffer });
   pump(w);
 }

@@ -7,7 +7,7 @@
  * jebakan 2 di bawah.
  *
  * Semua fungsi di sini murni dan mengembalikan **patch** `{ bpm?, offsetSec? }`
- * yang langsung bisa diberikan ke `studioActions.setAssetBeatGrid`. Tidak ada
+ * yang langsung bisa diberikan ke `assetActions.setAssetBeatGrid`. Tidak ada
  * yang menyentuh store, React, atau Web Audio; seluruh berkas ini bisa dites
  * tanpa merender apa pun. Pola yang sama dengan `dj/model.ts` dan `fade.ts`.
  *
@@ -38,11 +38,10 @@
  * yang mundur, dan tidak ada satu pun pemanggil yang siap menghadapinya.
  */
 
-import type { StudioAsset } from '../store';
-import { BEATS_PER_BAR, clampGridBpm } from './beat-grid';
-import { correctedBpm } from './playhead-tempo';
+import type { StudioAsset } from '../assets/model';
+import { BEATS_PER_BAR, clampGridBpm, correctedBpm } from './beat-grid';
 
-/** Patch untuk `studioActions.setAssetBeatGrid`. */
+/** Patch untuk `assetActions.setAssetBeatGrid`. */
 export interface GridPatch {
   readonly bpm?: number;
   readonly offsetSec?: number;
@@ -142,7 +141,7 @@ export function widenBeat(bpm: number, deltaSec: number, anchorSec: number): Gri
 /**
  * ×2 / ÷2 (kontrol #6). `delta` = +1 atau −1 oktaf.
  *
- * SENGAJA tidak memakai `studioActions.shiftAssetTempoOctave`. Yang itu
+ * SENGAJA tidak memakai `assetActions.shiftAssetTempoOctave`. Yang itu
  * mengubah `tempoOctave`, yaitu koreksi atas hasil DETEKSI; di panel grid, ×2
  * adalah keputusan manual yang harus mendarat di `bpmOverride` supaya tombol
  * AUTO bisa mengembalikan SEMUANYA sekaligus. Dua jalur menuju hal yang

@@ -10,10 +10,16 @@
  * yang benar-benar dipakai, bukan puncak di bagian lain yang sudah dipotong.
  */
 
-import type { StudioClip } from '../model';
-import { getBuffer } from '../preview/audio-preview';
-import { studioStore } from '../store';
+import { assetStore } from '../assets/store';
+import { getBuffer } from '../preview/audio-context';
 import type { Envelope } from './envelope';
+
+/** Bagian clip yang dibutuhkan: aset mana, dan region SOURCE-space mana. */
+export interface NormalizeRegion {
+  readonly assetId: number;
+  readonly sourceStart: number;
+  readonly sourceLen: number;
+}
 
 /**
  * Target puncak. Bukan 0 dBFS: sinyal yang tepat 0 dBFS bisa melewati batas
@@ -102,7 +108,7 @@ export function peakOf(
   return peak;
 }
 
-export function computeNormalizeGain(clip: StudioClip): NormalizeResult {
+export function computeNormalizeGain(clip: NormalizeRegion): NormalizeResult {
   const buffer = getBuffer(clip.assetId);
   if (buffer === undefined) {
     return { ok: false, reason: 'PCM clip ini tidak tersedia (clip demo tanpa audio asli)' };
@@ -110,7 +116,7 @@ export function computeNormalizeGain(clip: StudioClip): NormalizeResult {
   // Envelope diambil dari store, bukan diminta lewat parameter: pemanggilnya
   // adalah satu tombol di panel, dan menambah parameter di sana hanya
   // memindahkan pencarian yang sama ke tempat yang lebih mudah dilupakan.
-  const env = studioStore.getState().assets[clip.assetId]?.envelope ?? null;
+  const env = assetStore.getState().assets[clip.assetId]?.envelope ?? null;
   const peak = peakOf(buffer, clip.sourceStart, clip.sourceLen, env);
   if (peak <= 0) {
     return { ok: false, reason: 'clip ini senyap — tidak ada yang bisa dinormalisasi' };

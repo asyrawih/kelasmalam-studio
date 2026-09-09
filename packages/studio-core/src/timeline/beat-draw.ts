@@ -10,7 +10,7 @@
  * Semua posisi SOURCE-space; `from`/`len` adalah jendela yang sedang tampak.
  */
 
-import type { Samples } from '../model';
+import type { Samples } from '../assets/model';
 import { beatLinesIn, samplesPerBeat, type BeatGrid } from '../analysis/beat-grid';
 
 /**

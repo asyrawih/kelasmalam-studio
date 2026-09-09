@@ -29,9 +29,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 
 import { fitCanvas } from '@kelasmalam/ui/lib/canvas';
 import type { BeatGrid, GridSegment } from '../analysis/beat-grid';
-import { samplesToSec, secToSamples, type Samples } from '../model';
-import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-preview';
-import type { StudioAsset } from '../store';
+import { samplesToSec, secToSamples, type Samples, type StudioAsset } from '../assets/model';
 import { drawBeatGrid, drawPlayhead } from './beat-draw';
 import { drawFadeCurves, type FadeRegions } from './fade-draw';
 import { clipDetailGradient, drawClipWave, type BandColors } from './waveform';
@@ -83,10 +81,10 @@ export interface ScrollingWaveProps {
    * dengan `playhead`. `null` = tidak ada yang berbunyi, jadi `playhead` yang
    * dipakai.
    *
-   * Default-nya `previewPositionSec` — jam transport Studio. Prop ini ada
-   * supaya PEMAKAI KEDUA, deck DJ di `web/src/dj/`, bisa menyuntikkan jamnya
-   * sendiri (satu per deck) tanpa menyalin seluruh komponen ini beserta ketiga
-   * aturan di kepala berkas.
+   * Tidak ada default (docs/25 P4): komponen ini hidup di `studio-core`, yang
+   * tidak tahu pemutar mana pun. Studio menyuntikkan `previewPositionSec` (jam
+   * transport-nya), deck DJ menyuntikkan jamnya sendiri (satu per deck). Tanpa
+   * prop, `playhead` yang dipakai — sama seperti saat tidak ada yang berbunyi.
    *
    * Bentuknya FUNGSI, bukan angka, dan itu penting: ia dipanggil DI DALAM loop
    * rAF, jadi posisinya boleh bergerak 60×/detik tanpa satu render React pun.
@@ -94,6 +92,12 @@ export interface ScrollingWaveProps {
    * `latest.current`, yang hanya segar saat React me-render.
    */
   readonly positionSourceSec?: () => number | null;
+  /**
+   * Jam pemutar AUDISI, SOURCE-space (detik), dipakai saat `auditioning`.
+   * Studio menyuntikkan `auditionPositionSourceSec`; pemakai tanpa audisi
+   * tidak perlu mengisinya.
+   */
+  readonly auditionSourceSec?: () => number | null;
   /**
    * Kalau diisi, waveform digambar per pita frekuensi dengan tiga warna ini,
    * bukan gradien amber Studio. Halaman DJ memakainya; timeline tidak, karena
@@ -367,11 +371,11 @@ export function ScrollingWave(props: ScrollingWaveProps): JSX.Element {
  */
 function centerOf(p: ScrollingWaveProps, sr: number): Samples {
   if (p.center !== null && p.center !== undefined) return p.center;
-  if (p.auditioning) {
-    const src = auditionPositionSourceSec();
+  if (p.auditioning && p.auditionSourceSec !== undefined) {
+    const src = p.auditionSourceSec();
     if (src !== null) return secToSamples(src, sr);
   }
-  const heardSec = (p.positionSourceSec ?? previewPositionSec)();
+  const heardSec = p.positionSourceSec?.() ?? null;
   const timelineAt = heardSec === null || !p.playing ? p.playhead : secToSamples(heardSec, sr);
   return p.clipSourceStart + (timelineAt - p.clipStart) * p.speedRatio;
 }

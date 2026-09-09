@@ -23,9 +23,14 @@
  *    itu.
  */
 
-import type { Samples } from '../model';
-import type { StudioAsset } from '../store';
-import { correctedBpm } from './playhead-tempo';
+import type { Samples, StudioAsset } from '../assets/model';
+
+/** BPM sumber setelah koreksi oktaf user (×2 / ÷2). */
+export function correctedBpm(asset: StudioAsset): number | null {
+  if (asset.bpmOverride !== null) return asset.bpmOverride;
+  if (asset.tempo === null) return null;
+  return asset.tempo.bpm * 2 ** asset.tempoOctave;
+}
 
 /** Birama tetap 4/4 untuk sekarang. Dijadikan field di `BeatGrid` supaya
  *  penambahan 3/4 nanti tidak perlu menyisir ulang seluruh pemakainya. */

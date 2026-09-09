@@ -18,8 +18,15 @@
  *                    clip baru adalah equalPower.
  */
 
-import type { FadeCurve, Samples, StudioClip } from '../model';
-import { DEFAULT_FADE_CURVE } from '../model';
+import type { FadeCurve, Samples } from '../assets/model';
+import { DEFAULT_FADE_CURVE } from '../assets/model';
+
+/** Field fade sebuah clip — yang dibutuhkan `normalizeClipFade`, tanpa tahu clip. */
+export interface FadeFields {
+  readonly fadeInMs: number;
+  readonly fadeOutMs: number;
+  readonly fadeCurve?: FadeCurve;
+}
 
 /**
  * Gain fade-IN pada posisi `t` (0 = awal fade, 1 = akhir fade).
@@ -94,7 +101,7 @@ export type FadeSide = 'in' | 'out';
  * dengan melepas pointer.
  */
 export function clampFadeMs(
-  clip: Pick<StudioClip, 'len' | 'fadeInMs' | 'fadeOutMs'>,
+  clip: FadeFields & { readonly len: Samples },
   side: FadeSide,
   wantedMs: number,
   sampleRate: number,
@@ -118,7 +125,7 @@ export const FADE_PRESET_SEC = [1, 2, 4, 8, 16] as const;
  * adanya, jadi kalau tidak dinormalkan sekali di pintu masuk, nilai rusaknya
  * bertahan selamanya.
  */
-export function normalizeClipFade(clip: StudioClip): StudioClip {
+export function normalizeClipFade<T extends FadeFields>(clip: T): T {
   const curve: FadeCurve = clip.fadeCurve === 'linear' ? 'linear' : DEFAULT_FADE_CURVE;
   const fadeInMs = Number.isFinite(clip.fadeInMs) ? Math.max(0, clip.fadeInMs) : 0;
   const fadeOutMs = Number.isFinite(clip.fadeOutMs) ? Math.max(0, clip.fadeOutMs) : 0;
