@@ -14,8 +14,8 @@
 
 import { useRef } from 'react';
 
-import { useCanvasDraw } from '../../ui/lib/canvas';
-import { useDrag } from '../../ui/lib/drag';
+import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
+import { useDrag } from '@kelasmalam/ui/lib/drag';
 import type { DeckView } from '../deck-view';
 import { type DeckId } from '../model';
 import { djActions } from '../store';

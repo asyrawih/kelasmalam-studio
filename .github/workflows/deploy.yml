@@ -52,7 +52,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: wasm
-          path: apps/web/src/wasm/
+          path: packages/engine/src/wasm/
 
       - name: Ambil hasil build frontend
         uses: actions/download-artifact@v4

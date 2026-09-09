@@ -29,7 +29,7 @@
  * ketukan pada 120 BPM.
  */
 
-import { PFLAG, fromNorm, type EffectDesc } from '../../audio/fx-catalog';
+import { PFLAG, fromNorm, type EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
 import { createFxNode, pushFxParams, pushFxTempo } from '../../studio/preview/fx-node';
 import type { FxInsert } from '../../studio/model';
 import type { FxState, FxTargetDj } from '../model';

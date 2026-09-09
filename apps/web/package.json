@@ -13,6 +13,10 @@
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
+    "@kelasmalam/engine": "workspace:*",
+    "@kelasmalam/platform": "workspace:*",
+    "@kelasmalam/shell": "workspace:*",
+    "@kelasmalam/ui": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-deep-link": "^2.4.10",
     "@tauri-apps/plugin-dialog": "^2.7.3",

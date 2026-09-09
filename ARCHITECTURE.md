@@ -84,8 +84,8 @@ Kode konkret ada di repo ini (bukan di dokumen):
   (RUSTFLAGS atomics) + `apps/web/package.json` + `package.json` root.
 - **c)** SPSC ring: `crates/rt/src/ring.rs` · biquad TDF-II: `crates/dsp/src/biquad.rs` ·
   SIMD mixing: `crates/dsp/src/mix.rs`
-- **d)** worklet: `apps/web/src/audio/worklet-processor.ts` · export worker:
-  `apps/web/src/audio/export-worker.ts`
+- **d)** worklet: `packages/engine/src/audio/worklet-processor.ts` · export worker:
+  `packages/engine/src/audio/export-worker.ts`
 - **e)** Vite + header produksi: `apps/web/vite.config.ts`, `apps/web/public/_headers`, `deploy/nginx.conf`
 - **f)** Tabel keputusan MP3/OGG: [docs/03-export.md §3c](docs/03-export.md)
 - **h)** Struct + JSON schema: `crates/timeline-core/src/model.rs`, `schema/project.schema.json`
@@ -95,7 +95,7 @@ Kode konkret ada di repo ini (bukan di dokumen):
 
 Tambahan di luar daftar semula:
 
-- Deteksi tempo (BPM) gaya DJ: `crates/analysis/` + `apps/web/src/audio/tempo-worker.ts` —
+- Deteksi tempo (BPM) gaya DJ: `crates/analysis/` + `packages/engine/src/audio/tempo-worker.ts` —
   [docs/10-tempo-detection.md](docs/10-tempo-detection.md)
 - Beat loop cut & pembuangan stem (mid/side) di Clip Detail —
   [docs/11-beat-loop-stem.md](docs/11-beat-loop-stem.md)

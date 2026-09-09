@@ -14,7 +14,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { EffectDesc } from '../../audio/fx-catalog';
+import type { EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
 import { defaultFx, type FxState } from '../model';
 import { FxInsertSlot } from './fx-insert';
 import type { DjGraph } from './dj-graph';

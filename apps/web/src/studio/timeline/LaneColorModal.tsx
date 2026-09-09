@@ -25,7 +25,7 @@ import {
 import { createPortal } from 'react-dom';
 
 import { LANE_COLORS } from '../model';
-import { Button } from '../../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 
 // ── Hex ──────────────────────────────────────────────────────────────────────
 

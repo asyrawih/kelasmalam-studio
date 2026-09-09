@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { studioActions, studioStore, useStudio } from '../studio/store';
 import { ensureContext } from '../studio/preview/audio-preview';
 import { importBytesToLane } from '../studio/timeline/audio-import';
-import { Button } from '../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import { getPlatformHost } from '../platform';
 import { createSoundCloudApi, soundCloudApiBase, type SoundCloudProfile, type SoundCloudTrack } from './api';
 

@@ -5,6 +5,10 @@ import react from '@vitejs/plugin-react';
 import { build, defineConfig, type Plugin } from 'vite';
 
 import { ORT_DIST_ALIAS, ortDistDir } from './ort-dist';
+import { workspaceAliases } from '../../workspace-aliases';
+
+/** Akar repo — tempat `tsconfig.base.json` dan `packages/*` berada. */
+const REPO_ROOT = resolve(__dirname, '../..');
 
 /**
  * Header COOP/COEP — prasyarat `crossOriginIsolated === true`, yang merupakan
@@ -34,7 +38,11 @@ const COI_HEADERS = {
  *     suatu saat worklet membutuhkannya.
  *
  * Pemakaian di kode aplikasi:
- *   import workletUrl from './audio/worklet-processor.ts?worklet&url';
+ *   import workletUrl from '@kelasmalam/engine/audio/worklet-processor.ts?worklet&url';
+ *
+ * `this.resolve` menjalankan seluruh pipeline resolve Vite — termasuk
+ * `resolve.alias` — jadi specifier ber-alias paket di atas sampai ke berkas
+ * sumbernya tanpa plugin ini tahu-menahu soal alias.
  */
 function audioWorkletPlugin(): Plugin {
   const SUFFIX = '?worklet&url';
@@ -181,7 +189,12 @@ export default defineConfig({
   // (`ort-dist.ts`). Dipakai `proof-stem/scnet-model.ts` lewat
   // `new URL('@ort-dist/…', import.meta.url)`; Vite meresolusi alias di dalam
   // `new URL` dan menerbitkan berkasnya sebagai asset ber-hash.
-  resolve: { alias: { [ORT_DIST_ALIAS]: ortDistDir() } },
+  //
+  // `@kelasmalam/*` dan `@app-web/*` diturunkan dari `paths` tsconfig.base.json
+  // (`workspace-aliases.ts`), bukan ditulis ulang di sini — satu sumber.
+  resolve: {
+    alias: [{ find: ORT_DIST_ALIAS, replacement: ortDistDir() }, ...workspaceAliases(REPO_ROOT)],
+  },
 
   server: { headers: COI_HEADERS },
   preview: { headers: COI_HEADERS },

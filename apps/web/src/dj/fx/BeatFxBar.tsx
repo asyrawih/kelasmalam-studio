@@ -27,8 +27,8 @@
  * "1/4 ketukan" berarti 1/4 ketukan LAGU ITU. Lihat `audio/fx-insert.ts`.
  */
 
-import { PFLAG, type EffectDesc } from '../../audio/fx-catalog';
-import { Button } from '../../ui/cyber';
+import { PFLAG, type EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
+import { Button } from '@kelasmalam/ui/cyber';
 import { sortedEffects, useFxCatalog } from '../../studio/fx/useFxCatalog';
 import { FX_BEAT_DIVS, type FxTargetDj } from '../model';
 import { djActions, useDj } from '../store';

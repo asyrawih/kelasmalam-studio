@@ -1,0 +1,55 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+
+    /* Strict penuh + beberapa cek tambahan yang relevan untuk kode audio:
+       akses index buffer harus dianggap bisa undefined (noUncheckedIndexedAccess)
+       karena banyak jalur di sini membaca view yang panjangnya bisa 0 setelah
+       memory.grow (docs/05). */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+
+    /* SATU sumber alias untuk seluruh workspace (docs/25 P1).
+
+       Paket-paket dikonsumsi sebagai SUMBER TypeScript, tanpa build step, jadi
+       `@kelasmalam/engine/audio/x` harus menunjuk langsung ke berkas .ts-nya.
+       `workspace-aliases.ts` di root menurunkan alias Vite/Vitest dari daftar
+       ini, dan `apps/web/src/__tests__/workspace-aliases.test.ts` memastikan
+       keduanya tidak pernah berbeda — kalau tsc dan Vite meresolusi ke berkas
+       yang berbeda, typecheck hijau tidak membuktikan apa-apa tentang bundel.
+
+       `@app-web/*` adalah alias SEMENTARA untuk kode app yang belum jadi paket;
+       tiap pemakaiannya di packages/* wajib berkomentar TODO(P3)/TODO(P4) dan
+       dihitung `no-platform-leak.test.ts`. */
+    "baseUrl": ".",
+    "paths": {
+      "@kelasmalam/engine/*": ["packages/engine/src/*"],
+      "@kelasmalam/ui/*": ["packages/ui/src/*"],
+      "@kelasmalam/shell": ["packages/shell/src/index.ts"],
+      "@kelasmalam/shell/*": ["packages/shell/src/*"],
+      "@kelasmalam/platform": ["packages/platform/src/index.ts"],
+      "@kelasmalam/platform/*": ["packages/platform/src/*"],
+      "@app-web/*": ["apps/web/src/*"]
+    }
+  }
+}

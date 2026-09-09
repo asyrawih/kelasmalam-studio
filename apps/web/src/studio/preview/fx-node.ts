@@ -20,10 +20,10 @@
  * `fxPreviewStatus()` alih-alih didiamkan.
  */
 
-import fxWorkletUrl from '../../audio/fx-worklet.ts?worklet&url';
-import { catalogById, parseCatalog, type EffectDesc } from '../../audio/fx-catalog';
-import { loadWasm } from '../../audio/wasm-loader';
-import { WASM_URLS } from '../../audio/wasm-urls';
+import fxWorkletUrl from '@kelasmalam/engine/audio/fx-worklet.ts?worklet&url';
+import { catalogById, parseCatalog, type EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
+import { loadWasm } from '@kelasmalam/engine/audio/wasm-loader';
+import { WASM_URLS } from '@kelasmalam/engine/audio/wasm-urls';
 import type { FxInsert } from '../model';
 
 /** Modul `st` untuk worklet — lihat catatan varian di `fx-worklet.ts`. */

@@ -22,7 +22,7 @@ import { createLocalLibraryApi } from '../library/local-api';
 import type { LibraryApi } from '../library/api';
 import { assertModelSize, SCNET_MODELS, type ScnetModelId } from '../proof-stem/scnet-catalog';
 import type { ExportSink } from '../studio/export/sinks';
-import type { DropPoint, ModelBytes, OpenAudioFilesOptions, PlatformHost, SaveTarget } from './host';
+import type { DropPoint, ModelBytes, OpenAudioFilesOptions, PlatformHost, SaveTarget } from '@kelasmalam/platform/host';
 
 export const AUDIO_EXTENSIONS: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'aif', 'aiff', 'm4a', 'aac'];
 

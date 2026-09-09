@@ -28,7 +28,7 @@
 #                     platform-nya dipertahankan saat menulis latest.json baru.
 #   --notes <file>    catatan rilis (masuk ke latest.json `notes` dan badan
 #                     release). Default: satu baris berisi versi.
-#   --skip-wasm       pakai apps/web/src/wasm yang sudah ada (SKIP_WASM=1).
+#   --skip-wasm       pakai packages/engine/src/wasm yang sudah ada (SKIP_WASM=1).
 #   --skip-web        pakai apps/web/dist yang sudah ada (SKIP_WEB_BUILD=1).
 #   --unsigned        build uji: lepas semua env APPLE_* dan TAURI_SIGNING_*
 #                     walau ada di shell/.env.release — tidak ada codesign,
@@ -251,7 +251,7 @@ esac
 log "3/7 WASM (engine mt + st)"
 if [ "$SKIP_WASM" = 1 ]; then
   for v in mt st; do
-    [ -f "$ROOT/apps/web/src/wasm/$v/engine_bg.wasm" ] || die "SKIP_WASM tapi apps/web/src/wasm/$v/engine_bg.wasm tidak ada."
+    [ -f "$ROOT/packages/engine/src/wasm/$v/engine_bg.wasm" ] || die "SKIP_WASM tapi packages/engine/src/wasm/$v/engine_bg.wasm tidak ada."
   done
   note "lewati (artefak mt/st sudah ada)"
 else

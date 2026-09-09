@@ -1,9 +1,9 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { __clearCommandsForTest } from '../../app-shell/command';
-import { useCommands } from '../../app-shell/useCommands';
-import { useKeyDispatch } from '../../app-shell/useKeyDispatch';
+import { __clearCommandsForTest } from '@kelasmalam/shell/command';
+import { useCommands } from '@kelasmalam/shell/useCommands';
+import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
 import { studioCommands } from '../commands';
 import { studioActions } from '../store';
 import { SHORTCUTS } from './ShortcutsCard';

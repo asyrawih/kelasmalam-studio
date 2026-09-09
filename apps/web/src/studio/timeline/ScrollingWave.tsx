@@ -27,7 +27,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
-import { fitCanvas } from '../../ui/lib/canvas';
+import { fitCanvas } from '@kelasmalam/ui/lib/canvas';
 import type { BeatGrid, GridSegment } from '../analysis/beat-grid';
 import { samplesToSec, secToSamples, type Samples } from '../model';
 import { auditionPositionSourceSec, previewPositionSec } from '../preview/audio-preview';

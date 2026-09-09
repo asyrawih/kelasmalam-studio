@@ -16,11 +16,11 @@
  */
 
 import { useMemo, useRef, useState } from 'react';
-import { Card } from '../../ui/cyber';
+import { Card } from '@kelasmalam/ui/cyber';
 import { studioActions, useStudio } from '../store';
 import { EqSliders } from './EqSlidersCard';
-import { useCanvasDraw } from '../../ui/lib/canvas';
-import { useDrag } from '../../ui/lib/drag';
+import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
+import { useDrag } from '@kelasmalam/ui/lib/drag';
 import {
   EQ_PRESETS,
   defaultEq,

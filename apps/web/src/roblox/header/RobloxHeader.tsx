@@ -16,7 +16,7 @@
 
 import { VersionTag } from '../../app-shell/VersionTag';
 import type { PlatformKind } from '../../platform';
-import { Badge, Button } from '../../ui/cyber';
+import { Badge, Button } from '@kelasmalam/ui/cyber';
 import { MAX_BYTES, MAX_SECONDS, formatBytes, formatDuration } from '../model';
 import { useRoblox } from '../store';
 

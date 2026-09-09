@@ -14,10 +14,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { StoreSettings } from '../library/StoreSettings';
-import { Button } from '../ui/cyber';
-import { listCommands, subscribeCommands } from './command';
-import { bindChord, chordFor, isCustomized, resetKeymap, subscribeKeymap, unbindCommand } from './keymap';
-import { chordLabel, chordOf, isReservedChord } from './keys';
+import { Button } from '@kelasmalam/ui/cyber';
+import { listCommands, subscribeCommands } from '@kelasmalam/shell/command';
+import { bindChord, chordFor, isCustomized, resetKeymap, subscribeKeymap, unbindCommand } from '@kelasmalam/shell/keymap';
+import { chordLabel, chordOf, isReservedChord } from '@kelasmalam/shell/keys';
 
 export interface KeymapEditorProps {
   readonly open: boolean;

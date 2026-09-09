@@ -35,8 +35,9 @@ import { buildExportPayload } from './payload';
 import { runExport, type ExportEncoder, type ExportEngine } from './run-export';
 import { BlobSink } from './sinks';
 import { createWasmExportEngine } from './wasm-engine';
-import { EXPECTED_ABI_VERSION } from '../../audio/wasm-loader';
-import type { LoadedWasm } from '../../audio/wasm-loader';
+import { EXPECTED_ABI_VERSION } from '@kelasmalam/engine/audio/wasm-loader';
+import { WASM_URLS } from '@kelasmalam/engine/audio/wasm-urls';
+import type { LoadedWasm } from '@kelasmalam/engine/audio/wasm-loader';
 import type {
   EqBandKind,
   ExportFormat,
@@ -82,8 +83,11 @@ let glue: Glue;
 let memory: WebAssembly.Memory;
 
 beforeAll(async () => {
-  const glueUrl = new URL('../../wasm/st/engine.js', import.meta.url).href;
-  const wasmPath = fileURLToPath(new URL('../../wasm/st/engine_bg.wasm', import.meta.url));
+  // Letak artefak (`packages/engine/src/wasm/`, docs/25 P1) adalah urusan
+  // engine: `WASM_URLS` dihitung relatif terhadap modulnya sendiri, dan di
+  // vitest `import.meta.url` adalah `file://`, jadi bisa dibaca dari disk.
+  const glueUrl = WASM_URLS.st.glue;
+  const wasmPath = fileURLToPath(WASM_URLS.st.wasm);
 
   glue = (await import(/* @vite-ignore */ glueUrl)) as unknown as Glue;
   // `WebAssembly.compile` di sini BUKAN formalitas: inilah yang menangkap
@@ -771,8 +775,8 @@ describe('export lewat engine WASM sungguhan', () => {
     const { st, getBuffer } = twoLaneProject();
     const built = buildExportPayload(st, getBuffer);
 
-    const { Mp3LameJsEncoder } = await import('../../encoders/mp3-lamejs');
-    const { OggVorbisEncoder } = await import('../../encoders/ogg-vorbis');
+    const { Mp3LameJsEncoder } = await import('@kelasmalam/engine/encoders/mp3-lamejs');
+    const { OggVorbisEncoder } = await import('@kelasmalam/engine/encoders/ogg-vorbis');
 
     const cases: [string, ExportEncoder][] = [
       ['wav16', wavEncoder(16)],

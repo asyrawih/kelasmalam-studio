@@ -11,7 +11,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import { Card } from '../../ui/cyber';
+import { Card } from '@kelasmalam/ui/cyber';
 import {
   MAX_RENDER_SPEED,
   MIN_RENDER_SPEED,

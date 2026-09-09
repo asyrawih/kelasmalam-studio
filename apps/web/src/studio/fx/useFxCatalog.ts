@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from 'react';
 
-import type { EffectDesc } from '../../audio/fx-catalog';
+import type { EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
 import { ensureFxRuntime, fxCatalog, fxPreviewStatus } from '../preview/fx-node';
 
 export interface FxCatalogState {

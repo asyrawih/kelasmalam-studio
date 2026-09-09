@@ -4,7 +4,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import { Card } from '../../ui/cyber';
+import { Card } from '@kelasmalam/ui/cyber';
 import { PITCH_LOCK_AVAILABLE, SPEEDS, type Speed } from '../model';
 import { useStudio } from '../store';
 import { studioActions, usePlaying, useSpeed } from './store-adapter';

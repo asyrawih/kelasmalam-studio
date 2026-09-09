@@ -20,7 +20,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { Badge, Card } from '../../ui/cyber';
+import { Badge, Card } from '@kelasmalam/ui/cyber';
 import { MAX_MASTER_GAIN_DB, MIN_MASTER_GAIN_DB } from '../model';
 import { readMasterPeak } from '../preview/audio-preview';
 import { formatDb } from './fader';

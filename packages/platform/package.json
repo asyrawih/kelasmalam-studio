@@ -1,0 +1,20 @@
+{
+  "name": "@kelasmalam/platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "KONTRAK PlatformHost (docs/20 §2c) + dua hook di atasnya. Implementasi web/desktop milik tiap app (docs/25 §1d).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.3.12",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

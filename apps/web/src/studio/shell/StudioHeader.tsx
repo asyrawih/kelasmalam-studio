@@ -12,7 +12,7 @@
 // itu ikut memuat `AppShell` → `App`/`DjPage`, dan header tidak perlu menyeret
 // seluruh aplikasi hanya untuk menampilkan nomor versi.
 import { VersionTag } from '../../app-shell/VersionTag';
-import { Badge, Button } from '../../ui/cyber';
+import { Badge, Button } from '@kelasmalam/ui/cyber';
 import { studioActions, useStudio } from '../store';
 import { AutoStemToggle } from '../../stem/AutoStemToggle';
 import type { ReactNode } from 'react';

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, ProgressBar } from '../ui/cyber';
+import { Badge, Button, ProgressBar } from '@kelasmalam/ui/cyber';
 import { prefetchModelBytes, SCNET_MODELS, type ScnetModelId } from './scnet-model';
 import type { ScnetResult, ScnetStem } from './scnet-separate';
-import { useAudioFilePicker } from '../platform/useAudioFilePicker';
+import { useAudioFilePicker } from '../platform/hooks';
 import './proof-stem.css';
 
 type StemName = 'VOCALS' | 'DRUMS' | 'BASS' | 'OTHER';

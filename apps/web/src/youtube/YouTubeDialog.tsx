@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import { studioActions, studioStore, useStudio } from '../studio/store';
 import { importBytesToLane } from '../studio/timeline/audio-import';
-import { Button, ProgressBar } from '../ui/cyber';
+import { Button, ProgressBar } from '@kelasmalam/ui/cyber';
 import { isLocalError } from '../platform/local-invoke';
 import {
   formatYoutubeDuration,

@@ -23,8 +23,7 @@ import { djActions, useDj } from '../store';
 import { filterSort, rowsOf, type CollectionRow } from './collection';
 import { importFilesToDeck } from './dj-import';
 import { inspectRemoval, removeAssetFromLibrary } from './dj-remove';
-import { useAudioFilePicker } from '../../platform/useAudioFilePicker';
-import { useNativeFileDrop } from '../../platform/useNativeFileDrop';
+import { useAudioFilePicker, useNativeFileDrop } from '../../platform/hooks';
 
 /** Berapa lama konfirmasi hapus tetap bersenjata sebelum batal sendiri. */
 const CONFIRM_MS = 5000;

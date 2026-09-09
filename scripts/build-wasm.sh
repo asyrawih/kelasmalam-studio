@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build dua artefak WASM dari crate `daw-wasm` (crates/wasm-bridge):
 #
-#   apps/web/src/wasm/mt/  → engine-mt : +atomics +simd128, shared/imported memory.
+#   packages/engine/src/wasm/mt/  → engine-mt : +atomics +simd128, shared/imported memory.
 #                       Dipakai kalau crossOriginIsolated === true.
-#   apps/web/src/wasm/st/  → engine-st : TANPA atomics, memory biasa (non-shared).
+#   packages/engine/src/wasm/st/  → engine-st : TANPA atomics, memory biasa (non-shared).
 #                       Jalur degraded (docs/01 §1d) — build +atomics tidak akan
 #                       jalan sama sekali tanpa shared memory, jadi butuh
 #                       artefak kedua, bukan sekadar feature flag runtime.
@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
-OUT_BASE="$ROOT/apps/web/src/wasm"
+OUT_BASE="$ROOT/packages/engine/src/wasm"
 PKG="daw-wasm"
 LIB="daw_wasm"          # nama lib = nama package dengan '-' → '_'
 OUT_NAME="engine"       # menghasilkan engine.js + engine_bg.wasm
@@ -64,7 +64,7 @@ fi
 # terpisah, 40 putaran bersih.
 #
 # Mengekspornya membuat JS bisa mengarahkan tiap thread ke stack-nya sendiri —
-# lihat `adoptThreadStack()` di apps/web/src/audio/thread-stack.ts.
+# lihat `adoptThreadStack()` di packages/engine/src/audio/thread-stack.ts.
 RUSTFLAGS_MT="-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128 \
 -C link-arg=--import-memory \
 -C link-arg=--shared-memory \
@@ -221,4 +221,4 @@ build_variant() {
 build_variant mt "$OUT_BASE/mt" "$RUSTFLAGS_MT" "${WASM_OPT_ARGS_MT[@]}"
 build_variant st "$OUT_BASE/st" "$RUSTFLAGS_ST" "${WASM_OPT_ARGS_ST[@]}"
 
-echo "==> selesai. Loader di apps/web/src/audio memilih mt/ atau st/ berdasarkan crossOriginIsolated."
+echo "==> selesai. Loader di packages/engine/src/audio memilih mt/ atau st/ berdasarkan crossOriginIsolated."

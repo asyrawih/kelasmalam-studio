@@ -9,7 +9,7 @@
  * berbeda tipis dari yang pertama.
  */
 
-import { formatParam, fromNorm, toNorm, type ParamDesc } from '../../audio/fx-catalog';
+import { formatParam, fromNorm, toNorm, type ParamDesc } from '@kelasmalam/engine/audio/fx-catalog';
 import { useDragFraction } from '../rail/useDragFraction';
 
 export interface FxParamRowProps {

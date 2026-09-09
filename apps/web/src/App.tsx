@@ -25,7 +25,7 @@ import { BeatProvider, TimelinePanel } from './studio/timeline';
 import { LibraryDock } from './library';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { studioCommands } from './studio/commands';
-import { useCommands } from './app-shell/useCommands';
+import { useCommands } from '@kelasmalam/shell/useCommands';
 import { SoundCloudDialog } from './soundcloud/SoundCloudDialog';
 import { YouTubeDialog } from './youtube/YouTubeDialog';
 import { getPlatformHost } from './platform';

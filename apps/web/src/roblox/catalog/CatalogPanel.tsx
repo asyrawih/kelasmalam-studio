@@ -20,7 +20,7 @@
 
 import { useState, type CSSProperties } from 'react';
 
-import { Badge, Button, Card } from '../../ui/cyber';
+import { Badge, Button, Card } from '@kelasmalam/ui/cyber';
 import type { RobloxUploadRow } from '../../platform/local-commands';
 import {
   MODERATION_LABEL,

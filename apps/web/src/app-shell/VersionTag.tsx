@@ -8,7 +8,7 @@
  */
 
 import { BUILD_INFO, versionLabel, versionTitle } from '../build-info';
-import { Badge } from '../ui/cyber';
+import { Badge } from '@kelasmalam/ui/cyber';
 
 export interface VersionTagProps {
   /** Tinggi badge; topbar DJ dan landing lebih pendek dari topbar studio. */

@@ -23,7 +23,7 @@ check() {
   fi
 }
 
-check "$ROOT/apps/web/src/wasm/mt/engine_bg.wasm" || STATUS=1
-check "$ROOT/apps/web/src/wasm/st/engine_bg.wasm" || STATUS=1
+check "$ROOT/packages/engine/src/wasm/mt/engine_bg.wasm" || STATUS=1
+check "$ROOT/packages/engine/src/wasm/st/engine_bg.wasm" || STATUS=1
 
 exit "$STATUS"

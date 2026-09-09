@@ -16,7 +16,7 @@
 
 import { useRef, type CSSProperties } from 'react';
 
-import { useDrag } from '../../ui/lib/drag';
+import { useDrag } from '@kelasmalam/ui/lib/drag';
 
 /** Piksel tarikan tegak untuk menyapu seluruh rentang. */
 const TRAVEL_PX = 150;
