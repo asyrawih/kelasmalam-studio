@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { build, defineConfig, type Plugin } from 'vite';
 
+import { ORT_DIST_ALIAS, ortDistDir } from './ort-dist';
+
 /**
  * Header COOP/COEP — prasyarat `crossOriginIsolated === true`, yang merupakan
  * prasyarat SharedArrayBuffer (docs/01 §1d). Tanpa ini seluruh jalur SAB mati
@@ -174,6 +176,12 @@ export default defineConfig({
   plugins: [audioWorkletPlugin(), react()],
 
   define: buildInfoDefines(),
+
+  // `@ort-dist` → `onnxruntime-web/dist/`, di mana pun bun menaruhnya
+  // (`ort-dist.ts`). Dipakai `proof-stem/scnet-model.ts` lewat
+  // `new URL('@ort-dist/…', import.meta.url)`; Vite meresolusi alias di dalam
+  // `new URL` dan menerbitkan berkasnya sebagai asset ber-hash.
+  resolve: { alias: { [ORT_DIST_ALIAS]: ortDistDir() } },
 
   server: { headers: COI_HEADERS },
   preview: { headers: COI_HEADERS },

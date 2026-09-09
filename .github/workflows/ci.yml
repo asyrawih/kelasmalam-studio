@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     # Perubahan yang tidak bisa menjatuhkan build tidak perlu membangunkan
-    # empat runner. Catatan: `docs/` TIDAK ikut ke `web/dist`, jadi melewatinya
+    # empat runner. Catatan: `docs/` TIDAK ikut ke `apps/web/dist`, jadi melewatinya
     # juga berarti tidak ada deploy — itu memang yang diinginkan.
     paths-ignore:
       - '**/*.md'
@@ -186,7 +186,7 @@ jobs:
       # `wasm-pack test --headless --chrome` yang sudah lebih dulu dihapus.
       # `crates/wasm-bridge` tidak punya satu pun tes browser, jadi Chrome
       # dipasang 11 detik di tiap run untuk sesuatu yang tidak pernah dijalankan.
-      # Cakupan yang SUNGGUHAN ada: `web/src/studio/export/wasm-integration.test.ts`
+      # Cakupan yang SUNGGUHAN ada: `apps/web/src/studio/export/wasm-integration.test.ts`
       # di job `web`, yang memuat artefak `st` hasil build ini.
 
       # Binari siap pakai, bukan `cargo install` (61 detik) + `apt-get` (76 detik,
@@ -203,7 +203,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wasm
-          path: web/src/wasm/
+          path: apps/web/src/wasm/
           retention-days: 7
 
   # ------------------------------------------------------------------- web
@@ -213,32 +213,36 @@ jobs:
     timeout-minutes: 15
     needs: wasm
     steps:
-      # npm, BUKAN pnpm. Satu-satunya lockfile di repo ini adalah
-      # `web/package-lock.json`; `pnpm-lock.yaml` tidak pernah ada, jadi
-      # `pnpm install --frozen-lockfile` di sini memang tidak pernah bisa jalan.
+      # bun, BUKAN npm/pnpm. Satu workspace, satu lockfile: `bun.lock` di root
+      # (docs/25 §1a). Versi bun dipin sama dengan `packageManager` di
+      # package.json root supaya lockfile dibaca format yang sama.
+      #
+      # Node tetap dipasang: `bun run` menghormati shebang `#!/usr/bin/env node`
+      # pada biner vitest/vite/tsc, jadi tes dan build berjalan di Node yang
+      # sama dengan yang dipakai sebelum migrasi — bun di sini hanya pengelola
+      # paket dan pelari skrip.
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       # Butuh artefak WASM asli: tes sinkronisasi layout SAB Rust↔TS
       # membaca konstanta dari modul yang benar-benar di-build.
       - uses: actions/download-artifact@v4
         with:
           name: wasm
-          path: web/src/wasm/
+          path: apps/web/src/wasm/
 
-      - name: Install web deps
-        working-directory: web
-        run: npm ci
+      - name: Install deps (workspace)
+        run: bun install --frozen-lockfile
 
       - name: Test
-        working-directory: web
-        run: npx vitest run
+        run: bun run --cwd apps/web test
 
-      # `npm run build` = `tsc --noEmit && vite build`. Sebelumnya ada
+      # `bun run build` = `tsc --noEmit && vite build`. Sebelumnya ada
       # `npx tsc --noEmit` terpisah tepat di atas baris ini, jadi seluruh
       # typecheck jalan DUA KALI tiap run — satu-satunya bedanya, yang kedua
       # dijalankan lewat npm.
@@ -253,11 +257,10 @@ jobs:
       # aplikasi menanganinya dengan jujur — halaman /roblox berkata UI ONLY,
       # dok kepustakaan berkata BELUM DIPASANG.
       - name: Typecheck + build
-        working-directory: web
         env:
           VITE_ROBLOX_API: ${{ vars.VITE_ROBLOX_API }}
           VITE_LIBRARY_API: ${{ vars.VITE_LIBRARY_API }}
-        run: npm run build
+        run: bun run --cwd apps/web build
 
       # Hasil build dipakai apa adanya oleh job deploy. Membangunnya ulang di
       # sana berarti menjalankan tsc + vite untuk kedua kalinya atas commit yang
@@ -265,14 +268,14 @@ jobs:
       # yang baru saja diuji.
       #
       # Dulu langkah ini hanya jalan saat deploy. Sekarang SELALU: job `desktop`
-      # menanam `web/dist` ke dalam binary Tauri (tauri-build gagal kalau
+      # menanam `apps/web/dist` ke dalam binary Tauri (tauri-build gagal kalau
       # direktorinya tidak ada), dan ia juga jalan di pull request. Harganya
       # ~60 MB artefak per run yang dibuang setelah sehari.
       - name: Upload dist
         uses: actions/upload-artifact@v4
         with:
           name: web-dist
-          path: web/dist/
+          path: apps/web/dist/
           retention-days: 1
 
   # --------------------------------------------------------------- backend
@@ -296,25 +299,25 @@ jobs:
       # Node 24, BUKAN 22 seperti job web: tes kepustakaan menjalankan SQL-nya
       # di atas `node:sqlite` sungguhan, dan modul itu masih di balik flag di
       # 22.x. Menurunkannya berarti seluruh lapisan SQL tidak teruji.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
 
-      - name: Install backend deps
-        working-directory: backend
-        run: npm ci
+      # `backend` adalah anggota workspace yang sama (docs/25 §1a); instalnya
+      # dari root, satu lockfile.
+      - name: Install deps (workspace)
+        run: bun install --frozen-lockfile
 
       - name: Test
-        working-directory: backend
-        run: npx vitest run
+        run: bun run --cwd backend test
 
       # Dua tsconfig: kode Worker dinilai TANPA tipe Node (supaya `Buffer` dan
       # `process` tidak diam-diam lolos ke produksi), harness tes dengan.
       - name: Typecheck
-        working-directory: backend
-        run: npm run typecheck
+        run: bun run --cwd backend typecheck
 
   # --------------------------------------------------------------- desktop
   # Aplikasi desktop Tauri (docs/20 §3). Dua runner, dua WebView: WKWebView di
@@ -323,9 +326,9 @@ jobs:
   # tes unit menu lewat — BUKAN bahwa suara keluar. Itu tetap butuh mesin
   # sungguhan (docs/20 §5b).
   #
-  # `needs: [wasm, web]`: `web/dist` ditanam ke binary saat compile, jadi
+  # `needs: [wasm, web]`: `apps/web/dist` ditanam ke binary saat compile, jadi
   # artefak `web-dist` harus sudah ada. Artefak `wasm` TIDAK diunduh terpisah:
-  # isinya sudah ikut ke dalam `web/dist` (vite meng-copy artefak `mt`/`st`
+  # isinya sudah ikut ke dalam `apps/web/dist` (vite meng-copy artefak `mt`/`st`
   # sebagai asset), dan crate Rust-nya sendiri tidak menyentuh WASM sama sekali.
   #
   # Job ini SENGAJA tidak ada di `needs:` job deploy: runner macOS/Windows
@@ -360,7 +363,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: web-dist
-          path: web/dist/
+          path: apps/web/dist/
 
       # tauri-cli lewat npm, BUKAN `cargo install tauri-cli` — yang terakhir
       # mengompilasi CLI-nya dari source (~5 menit per runner, per run) untuk

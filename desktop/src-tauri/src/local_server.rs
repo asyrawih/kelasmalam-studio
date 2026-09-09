@@ -171,12 +171,12 @@ mod tests {
 
     #[test]
     fn isolation_headers_match_the_web_deploy() {
-        // Cermin web/public/_headers: kalau salah satu berubah, tes ini yang
+        // Cermin apps/web/public/_headers: kalau salah satu berubah, tes ini yang
         // meminta yang lain ikut.
         let headers = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/public/_headers"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/web/public/_headers"),
         )
-        .expect("web/public/_headers ada");
+        .expect("apps/web/public/_headers ada");
         for (name, value) in ISOLATION_HEADERS {
             assert!(
                 headers.contains(&format!("{name}: {value}")),

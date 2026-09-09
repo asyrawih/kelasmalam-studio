@@ -21,12 +21,34 @@
  * OGG gagal di `pnpm dev` dengan persis pesan itu. Yang diperiksa di sini
  * adalah konfigurasi SUNGGUHAN yang dipakai Vite, bukan salinannya.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 import viteConfig from '../../vite.config';
+
+/**
+ * `package.json` sebuah paket, di mana pun pengelola paket menaruhnya: naik
+ * dari direktori tes ini sampai ketemu `node_modules/<pkg>/`. Workspace bun
+ * (docs/25 P0) meng-hoist dependensi ke `node_modules` ROOT repo, jadi
+ * `../../node_modules/<pkg>` yang dulu dipakai tidak ada lagi; linker
+ * `isolated` menaruhnya di tempat lain lagi. `require.resolve` tidak dipakai
+ * karena `exports` beberapa paket tidak mengekspos `./package.json`.
+ */
+function packageJsonOf(pkg: string): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    const candidate = join(dir, 'node_modules', pkg, 'package.json');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) {
+      throw new Error(`${pkg}/package.json tidak ditemukan di node_modules mana pun di atas ${dir}`);
+    }
+    dir = parent;
+  }
+}
 
 /**
  * Dikecualikan dari aturan: glue wasm-bindgen memang WAJIB di-exclude, karena
@@ -65,8 +87,7 @@ describe('optimizeDeps.exclude', () => {
   });
 
   it.each(excludedPackages())('%s punya jalur ESM, jadi aman di-exclude', (pkg) => {
-    const url = new URL(`../../node_modules/${pkg}/package.json`, import.meta.url);
-    const manifest = JSON.parse(readFileSync(fileURLToPath(url), 'utf8')) as PackageJson;
+    const manifest = JSON.parse(readFileSync(packageJsonOf(pkg), 'utf8')) as PackageJson;
 
     const esm =
       manifest.type === 'module' ||

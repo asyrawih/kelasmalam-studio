@@ -255,10 +255,13 @@ byte lewat IPC menghindari seluruh pertanyaan itu.
 ### a) Alur build
 
 ```
-scripts/build-wasm.sh ──► web/src/wasm/{mt,st}
+scripts/build-wasm.sh ──► apps/web/src/wasm/{mt,st}
                                │
-pnpm -C web build ─────────────┴──► web/dist  ──┬──► Vercel (seperti sekarang)
-                                                 └──► cargo tauri build (bundel)
+bun run --cwd apps/web build ──┴──► apps/web/dist ──┬──► Vercel (seperti sekarang)
+                                                     └──► cargo tauri build (bundel)
+
+(Path `apps/web` sejak docs/25 P0; sebelumnya `web/`. P2 mengganti sumber
+bundel Tauri menjadi `apps/desktop/dist`.)
 ```
 
 Skrip root yang ditambahkan:
@@ -266,7 +269,7 @@ Skrip root yang ditambahkan:
 | Skrip | Isi |
 |---|---|
 | `dev:desktop` | `cargo tauri dev` — `beforeDevCommand` menjalankan Vite; header COI sudah dipasang `vite.config.ts`, jadi dev desktop = dev web + jendela. |
-| `build:desktop` | `build:wasm` → `pnpm -C web build` → `cargo tauri build`. |
+| `build:desktop` | `build:wasm` → `bun run --cwd apps/web build` → `cargo tauri build`. |
 
 Vite mendapat `envPrefix: ['VITE_', 'TAURI_ENV_']` supaya `TAURI_ENV_PLATFORM`
 terbaca kalau suatu saat perlu, dan `clearScreen: false` supaya log Rust tidak

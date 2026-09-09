@@ -1,7 +1,7 @@
 //! Command Tauri untuk penyimpanan lokal (docs/21 §2a) — pembungkus tipis
 //! di atas `daw-desktop-host`.
 //!
-//! Kontraknya `web/src/platform/local-commands.ts`: nama command, argumen
+//! Kontraknya `apps/web/src/platform/local-commands.ts`: nama command, argumen
 //! `camelCase`, bentuk hasil, kode galat `LocalError`, nama event. Tes bentuk
 //! di `crates/desktop-host/src/contract_tests.rs` membaca daftar
 //! `generate_handler!` di bawah dan memastikan tiap nama kontrak ada di sana

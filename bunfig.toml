@@ -1,0 +1,11 @@
+# Tata letak node_modules HOISTED (satu pohon di root), bukan isolated.
+#
+# Bun 1.3 memilih linker "isolated" untuk workspace: tiap paket mendapat
+# symlink ke node_modules/.bun/<nama@versi>/. Dengan itu, `typeof import('onnxruntime-web/wasm')`
+# di apps/web/src/proof-stem/scnet-model.ts tidak lagi menemukan types.d.ts
+# (exports "./wasm" paketnya tidak punya kondisi "types"), dan tsc merah —
+# padahal kodenya tidak berubah. Hoisted adalah tata letak yang dipakai sebelum
+# workspace (docs/25 P0: "perubahan tanpa perilaku baru"), dan ia yang membuat
+# `node_modules/.bin/{vite,vitest,tsc}` ada di root untuk skrip rilis.
+[install]
+linker = "hoisted"

@@ -6,13 +6,12 @@ perf.data*
 flamegraph.svg
 
 # --- artefak WASM (hasil scripts/build-wasm.sh, jangan di-commit) ---
-/web/src/wasm/
+/apps/web/src/wasm/
 
-# --- Node / pnpm ---
+# --- Node / bun (satu workspace, satu bun.lock di root — docs/25 §1a) ---
 node_modules/
-.pnpm-store/
-/web/dist/
-/web/.vite/
+/apps/web/dist/
+/apps/web/.vite/
 *.tsbuildinfo
 
 # --- OS / editor ---

@@ -77,11 +77,11 @@ cargo +nightly build -p wasm-bridge --release \
       -Z build-std-features=panic_immediate_abort
 
 wasm-bindgen target/wasm32-unknown-unknown/release/wasm_bridge.wasm \
-      --out-dir web/src/wasm --target web --no-typescript=false
+      --out-dir apps/web/src/wasm --target web --no-typescript=false
 
 wasm-opt -O4 --enable-simd --enable-threads --enable-bulk-memory \
       --strip-debug --strip-producers \
-      -o web/src/wasm/wasm_bridge_bg.wasm web/src/wasm/wasm_bridge_bg.wasm
+      -o apps/web/src/wasm/wasm_bridge_bg.wasm apps/web/src/wasm/wasm_bridge_bg.wasm
 ```
 
 ## Build profile
@@ -117,7 +117,7 @@ kecepatan dan ~15% ukuran.
 
 ```yaml
 - run: |
-    SIZE=$(gzip -c web/src/wasm/wasm_bridge_bg.wasm | wc -c)
+    SIZE=$(gzip -c apps/web/src/wasm/wasm_bridge_bg.wasm | wc -c)
     echo "engine gz: $SIZE"
     test "$SIZE" -lt 307200 || { echo "SIZE BUDGET EXCEEDED"; exit 1; }
 ```
@@ -144,7 +144,7 @@ Tiga hal yang non-obvious:
    ```
    Vite 5 menangani `?worker&url` untuk worker; untuk worklet kita definisikan
    input tambahan di `build.rollupOptions.input` + `output.format:'iife'` via
-   plugin kecil. Lihat `web/vite.config.ts` di repo — ada plugin
+   plugin kecil. Lihat `apps/web/vite.config.ts` di repo — ada plugin
    `audioWorkletPlugin()` 20 baris yang mem-build entry worklet sebagai IIFE
    dan mengembalikan URL hash-nya.
 
