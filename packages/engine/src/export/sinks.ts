@@ -24,31 +24,14 @@
  *                           sebagai transferable, jangan tahan apa pun.
  */
 
+import type { ExportSink } from '@kelasmalam/platform/export-sink';
+
 /**
- * Urutan panggilan yang dijamin `runExport`:
- *
- *   header?  →  chunk*  →  patchHeader?  →  close
- *                    ↘  abort  (batal / gagal, kapan saja)
- *
- * `header` dan `patchHeader` hanya muncul untuk format yang butuh menimpa
- * bagian depan file setelah panjang total diketahui (WAV). Keduanya SELALU
- * sama panjang — itu syarat yang dijaga tes di `crates/export/src/tests.rs`.
+ * Antarmukanya milik kontrak host (`SaveTarget.kind === 'stream'` membawa
+ * satu), jadi ia didefinisikan di `@kelasmalam/platform/export-sink` dan
+ * diekspor ulang dari sini supaya pemakai sink tidak perlu tahu pembagian itu.
  */
-export interface ExportSink {
-  /** Header placeholder, ditulis sebelum chunk pertama. */
-  header(bytes: Uint8Array): Promise<void> | void;
-  /** Satu chunk terenkode. Sesudah ini sink yang memilikinya. */
-  chunk(bytes: Uint8Array): Promise<void> | void;
-  /** Timpa header di posisi 0 dengan versi final. */
-  patchHeader(bytes: Uint8Array): Promise<void> | void;
-  /** Tutup dengan sukses. */
-  close(): Promise<void> | void;
-  /**
-   * Batalkan. Kontraknya: JANGAN tinggalkan file separuh jadi yang terlihat
-   * seperti export yang berhasil.
-   */
-  abort(reason?: unknown): Promise<void> | void;
-}
+export type { ExportSink };
 
 /**
  * Buffer yang bisa di-*transfer*.

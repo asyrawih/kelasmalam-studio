@@ -28,7 +28,6 @@ function fakeWebHost(): PlatformHost {
     openExternal: async () => undefined,
     authHeaders: async () => ({}),
     modelBytes: async () => ({ bytes: new Uint8Array(), cacheHit: false }),
-    libraryApi: () => null,
   };
 }
 

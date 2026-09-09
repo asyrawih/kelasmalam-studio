@@ -13,10 +13,8 @@
  * `guard.test.ts` menjaga itu.
  */
 
-import { createLibraryApi, type LibraryApi } from '../library/api';
-import { assertModelSize, SCNET_MODELS, type ScnetModelDefinition, type ScnetModelDownloadProgress } from '../proof-stem/scnet-catalog';
-import { FileSystemSink } from '../studio/export/sinks';
-import type { ModelBytes, PlatformHost, SaveTarget } from '@kelasmalam/platform/host';
+import { FileSystemSink } from '@kelasmalam/engine/export/sinks';
+import type { PlatformHost, SaveTarget } from '@kelasmalam/platform/host';
 
 // ── File delivery (dipindah dari encoders/index.ts) ─────────────────────────
 
@@ -101,79 +99,6 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   // Revoke ditangani ObjectUrlRegistry (60 s) — JANGAN revoke di sini.
 }
 
-// ── Model ONNX (dipindah dari proof-stem/scnet-model.ts) ────────────────────
-
-/**
- * Cache di OPFS kalau ada, supaya 44–170 MB tidak diunduh ulang tiap kunjungan.
- * Tanpa OPFS (Safari lama, konteks tertentu) jalurnya fetch langsung ke memori
- * — tetap jalan, hanya tidak diingat.
- */
-async function loadModelBytes(
-  model: ScnetModelDefinition,
-  onProgress: (progress: ScnetModelDownloadProgress) => void,
-): Promise<ModelBytes> {
-  if (typeof navigator.storage?.getDirectory !== 'function') {
-    const response = await fetchModel(model);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    assertModelSize(model, bytes.byteLength);
-    onProgress({ loaded: bytes.byteLength, total: model.bytes, cacheHit: false });
-    return { bytes, cacheHit: false };
-  }
-
-  const root = await navigator.storage.getDirectory();
-  const directory = await root.getDirectoryHandle('scnet-models', { create: true });
-  const fileName = `scnet-${model.id}-${model.sha256.slice(0, 12)}.onnx`;
-  try {
-    const existing = await directory.getFileHandle(fileName);
-    const file = await existing.getFile();
-    if (file.size === model.bytes) {
-      onProgress({ loaded: file.size, total: model.bytes, cacheHit: true });
-      return { bytes: new Uint8Array(await file.arrayBuffer()), cacheHit: true };
-    }
-    await directory.removeEntry(fileName);
-  } catch {
-    // Cache miss normal.
-  }
-
-  void navigator.storage.persist?.();
-  const response = await fetchModel(model);
-  const handle = await directory.getFileHandle(fileName, { create: true });
-  const writable = await handle.createWritable();
-  const reader = response.body?.getReader();
-  let loaded = 0;
-  try {
-    if (reader === undefined) {
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      await writable.write(bytes);
-      loaded = bytes.byteLength;
-      onProgress({ loaded, total: model.bytes, cacheHit: false });
-    } else {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        await writable.write(value);
-        loaded += value.byteLength;
-        onProgress({ loaded, total: model.bytes, cacheHit: false });
-      }
-    }
-    await writable.close();
-  } catch (reason) {
-    await writable.abort(reason).catch(() => {});
-    await directory.removeEntry(fileName).catch(() => {});
-    throw reason;
-  }
-
-  assertModelSize(model, loaded);
-  const file = await handle.getFile();
-  return { bytes: new Uint8Array(await file.arrayBuffer()), cacheHit: false };
-}
-
-async function fetchModel(model: ScnetModelDefinition): Promise<Response> {
-  const response = await fetch(model.url);
-  if (!response.ok) throw new Error(`Download ${model.label} gagal: HTTP ${response.status}`);
-  return response;
-}
-
 // ── Host ────────────────────────────────────────────────────────────────────
 
 /**
@@ -184,21 +109,9 @@ export function libraryApiBaseFromEnv(): string {
   return (import.meta.env.VITE_LIBRARY_API ?? '').trim();
 }
 
-export function createWebHost(opts: { readonly libraryApiBase?: string } = {}): PlatformHost {
-  // Dibuat SEKALI per host, malas: dok memakai objek ini sebagai kunci
-  // effect-nya, dan klien baru tiap panggilan berarti boot ulang tiap render.
-  let library: LibraryApi | null | undefined;
-
+export function createWebHost(): PlatformHost {
   return {
     kind: 'web',
-
-    libraryApi(): LibraryApi | null {
-      if (library === undefined) {
-        const base = (opts.libraryApiBase ?? libraryApiBaseFromEnv()).trim();
-        library = base === '' ? null : createLibraryApi(base);
-      }
-      return library;
-    },
 
     async pickSaveTarget(fileName, mime, ext): Promise<SaveTarget> {
       // Picker DULU, sebelum render: ia butuh user gesture, dan gesture-nya
@@ -231,10 +144,6 @@ export function createWebHost(opts: { readonly libraryApiBase?: string } = {}): 
       // Sesi web adalah cookie `__Host-lib_session`; `credentials: 'include'`
       // di `library/api.ts` yang membawanya. Tidak ada header tambahan.
       return {};
-    },
-
-    modelBytes(id, onProgress): Promise<ModelBytes> {
-      return loadModelBytes(SCNET_MODELS[id], onProgress);
     },
   };
 }

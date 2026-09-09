@@ -1,7 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
-  /* `apps/web/src/*.d.ts` ikut karena impor `@app-web/*` (TODO(P3)/(P4)) masih
-     menarik kode app yang bergantung pada deklarasi ambient-nya
-     (`onnxruntime-web.d.ts`, `vite-env.d.ts`). Hilang bersama alias itu. */
-  "include": ["src", "../../apps/web/src/*.d.ts"]
+  /* `../*\/src/*.d.ts`: deklarasi ambient milik paket lain (shim modul tanpa
+     tipe di engine, `?worklet&url`, ORT di proof-stem, `ImportMetaEnv` per
+     paket). `tsc -p` paket ini menarik sumber paket yang diimpornya, dan sumber
+     itu mengandalkan deklarasi ambient di sampingnya yang TIDAK ikut tertarik
+     lewat impor. App menyertakan `packages/*\/src` utuh, jadi tidak butuh ini. */
+  "include": ["src", "../*/src/*.d.ts"]
 }

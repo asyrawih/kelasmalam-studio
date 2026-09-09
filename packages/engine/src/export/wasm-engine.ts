@@ -7,8 +7,8 @@
  * `run-export.ts`, yang dites dengan engine palsu.
  */
 
-import type { LoadedWasm } from '@kelasmalam/engine/audio/wasm-loader';
-import { f32View } from '@kelasmalam/engine/audio/wasm-loader';
+import type { LoadedWasm } from '../audio/wasm-loader';
+import { f32View } from '../audio/wasm-loader';
 import type { ExportEngine, RenderHandle, SnapshotResult } from './run-export';
 
 export function createWasmExportEngine(wasm: LoadedWasm): ExportEngine {

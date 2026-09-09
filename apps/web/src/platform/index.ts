@@ -11,13 +11,14 @@
  * worker.
  *
  * Didaftarkan sebagai resolver BAWAAN (`registerDefaultPlatformHostResolver`),
- * bukan resolver app: modul-modul di `apps/web/src` yang belum jadi paket
- * (studio, roblox, kepustakaan — TODO(P3)) juga dimuat app DESKTOP lewat
- * `@app-web/*`, dan mereka mengimpor modul ini. Bawaan tidak menimpa resolver
- * yang didaftarkan `apps/desktop/src/platform/index.ts`, apa pun urutan
- * pemuatannya; di worker desktop hanya bawaan ini yang ada, dan host web
- * memang yang benar di sana (tidak ada IPC di worker). Di app web tidak ada
- * resolver lain, jadi bawaan = satu-satunya.
+ * bukan resolver app: setup vitest app web (`__tests__/setup.ts`) memuat
+ * modul ini untuk semua tes — termasuk tes `packages/*` dan, lewat impor
+ * setup yang sama, tes `apps/desktop` — dan di sana resolver desktop yang
+ * didaftarkan `apps/desktop/src/platform/index.ts` harus menang apa pun
+ * urutan pemuatannya. Di app web tidak ada resolver lain, jadi bawaan =
+ * satu-satunya. Sejak P3 tidak ada lagi modul bersama yang mengimpor ini
+ * (paket tidak tahu host mana pun), jadi di worker tidak ada host sama
+ * sekali — dan memang tidak dibutuhkan (lihat `modelBytes` di kontrak).
  *
  * Yang HILANG dari sini dibanding sebelum P2: `isTauri()` dan
  * `createDesktopHost()`. Keduanya kini milik `apps/desktop/src/platform/`,
@@ -25,9 +26,9 @@
  * `@tauri-apps/*` sama sekali — `__tests__/no-desktop-leak.test.ts` menjaga.
  *
  * Importer lama (`from '../platform'`) tidak berubah: semua yang dulu
- * diekspor dari sini diekspor ulang dari paket. Hook ada di `./hooks`, bukan
- * di sini — modul ini dimuat worker, dan hook membawa React (lihat komentar
- * `@kelasmalam/platform`).
+ * diekspor dari sini diekspor ulang dari paket. Hook TIDAK ada di sini —
+ * komponen mengimpor `@kelasmalam/platform/hooks` langsung (modul ini dimuat
+ * pemilih yang juga dipakai worker, dan hook membawa React).
  */
 
 import { registerDefaultPlatformHostResolver } from '@kelasmalam/platform';

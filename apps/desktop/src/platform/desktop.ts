@@ -13,16 +13,23 @@
  *
  * TIDAK ADA LOGIN di sini, dan sekarang memang tidak perlu: kepustakaan
  * desktop adalah `createLocalLibraryApi()` di atas SQLite + folder lokal
- * (docs/21 §1c) — tanpa sesi, tanpa Worker. `login` tetap tidak didefinisikan,
- * dan dok membaca ketiadaan itu sebagai "tidak ada tombol MASUK/KELUAR".
+ * (docs/21 §1c) — tanpa sesi, tanpa Worker — dan `main.tsx` yang
+ * mendaftarkannya (`registerLibraryApi`), bukan host ini: kepustakaan bukan
+ * soal platform (docs/25 P3). `login` tetap tidak didefinisikan, dan dok
+ * membaca ketiadaan itu sebagai "tidak ada tombol MASUK/KELUAR".
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { createLocalLibraryApi } from '../library-local/local-api';
-import type { LibraryApi } from '@app-web/library/api'; // TODO(P3)
-import { assertModelSize, SCNET_MODELS, type ScnetModelId } from '@app-web/proof-stem/scnet-catalog'; // TODO(P3)
-import type { ExportSink } from '@app-web/studio/export/sinks'; // TODO(P3)
-import type { DropPoint, ModelBytes, OpenAudioFilesOptions, PlatformHost, SaveTarget } from '@kelasmalam/platform/host';
+import { assertModelSize, SCNET_MODELS } from '@kelasmalam/proof-stem/proof-stem/scnet-catalog';
+import type { ExportSink } from '@kelasmalam/platform/export-sink';
+import type {
+  DropPoint,
+  ModelBytes,
+  OpenAudioFilesOptions,
+  PlatformHost,
+  SaveTarget,
+  ScnetModelId,
+} from '@kelasmalam/platform/host';
 
 export const AUDIO_EXTENSIONS: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'aif', 'aiff', 'm4a', 'aac'];
 
@@ -176,7 +183,6 @@ export class DroppedPathRegistry {
 
 export function createDesktopHost(): PlatformHost {
   const dropped = new DroppedPathRegistry();
-  let library: LibraryApi | null = null;
 
   const readFiles = async (paths: readonly string[]): Promise<File[]> => {
     const { readFile } = await import('@tauri-apps/plugin-fs');
@@ -195,11 +201,6 @@ export function createDesktopHost(): PlatformHost {
 
   return {
     kind: 'desktop',
-
-    libraryApi(): LibraryApi {
-      library ??= createLocalLibraryApi();
-      return library;
-    },
 
     droppedPathFor(name, size): string | null {
       return dropped.take(name, size);
@@ -229,6 +230,13 @@ export function createDesktopHost(): PlatformHost {
     },
 
     async openExternal(url): Promise<void> {
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      await openUrl(url);
+    },
+
+    async downloadUrl(url): Promise<void> {
+      // WebView tidak mengunduh dari `<a download>`; browser OS yang menangani
+      // unduhannya sendiri. Ada-nya method ini yang dibaca dialog SoundCloud.
       const { openUrl } = await import('@tauri-apps/plugin-opener');
       await openUrl(url);
     },

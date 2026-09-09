@@ -11,11 +11,26 @@
  * menyentuh satu pun komponen.
  */
 
-import type { LibraryApi } from '@app-web/library/api'; // TODO(P3): kontrak LibraryApi/ExportSink/Scnet pindah ke paketnya sendiri
-import type { ScnetModelDownloadProgress, ScnetModelId } from '@app-web/proof-stem/scnet-catalog'; // TODO(P3): kontrak LibraryApi/ExportSink/Scnet pindah ke paketnya sendiri
-import type { ExportSink } from '@app-web/studio/export/sinks'; // TODO(P3): kontrak LibraryApi/ExportSink/Scnet pindah ke paketnya sendiri
+import type { ExportSink } from './export-sink';
 
 export type PlatformKind = 'web' | 'desktop';
+
+/**
+ * Id model SCNet yang bisa diminta lewat [`PlatformHost.modelBytes`].
+ *
+ * Tinggal di KONTRAK, bukan di katalog `proof-stem`: daftar id ini adalah
+ * bagian dari apa yang dijanjikan host (desktop menjawab `model_download`
+ * untuk id ini), dan platform tidak boleh mengimpor paket halaman (docs/25
+ * §1b). Katalog `proof-stem/scnet-catalog.ts` mengekspornya ulang dan
+ * `SCNET_MODELS: Record<ScnetModelId, …>` memaksa katalog menutupi semua id.
+ */
+export type ScnetModelId = 'base' | 'large';
+
+export interface ScnetModelDownloadProgress {
+  readonly loaded: number;
+  readonly total: number;
+  readonly cacheHit: boolean;
+}
 
 /**
  * Hasil "minta lokasi simpan" — diputuskan SEBELUM render dimulai, karena di
@@ -75,6 +90,14 @@ export interface PlatformHost {
   openExternal(url: string): Promise<void>;
 
   /**
+   * Unduh sebuah URL lewat mekanisme platform. OPSIONAL: host yang tidak punya
+   * membiarkan `<a download>` bekerja — satu-satunya cara di browser, dan
+   * cukup. Desktop punya: WebView tidak mengunduh dari anchor, jadi tautannya
+   * dibuka di browser OS yang menangani unduhannya sendiri.
+   */
+  downloadUrl?(url: string): Promise<void>;
+
+  /**
    * Header yang harus ikut di SETIAP fetch ke Worker kepustakaan. Web: `{}` —
    * sesinya cookie. Desktop: juga `{}` untuk sekarang; ini titik sambung
    * bearer token begitu alur login desktop ada (docs/20 §1d, ditunda).
@@ -94,8 +117,19 @@ export interface PlatformHost {
    */
   login?(req: LoginRequest): Promise<void>;
 
-  /** Byte model ONNX, dengan laporan kemajuan unduhan. */
-  modelBytes(
+  /**
+   * Byte model ONNX, dengan laporan kemajuan unduhan.
+   *
+   * OPSIONAL, dan ketiadaannya BERARTI SESUATU: host yang tidak punya ini
+   * membiarkan worker inferensi mengambil modelnya sendiri (fetch `/models/…`
+   * + cache OPFS, `proof-stem/scnet-model.ts`) — jalur yang bekerja di
+   * browser mana pun tanpa bantuan siapa pun. Host yang PUNYA ini (desktop:
+   * unduhan sisi Rust ke `appDataDir()`) hanya bisa dipanggil dari main thread
+   * (IPC tidak ada di worker), jadi main thread memanggilnya lebih dulu dan
+   * mengirim byte-nya ke worker sebagai transferable. Pemanggil bertanya
+   * "host ini punya `modelBytes`?", bukan "ini desktop?".
+   */
+  modelBytes?(
     id: ScnetModelId,
     onProgress: (progress: ScnetModelDownloadProgress) => void,
   ): Promise<ModelBytes>;
@@ -115,20 +149,6 @@ export interface PlatformHost {
    * `File` supaya jalur import-nya tetap satu.
    */
   onFilesDropped?(cb: (files: readonly File[], point: DropPoint) => void): () => void;
-
-  /**
-   * Kepustakaan milik platform ini (docs/21 §1c).
-   *
-   * Web: klien Worker dari `VITE_LIBRARY_API`, atau `null` kalau build ini
-   * memang tanpa backend — dok tetap tampil dan mengatakan kenapa kosong.
-   * Desktop: implementasi LOKAL di atas command Tauri; tidak pernah `null`,
-   * tidak butuh sesi. Dok tidak membaca env sendiri: satu-satunya yang tahu
-   * dari mana kepustakaan datang adalah host, sama seperti export dan drop.
-   *
-   * Objek yang sama dikembalikan tiap panggilan — dok memakainya sebagai
-   * kunci effect, dan klien baru tiap render berarti boot ulang tiap render.
-   */
-  libraryApi(): LibraryApi | null;
 
   /**
    * Path asli berkas yang baru dijatuhkan/dipilih, untuk jalur cepat

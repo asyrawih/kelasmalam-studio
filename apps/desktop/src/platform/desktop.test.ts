@@ -99,16 +99,8 @@ describe('sesi', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('libraryApi() = kepustakaan LOKAL, satu objek yang sama tiap panggilan, tanpa sesi', async () => {
-    const host = createDesktopHost();
-    const api = host.libraryApi();
-    expect(api).not.toBeNull();
-    expect(host.libraryApi()).toBe(api);
-    await expect(api!.me()).resolves.toMatchObject({ id: 'lokal', name: 'KEPUSTAKAAN LOKAL' });
-    expect(invoke).not.toHaveBeenCalled();
-    invoke.mockResolvedValueOnce([]);
-    await expect(api!.tracks()).resolves.toEqual([]);
-    expect(invoke).toHaveBeenCalledWith('library_tracks', {});
+  it('tidak ada libraryApi di host: kepustakaan lokal didaftarkan main.tsx, bukan platform', () => {
+    expect('libraryApi' in createDesktopHost()).toBe(false);
   });
 });
 
@@ -255,6 +247,13 @@ describe('openAudioFiles / openExternal', () => {
     expect(openUrl).toHaveBeenCalledWith('https://soundcloud.com/x');
     expect(winOpen).not.toHaveBeenCalled();
   });
+
+  it('downloadUrl ADA dan membuka tautan di browser OS — WebView tidak mengunduh dari <a download>', async () => {
+    const host = createDesktopHost();
+    expect(host.downloadUrl).toBeDefined();
+    await host.downloadUrl!('https://sc.test/v1/download?url=x');
+    expect(openUrl).toHaveBeenCalledWith('https://sc.test/v1/download?url=x');
+  });
 });
 
 describe('onFilesDropped', () => {
@@ -304,7 +303,7 @@ describe('modelBytes', () => {
       return null;
     });
     const progress: unknown[] = [];
-    const out = await createDesktopHost().modelBytes('base', (p) => progress.push(p));
+    const out = await createDesktopHost().modelBytes!('base', (p) => progress.push(p));
     expect(out.bytes.byteLength).toBe(total);
     expect(out.cacheHit).toBe(false);
     expect(progress).toEqual([
@@ -319,13 +318,13 @@ describe('modelBytes', () => {
     invoke.mockImplementation(async (cmd) =>
       cmd === 'model_read' ? Array.from({ length: 44_516_685 }, () => 0) : '/p',
     );
-    const out = await createDesktopHost().modelBytes('base', () => {});
+    const out = await createDesktopHost().modelBytes!('base', () => {});
     expect(out.cacheHit).toBe(true);
     expect(out.bytes).toBeInstanceOf(Uint8Array);
   });
 
   it('byte yang terpotong ditolak', async () => {
     invoke.mockImplementation(async (cmd) => (cmd === 'model_read' ? new Uint8Array(5) : '/p'));
-    await expect(createDesktopHost().modelBytes('base', () => {})).rejects.toThrow(/tidak lengkap/);
+    await expect(createDesktopHost().modelBytes!('base', () => {})).rejects.toThrow(/tidak lengkap/);
   });
 });
