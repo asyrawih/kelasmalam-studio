@@ -6,7 +6,7 @@ perf.data*
 flamegraph.svg
 
 # --- artefak WASM (hasil scripts/build-wasm.sh, jangan di-commit) ---
-/apps/web/src/wasm/
+/packages/engine/src/wasm/
 
 # --- Node / bun (satu workspace, satu bun.lock di root — docs/25 §1a) ---
 node_modules/

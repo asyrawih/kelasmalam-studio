@@ -6,7 +6,7 @@
  * disimpan ke store selalu dB.
  */
 
-import { Card } from '../../ui/cyber';
+import { Card } from '@kelasmalam/ui/cyber';
 import type { StudioLane } from '../model';
 import { isAudible } from '../model';
 import { dbToFader, faderToDb, formatDb } from './fader';

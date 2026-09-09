@@ -14,7 +14,7 @@
  * apa-apa adalah bentuk kebohongan yang paling mahal di perkakas audio.
  */
 
-import { Button } from '../../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import { Fader } from '../mixer/Fader';
 import {
   KEY_LOCK_AVAILABLE,

@@ -17,9 +17,8 @@
 
 import { useRef, useState, type DragEvent } from 'react';
 
-import { Button } from '../../ui/cyber';
-import { useAudioFilePicker } from '../../platform/useAudioFilePicker';
-import { useNativeFileDrop } from '../../platform/useNativeFileDrop';
+import { Button } from '@kelasmalam/ui/cyber';
+import { useAudioFilePicker, useNativeFileDrop } from '../../platform/hooks';
 import { AUDIO_EXTS } from '../model';
 
 export interface DropZoneProps {

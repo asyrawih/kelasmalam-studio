@@ -12,7 +12,7 @@
  * tinggal di dalam Studio.
  */
 
-import { Card } from '../../ui/cyber';
+import { Card } from '@kelasmalam/ui/cyber';
 
 export interface ShortcutDoc {
   readonly keys: readonly string[];

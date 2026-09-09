@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Badge, Button, ProgressBar } from '../ui/cyber';
+import { Badge, Button, ProgressBar } from '@kelasmalam/ui/cyber';
 import { importFileToAsset } from '../studio/timeline/audio-import';
 import { studioStore } from '../studio/store';
 import { highlightLane, locateLane, notifyLibraryDrop } from '../studio/timeline/library-drop';
@@ -32,8 +32,7 @@ import type { LibraryApi } from './api';
 import { hashesIn } from './projects';
 import { formatBytes, formatDuration, type LibraryState, type LibraryTrack } from './model';
 import { libraryActions, libraryStore } from './store';
-import { useAudioFilePicker } from '../platform/useAudioFilePicker';
-import { useNativeFileDrop } from '../platform/useNativeFileDrop';
+import { useAudioFilePicker, useNativeFileDrop } from '../platform/hooks';
 import './library.css';
 
 export interface LibraryBrowserProps {

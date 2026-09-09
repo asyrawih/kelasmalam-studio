@@ -20,16 +20,16 @@ import { createRoot } from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import { AppShell } from './app-shell';
 import { getPlatformHost } from './platform';
-import type { UiEngine } from './state';
+import type { UiEngine } from '@kelasmalam/engine/state';
 import './index.css';
 // Suffix `?worklet&url` WAJIB: ia melewati `audioWorkletPlugin()` yang mem-build
 // worklet jadi IIFE tanpa `import`. Memakai `new URL(...)` biasa membuat Vite
 // menyalin file .ts MENTAH ke dist — dev tetap jalan (dev-server men-transform),
 // produksi gagal dengan SyntaxError saat addModule().
-import workletUrl from './audio/worklet-processor.ts?worklet&url';
+import workletUrl from '@kelasmalam/engine/audio/worklet-processor.ts?worklet&url';
 
 async function createEngine(): Promise<UiEngine | null> {
-  const mod = await import('./audio/engine-client');
+  const mod = await import('@kelasmalam/engine/audio/engine-client');
   return await mod.EngineClient.create({
     workletUrl,
     onFault: (message) => {

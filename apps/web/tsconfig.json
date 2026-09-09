@@ -1,34 +1,10 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "types": ["vite/client", "node"],
-
-    /* Strict penuh + beberapa cek tambahan yang relevan untuk kode audio:
-       akses index buffer harus dianggap bisa undefined (noUncheckedIndexedAccess)
-       karena banyak jalur di sini membaca view yang panjangnya bisa 0 setelah
-       memory.grow (docs/05). */
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": false,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "useUnknownInCatchVariables": true,
-
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "noEmit": true
-  },
-  "include": ["src", "vite.config.ts"],
-  "exclude": ["dist", "src/wasm"]
+  "extends": "../../tsconfig.base.json",
+  /* `packages/*\/src` ikut di-include supaya SATU `tsc --noEmit` memeriksa semua
+     sumber yang benar-benar masuk bundel web — paket dikonsumsi sebagai
+     sumber, bukan hasil build, jadi tidak ada langkah lain yang memeriksanya.
+     `engine/src/wasm` dikecualikan: itu artefak build wasm-bindgen
+     (gitignored), bukan sumber. */
+  "include": ["src", "vite.config.ts", "../../packages/*/src"],
+  "exclude": ["dist", "../../packages/engine/src/wasm"]
 }

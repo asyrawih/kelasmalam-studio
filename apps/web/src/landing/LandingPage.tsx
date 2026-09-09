@@ -17,7 +17,7 @@
 
 import { useState, type CSSProperties } from 'react';
 import { VersionTag } from '../app-shell/VersionTag';
-import { Badge, Button, Card } from '../ui/cyber';
+import { Badge, Button, Card } from '@kelasmalam/ui/cyber';
 import { getPlatformHost } from '../platform';
 import { HeroShot } from './HeroShot';
 import {

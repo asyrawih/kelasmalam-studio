@@ -13,9 +13,9 @@
 
 import { useState } from 'react';
 
-import { Badge, Card } from '../../ui/cyber';
-import type { EffectDesc } from '../../audio/fx-catalog';
-import { defaultParams } from '../../audio/fx-catalog';
+import { Badge, Card } from '@kelasmalam/ui/cyber';
+import type { EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
+import { defaultParams } from '@kelasmalam/engine/audio/fx-catalog';
 import type { FxInsert, FxTarget } from '../model';
 import { studioActions, useStudio } from '../rail/store-adapter';
 import { FxParamRow } from './FxParamRow';

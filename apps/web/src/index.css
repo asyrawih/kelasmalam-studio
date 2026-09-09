@@ -2,13 +2,17 @@
  * Reset minimal + import token.
  *
  * Tidak ada gaya komponen di sini: seluruh bahasa visual datang dari
- * `ui/cyber/theme.css` (token dari design) dan dari inline style di tiap panel
- * yang menyalin design file. File ini hanya menghapus default browser yang
- * akan mengganggu.
+ * `@kelasmalam/ui/cyber/theme.css` (token dari design) dan dari inline style
+ * di tiap panel yang menyalin design file. File ini hanya menghapus default
+ * browser yang akan mengganggu.
+ *
+ * `@import` di bawah memakai alias paket (docs/25 P1): resolver CSS Vite
+ * menghormati `resolve.alias` yang sama dengan modul JS, jadi letak paket
+ * tidak perlu dieja ulang di sini.
  */
 
-@import './ui/cyber/theme.css';
-@import './ui/cyber/cyber.css';
+@import '@kelasmalam/ui/cyber/theme.css';
+@import '@kelasmalam/ui/cyber/cyber.css';
 
 *,
 *::before,

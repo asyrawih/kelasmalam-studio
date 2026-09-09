@@ -24,8 +24,8 @@ import {
   type ReactNode,
 } from 'react';
 
-import { Button } from '../../ui/cyber';
-import { useCanvasDraw } from '../../ui/lib/canvas';
+import { Button } from '@kelasmalam/ui/cyber';
+import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import {
   MAX_GRID_BPM,
   MIN_GRID_BPM,

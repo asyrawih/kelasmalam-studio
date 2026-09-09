@@ -77,11 +77,11 @@ cargo +nightly build -p wasm-bridge --release \
       -Z build-std-features=panic_immediate_abort
 
 wasm-bindgen target/wasm32-unknown-unknown/release/wasm_bridge.wasm \
-      --out-dir apps/web/src/wasm --target web --no-typescript=false
+      --out-dir packages/engine/src/wasm --target web --no-typescript=false
 
 wasm-opt -O4 --enable-simd --enable-threads --enable-bulk-memory \
       --strip-debug --strip-producers \
-      -o apps/web/src/wasm/wasm_bridge_bg.wasm apps/web/src/wasm/wasm_bridge_bg.wasm
+      -o packages/engine/src/wasm/wasm_bridge_bg.wasm packages/engine/src/wasm/wasm_bridge_bg.wasm
 ```
 
 ## Build profile
@@ -117,7 +117,7 @@ kecepatan dan ~15% ukuran.
 
 ```yaml
 - run: |
-    SIZE=$(gzip -c apps/web/src/wasm/wasm_bridge_bg.wasm | wc -c)
+    SIZE=$(gzip -c packages/engine/src/wasm/wasm_bridge_bg.wasm | wc -c)
     echo "engine gz: $SIZE"
     test "$SIZE" -lt 307200 || { echo "SIZE BUDGET EXCEEDED"; exit 1; }
 ```

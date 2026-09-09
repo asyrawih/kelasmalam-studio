@@ -12,7 +12,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AppShell } from './AppShell';
-import { listCommands } from './command';
+import { listCommands } from '@kelasmalam/shell/command';
 import { DESKTOP_MENU_COMMAND_IDS, menuCommandRoute } from './menu-ids';
 import { pathOf, type Route } from './routes';
 import { djActions } from '../dj/store';

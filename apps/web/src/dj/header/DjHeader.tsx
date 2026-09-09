@@ -16,7 +16,7 @@
 
 import { chordFor, chordLabel } from '../../app-shell';
 import { VersionTag } from '../../app-shell/VersionTag';
-import { Badge, Button } from '../../ui/cyber';
+import { Badge, Button } from '@kelasmalam/ui/cyber';
 import { QUANTIZE_DIVS, DECK_ACCENT, type QuantizeDiv } from '../model';
 import { djActions, djStore, useDj } from '../store';
 import { deckView } from '../deck-view';

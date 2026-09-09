@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type React from 'react';
-import { Card } from '../../ui/cyber';
+import { Card } from '@kelasmalam/ui/cyber';
 import { LANE_HEIGHT_IDS, findClip, samplesToSec } from '../model';
 import { studioActions, useStudio } from '../store';
 import { ClipArea } from './ClipArea';

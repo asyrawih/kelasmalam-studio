@@ -11,7 +11,7 @@
  */
 
 import type { BeatGrid } from '../../studio/analysis/beat-grid';
-import { Button } from '../../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import { loopLen, type DeckId, type DeckState } from '../model';
 import { djActions } from '../store';
 

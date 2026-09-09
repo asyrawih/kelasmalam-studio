@@ -14,7 +14,7 @@
 
 import { useState } from 'react';
 
-import { Badge, Button, Card } from '../../ui/cyber';
+import { Badge, Button, Card } from '@kelasmalam/ui/cyber';
 import { isBusy, readyItems, type QueueItem, type RobloxState } from '../model';
 import { GenrePicker } from './GenrePicker';
 import { QueueRow } from './QueueRow';

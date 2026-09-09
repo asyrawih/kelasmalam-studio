@@ -14,7 +14,7 @@
 
 import { useState } from 'react';
 
-import { Button } from '../../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import {
   STEM_BYPASS,
   STEM_MAX_BASS_HZ,

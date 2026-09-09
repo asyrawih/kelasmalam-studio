@@ -23,6 +23,6 @@
     "test:rust": "cargo test --workspace",
     "lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check",
     "size-check": "./scripts/size-check.sh",
-    "clean": "cargo clean && rm -rf apps/web/src/wasm apps/web/dist"
+    "clean": "cargo clean && rm -rf packages/engine/src/wasm apps/web/dist"
   }
 }

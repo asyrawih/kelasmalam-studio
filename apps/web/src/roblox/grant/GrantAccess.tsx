@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { PlatformKind } from '../../platform';
-import { Button, Card } from '../../ui/cyber';
+import { Button, Card } from '@kelasmalam/ui/cyber';
 import type { QueueItem, RobloxTarget } from '../model';
 import { robloxActions } from '../store';
 import type { GrantApi, RobloxCatalogAsset, RobloxExperience } from './api';

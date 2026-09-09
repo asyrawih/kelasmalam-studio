@@ -30,12 +30,11 @@ import { activeLoopLen } from './clip-loop';
 import { BAND_COLORS, drawClipWave, drawLoopedClipWave } from './waveform';
 import { visibleWindow, type WaveWindow } from './wave-window';
 import { fadeOverlayGradient } from './fade';
-import { useCanvasDraw } from '../../ui/lib/canvas';
+import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
 import { clearTimelineCursor, setTimelineCursor } from './timeline-cursor';
 import { snapClipMove } from './clip-snap';
-import { useAudioFilePicker } from '../../platform/useAudioFilePicker';
-import { useNativeFileDrop } from '../../platform/useNativeFileDrop';
+import { useAudioFilePicker, useNativeFileDrop } from '../../platform/hooks';
 
 export interface ClipAreaProps {
   readonly scrollerRef: RefObject<HTMLDivElement>;

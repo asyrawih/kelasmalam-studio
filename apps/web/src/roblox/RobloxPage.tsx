@@ -25,7 +25,7 @@ import { useCallback, useState } from 'react';
 
 import { useCommands } from '../app-shell';
 import type { PlatformKind } from '../platform';
-import { Button } from '../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import { RobloxHeader } from './header/RobloxHeader';
 import { GrantAccess } from './grant/GrantAccess';
 import type { GrantApi } from './grant/api';

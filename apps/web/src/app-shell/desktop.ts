@@ -29,7 +29,7 @@
 
 import { isTauri } from '@tauri-apps/api/core';
 
-import { getCommand, runCommand } from './command';
+import { getCommand, runCommand } from '@kelasmalam/shell/command';
 
 /**
  * Modul jendela diimpor SEKALI dan janjinya disimpan.

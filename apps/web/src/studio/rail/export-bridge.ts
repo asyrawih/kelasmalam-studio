@@ -13,10 +13,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { createEncoder } from '../../encoders';
-import type { EncoderFormat } from '../../encoders';
+import { createEncoder } from '@kelasmalam/engine/encoders';
+import type { EncoderFormat } from '@kelasmalam/engine/encoders';
 import { getPlatformHost } from '../../platform';
-import { loadWasm, type LoadedWasm } from '../../audio/wasm-loader';
+import { loadWasm, type LoadedWasm } from '@kelasmalam/engine/audio/wasm-loader';
 import {
   buildExportPayload,
   type BufferLookup,

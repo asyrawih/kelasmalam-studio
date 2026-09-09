@@ -13,7 +13,7 @@ import { act } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { EffectDesc } from '../../audio/fx-catalog';
+import type { EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
 
 const TESTFX: EffectDesc = {
   kind: 0,

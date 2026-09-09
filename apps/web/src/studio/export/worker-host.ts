@@ -71,7 +71,7 @@ export function canRunExportInWorker(): boolean {
 }
 
 function defaultWorker(): Worker {
-  return new Worker(new URL('../../audio/export-worker.ts', import.meta.url), {
+  return new Worker(new URL('@kelasmalam/engine/audio/export-worker.ts', import.meta.url), {
     type: 'module',
     name: 'daw-export',
   });

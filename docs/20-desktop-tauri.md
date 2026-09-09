@@ -255,7 +255,7 @@ byte lewat IPC menghindari seluruh pertanyaan itu.
 ### a) Alur build
 
 ```
-scripts/build-wasm.sh ──► apps/web/src/wasm/{mt,st}
+scripts/build-wasm.sh ──► packages/engine/src/wasm/{mt,st}
                                │
 bun run --cwd apps/web build ──┴──► apps/web/dist ──┬──► Vercel (seperti sekarang)
                                                      └──► cargo tauri build (bundel)
@@ -497,7 +497,7 @@ dimuat Studio"): salin `web/dist` ke direktori sementara, sisipkan
 `<script src="/reporter.js">` setelah `<div id="root">` yang membungkus
 `fetch` dan setelah 15 detik melaporkan URL `engine_bg-*.wasm` yang diminta
 (`BN89mABI` = mt, `BWSYtPMo` = st — cocokkan ukurannya dengan
-`web/src/wasm/{mt,st}/engine_bg.wasm`), arahkan `frontendDist` ke salinan itu
+`packages/engine/src/wasm/{mt,st}/engine_bg.wasm`), arahkan `frontendDist` ke salinan itu
 dan `windows[0].url` ke `/studio`. **Aset ditanam saat compile** — setiap
 perubahan di salinan `dist` butuh `cargo build` lagi, kalau tidak yang jalan
 adalah salinan lama. Untuk baris `http://localhost`, server statis Node

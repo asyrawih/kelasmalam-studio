@@ -19,7 +19,7 @@ function ensureWorker(): Worker | null {
   if (worker !== null) return worker;
   if (typeof Worker === 'undefined') return null; // jsdom / lingkungan tes
   try {
-    worker = new Worker(new URL('../../audio/tempo-worker.ts', import.meta.url), {
+    worker = new Worker(new URL('@kelasmalam/engine/audio/tempo-worker.ts', import.meta.url), {
       type: 'module',
     });
   } catch {

@@ -19,8 +19,8 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
-import { Button } from '../../ui/cyber';
-import { useCanvasDraw } from '../../ui/lib/canvas';
+import { Button } from '@kelasmalam/ui/cyber';
+import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import {
   DEFAULT_FADE_CURVE,
   formatTime,

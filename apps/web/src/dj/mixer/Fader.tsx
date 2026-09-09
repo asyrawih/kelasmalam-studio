@@ -11,7 +11,7 @@
 
 import { useRef } from 'react';
 
-import { useDrag } from '../../ui/lib/drag';
+import { useDrag } from '@kelasmalam/ui/lib/drag';
 
 export interface FaderProps {
   readonly orientation: 'vertical' | 'horizontal';

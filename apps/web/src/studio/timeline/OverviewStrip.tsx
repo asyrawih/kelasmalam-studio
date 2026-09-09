@@ -11,7 +11,7 @@
 
 import { useRef } from 'react';
 import { useStudio } from '../store';
-import { useCanvasDraw } from '../../ui/lib/canvas';
+import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import { BAND_COLORS, drawClipWave } from './waveform';
 
 export interface OverviewStripProps {

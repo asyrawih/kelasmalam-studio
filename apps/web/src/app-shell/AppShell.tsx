@@ -33,8 +33,8 @@ import { getPlatformHost } from '../platform';
 import { RobloxRoute } from '../roblox';
 import { ProofStemPage } from '../proof-stem';
 import { selectProjectDirty, studioStore, useStudio } from '../studio/store';
-import { Button } from '../ui/cyber';
-import { CommandPalette } from './CommandPalette';
+import { Button } from '@kelasmalam/ui/cyber';
+import { CommandPalette } from '@kelasmalam/shell/CommandPalette';
 import { KeymapEditor } from './KeymapEditor';
 import {
   closeGuardReason,
@@ -44,8 +44,8 @@ import {
   setWindowTitle,
   windowTitle,
 } from './desktop';
-import { useCommands } from './useCommands';
-import { useKeyDispatch } from './useKeyDispatch';
+import { useCommands } from '@kelasmalam/shell/useCommands';
+import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
 import { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
 
 export interface AppShellProps {

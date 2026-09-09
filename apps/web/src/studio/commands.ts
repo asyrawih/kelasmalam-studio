@@ -32,7 +32,7 @@
  * editor pintasan (`?`).
  */
 
-import { runCommand, type Command } from '../app-shell/command';
+import { runCommand, type Command } from '@kelasmalam/shell/command';
 import { libraryActions } from '../library/store';
 import { pressSpace, releaseSpace, resetSpace } from './shortcuts/space-pan';
 import { studioActions, studioStore } from './store';

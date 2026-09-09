@@ -16,7 +16,7 @@
 import { createLibraryApi, type LibraryApi } from '../library/api';
 import { assertModelSize, SCNET_MODELS, type ScnetModelDefinition, type ScnetModelDownloadProgress } from '../proof-stem/scnet-catalog';
 import { FileSystemSink } from '../studio/export/sinks';
-import type { ModelBytes, PlatformHost, SaveTarget } from './host';
+import type { ModelBytes, PlatformHost, SaveTarget } from '@kelasmalam/platform/host';
 
 // ── File delivery (dipindah dari encoders/index.ts) ─────────────────────────
 

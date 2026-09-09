@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { createPortal } from 'react-dom';
-import { Card, ProgressBar } from '../../ui/cyber';
+import { Card, ProgressBar } from '@kelasmalam/ui/cyber';
 import { formatTime, isAudible, type ExportFormat, type StudioState } from '../model';
 import { hasRenderableAudio } from '../preview/audio-preview';
 import {

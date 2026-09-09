@@ -38,7 +38,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Button } from '../../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import { ClipEditPanel, ClipHeader, ClipWavePanel } from './ClipPanels';
 
 /** Kontrol yang bisa difokus di dalam dialog. Tidak menyaring visibilitas:

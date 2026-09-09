@@ -1,4 +1,4 @@
-import { Button } from '../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import { enqueueAutoStem, setAutoStemEnabled, useAutoStem } from './auto-stem';
 import { studioStore } from '../studio/store';
 import { getBuffer } from '../studio/preview/audio-preview';

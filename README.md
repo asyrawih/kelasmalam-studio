@@ -21,7 +21,7 @@ valid sebagai tes korektnes.
 
 ```bash
 bun install
-bun run build:wasm        # build engine-mt + engine-st ke apps/web/src/wasm/
+bun run build:wasm        # build engine-mt + engine-st ke packages/engine/src/wasm/
 bun run dev               # Vite dev server (sudah mengirim header COOP/COEP)
 ```
 
@@ -37,7 +37,7 @@ cargo run -p daw-native-host --release   # putar engine lewat speaker (dev/profi
 > **Catatan COOP/COEP.** `SharedArrayBuffer` hanya aktif kalau
 > `crossOriginIsolated === true`. Untuk produksi lihat `deploy/nginx.conf`.
 > Tanpa isolasi, aplikasi tetap jalan dalam *degraded mode* (command lewat
-> `postMessage`, export single-thread) memakai artefak `apps/web/src/wasm/st/`.
+> `postMessage`, export single-thread) memakai artefak `packages/engine/src/wasm/st/`.
 
 ## Deploy (Vercel)
 

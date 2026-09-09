@@ -6,7 +6,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
-import * as panels from '../ui/panels';
+import * as panels from '@kelasmalam/ui/panels';
 
 // jsdom melaporkan semua elemen berukuran 0. Itu membuat `fitCanvas` bail out
 // dan jalur gambar TIDAK PERNAH dieksekusi — kita justru ingin dieksekusi.

@@ -39,7 +39,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useCommands } from '../app-shell';
-import { Badge, Button, ProgressBar } from '../ui/cyber';
+import { Badge, Button, ProgressBar } from '@kelasmalam/ui/cyber';
 import { studioStore, useStudio } from '../studio/store';
 import { djStore } from '../dj/store';
 import { registerImportSink } from '../studio/timeline/import-sink';

@@ -1,7 +1,11 @@
+/**
+ * Pintu `app-shell` milik app: gabungan `@kelasmalam/shell` (registry command,
+ * keymap, palette — docs/25 P1) dan yang tetap di sini karena bergantung pada
+ * app (`AppShell`, `routes`, `VersionTag` → `build-info`). Importer lama
+ * (`from '../app-shell'`) tidak perlu tahu pembagian itu.
+ */
+
 export { AppShell, type AppShellProps } from './AppShell';
-export { useCommands } from './useCommands';
 export { routeOf, pathOf, type Route } from './routes';
-export type { Command, CommandHold, CommandId } from './command';
-export { chordLabel } from './keys';
-export { chordFor } from './keymap';
 export { VersionTag, type VersionTagProps } from './VersionTag';
+export { useCommands, chordLabel, chordFor, type Command, type CommandHold, type CommandId } from '@kelasmalam/shell';

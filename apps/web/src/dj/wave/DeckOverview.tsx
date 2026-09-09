@@ -12,7 +12,7 @@
 
 import { useRef } from 'react';
 
-import { useCanvasDraw } from '../../ui/lib/canvas';
+import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import { BAND_COLORS, drawAssetWave, drawPlaceholderWave } from '../../studio/timeline/waveform';
 import type { DeckView } from '../deck-view';
 import { HOT_CUE_SLOTS, type DeckId, type TrackCues } from '../model';

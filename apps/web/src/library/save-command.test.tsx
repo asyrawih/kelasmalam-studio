@@ -30,8 +30,8 @@ import {
   isCommandEnabled,
   listCommands,
   runCommand,
-} from '../app-shell/command';
-import { useCommands } from '../app-shell/useCommands';
+} from '@kelasmalam/shell/command';
+import { useCommands } from '@kelasmalam/shell/useCommands';
 import { setPlatformHostForTests } from '../platform';
 import { studioCommands } from '../studio/commands';
 import { selectProjectDirty, studioActions, studioStore } from '../studio/store';

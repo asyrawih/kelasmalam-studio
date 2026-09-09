@@ -39,7 +39,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
-import { Button } from '../../ui/cyber';
+import { Button } from '@kelasmalam/ui/cyber';
 import { MAX_GRID_BPM, MIN_GRID_BPM, gridSegments } from '../../studio/analysis/beat-grid';
 import { MIN_FIT_BARS, barsBetween, currentBpm, rawAnchorSec } from '../../studio/analysis/grid-edit';
 import { useStudio } from '../../studio/store';
