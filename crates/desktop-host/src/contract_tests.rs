@@ -374,9 +374,10 @@ fn build_rs() -> String {
 }
 
 fn capability_permissions() -> BTreeSet<String> {
-    let raw =
-        std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/capabilities/default.json"))
-            .expect("capabilities/default.json ada");
+    let raw = std::fs::read_to_string(
+        repo_root().join("apps/desktop/src-tauri/capabilities/default.json"),
+    )
+    .expect("capabilities/default.json ada");
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     json["permissions"]
         .as_array()
@@ -432,9 +433,10 @@ fn capability_allows_every_command_for_the_loopback_origin() {
         "izin yang belum ada di capabilities/default.json: {missing:?}"
     );
 
-    let raw =
-        std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/capabilities/default.json"))
-            .unwrap();
+    let raw = std::fs::read_to_string(
+        repo_root().join("apps/desktop/src-tauri/capabilities/default.json"),
+    )
+    .unwrap();
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let urls = json["remote"]["urls"].as_array().expect("remote.urls ada");
     assert!(
