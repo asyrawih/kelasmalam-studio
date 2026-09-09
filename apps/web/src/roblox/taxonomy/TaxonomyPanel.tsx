@@ -16,7 +16,7 @@
 import { useState, type CSSProperties } from 'react';
 
 import { Badge, Button, Card } from '@kelasmalam/ui/cyber';
-import type { RobloxCategory, RobloxGenre, RobloxTaxonomy } from '../../platform/local-commands';
+import type { RobloxCategory, RobloxGenre, RobloxTaxonomy } from '../model';
 import { genresOf, sortedCategories, type RobloxState } from '../model';
 import { robloxActions, type TaxonomyResult } from '../store';
 

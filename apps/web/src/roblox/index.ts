@@ -11,9 +11,8 @@ export { RobloxPage, type RobloxPageProps } from './RobloxPage';
 export { RobloxRoute, type RobloxRouteProps } from './RobloxRoute';
 export { createRunner, type Runner } from './backend/runner';
 export { createHttpTransport, UploadError, type Transport } from './backend/transport';
-export { createDesktopTransport } from './backend/desktop-transport';
-export { createLocalQueuePersistence } from './local/queue-persistence';
-export { robloxActions, robloxStore, useRoblox, fileOf, restoreRobloxQueue } from './store';
+export { registerRobloxBackend, getRobloxBackend, type RobloxBackend } from './backend/backend';
+export { registerRobloxPersistence, robloxActions, robloxStore, useRoblox, fileOf, restoreRobloxQueue } from './store';
 export {
   MAX_BYTES,
   MAX_DESC_LEN,

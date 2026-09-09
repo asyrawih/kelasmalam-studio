@@ -3,9 +3,16 @@
  *
  * Berkas ini adalah satu-satunya sumber kebenaran untuk DUA sisi: TypeScript
  * memanggil nama dan bentuk di sini, dan `crates/desktop-host` +
- * `desktop/src-tauri` mengimplementasikan nama dan bentuk yang PERSIS sama.
- * Kalau salah satu sisi perlu bentuk lain, ubah berkas ini dulu — jangan
+ * `apps/desktop/src-tauri` mengimplementasikan nama dan bentuk yang PERSIS
+ * sama. Kalau salah satu sisi perlu bentuk lain, ubah berkas ini dulu — jangan
  * menyimpang diam-diam di salah satu sisi.
+ *
+ * Tipe DTO yang juga dipakai UI web (bentuk lagu/project kepustakaan, baris
+ * antrean Roblox, `LocalError`) TIDAK didefinisikan di sini melainkan di
+ * `apps/web/src/{library,roblox}/model.ts` dan `apps/web/src/local-error.ts`,
+ * lalu diekspor ulang: bundel web tidak boleh menarik kontrak Tauri hanya
+ * untuk tipe (docs/25 §1c). `contract_tests.rs` membaca ketiga berkas itu
+ * bersama berkas ini.
  *
  * Konvensi:
  * - Nama command `snake_case`; argumen satu objek `camelCase` (Tauri
@@ -18,148 +25,53 @@
  *   (`invoke(cmd, bytes, { headers })`, Rust: `tauri::ipc::Request`).
  */
 
-// ── Galat ──────────────────────────────────────────────────────────────────
+// ── Tipe bersama (didefinisikan di apps/web, lihat kepala berkas) ──────────
 
-export interface LocalError {
-  readonly code:
-    | 'NOT_FOUND'
-    | 'IN_USE' // hapus ditolak; `message` menyebut pemakainya, `count` jumlahnya
-    | 'VERSION_CONFLICT' // simpan project dengan versi basi; `currentVersion` terisi
-    | 'DISK_FULL'
-    | 'INVALID'
-    | 'SECRET_UNAVAILABLE' // berkas rahasia Roblox tidak bisa dibaca/ditulis
-    | 'HTTP' // Open Cloud menjawab galat; `status` terisi
-    | 'YOUTUBE' // yt-dlp menolak; `message` = kalimat yt-dlp sendiri (docs/23)
-    | 'IO';
-  readonly message: string;
-  readonly count?: number;
-  readonly currentVersion?: number;
-  readonly status?: number;
-}
+// TODO(P3): `LocalError` ikut ke paket kontrak kepustakaan/roblox.
+import type { LocalError } from '@app-web/local-error'; // TODO(P3)
+// TODO(P3): DTO kepustakaan lokal ikut `packages/library`.
+import type {
+  ImportedTrack,
+  LocalProjectBody,
+  LocalProjectSummary,
+  LocalTrack,
+  StoreInfo,
+  TrackMetaInput,
+} from '@app-web/library/model'; // TODO(P3)
+// TODO(P3): DTO Roblox ikut `packages/roblox`.
+import type {
+  RobloxCategory,
+  RobloxGenre,
+  RobloxModerationState,
+  RobloxOperationState,
+  RobloxTargetSettings,
+  RobloxTaxonomy,
+  RobloxUploadRow,
+  RobloxUploadStatus,
+} from '@app-web/roblox/model'; // TODO(P3)
+
+export type {
+  ImportedTrack,
+  LocalError,
+  LocalProjectBody,
+  LocalProjectSummary,
+  LocalTrack,
+  RobloxCategory,
+  RobloxGenre,
+  RobloxModerationState,
+  RobloxOperationState,
+  RobloxTargetSettings,
+  RobloxTaxonomy,
+  RobloxUploadRow,
+  RobloxUploadStatus,
+  StoreInfo,
+  TrackMetaInput,
+};
 
 // ── Folder & rahasia ───────────────────────────────────────────────────────
 
-export interface StoreInfo {
-  /** Path absolut folder kepustakaan (docs/21 §1b). */
-  readonly dir: string;
-  readonly bytes: number;
-  readonly tracks: number;
-  readonly projects: number;
-  readonly schemaVersion: number;
-}
-
 /** Hanya kunci yang terdaftar di sini yang diterima `secret_*`. */
 export type SecretKey = 'roblox.api_key' | 'roblox.cookie';
-
-// ── Kepustakaan (cermin `LibraryApi`, docs/21 §2c) ─────────────────────────
-
-export interface LocalTrack {
-  readonly hash: string;
-  readonly name: string;
-  readonly bytes: number;
-  readonly mime: string;
-  /** 0 = tidak diketahui, sama dengan kontrak Worker. */
-  readonly frames: number;
-  readonly sampleRate: number;
-  readonly marks: unknown | null;
-  readonly createdAt: number;
-}
-
-export interface TrackMetaInput {
-  readonly hash: string;
-  readonly name: string;
-  readonly bytes: number;
-  readonly mime: string;
-  readonly frames: number;
-  readonly sampleRate: number;
-}
-
-/** Hasil `library_import_path`: berkas sudah disalin & di-hash oleh Rust. */
-export interface ImportedTrack extends LocalTrack {
-  /** `true` = hash-nya sudah ada; tidak ada berkas baru yang ditulis. */
-  readonly existed: boolean;
-}
-
-export interface LocalProjectSummary {
-  readonly id: string;
-  readonly name: string;
-  readonly updatedAt: number;
-  readonly version: number;
-}
-
-export interface LocalProjectBody extends LocalProjectSummary {
-  readonly json: unknown;
-  readonly tracks: readonly string[];
-}
-
-// ── Roblox (docs/21 §3) ────────────────────────────────────────────────────
-
-export interface RobloxCategory {
-  readonly id: string;
-  readonly name: string;
-  readonly sort: number;
-}
-
-export interface RobloxGenre {
-  readonly id: string;
-  readonly categoryId: string;
-  readonly name: string;
-  readonly sort: number;
-}
-
-export interface RobloxTaxonomy {
-  readonly categories: readonly RobloxCategory[];
-  readonly genres: readonly RobloxGenre[];
-}
-
-export type RobloxUploadStatus =
-  | 'draft'
-  | 'queued'
-  | 'uploading'
-  | 'processing'
-  | 'done'
-  | 'failed';
-
-export type RobloxModerationState = 'reviewing' | 'approved' | 'rejected';
-
-/** Satu baris `roblox_upload`. Antrean = status bukan `done`; katalog = `done` | `failed`. */
-export interface RobloxUploadRow {
-  readonly id: string;
-  /** Lagu kepustakaan yang byte-nya dikirim (`tracks/<hash>`). */
-  readonly hash: string;
-  readonly fileName: string;
-  readonly bytes: number;
-  /** Durasi; `null` = belum diukur (BUKAN nol — lihat `roblox/model.ts`). */
-  readonly seconds: number | null;
-  readonly name: string;
-  readonly description: string;
-  readonly categoryId: string | null;
-  readonly genreId: string | null;
-  readonly creatorKind: 'user' | 'group';
-  readonly creatorId: string;
-  readonly status: RobloxUploadStatus;
-  readonly operationId: string | null;
-  readonly assetId: string | null;
-  readonly moderationState: RobloxModerationState | null;
-  readonly error: string | null;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-  readonly uploadedAt: number | null;
-  readonly approvedAt: number | null;
-}
-
-export interface RobloxOperationState {
-  readonly done: boolean;
-  readonly assetId: string | null;
-  readonly moderationState: RobloxModerationState | null;
-}
-
-export interface RobloxTargetSettings {
-  readonly creatorKind: 'user' | 'group';
-  readonly creatorId: string;
-  /** Tulis baris `Genre: <kategori> / <genre>` di akhir deskripsi asset (§1d). */
-  readonly genreToDescription: boolean;
-}
 
 // ── Roblox — Grant Access (docs/21 §3f, fase R5) ──────────────────────────
 

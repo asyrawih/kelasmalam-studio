@@ -19,7 +19,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import { AppShell } from './app-shell';
-import { getPlatformHost } from './platform';
 import type { UiEngine } from '@kelasmalam/engine/state';
 import './index.css';
 // Suffix `?worklet&url` WAJIB: ia melewati `audioWorkletPlugin()` yang mem-build
@@ -45,10 +44,11 @@ createRoot(container).render(
   <StrictMode>
     <AppShell createEngine={createEngine} />
     {/*
-      * Analytics Vercel hanya di web: di desktop tidak ada halaman Vercel yang
-      * menyajikan skripnya, dan mengirim telemetri dari app yang dipasang di
-      * mesin orang bukan sesuatu yang diputuskan diam-diam lewat bundel yang sama.
+      * Analytics Vercel TANPA syarat: app ini selalu web (docs/25 P2).
+      * Desktop punya `main.tsx`-nya sendiri tanpa ini — mengirim telemetri
+      * dari app yang dipasang di mesin orang bukan sesuatu yang diputuskan
+      * diam-diam lewat bundel yang sama.
       */}
-    {getPlatformHost().kind === 'web' ? <Analytics /> : null}
+    <Analytics />
   </StrictMode>,
 );

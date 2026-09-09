@@ -24,8 +24,21 @@ export interface StudioHeaderProps {
   /** Buka halaman upload dan grant access Roblox. */
   readonly onOpenRoblox?: () => void;
   readonly onOpenSoundCloud?: () => void;
-  /** Buka dialog impor YouTube. HANYA diberikan di desktop (docs/23); di web tombolnya tidak ada. */
-  readonly onOpenYoutube?: () => void;
+  /**
+   * Tombol impor TAMBAHAN di grup TOOLS, disuntik app (docs/25 §1c). Desktop
+   * memberi YOUTUBE (docs/23); web tidak memberi apa-apa — bukan tombol yang
+   * mati, melainkan tidak ada, karena di browser fitur itu memang tidak ada.
+   * Header tidak tahu tombol apa yang mungkin ada; ia hanya merendernya.
+   */
+  readonly importActions?: readonly ImportAction[];
+}
+
+/** Satu tombol di grup TOOLS yang dimiliki app, bukan Studio. */
+export interface ImportAction {
+  readonly id: string;
+  /** Label tombol, huruf besar seperti tombol lain di header (mis. `YOUTUBE`). */
+  readonly label: string;
+  readonly run: () => void;
 }
 
 function HeaderDivider(): JSX.Element {
@@ -50,7 +63,7 @@ function HeaderGroup({ label, children }: { readonly label: string; readonly chi
   );
 }
 
-export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud, onOpenYoutube }: StudioHeaderProps): JSX.Element {
+export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud, importActions = [] }: StudioHeaderProps): JSX.Element {
   const laneCount = useStudio((s) => s.lanes.length);
   const sampleRate = useStudio((s) => s.sampleRate);
   const engineReady = useStudio((s) => s.engineReady);
@@ -110,7 +123,7 @@ export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud
         <HeaderGroup label="TOOLS">
           <AutoStemToggle />
           {onOpenSoundCloud !== undefined && <Button size="sm" variant="outline" onClick={onOpenSoundCloud}>SOUNDCLOUD</Button>}
-          {onOpenYoutube !== undefined && <Button size="sm" variant="outline" onClick={onOpenYoutube}>YOUTUBE</Button>}
+          {importActions.map((a) => <Button key={a.id} size="sm" variant="outline" onClick={a.run}>{a.label}</Button>)}
         </HeaderGroup>
         <HeaderDivider />
         <HeaderGroup label="STATUS">

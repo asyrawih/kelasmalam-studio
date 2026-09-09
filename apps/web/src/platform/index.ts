@@ -1,20 +1,19 @@
 /**
- * Pemilih adapter platform (docs/20 §1a) — milik APP, bukan paket.
+ * Pemilih adapter platform milik APP WEB (docs/25 §1d) — dan sejak P2 tidak
+ * ada yang perlu dipilih: app ini SELALU web.
  *
- * Kontrak `PlatformHost` dan `getPlatformHost()` hidup di `@kelasmalam/platform`
- * (docs/25 §1d). Modul ini yang memutuskan implementasinya: `isTauri()`
- * membaca `globalThis.isTauri` yang disuntik Tauri ke WebView utama, dan
- * pilihannya didaftarkan sebagai RESOLVER di level modul, bukan dipasang dari
- * `main.tsx`.
+ * Kontrak `PlatformHost` dan `getPlatformHost()` hidup di `@kelasmalam/platform`.
+ * Modul ini mendaftarkan `createWebHost()` sebagai RESOLVER di level modul,
+ * bukan dari `main.tsx`, dan itu bukan kemalasan: worker tidak menjalankan
+ * `main.tsx`. Modul yang butuh host di dalam worker
+ * (`proof-stem/scnet-model.ts` lewat `stem/auto-stem.worker.ts`) mengimpor
+ * `'../platform'` — modul ini — dan dengan begitu resolver ikut terdaftar di
+ * worker.
  *
- * Kenapa di level modul: worker tidak menjalankan `main.tsx`. Modul yang butuh
- * host di dalam worker (`proof-stem/scnet-model.ts` lewat
- * `stem/auto-stem.worker.ts`) mengimpor `'../platform'` — modul ini — dan
- * dengan begitu resolver ikut terdaftar di worker. Di sana `globalThis.isTauri`
- * TIDAK ada, jadi worker selalu mendapat host web, persis seperti sebelumnya;
- * memang tidak ada jembatan IPC di worker. Apa pun yang butuh Tauri harus
- * dilakukan di main thread lalu dikirim ke worker (lihat `prefetchModelBytes`
- * di `proof-stem/scnet-model.ts`).
+ * Yang HILANG dari sini dibanding sebelum P2: `isTauri()` dan
+ * `createDesktopHost()`. Keduanya kini milik `apps/desktop/src/platform/`,
+ * yang mendaftarkan resolvernya sendiri. Bundel web tidak lagi membawa
+ * `@tauri-apps/*` sama sekali — `__tests__/no-desktop-leak.test.ts` menjaga.
  *
  * Importer lama (`from '../platform'`) tidak berubah: semua yang dulu
  * diekspor dari sini diekspor ulang dari paket. Hook ada di `./hooks`, bukan
@@ -22,12 +21,10 @@
  * `@kelasmalam/platform`).
  */
 
-import { isTauri } from '@tauri-apps/api/core';
 import { registerPlatformHostResolver } from '@kelasmalam/platform';
-import { createDesktopHost } from './desktop';
 import { createWebHost } from './web';
 
-registerPlatformHostResolver(() => (isTauri() ? createDesktopHost() : createWebHost()));
+registerPlatformHostResolver(() => createWebHost());
 
 export {
   getPlatformHost,

@@ -29,8 +29,7 @@
  */
 
 import { getPlatformHost } from '../platform';
-import type { ImportedTrack, StoreInfo } from '../platform/local-commands';
-import type { LibraryTrack, LibraryUser } from './model';
+import type { ImportedTrack, LibraryTrack, LibraryUser, StoreInfo } from './model';
 
 export class LibraryError extends Error {
   readonly code: string;

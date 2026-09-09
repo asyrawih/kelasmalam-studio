@@ -1,6 +1,3 @@
-import { getPlatformHost } from '../platform';
-import { desktopTransport } from './desktop-transport';
-
 export interface SoundCloudTrack {
   readonly id: number;
   readonly title: string;
@@ -74,10 +71,11 @@ function profileOf(value: unknown): SoundCloudProfile | null {
 
 /**
  * Cara satu permintaan berangkat. Web: `fetch` (bawaan). Desktop: command
- * Tauri lewat Rust (`./desktop-transport`), karena `fetch` dari WebView mati di
- * CORS — origin `tauri://localhost` tidak dikenal server. Bentuknya sengaja
- * sekecil ini: dua kata kerja, status diteruskan apa adanya, supaya kedua
- * implementasi bisa diuji dengan cara yang sama.
+ * Tauri lewat Rust (`apps/desktop/src/soundcloud/desktop-transport.ts`),
+ * karena `fetch` dari WebView mati di CORS — origin `tauri://localhost` tidak
+ * dikenal server. Bentuknya sengaja sekecil ini: dua kata kerja, status
+ * diteruskan apa adanya, supaya kedua implementasi bisa diuji dengan cara
+ * yang sama.
  */
 export interface SoundCloudTransport {
   json(url: string, signal?: AbortSignal): Promise<{ readonly status: number; readonly body: unknown }>;
@@ -222,14 +220,19 @@ export function soundCloudApiBase(configured = import.meta.env.VITE_SOUNDCLAUDE_
   return SOUNDCLOUD_API_DEFAULT;
 }
 
+let registeredTransport: SoundCloudTransport | null = null;
+
 /**
- * Client siap pakai: transport dipilih dari platform. Desktop → Rust
- * (`desktop-transport`), web → `fetch`. Impornya statis: pembungkus `invoke`
- * sudah ada di bundel lewat `platform/`, jadi tidak ada byte baru untuk web.
+ * Transport yang DIDAFTARKAN app (docs/25 §1c). Web tidak mendaftarkan apa
+ * pun dan memakai `fetch`; desktop mendaftarkan transport command Tauri di
+ * `main.tsx`. `null` mengembalikan ke bawaan (dipakai tes).
  */
+export function registerSoundCloudTransport(transport: SoundCloudTransport | null): void {
+  registeredTransport = transport;
+}
+
+/** Client siap pakai: transport yang didaftarkan app, atau `fetch`. */
 export function createSoundCloudApi(base = soundCloudApiBase()): SoundCloudApi {
   if (base === null) throw new Error('VITE_SOUNDCLAUDE_API belum dikonfigurasi untuk build production');
-  return getPlatformHost().kind === 'desktop'
-    ? new SoundCloudApi(base, desktopTransport)
-    : new SoundCloudApi(base);
+  return new SoundCloudApi(base, registeredTransport ?? fetchTransport);
 }

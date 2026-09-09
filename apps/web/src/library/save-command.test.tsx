@@ -15,11 +15,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: async () => null,
-  isTauri: () => false,
-}));
-
 import { LibraryDock } from './LibraryDock';
 import { VersionConflict, type LibraryApi } from './api';
 import { fakeLibraryApi } from './fake-api';

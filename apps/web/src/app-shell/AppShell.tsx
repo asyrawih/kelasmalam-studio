@@ -19,6 +19,14 @@
  * Bukan sekadar hemat render: `App` memasang interval playhead, autosave, dan
  * mencoba membangun `AudioContext` begitu ia mount; `DjPage` memasang jam audio
  * dan autosave sesinya sendiri. Keduanya tidak boleh jalan di halaman lain.
+ *
+ * ## Ini shell WEB (docs/25 P2)
+ *
+ * Tidak ada `isDesktop()` di sini lagi. Judul jendela Tauri, menu native, dan
+ * penjaga tutup lewat `onCloseRequested` hidup di
+ * `apps/desktop/src/app-shell/AppShell.tsx` + `window/`, yang punya tabel
+ * route dan gerbangnya sendiri. Yang tersisa di sini murni web: gerbang login,
+ * `document.title`, dan `beforeunload`.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -36,14 +44,7 @@ import { selectProjectDirty, studioStore, useStudio } from '../studio/store';
 import { Button } from '@kelasmalam/ui/cyber';
 import { CommandPalette } from '@kelasmalam/shell/CommandPalette';
 import { KeymapEditor } from './KeymapEditor';
-import {
-  closeGuardReason,
-  guardWindowClose,
-  isDesktop,
-  listenMenuCommands,
-  setWindowTitle,
-  windowTitle,
-} from './desktop';
+import { closeGuardReason, windowTitle } from '@kelasmalam/shell/title';
 import { useCommands } from '@kelasmalam/shell/useCommands';
 import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
 import { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
@@ -90,16 +91,10 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   // disuntikkan di tes, guard tetap aktif agar perilakunya bisa diverifikasi
   // tanpa jaringan sungguhan.
   //
-  // DESKTOP TANPA LOGIN (keputusan produk, untuk sekarang): di jendela Tauri
-  // gerbang ini dilewati seluruhnya. Alasannya bukan cuma "belum ada jalur
-  // login desktop" (docs/20 §1d): cookie sesi tidak pernah ikut dari origin
-  // `tauri://`, jadi `me()` selalu menjawab anonim dan seluruh .app terkunci
-  // di balik gerbang login yang di desktop tidak punya tombol MASUK sama sekali
-  // (host desktop tidak mendefinisikan `login`, lihat `canLogin`). Kepustakaan
-  // tetap tidak tersedia di desktop sampai D3; halaman-halamannya sendiri
-  // bekerja penuh tanpanya.
-  const desktop = isDesktop();
-  const authRequired = !desktop && (!import.meta.env.DEV || injectedAuthApi !== undefined);
+  // Desktop tidak punya gerbang ini sama sekali — bukan dilewati lewat `if`,
+  // melainkan tidak ada di shell-nya (docs/25 P2; alasan produknya di
+  // docs/20 §1d: cookie sesi tidak pernah ikut dari origin `tauri://`).
+  const authRequired = !import.meta.env.DEV || injectedAuthApi !== undefined;
 
   // Login lewat adapter platform, bukan `location.href` (docs/20 §2c): dari
   // WebView Tauri navigasi ke Google tidak pernah kembali, dan `guard.test.ts`
@@ -257,36 +252,24 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   // kalau tidak tombol yang sudah terpakai mustahil direbut.
   useKeyDispatch({ suspended: capturing });
 
-  // ── Rasa desktop (docs/20 fase D5) ──
-  //
-  // Judul dokumen mengikuti nama project + tanda kotor, di web DAN desktop.
-  // `document.title` tidak sampai ke judul jendela Tauri, jadi keduanya diatur;
-  // yang desktop hanya saat `isDesktop()` supaya web tidak menyentuh API Tauri.
+  // Judul dokumen mengikuti nama project + tanda kotor — aturan yang sama
+  // dengan judul jendela desktop (`@kelasmalam/shell/title`), tab browser yang
+  // bertanda sama bergunanya.
   const projectName = useStudio((s) => s.projectName);
   const dirty = useStudio(selectProjectDirty);
   useEffect(() => {
-    const title = windowTitle(projectName, dirty);
-    document.title = title;
-    if (isDesktop()) void setWindowTitle(title);
+    document.title = windowTitle(projectName, dirty);
   }, [projectName, dirty]);
 
-  // Menu native adalah pintu ketiga ke registry: satu listener, satu
-  // penerjemah (`dispatchMenuCommand`), tanpa salinan daftar aksi.
-  useEffect(() => {
-    if (!isDesktop()) return undefined;
-    return listenMenuCommands();
-  }, []);
-
   // Penjaga tutup: export yang sedang jalan atau project kotor → tanya dulu.
-  // Desktop lewat `onCloseRequested` (dialog native, jendela dihancurkan
-  // hanya kalau user setuju); web lewat `beforeunload` (browser yang bertanya,
-  // dengan kalimatnya sendiri). Satu aturan (`closeGuardReason`), dua pintu.
+  // Web lewat `beforeunload` (browser yang bertanya, dengan kalimatnya
+  // sendiri); desktop lewat `onCloseRequested` di shell-nya sendiri. Satu
+  // aturan (`closeGuardReason`), dua pintu.
   useEffect(() => {
     const snapshot = (): { exportProgress: number | null; dirty: boolean } => {
       const s = studioStore.getState();
       return { exportProgress: s.exportProgress, dirty: selectProjectDirty(s) };
     };
-    if (isDesktop()) return guardWindowClose(snapshot);
     const onBeforeUnload = (e: BeforeUnloadEvent): void => {
       if (closeGuardReason(snapshot()) === null) return;
       e.preventDefault();
@@ -347,9 +330,9 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
           showAppLinks={!authRequired || authenticated}
-          // Tanpa `login` di host (desktop hari ini) tidak ada tombol MASUK
-          // sama sekali: tautan aplikasi sudah terbuka (`showAppLinks`), dan
-          // tombol yang tidak bisa berbuat apa-apa lebih buruk daripada tidak ada.
+          // Tanpa `login` di host tidak ada tombol MASUK sama sekali: tautan
+          // aplikasi sudah terbuka (`showAppLinks`), dan tombol yang tidak
+          // bisa berbuat apa-apa lebih buruk daripada tidak ada.
           onLogin={
             !canLogin
               ? undefined

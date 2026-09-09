@@ -20,13 +20,82 @@
  * model.
  */
 
-import type {
-  RobloxCategory,
-  RobloxGenre,
-  RobloxModerationState,
-  RobloxTaxonomy,
-  RobloxUploadRow,
-} from '../platform/local-commands';
+// ── Bentuk yang menyeberang ke penyimpanan (docs/21 §3) ─────────────────────
+//
+// Ini bagian dari KONTRAK command Tauri desktop (`apps/desktop/src/platform/
+// local-commands.ts` mengimpornya dari sini), tapi tinggal di web karena
+// `persistence.ts` (IndexedDB) menyimpan bentuk yang PERSIS sama — satu UI,
+// dua penyimpanan, satu bentuk baris (docs/25 §1c). `crates/desktop-host/src/
+// contract_tests.rs` membaca berkas ini bersama `local-commands.ts` untuk
+// memeriksa bentuknya lawan `types.rs`: pertahankan gaya `readonly x:` satu
+// field per baris, dan literal status di bawah dalam kutip tunggal.
+
+export interface RobloxCategory {
+  readonly id: string;
+  readonly name: string;
+  readonly sort: number;
+}
+
+export interface RobloxGenre {
+  readonly id: string;
+  readonly categoryId: string;
+  readonly name: string;
+  readonly sort: number;
+}
+
+export interface RobloxTaxonomy {
+  readonly categories: readonly RobloxCategory[];
+  readonly genres: readonly RobloxGenre[];
+}
+
+export type RobloxUploadStatus =
+  | 'draft'
+  | 'queued'
+  | 'uploading'
+  | 'processing'
+  | 'done'
+  | 'failed';
+
+export type RobloxModerationState = 'reviewing' | 'approved' | 'rejected';
+
+/** Satu baris `roblox_upload`. Antrean = status bukan `done`; katalog = `done` | `failed`. */
+export interface RobloxUploadRow {
+  readonly id: string;
+  /** Lagu kepustakaan yang byte-nya dikirim (`tracks/<hash>`). */
+  readonly hash: string;
+  readonly fileName: string;
+  readonly bytes: number;
+  /** Durasi; `null` = belum diukur (BUKAN nol — lihat `QueueItem.seconds`). */
+  readonly seconds: number | null;
+  readonly name: string;
+  readonly description: string;
+  readonly categoryId: string | null;
+  readonly genreId: string | null;
+  readonly creatorKind: 'user' | 'group';
+  readonly creatorId: string;
+  readonly status: RobloxUploadStatus;
+  readonly operationId: string | null;
+  readonly assetId: string | null;
+  readonly moderationState: RobloxModerationState | null;
+  readonly error: string | null;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly uploadedAt: number | null;
+  readonly approvedAt: number | null;
+}
+
+export interface RobloxOperationState {
+  readonly done: boolean;
+  readonly assetId: string | null;
+  readonly moderationState: RobloxModerationState | null;
+}
+
+export interface RobloxTargetSettings {
+  readonly creatorKind: 'user' | 'group';
+  readonly creatorId: string;
+  /** Tulis baris `Genre: <kategori> / <genre>` di akhir deskripsi asset (§1d). */
+  readonly genreToDescription: boolean;
+}
 
 /** Ekstensi yang diterima Roblox untuk asset audio. */
 export const AUDIO_EXTS: readonly string[] = ['.mp3', '.ogg'];
@@ -50,8 +119,6 @@ export const MAX_NAME_LEN = 50;
 export const MAX_DESC_LEN = 1000;
 
 // ── Taksonomi: kategori → genre (docs/21 §1d) ───────────────────────────────
-
-export type { RobloxCategory, RobloxGenre, RobloxTaxonomy } from '../platform/local-commands';
 
 /**
  * Taksonomi bawaan supaya halaman tidak lahir kosong. Ini BARIS BIASA, bukan

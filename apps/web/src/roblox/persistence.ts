@@ -8,20 +8,23 @@
  * katalog yang ikut di dokumen yang sama.
  *
  * Desktop mengimplementasikan adapter yang sama di atas command Tauri
- * (`local/queue-persistence.ts`, docs/21 §3b): di sana antrean adalah TABEL
- * dan byte draft tidak pernah lewat TS. Store memilih salah satunya lewat
- * `getPlatformHost().kind`, dan tidak ada satu pun komponen yang tahu bedanya
- * — itulah yang membuat tab KATALOG dan TAKSONOMI satu UI untuk dua platform.
+ * (`apps/desktop/src/roblox-local/queue-persistence.ts`, docs/21 §3b): di sana
+ * antrean adalah TABEL dan byte draft tidak pernah lewat TS. App desktop
+ * mendaftarkannya lewat `registerRobloxPersistence` (`store.ts`), dan tidak
+ * ada satu pun komponen yang tahu bedanya — itulah yang membuat tab KATALOG
+ * dan TAKSONOMI satu UI untuk dua platform.
  */
 
-import type {
-  LocalError,
-  RobloxCategory,
-  RobloxGenre,
-  RobloxTaxonomy,
-  RobloxUploadRow,
-} from '../platform/local-commands';
-import { toUploadRow, type QueueItem, type RobloxTarget } from './model';
+import type { LocalError } from '../local-error';
+import {
+  toUploadRow,
+  type QueueItem,
+  type RobloxCategory,
+  type RobloxGenre,
+  type RobloxTarget,
+  type RobloxTaxonomy,
+  type RobloxUploadRow,
+} from './model';
 
 const DB_NAME = 'dawonweb-roblox-upload';
 const STORE = 'queue';
@@ -103,7 +106,8 @@ export interface PersistenceAdapter {
 }
 
 /**
- * Galat berbentuk `LocalError` (kontrak `platform/local-commands.ts`) yang
+ * Galat berbentuk `LocalError` (`local-error.ts`, bentuk yang sama dengan
+ * penolakan command Tauri) yang
  * bisa dilempar dari TS. `invoke` di desktop menolak dengan objek polos
  * `{ code, message }`; class ini memberi web bentuk yang sama, jadi pemanggil
  * cukup memeriksa `isLocalError` tanpa peduli dari mana galatnya datang.
