@@ -14,6 +14,14 @@ kini dipenuhi oleh **dua aplikasi**, bukan satu bundel yang menebak di runtime.
 Prasyarat docs/24: fase F0 dan seterusnya di sana baru dimulai setelah P2 di
 sini selesai.
 
+## Status (9 Sep 2026)
+
+| Fase | PR | Catatan |
+|---|---|---|
+| P0 | #78 | Selesai di branch. Dua hal yang baru ketahuan saat verifikasi dan masuk PR: (1) linker bun harus `hoisted` (`bunfig.toml`), karena linker `isolated` bawaan bun 1.3 membuat `tsc` tidak menemukan types `onnxruntime-web/wasm`; (2) `scnet-model.ts` menunjuk `../../node_modules/onnxruntime-web/dist` dan `vite build` tetap hijau saat path itu tidak ada — `ort-wasm-simd-threaded.{mjs,wasm}` lenyap dari `dist`. Kini alias `@ort-dist` lewat `require.resolve` + tes `ort-dist.test.ts`. Dua tes Rust yang membaca berkas frontend (`contract_tests.rs`, `local_server.rs`) ikut dipindah path-nya. |
+| P1 | #79 | Selesai di branch, ditumpuk di atas #78. Bentuk aktual sedikit berbeda dari rencana awal — lihat §1a (letak wasm), §1d (resolver platform), §2 (lingkup `shell`), §1h (vitest). 156 berkas / 1817 tes; gzip JS +0,05%. |
+| P2 | — | Titik suntiknya dirinci di §1c (tabel) dan §3 P2. |
+
 ---
 
 ## 0. Dari mana kita mulai
@@ -72,7 +80,7 @@ apps/
   desktop/             ← frontend Tauri: entry, routes, komposisi halaman, adapter desktop
     src-tauri/         ← `desktop/src-tauri` hari ini, dipindah (git mv); frontendDist → ../dist
 packages/
-  engine/              ← audio/ (EngineClient, worklet, SAB), encoders/, state/, wasm/ (artefak build)
+  engine/              ← src/audio/ (EngineClient, worklet, SAB), src/encoders/, src/state/, src/wasm/ (artefak build, gitignored)
   ui/                  ← ui/cyber, ui/lib, ui/panels
   shell/               ← app-shell tanpa desktop.ts: registry command, keymap, palette, VersionTag
   platform/            ← KONTRAK saja: host.ts, hooks (useAudioFilePicker, useNativeFileDrop)
@@ -84,9 +92,23 @@ packages/
 backend/               ← tetap
 ```
 
+Semua paket menaruh sumbernya di `src/` dengan **kedalaman folder yang sama
+seperti di `apps/web/src`** (`packages/engine/src/audio/…`, bukan
+`packages/engine/audio/…`). Itu bukan selera: impor relatif di dalam paket
+(`state → ../audio`) dan path relatif ke `crates/…` di tes
+(`audio/sab-layout.test.ts` membaca `../../../crates/rt/src/layout.rs`)
+tidak perlu berubah, sehingga `git mv` tetap terdeteksi sebagai rename
+(77 rename di P1) dan hanya impor LINTAS paket yang ditulis ulang.
+
+Paket dikonsumsi sebagai sumber TypeScript — tidak ada build step. Alias
+`@kelasmalam/<paket>/<subpath>` datang dari SATU sumber: `paths` di
+`tsconfig.base.json` root dan `workspace-aliases.ts` root (untuk Vite dan
+Vitest), dijaga `workspace-aliases.test.ts` agar keduanya selalu setara.
+
 `package.json` root memakai `"workspaces": ["apps/*", "packages/*", "backend"]`.
 `pnpm-workspace.yaml` dan `pnpm-lock.yaml` dihapus; `bun.lock` yang dipegang
-(diputuskan 9 Sep 2026). Folder `desktop/` di root hilang: seluruh isinya
+(diputuskan 9 Sep 2026). `bunfig.toml` memaksa `linker = "hoisted"` —
+lihat Status P0. Folder `desktop/` di root hilang: seluruh isinya
 adalah `src-tauri`, dan tempat yang benar untuknya adalah di samping frontend
 yang ia bungkus.
 
@@ -120,16 +142,38 @@ Pola yang dipakai untuk 46 file yang bercabang:
 Aturannya: **paket menerima kemampuan sebagai nilai** (prop, provider,
 registry), tidak pernah bertanya di mana ia berjalan.
 
+Titik suntik yang harus ada sejak P2 (karena modul-modul ini belum jadi
+paket, registrasinya untuk sementara diekspor dari `apps/web/src/*` dan
+dipanggil `apps/desktop` lewat alias `@app-web/*` dengan `TODO(P3)`):
+
+| Modul di `apps/web/src` | Hari ini | Titik suntik P2 |
+|---|---|---|
+| `App.tsx` (halaman Studio) | `useMemo(() => getPlatformHost().kind === 'desktop')`, mengimpor `./youtube/YouTubeDialog` | prop `extras` / `importActions` — desktop menyuntik tombol + dialog YouTube; web tidak tahu YouTube ada |
+| `studio/timeline/url-to-lane.ts` | cabang `kind === 'desktop'` + impor `../../youtube` | registry `registerUrlImporter({ matches, import })`; desktop mendaftarkan importer YouTube |
+| `library/api.ts` + `platform/{web,desktop}.ts` | host memilih `createLibraryApi` (Worker) vs `createLocalLibraryApi` (SQLite) | tetap lewat `PlatformHost.libraryApi()`; `local-api.ts`, `store-settings.ts`, `StoreSettings.tsx` pindah ke `apps/desktop`; `KeymapEditor` menerima slot `storeSettings?: ReactNode` |
+| `roblox/store.ts` | `persistence ??= kind === 'desktop' ? createLocalQueuePersistence() : createWebPersistence()` | `registerRobloxPersistence(factory)`; bawaan web |
+| `roblox/RobloxRoute.tsx` | memilih `createDesktopTransport`/`createLocalGrantApi`/`localInvoke` dari `kind` | prop/registry `RobloxBackend { transport, grantApi, saveTarget }`; implementasi desktop pindah ke `apps/desktop/src/roblox-local/` |
+| `soundcloud/api.ts` | `kind === 'desktop' ? desktopTransport : fetch` | `registerSoundCloudTransport(transport)`; bawaan `fetch` |
+| `main.tsx` | `kind === 'web' ? <Analytics/>` | hanya ada di `apps/web` |
+| `app-shell/AppShell.tsx` + `desktop.ts` | `isDesktop()` untuk judul jendela, tutup, menu native, gerbang login | `apps/desktop/src/app-shell/AppShell.tsx` sendiri (rute tanpa landing/legal, tanpa gerbang login) + `window.ts`; `apps/web` kehilangan seluruh cabang itu |
+| `proof-stem/scnet-model.ts` | `host.kind !== 'desktop'` untuk prefetch model di main thread | tetap: ini pertanyaan ke KONTRAK host (`modelBytes` ada/tidak), bukan `isTauri`; diganti `host.modelBytes === undefined` bila kontraknya dibuat opsional |
+
 ### d) `PlatformHost` tetap, tapi menjadi milik tiap app
 
 `packages/platform` hanya menyimpan `host.ts` (kontrak) dan dua hook yang
 bekerja di atas kontrak. `web.ts` pindah ke `apps/web/src/platform/`,
 `desktop.ts` + `local-invoke.ts` + `local-commands.ts` ke
-`apps/desktop/src/platform/`. `getPlatformHost()` tidak lagi memanggil
-`isTauri()` — app-nya yang memasang host di `main.tsx` lewat
-`setPlatformHost(createDesktopHost())`. Worker tetap mendapat host web
-(catatan `platform/index.ts` hari ini) — di `apps/desktop`, worker memakai
-`createWorkerHost()` yang eksplisit menolak IPC.
+`apps/desktop/src/platform/`. `getPlatformHost()` di paket tidak tahu
+`isTauri()`: paket menyimpan **resolver** yang didaftarkan app
+(`registerPlatformHostResolver`, `packages/platform/src/host-registry.ts`),
+dan `apps/*/src/platform/index.ts` mendaftarkannya di level modul. Ini yang
+membuat worker tetap benar: worker tidak menjalankan `main.tsx`, tapi modul
+yang butuh host di worker (`proof-stem/scnet-model.ts` lewat
+`auto-stem.worker.ts`) mengimpor `../platform` milik app, yang mendaftarkan
+resolvernya sendiri. Hook (`useAudioFilePicker`, `useNativeFileDrop`) hidup
+di paket dan diekspor ke app lewat `apps/web/src/platform/hooks.ts`, BUKAN
+lewat index, supaya worker yang mengimpor `../platform` tidak menarik React
+(terukur +2,7 KB gzip per worker kalau lewat index).
 
 ### e) Studio web tidak berubah; Studio desktop boleh berbeda
 
@@ -144,11 +188,22 @@ stem, atau export mengalir ke dua Studio sekaligus. DJ hanya bergantung pada
 
 `packages/engine/vite/base.ts` mengekspor plugin worklet, header COOP/COEP,
 `define` build-info, dan aturan `optimizeDeps` yang sekarang ada di
-`web/vite.config.ts`. `apps/web/vite.config.ts` dan
+`apps/web/vite.config.ts` (P1 belum mengekstraknya; itu pekerjaan P2 karena
+baru di P2 ada konsumen kedua). `apps/web/vite.config.ts` dan
 `apps/desktop/vite.config.ts` memanggilnya dan menambah yang khas: web
 menambah `_headers`/Analytics; desktop menambah `envPrefix: ['VITE_',
 'TAURI_']` dan `clearScreen: false`. Artefak WASM ditulis
 `scripts/build-wasm.sh` ke `packages/engine/wasm/` (dari `web/src/wasm/`).
+
+### h) Satu konfigurasi Vitest, root = akar repo
+
+Tes di `packages/*/src/**` dijalankan oleh `apps/web/vitest.config.ts` yang
+`root`-nya akar repo (`include: ['apps/web/src/**', 'packages/*/src/**']`),
+bukan `vitest.workspace`. Paket dikonsumsi sebagai sumber, jadi ia butuh
+setup (`vitest-canvas-mock`, stub pointer capture), plugin, dan alias yang
+IDENTIK dengan app — workspace berarti dua tempat yang harus dijaga sama.
+`apps/desktop` (P2) memakai config yang sama bentuknya dengan `include`
+miliknya; tes paket tidak dijalankan dua kali (hanya dari `apps/web`).
 
 ### g) Kode Rust tidak berubah; `src-tauri` pindah folder
 
@@ -176,7 +231,7 @@ menyebut path lama diperbarui dalam PR yang sama — daftar lengkapnya dari
 |---|---|---|
 | `audio/`, `encoders/`, `state/`, `wasm/`, `worklet.d.ts` | `packages/engine/src/` | nol cabang platform; `export-worker` mengimpor `studio/export` → pindah bersama ke `studio-core` di P4, sementara alias |
 | `ui/` | `packages/ui/src/` | `ui/panels` mengimpor `state/` → dependensi `ui → engine` (searah, boleh) |
-| `app-shell/` kecuali `desktop.ts`, `menu-ids.ts` | `packages/shell/src/` | `routes.ts` jadi **tabel per app** (§3 P2); `AppShell` menerima `pages: Record<Route, Component>` |
+| `app-shell/{command,keymap,keys,useCommands,CommandPalette,useKeyDispatch}` | `packages/shell/src/` | **P1 (aktual):** hanya registry + keymap + dispatch + palette. `AppShell.tsx`, `routes.ts`, `VersionTag.tsx` (build-info), `KeymapEditor.tsx` (StoreSettings) tetap di app — komposisi halaman adalah urusan P2, dan tiap app punya `AppShell`-nya sendiri |
 | `app-shell/desktop.ts`, `menu-ids.ts` | `apps/desktop/src/window/` | menu native = pintu ketiga registry (docs/15), tetap |
 | `platform/host.ts`, `useAudioFilePicker`, `useNativeFileDrop` | `packages/platform/src/` | kontrak |
 | `platform/web.ts` | `apps/web/src/platform/` | |
@@ -247,9 +302,28 @@ belum jadi paket (`studio`, `dj`, `library`, `roblox`), `apps/desktop`
 memakai alias sementara `@app-web/*` → `apps/web/src/*`, dan cabang
 `kind === 'desktop'` di dalamnya **belum** dibersihkan — itu P3.
 
-Ke-46 file bercabang ditinjau satu per satu di P2 dengan tabel §1c; yang
-folder-nya sudah paket dibersihkan sekarang, sisanya diberi `TODO(P3)` yang
+Ke-46 file bercabang ditinjau satu per satu di P2 dengan tabel §1c: yang
+mengimpor `@tauri-apps`/`localInvoke`/`local-commands` **harus** pindah ke
+`apps/desktop` di P2 (kalau tidak, bundel web masih membawa Tauri), dan itu
+memaksa titik suntik di tabel §1c dibuat sekarang meski modulnya masih di
+`apps/web`. Cabang `kind` yang tersisa di `apps/web` (mis. `RobloxRoute`
+memilih teks "UI ONLY") boleh tinggal sampai P3, diberi `TODO(P3)` yang
 dihitung tes.
+
+`apps/desktop/src/` yang lahir di P2:
+
+```
+main.tsx            ← host desktop didaftarkan, tanpa Analytics
+index.html, vite.config.ts (base bersama §1f), vitest.config.ts, tsconfig.json, package.json (@tauri-apps/* pindah ke sini)
+platform/           ← desktop.ts, local-invoke.ts, local-commands.ts, index.ts (resolver desktop) — dari apps/web/src/platform
+window/             ← app-shell/desktop.ts, menu-ids.ts (judul, tutup, menu native → runCommand)
+app-shell/          ← AppShell.tsx + routes.ts sendiri: /studio, /dj, /roblox, /proof-stem; tanpa gerbang login
+youtube/            ← seluruhnya
+library-local/      ← library/local-api.ts, store-settings.ts, StoreSettings.tsx
+roblox-local/       ← roblox/local/, backend/desktop-transport.ts, grant/local-api.ts, persistence lokal
+soundcloud/         ← desktop-transport.ts
+src-tauri/          ← desktop/src-tauri (git mv), lihat §1g
+```
 
 **Done:**
 1. `bun run dev:desktop` dan `bun run build:desktop` berjalan dari
