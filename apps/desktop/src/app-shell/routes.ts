@@ -8,32 +8,15 @@
  *
  * `HOME_PATH` tetap `/` supaya command `shell.goto.home` (menu native
  * "Beranda", `src-tauri/src/menu.rs`) tetap punya sasaran; di desktop sasaran
- * itu adalah Studio.
+ * itu adalah Studio. Konstanta path dan `pathOf` dari
+ * `@kelasmalam/shell/routes` (docs/25 P3) — yang milik app hanya DAFTAR-nya.
  */
 
-export type Route = 'studio' | 'dj' | 'roblox' | 'proof-stem';
+import { makeRouteOf, type Route as AnyRoute } from '@kelasmalam/shell/routes';
 
-export const HOME_PATH = '/';
-export const STUDIO_PATH = '/studio';
-export const DJ_PATH = '/dj';
-export const ROBLOX_PATH = '/roblox';
-export const PROOF_STEM_PATH = '/proof-stem';
+export { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, pathOf } from '@kelasmalam/shell/routes';
 
-const TABLE: Readonly<Record<string, Route>> = {
-  [STUDIO_PATH]: 'studio',
-  [DJ_PATH]: 'dj',
-  [ROBLOX_PATH]: 'roblox',
-  [PROOF_STEM_PATH]: 'proof-stem',
-};
+export type Route = Extract<AnyRoute, 'studio' | 'dj' | 'roblox' | 'proof-stem'>;
 
 /** Trailing slash diabaikan; yang tidak dikenal (termasuk `/`) = studio. */
-export function routeOf(pathname: string): Route {
-  return TABLE[pathname.replace(/\/+$/, '')] ?? 'studio';
-}
-
-export function pathOf(route: Route): string {
-  if (route === 'dj') return DJ_PATH;
-  if (route === 'roblox') return ROBLOX_PATH;
-  if (route === 'proof-stem') return PROOF_STEM_PATH;
-  return STUDIO_PATH;
-}
+export const routeOf: (pathname: string) => Route = makeRouteOf<Route>(['studio', 'dj', 'roblox', 'proof-stem'], 'studio');

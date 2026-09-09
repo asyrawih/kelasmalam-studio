@@ -3,7 +3,8 @@
  * bisa dijawab dari layar, bukan dari menebak deployment mana yang terakhir
  * naik.
  *
- * Nilainya DI-INJECT SAAT BUILD lewat `define` di `web/vite.config.ts`, bukan
+ * Nilainya DI-INJECT SAAT BUILD lewat `define` (`buildInfoDefines()` di
+ * `packages/engine/vite/base.ts`, dipakai kedua app), bukan
  * dibaca saat runtime: bundel produksi tidak punya akses ke git maupun
  * `process.env`. Konsekuensinya, di lingkungan yang tidak melewati Vite
  * (vitest memakai `vitest.config.ts` sendiri) semua nilainya kosong — jadi
@@ -13,7 +14,7 @@
 
 /** Satu build, sebagaimana diketahui oleh bundel yang sedang berjalan. */
 export interface BuildInfo {
-  /** `version` dari `web/package.json`, mis. `0.1.0`. */
+  /** `version` dari `package.json` app yang di-build, mis. `0.1.0`. */
   readonly version: string;
   /** Commit pendek, mis. `678a10f`. Kosong kalau build-nya di luar git. */
   readonly commit: string;

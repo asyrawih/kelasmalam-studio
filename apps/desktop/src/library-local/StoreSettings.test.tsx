@@ -13,7 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StoreInfo } from '../platform/local-commands';
-import { KeymapEditor } from '@app-web/app-shell/KeymapEditor'; // TODO(P3)
+import { KeymapEditor } from '@kelasmalam/shell/KeymapEditor';
 import { StoreSettings } from './StoreSettings';
 import {
   confirmRelocateMessage,

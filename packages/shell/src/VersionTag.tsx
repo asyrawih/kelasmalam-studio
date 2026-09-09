@@ -7,7 +7,7 @@
  * begitu saja dengan keluaran `git log`, dan itu justru kegunaan utamanya.
  */
 
-import { BUILD_INFO, versionLabel, versionTitle } from '../build-info';
+import { BUILD_INFO, versionLabel, versionTitle } from './build-info';
 import { Badge } from '@kelasmalam/ui/cyber';
 
 export interface VersionTagProps {
