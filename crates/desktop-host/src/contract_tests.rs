@@ -1,4 +1,4 @@
-//! Tes bentuk kontrak: `web/src/platform/local-commands.ts` adalah sumber
+//! Tes bentuk kontrak: `apps/web/src/platform/local-commands.ts` adalah sumber
 //! kebenaran, dan sisi Rust harus mengikutinya PERSIS (docs/21 §2a).
 //!
 //! Dua hal yang dijaga, keduanya dengan parser teks sederhana — bukan parser
@@ -30,8 +30,8 @@ fn repo_root() -> PathBuf {
 }
 
 fn contract_ts() -> String {
-    std::fs::read_to_string(repo_root().join("web/src/platform/local-commands.ts"))
-        .expect("kontrak web/src/platform/local-commands.ts harus ada")
+    std::fs::read_to_string(repo_root().join("apps/web/src/platform/local-commands.ts"))
+        .expect("kontrak apps/web/src/platform/local-commands.ts harus ada")
 }
 
 fn commands_rs() -> String {
