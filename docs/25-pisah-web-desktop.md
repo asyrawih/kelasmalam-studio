@@ -20,7 +20,7 @@ sini selesai.
 |---|---|---|
 | P0 | #78 | Selesai di branch. Dua hal yang baru ketahuan saat verifikasi dan masuk PR: (1) linker bun harus `hoisted` (`bunfig.toml`), karena linker `isolated` bawaan bun 1.3 membuat `tsc` tidak menemukan types `onnxruntime-web/wasm`; (2) `scnet-model.ts` menunjuk `../../node_modules/onnxruntime-web/dist` dan `vite build` tetap hijau saat path itu tidak ada — `ort-wasm-simd-threaded.{mjs,wasm}` lenyap dari `dist`. Kini alias `@ort-dist` lewat `require.resolve` + tes `ort-dist.test.ts`. Dua tes Rust yang membaca berkas frontend (`contract_tests.rs`, `local_server.rs`) ikut dipindah path-nya. |
 | P1 | #79 | Selesai di branch, ditumpuk di atas #78. Bentuk aktual sedikit berbeda dari rencana awal — lihat §1a (letak wasm), §1d (resolver platform), §2 (lingkup `shell`), §1h (vitest). 156 berkas / 1817 tes; gzip JS +0,05%. |
-| P2 | — | Titik suntiknya dirinci di §1c (tabel) dan §3 P2. |
+| P2 | #80 | Selesai di branch, ditumpuk di atas #79. `apps/desktop` lahir (port dev 5174), `src-tauri` pindah, bundel web bebas Tauri (gzip −3,1%), Vite base bersama `packages/engine/vite/base.ts` (`defineDawApp`). Registry host **dua tingkat** (web mendaftar bawaan, desktop menang) karena modul `apps/web` yang ditarik desktop ikut mendaftar host web. 28 berkas `apps/desktop/src` masih memakai `@app-web` (allowlist `app-web-imports.test.ts`) — P3 menurunkannya ke nol. Uji manual docs/22 dan job CI `desktop` di runner macOS/Windows belum dijalankan. |
 
 ---
 
