@@ -3,17 +3,19 @@
  *
  * Pemisahannya disengaja. `RobloxPage` adalah UI murni — ia menerima `onUpload`
  * dan tidak tahu apa pun tentang HTTP maupun Tauri, dan itulah yang membuatnya
- * bisa dites tanpa jaringan sama sekali. Yang tahu soal URL, berkas rahasia, probe
- * kesiapan, dan siklus hidup runner adalah berkas ini, dan hanya berkas ini.
+ * bisa dites tanpa jaringan sama sekali. Yang tahu soal URL, probe kesiapan,
+ * dan siklus hidup runner adalah berkas ini, dan hanya berkas ini.
  *
- * ## Dua kabel, satu runner (docs/21 §1e)
+ * ## Dua kabel, satu runner (docs/21 §1e) — yang kedua DISUNTIK
  *
- * Web: `createHttpTransport(VITE_ROBLOX_API)` ke Worker unggah, Grant Access
- * lewat Worker kepustakaan — persis seperti sebelum desktop ada.
- * Desktop: `createDesktopTransport()` ke command Tauri; unggah dan poll
- * dilakukan Rust, API key di berkas rahasia, target di SQLite. Grant Access lewat
- * `createLocalGrantApi()` — command `roblox_grant_*`/`roblox_assets_*` yang
- * bicara ke Roblox langsung dari Rust dengan cookie di berkas rahasia (§3f, R5).
+ * Web (bawaan, tanpa pendaftaran apa pun): `createHttpTransport(VITE_ROBLOX_API)`
+ * ke Worker unggah, Grant Access lewat Worker kepustakaan — persis seperti
+ * sebelum desktop ada.
+ * Desktop: app-nya mendaftarkan `RobloxBackend` (`backend/backend.ts`) —
+ * transport command Tauri, Grant Access lokal, target ke SQLite, API key ke
+ * berkas rahasia — dan berkas ini memakainya tanpa tahu Tauri ada (docs/25
+ * §1c). Dulu ada `if (kind === 'desktop')` di sini yang mengimpor semua itu;
+ * sekarang bundel web tidak membawa satu byte pun dari jalur desktop.
  * `runner.ts` sama untuk keduanya.
  *
  * ## Tanpa `VITE_ROBLOX_API`, halaman web persis seperti sebelum backend ada
@@ -26,16 +28,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { getPlatformHost, type PlatformKind } from '../platform';
+import type { PlatformKind } from '../platform';
 import { RobloxPage } from './RobloxPage';
+import { getRobloxBackend, type RobloxBackend } from './backend/backend';
 import { createRunner, type Runner } from './backend/runner';
-import { createDesktopTransport, hasStoredApiKey } from './backend/desktop-transport';
 import { createHttpTransport } from './backend/transport';
-import { localInvoke } from './local/invoke';
 import { descriptionForRoblox, type RobloxTarget } from './model';
 import { restoreRobloxQueue, robloxActions, robloxStore } from './store';
 import { createGrantApi, type GrantApi } from './grant/api';
-import { createLocalGrantApi } from './grant/local-api';
 
 export interface RobloxRouteProps {
   readonly onClose?: () => void;
@@ -44,13 +44,19 @@ export interface RobloxRouteProps {
   readonly apiBase?: string;
   /** Ditimpa di tes supaya tidak ada HTTP sungguhan. */
   readonly makeRunner?: (base: string) => Runner;
-  /** Ditimpa di tes. Default: probe `/health` lewat transport. */
+  /** Ditimpa di tes. Default: probe `/health` lewat transport (web) atau `backend.probe()`. */
   readonly probe?: (base: string) => Promise<boolean>;
   /** Default: `VITE_LIBRARY_API`; Worker ini menyimpan katalog dan grant di D1. */
   readonly libraryBase?: string;
   readonly makeGrantApi?: (base: string) => GrantApi;
-  /** Ditimpa di tes. Default: `getPlatformHost().kind`. */
+  /**
+   * Ditimpa di tes. Default: `backend.platform` kalau ada backend terdaftar,
+   * kalau tidak `'web'`. TODO(P3): hanya untuk teks UI (badge, kalimat
+   * bantuan); saat roblox jadi paket, teks itu ikut disuntik.
+   */
   readonly platform?: PlatformKind;
+  /** Ditimpa di tes. Default: `getRobloxBackend()` — yang didaftarkan app. */
+  readonly backend?: RobloxBackend | null;
 }
 
 /** Deskripsi yang dikirim jalur web: + baris Genre kalau opsinya hidup (§3d). Desktop: Rust yang menambahkannya. */
@@ -58,6 +64,9 @@ function describeForWeb(item: Parameters<typeof descriptionForRoblox>[0]): strin
   const s = robloxStore.getState();
   return descriptionForRoblox(item, s.taxonomy, s.target.genreToDescription);
 }
+
+/** Penanda `base` untuk backend yang disuntik: tidak ada URL, tapi "terkonfigurasi". */
+const INJECTED_BASE = 'desktop';
 
 export function RobloxRoute({
   onClose,
@@ -68,56 +77,57 @@ export function RobloxRoute({
   libraryBase,
   makeGrantApi,
   platform: platformProp,
+  backend: backendProp,
 }: RobloxRouteProps): JSX.Element {
-  const platform = platformProp ?? getPlatformHost().kind;
-  const desktop = platform === 'desktop';
-  const base = desktop ? 'desktop' : (apiBase ?? import.meta.env.VITE_ROBLOX_API ?? '').trim();
-  const catalogBase = desktop ? '' : (libraryBase ?? import.meta.env.VITE_LIBRARY_API ?? '').trim();
-  // Naik setiap kali user menyimpan target di desktop: kesiapan diperiksa
-  // ULANG, bukan diasumsikan dari klik SIMPAN yang berhasil.
+  const backend = backendProp === undefined ? getRobloxBackend() : backendProp;
+  const injected = backend !== null;
+  const platform = platformProp ?? backend?.platform ?? 'web';
+  const base = injected ? INJECTED_BASE : (apiBase ?? import.meta.env.VITE_ROBLOX_API ?? '').trim();
+  const catalogBase = injected ? '' : (libraryBase ?? import.meta.env.VITE_LIBRARY_API ?? '').trim();
+  // Naik setiap kali user menyimpan target lewat backend yang disuntik:
+  // kesiapan diperiksa ULANG, bukan diasumsikan dari klik SIMPAN yang berhasil.
   const [probeGeneration, setProbeGeneration] = useState(0);
 
   const grantApi = useMemo<GrantApi | null>(() => {
-    // Desktop tidak punya URL: `base` hanya penanda supaya tes yang menyuntik
-    // `makeGrantApi` tetap bisa membedakan dari mana ia dipanggil.
-    if (desktop) return makeGrantApi?.('desktop') ?? createLocalGrantApi();
+    // Backend yang disuntik tidak punya URL: `INJECTED_BASE` hanya penanda
+    // supaya tes yang menyuntik `makeGrantApi` tetap bisa membedakan dari
+    // mana ia dipanggil.
+    if (backend !== null) return makeGrantApi?.(INJECTED_BASE) ?? backend.grantApi;
     if (catalogBase === '') return null;
     return makeGrantApi?.(catalogBase) ?? createGrantApi(catalogBase);
-  }, [catalogBase, desktop, makeGrantApi]);
+  }, [catalogBase, backend, makeGrantApi]);
 
   const transport = useMemo(
     () =>
-      desktop
-        ? createDesktopTransport({
-            creatorId: () => robloxStore.getState().target.creatorId,
-            rowIdOf: (operationId) =>
-              robloxStore.getState().items.find((it) => it.operationId === operationId)?.localId ?? null,
-          })
+      backend !== null
+        ? backend.transport
         : base === ''
           ? null
           : createHttpTransport(base, { description: describeForWeb }),
-    [desktop, base],
+    [backend, base],
   );
 
   const runner = useMemo<Runner | null>(() => {
     if (makeRunner !== undefined) return base === '' ? null : makeRunner(base);
     if (transport === null) return null;
     return createRunner(transport, {
-      // Desktop: baris `done` di tabel SUDAH katalog (§3d); tidak ada
-      // `recordAsset` ke Worker mana pun.
-      onApproved: desktop
-        ? undefined
-        : async (item, assetId, target) => {
-            await grantApi?.recordAsset({
-              assetId,
-              creatorKind: target.creatorKind,
-              creatorId: target.creatorId.trim(),
-              name: item.name,
-              moderationState: 'approved',
-            });
-          },
+      // Web: catat asset yang disetujui ke Worker kepustakaan. Backend yang
+      // disuntik memutuskan sendiri (desktop: tidak perlu — baris `done` di
+      // tabel SUDAH katalog, §3d).
+      onApproved:
+        backend !== null
+          ? backend.onApproved
+          : async (item, assetId, target) => {
+              await grantApi?.recordAsset({
+                assetId,
+                creatorKind: target.creatorKind,
+                creatorId: target.creatorId.trim(),
+                name: item.name,
+                moderationState: 'approved',
+              });
+            },
     });
-  }, [base, desktop, grantApi, makeRunner, transport]);
+  }, [base, backend, grantApi, makeRunner, transport]);
 
   useEffect(() => {
     let alive = true;
@@ -157,9 +167,8 @@ export function RobloxRoute({
    * Kesiapan diperiksa, bukan diasumsikan dari adanya konfigurasi. URL yang
    * terisi tapi Worker-nya mati adalah keadaan yang paling sering terjadi saat
    * pengembangan, dan badge yang berkata SIAP di situ berbohong tepat di
-   * tempat yang paling mahal. Di desktop yang diperiksa berkas rahasia + target —
-   * dan keduanya baru terisi setelah `restoreRobloxQueue` memuat tabel
-   * `setting`, jadi probe menunggu itu dulu.
+   * tempat yang paling mahal. Backend yang disuntik memeriksa dengan caranya
+   * sendiri (`probe()`; desktop: berkas rahasia + target dari tabel `setting`).
    */
   useEffect(() => {
     if (base === '') {
@@ -169,13 +178,8 @@ export function RobloxRoute({
     let alive = true;
     const ask =
       probe ??
-      (desktop && transport !== null
-        ? async () => {
-            await restoreRobloxQueue().catch(() => {});
-            const stored = await hasStoredApiKey().catch(() => false);
-            if (alive) robloxActions.setApiKeyStored(stored);
-            return transport.health();
-          }
+      (backend !== null
+        ? () => backend.probe()
         : (b: string) => createHttpTransport(b).health());
     void ask(base)
       .then((ok) => {
@@ -191,31 +195,22 @@ export function RobloxRoute({
       // UNGGAH menyala sebelum ada yang memastikan Worker-nya masih hidup.
       robloxActions.setBackendReady(false);
     };
-  }, [base, desktop, probe, transport, probeGeneration]);
+  }, [base, backend, probe, probeGeneration]);
 
   /**
-   * SIMPAN di panel TUJUAN. Desktop: creator → `roblox_target_set`, kunci →
-   * berkas rahasia lewat `secret_set` (docs/21 §1f), lalu kolom kunci DIKOSONGKAN —
-   * salinan di memori WebView tidak punya alasan untuk hidup lebih lama
-   * daripada perjalanan ke berkas rahasia. Web: Worker kepustakaan seperti semula.
+   * SIMPAN di panel TUJUAN. Backend yang disuntik menyimpan dengan caranya
+   * (desktop: `roblox_target_set` + berkas rahasia, lalu kolom kunci
+   * dikosongkan) dan kesiapannya diperiksa ulang. Web: Worker kepustakaan.
    */
-  const onSaveTarget = desktop
-    ? async (target: RobloxTarget): Promise<void> => {
-        await localInvoke('roblox_target_set', {
-          creatorKind: target.creatorKind,
-          creatorId: target.creatorId.trim(),
-          genreToDescription: target.genreToDescription,
-        });
-        if (target.apiKey.trim() !== '') {
-          await localInvoke('secret_set', { key: 'roblox.api_key', value: target.apiKey.trim() });
-          robloxActions.setApiKey('');
-          robloxActions.setApiKeyStored(true);
+  const onSaveTarget =
+    backend !== null
+      ? async (target: RobloxTarget): Promise<void> => {
+          await backend.saveTarget(target);
+          setProbeGeneration((n) => n + 1);
         }
-        setProbeGeneration((n) => n + 1);
-      }
-    : grantApi === null
-      ? undefined
-      : async (target: RobloxTarget): Promise<void> => grantApi.saveSettings(target);
+      : grantApi === null
+        ? undefined
+        : async (target: RobloxTarget): Promise<void> => grantApi.saveSettings(target);
 
   return (
     <RobloxPage

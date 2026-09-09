@@ -4,7 +4,7 @@
 # Cargo.toml root.
 #
 # KENAPA BUKAN `version` DI tauri.conf.json:
-# `desktop/src-tauri/Cargo.toml` memakai `version.workspace = true`, dan
+# `apps/desktop/src-tauri/Cargo.toml` memakai `version.workspace = true`, dan
 # tauri-cli (interface/rust.rs, "Couldn't inherit value for `version` from
 # workspace") menyelesaikan pewarisan itu sendiri saat membaca manifest. Jadi
 # selama tauri.conf.json TIDAK punya field `version`, angka yang masuk ke
@@ -25,7 +25,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CARGO_TOML="$ROOT/Cargo.toml"
-TAURI_CONF="$ROOT/desktop/src-tauri/tauri.conf.json"
+TAURI_CONF="$ROOT/apps/desktop/src-tauri/tauri.conf.json"
 
 # Baca `version = "..."` HANYA di dalam blok [workspace.package]. Grep polos
 # `^version` akan menangkap versi crate lain kalau suatu hari ada [package] di

@@ -9,7 +9,7 @@
 
 import type { CSSProperties } from 'react';
 
-import type { RobloxTaxonomy } from '../../platform/local-commands';
+import type { RobloxTaxonomy } from '../model';
 import { genresOf, sortedCategories } from '../model';
 
 export interface GenrePickerProps {

@@ -114,12 +114,15 @@ WAV sampai berkasnya terunduh.
 
 ## Desktop (Tauri 2, macOS + Windows)
 
-Aplikasi desktop memakai frontend yang sama (`apps/web/dist` ditanam ke binary;
-[docs/20](docs/20-desktop-tauri.md)). Rilisnya **dibangun di mesin lokal**,
-bukan CI — sertifikat Developer ID dan kunci updater ada di sana:
+Aplikasi desktop adalah aplikasi Vite kedua, `apps/desktop`, di atas paket
+bersama yang sama dengan web (`apps/desktop/dist` ditanam ke binary;
+[docs/20](docs/20-desktop-tauri.md), [docs/25](docs/25-pisah-web-desktop.md)).
+`src-tauri` ada di sampingnya (`apps/desktop/src-tauri`). Rilisnya
+**dibangun di mesin lokal**, bukan CI — sertifikat Developer ID dan kunci
+updater ada di sana:
 
 ```bash
-bun run dev:desktop                                   # jendela Tauri ke Vite dev
+bun run dev:desktop                                   # jendela Tauri ke Vite dev apps/desktop (port 5174)
 scripts/release-desktop.sh --unsigned              # .dmg uji, tanpa signing
 scripts/release-desktop.sh --targets aarch64,x86_64 --publish   # draft GitHub Release + latest.json
 ```
@@ -138,7 +141,9 @@ crates/engine/         ProcessPlan, VoicePool, Transport, render_block()
 crates/export/         render offline + WAV writer + dither
 crates/wasm-bridge/    satu-satunya crate yang tahu wasm-bindgen
 crates/native-host/    [dev] host cpal untuk debugging di desktop
-apps/web/              UI React + Vite, worklet, worker (docs/25: `apps/desktop` dan `packages/*` menyusul)
+apps/web/              app web (Vercel): entry, AppShell web, dan modul yang belum jadi paket (studio, dj, library, roblox — docs/25 P3)
+apps/desktop/          app desktop (Tauri): entry, AppShell desktop, adapter Tauri, youtube, kepustakaan/roblox lokal; src-tauri/ di dalamnya
+packages/              engine (EngineClient, worklet, SAB, encoder), ui (cyber), shell (registry command, keymap), platform (kontrak host)
 scripts/               build-wasm.sh, size-check.sh, vercel-build.sh
 deploy/                vercel-config.json (sumber header/rute produksi)
                        nginx.conf (alternatif self-host: COOP/COEP + mime wasm)

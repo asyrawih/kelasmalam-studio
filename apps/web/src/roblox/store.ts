@@ -26,9 +26,11 @@
  *
  * Semua yang harus bertahan melewati refresh/restart — antrean, taksonomi,
  * katalog, target — lewat SATU `PersistenceAdapter`: IndexedDB di web,
- * command Tauri di desktop. Dipilih lazy dari `getPlatformHost().kind` saat
- * pertama dibutuhkan, bukan saat modul dimuat, supaya tes bisa menukar host
- * lebih dulu. Tidak ada satu pun komponen yang tahu adapter mana yang aktif.
+ * command Tauri di desktop. Yang desktop DIDAFTARKAN app-nya lewat
+ * `registerRobloxPersistence` (docs/25 §1c) — store ini tidak bertanya di
+ * mana ia berjalan, dan bawaannya web. Dibuat lazy saat pertama dibutuhkan,
+ * bukan saat modul dimuat, supaya pendaftaran (dan tes) sempat mendahuluinya.
+ * Tidak ada satu pun komponen yang tahu adapter mana yang aktif.
  *
  * ## Seam untuk lapisan unggah
  *
@@ -40,8 +42,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-import { getPlatformHost } from '../platform';
-import type { RobloxGenre, RobloxTaxonomy, RobloxUploadRow } from '../platform/local-commands';
+import type { RobloxGenre, RobloxTaxonomy, RobloxUploadRow } from './model';
 import {
   baseNameOf,
   createInitialRoblox,
@@ -59,7 +60,6 @@ import {
   type PersistedRobloxQueue,
   type PersistenceAdapter,
 } from './persistence';
-import { createLocalQueuePersistence } from './local/queue-persistence';
 
 // ── Inti store ───────────────────────────────────────────────────────────────
 
@@ -136,13 +136,26 @@ interface CriticalPersist {
   readonly done: () => void;
 }
 let persistence: PersistenceAdapter | null = null;
+let persistenceFactory: () => PersistenceAdapter = createWebPersistence;
 let pendingPersist: PersistJob | null = null;
 const criticalPersists: CriticalPersist[] = [];
 let activePersist: Promise<void> | null = null;
 
-/** Adapter aktif, dipilih saat pertama dibutuhkan (lihat kepala berkas). */
+/**
+ * Pabrik adapter yang DIDAFTARKAN app (docs/25 §1c). Bawaan: IndexedDB web.
+ * Desktop memanggil ini di `main.tsx` dengan `createLocalQueuePersistence`
+ * sebelum halaman mana pun dirender. `null` mengembalikan ke bawaan (tes).
+ * Adapter yang sudah terlanjur dibuat dibuang supaya pendaftaran berlaku
+ * pada pemakaian berikutnya, bukan sesudah restart.
+ */
+export function registerRobloxPersistence(factory: (() => PersistenceAdapter) | null): void {
+  persistenceFactory = factory ?? createWebPersistence;
+  persistence = null;
+}
+
+/** Adapter aktif, dibuat saat pertama dibutuhkan (lihat kepala berkas). */
 function adapter(): PersistenceAdapter {
-  persistence ??= getPlatformHost().kind === 'desktop' ? createLocalQueuePersistence() : createWebPersistence();
+  persistence ??= persistenceFactory();
   return persistence;
 }
 

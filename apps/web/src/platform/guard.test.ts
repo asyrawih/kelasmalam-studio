@@ -90,22 +90,15 @@ describe('pintu platform hanya di platform/', () => {
   });
 
   /**
-   * `app-shell/desktop.ts` boleh meng-import `isTauri` secara statis — modul
-   * itu adalah satu-satunya pintu desktop milik app-shell (menu native, judul
-   * jendela, penjaga tutup), dan `@tauri-apps/api/core` hanya beberapa byte;
-   * plugin lainnya ia impor dinamis, sama seperti `platform/desktop.ts`.
+   * Sejak docs/25 P2 tidak ada pengecualian: `app-shell/desktop.ts` (yang dulu
+   * boleh mengimpor `isTauri` statis) pindah ke `apps/desktop/src/window/`.
+   * Penjaga yang lebih luas — tanpa `@tauri-apps` sama sekali, statis maupun
+   * dinamis — ada di `__tests__/no-desktop-leak.test.ts`; yang di sini tinggal
+   * lapis kedua untuk impor statis.
    */
-  const STATIC_CORE_ALLOWED: ReadonlySet<string> = new Set(['app-shell/desktop.ts']);
-
-  it('bundel web tidak meng-import plugin Tauri secara statis di luar platform/', () => {
+  it('bundel web tidak meng-import @tauri-apps/* secara statis', () => {
     const hits = files
-      .filter(([rel, full]) => {
-        const src = readFileSync(full, 'utf8');
-        const statik = src.match(/^\s*import\s[^;]*from\s+['"](@tauri-apps\/[^'"]+)['"]/gm) ?? [];
-        return statik.some(
-          (line) => !(STATIC_CORE_ALLOWED.has(rel) && line.includes("'@tauri-apps/api/core'")),
-        );
-      })
+      .filter(([, full]) => /^\s*import\s[^;]*from\s+['"]@tauri-apps\//m.test(readFileSync(full, 'utf8')))
       .map(([rel]) => rel);
     expect(hits).toEqual([]);
   });

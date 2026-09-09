@@ -49,7 +49,8 @@ Yang tetap di CI: job `desktop` di `ci.yml` (`cargo tauri build --debug
 
 `tauri-plugin-updater` memverifikasi setiap unduhan dengan tanda tangan
 minisign. Kunci publiknya **ditanam di aplikasi** (`plugins.updater.pubkey` di
-`desktop/src-tauri/tauri.conf.json`), kunci privatnya dipakai saat build.
+`apps/desktop/src-tauri/tauri.conf.json` — dipindah oleh docs/25 P2), kunci
+privatnya dipakai saat build.
 
 ```bash
 cargo tauri signer generate -w ~/.tauri/kelasmalam-studio.key
@@ -165,7 +166,7 @@ notarization**. Pakai `--unsigned` untuk build uji; skrip melepas semua env
 Bukan env, melainkan config bundler. Dua jalur:
 
 - **Sertifikat OV/EV di mesin** — pasang `.pfx` ke Personal store, lalu di
-  `desktop/src-tauri/tauri.windows.conf.json` (auto-merge Tauri, boleh
+  `apps/desktop/src-tauri/tauri.windows.conf.json` (auto-merge Tauri, boleh
   di-commit — thumbprint bukan rahasia):
   ```json
   { "bundle": { "windows": {
@@ -291,7 +292,8 @@ terlihat oleh yang punya akses tulis):
 1. Semua aset ada, nama tanpa spasi, ukuran masuk akal (`.dmg` ~20–70 MB;
    kalau ~60 MB+ berarti model ONNX 44 MB masih ikut `dist` — docs/20 §1g/§5e
    dan D4 menyebut ia dikeluarkan hanya untuk build desktop; periksa
-   `web/dist/models` sebelum build).
+   `apps/desktop/dist` sebelum build — sejak docs/25 P2 bundel desktop
+   datang dari `apps/desktop`, bukan `web/dist`).
 2. `latest.json`: `version` = versi tag tanpa `desktop-v`; setiap `platforms.*.url`
    menunjuk ke `releases/download/desktop-v0.1.0/<nama aset yang benar-benar ada>`;
    `signature` berisi teks `.sig` (dimulai `untrusted comment:`).
@@ -328,7 +330,7 @@ patch.
 memanggil `@tauri-apps/plugin-updater` (`check()`), meski plugin-nya terdaftar
 di `lib.rs` dan capability `updater:default` sudah diberikan. Tanpa pemanggil,
 aplikasi tidak pernah bertanya ke endpoint. Tindak lanjut D6 (PR terpisah,
-`web/src/platform/` adapter desktop): saat start + menu "Periksa
+`apps/desktop/src/platform/` adapter desktop, dipindah oleh docs/25 P2): saat start + menu "Periksa
 pembaruan…" → `check()` → dialog "Versi X tersedia" → `downloadAndInstall()`
 dengan progres → `relaunch()`. Setelah itu, urutan ujinya:
 

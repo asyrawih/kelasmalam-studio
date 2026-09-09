@@ -11,9 +11,8 @@
  * tempat lain lebih dulu — dua langkah untuk satu maksud.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { StoreSettings } from '../library/StoreSettings';
 import { Button } from '@kelasmalam/ui/cyber';
 import { listCommands, subscribeCommands } from '@kelasmalam/shell/command';
 import { bindChord, chordFor, isCustomized, resetKeymap, subscribeKeymap, unbindCommand } from '@kelasmalam/shell/keymap';
@@ -24,9 +23,15 @@ export interface KeymapEditorProps {
   readonly onClose: () => void;
   /** Diberi tahu saat penangkapan tombol mulai/berhenti. */
   readonly onCaptureChange: (capturing: boolean) => void;
+  /**
+   * Bagian PENYIMPANAN di atas daftar pintasan — disuntik app (docs/25 §1c).
+   * Desktop mengisi `<StoreSettings/>` (folder kepustakaan lokal, docs/21 K3);
+   * web tidak punya folder dan tidak mengisi apa-apa.
+   */
+  readonly storeSettings?: ReactNode;
 }
 
-export function KeymapEditor({ open, onClose, onCaptureChange }: KeymapEditorProps): JSX.Element | null {
+export function KeymapEditor({ open, onClose, onCaptureChange, storeSettings }: KeymapEditorProps): JSX.Element | null {
   const [version, setVersion] = useState(0);
   const [capturing, setCapturing] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -139,11 +144,10 @@ export function KeymapEditor({ open, onClose, onCaptureChange }: KeymapEditorPro
           {/*
            * Layar ini yang dibuka `shell.preferences` (⌘,), jadi pengaturan
            * yang bukan pintasan ikut di sini. PENYIMPANAN hanya ada di desktop
-           * (web tidak punya folder); komponennya sendiri yang memutuskan —
-           * di web ia `null` tanpa menyentuh Tauri — supaya tidak ada dua
-           * tempat yang harus sama-sama ingat memeriksa `isDesktop()`.
+           * (web tidak punya folder), dan yang tahu itu adalah app yang
+           * memasang editor ini — bukan editor yang bertanya ke Tauri.
            */}
-          <StoreSettings />
+          {storeSettings}
           {groups.map(([group, list]) => (
             <div key={group}>
               <div

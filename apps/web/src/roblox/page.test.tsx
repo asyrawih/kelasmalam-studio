@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { RobloxPage } from './RobloxPage';
 import { robloxActions, robloxStore } from './store';
 import { MAX_BYTES, type QueueItem } from './model';
-import type { RobloxUploadRow } from '../platform/local-commands';
+import type { RobloxUploadRow } from './model';
 
 const mp3 = (name = 'lagu.mp3', bytes = 1024): File =>
   new File([new Uint8Array(bytes)], name, { type: 'audio/mpeg' });

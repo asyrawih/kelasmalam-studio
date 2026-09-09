@@ -21,7 +21,7 @@
 import { useState, type CSSProperties } from 'react';
 
 import { Badge, Button, Card } from '@kelasmalam/ui/cyber';
-import type { RobloxUploadRow } from '../../platform/local-commands';
+import type { RobloxUploadRow } from '../model';
 import {
   MODERATION_LABEL,
   catalogSummary,

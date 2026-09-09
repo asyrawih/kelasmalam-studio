@@ -16,7 +16,7 @@
 import { memo } from 'react';
 
 import { Badge, Button, ProgressBar, type BadgeTone } from '@kelasmalam/ui/cyber';
-import type { RobloxTaxonomy } from '../../platform/local-commands';
+import type { RobloxTaxonomy } from '../model';
 import {
   STATUS_LABEL,
   formatBytes,

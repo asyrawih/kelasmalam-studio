@@ -2,8 +2,7 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
-import { ORT_DIST_ALIAS, ortDistDir } from './ort-dist';
-import { workspaceAliases } from '../../workspace-aliases';
+import { dawAliases } from '../../packages/engine/vite/base';
 
 const REPO_ROOT = resolve(__dirname, '../..');
 
@@ -22,11 +21,10 @@ const REPO_ROOT = resolve(__dirname, '../..');
  */
 export default defineConfig({
   plugins: [react()],
-  // Sama dengan `vite.config.ts`: modul yang memakai `@ort-dist` atau alias
-  // paket harus bisa di-import oleh tes tanpa konfigurasi berbeda dari build.
-  resolve: {
-    alias: [{ find: ORT_DIST_ALIAS, replacement: ortDistDir() }, ...workspaceAliases(REPO_ROOT)],
-  },
+  // Sama dengan `vite.config.ts` (lewat `dawAliases`, satu sumber): modul yang
+  // memakai `@ort-dist` atau alias paket harus bisa di-import oleh tes tanpa
+  // konfigurasi berbeda dari build.
+  resolve: { alias: dawAliases(REPO_ROOT) },
   test: {
     root: REPO_ROOT,
     environment: 'jsdom',

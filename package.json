@@ -17,12 +17,12 @@
     "build": "bun run build:wasm && bun run --cwd apps/web build",
     "build:wasm": "./scripts/build-wasm.sh",
     "preview": "bun run --cwd apps/web preview",
-    "dev:desktop": "cd desktop/src-tauri && cargo tauri dev",
-    "build:desktop": "bun run build:wasm && bun run --cwd apps/web build && cd desktop/src-tauri && cargo tauri build",
+    "dev:desktop": "cd apps/desktop/src-tauri && cargo tauri dev",
+    "build:desktop": "bun run build:wasm && bun run --cwd apps/desktop build && cd apps/desktop/src-tauri && cargo tauri build",
     "test": "bun run test:rust && bun run --cwd apps/web test && bun run --cwd backend test",
     "test:rust": "cargo test --workspace",
     "lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check",
     "size-check": "./scripts/size-check.sh",
-    "clean": "cargo clean && rm -rf packages/engine/src/wasm apps/web/dist"
+    "clean": "cargo clean && rm -rf packages/engine/src/wasm apps/web/dist apps/desktop/dist"
   }
 }

@@ -4,9 +4,11 @@
  *
  * Yang SENGAJA tidak ada di sini: `AppShell` (komposisi halaman milik tiap
  * app), `routes` (tabel per app), `VersionTag` (bergantung `build-info` app),
- * `KeymapEditor` (bergantung `StoreSettings` kepustakaan), dan `desktop.ts`
- * (menu native, judul jendela). Semuanya tinggal di `apps/web/src/app-shell`,
- * yang `index.ts`-nya mengekspor ulang gabungan keduanya.
+ * `KeymapEditor` (punya slot `storeSettings` yang diisi app), dan
+ * `window/desktop.ts` (menu native, judul jendela Tauri — hanya di
+ * `apps/desktop`). Yang MURNI dari urusan jendela — aturan judul dan alasan
+ * penjaga tutup (`title.ts`) — ada di sini, karena web dan desktop memakai
+ * aturan yang sama lewat pintu yang berbeda (docs/25 P2).
  */
 
 export * from './command';
@@ -15,3 +17,4 @@ export * from './keys';
 export * from './useCommands';
 export * from './CommandPalette';
 export * from './useKeyDispatch';
+export * from './title';

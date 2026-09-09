@@ -15,7 +15,12 @@
  * sini, `index` → hook → `index` jadi siklus impor.
  */
 
-export { getPlatformHost, registerPlatformHostResolver, setPlatformHostForTests } from './host-registry';
+export {
+  getPlatformHost,
+  registerDefaultPlatformHostResolver,
+  registerPlatformHostResolver,
+  setPlatformHostForTests,
+} from './host-registry';
 export type {
   DropPoint,
   LoginRequest,

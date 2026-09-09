@@ -1,0 +1,15 @@
+/*
+ * Gaya global app desktop = gaya global app web, apa adanya.
+ *
+ * Isi `apps/web/src/index.css` adalah reset browser + token `@kelasmalam/ui`
+ * + beberapa aturan yang hanya bisa ditulis sebagai CSS untuk Studio lane
+ * (scrollbar timeline, input nama lane, `user-select` di permukaan drag).
+ * Yang terakhir itu milik `studio/`, dan ikut pindah ke paketnya di P3 —
+ * sampai saat itu desktop mengimpornya utuh lewat alias `@app-web`
+ * (TODO(P3)), bukan menyalinnya: dua salinan CSS yang harus dijaga sama
+ * adalah persis jenis utang yang tidak dilaporkan siapa pun.
+ *
+ * Resolver CSS Vite menghormati `resolve.alias` yang sama dengan modul JS.
+ */
+
+@import '@app-web/index.css';

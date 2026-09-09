@@ -29,7 +29,7 @@ macOS 26.5 arm64 (WKWebView 605.1.15, 8 core).
 | macOS | `tauri://localhost` | ya + `useHttpsScheme: true` | **false** (opsi ini hanya berlaku Windows/Android; `href` tetap `tauri://localhost`) | undefined | ok | function | 8 | — |
 | macOS | `http://localhost:5199` (server statis lokal) | tidak | false | undefined | ok | function | 8 | — |
 | macOS | `http://localhost:5199` (server statis lokal) | ya | **true** | function | ok | function | 8 | **`mt`** — Studio hidup, tanpa error console |
-| macOS | `http://localhost:5173` (`cargo tauri dev` → Vite) | ya (`vite.config.ts`) | true | function | ok | function | 8 | `mt` (dev meminta `wasm/mt/engine_bg.wasm`) |
+| macOS | `http://localhost:5173` (`cargo tauri dev` → Vite; sejak docs/25 P2 `apps/desktop` di 5174) | ya (`vite.config.ts`) | true | function | ok | function | 8 | `mt` (dev meminta `wasm/mt/engine_bg.wasm`) |
 | Windows | — | — | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin | belum diuji — butuh mesin |
 
 Yang ditetapkan dari tabel ini:
@@ -116,6 +116,12 @@ Tiga fakta dari repo yang menentukan bentuk rencana ini:
 adapter** `web/src/platform/` (§2c) yang memilih implementasi berdasarkan
 `isTauri()` dari `@tauri-apps/api/core`.
 
+> **Direvisi docs/25 (P2, 9 Sep 2026).** Kini ada DUA aplikasi Vite di atas
+> paket bersama: `apps/web` (Vercel) dan `apps/desktop` (frontend Tauri,
+> `frontendDist: ../dist`, `devUrl: http://localhost:5174`). Tidak ada
+> `isTauri()` lagi: perbedaan platform masuk lewat komposisi dan registry
+> (docs/25 §1c), dan `apps/web` tidak membawa `@tauri-apps/*` sama sekali.
+
 ### b) Audio tetap di WebView (v1); cpal native adalah v2
 
 Engine Rust sudah berjalan sebagai WASM di AudioWorklet, dan seluruh kontrak
@@ -136,7 +142,7 @@ dengan `crates/native-host` sebagai bibitnya.
 
 **Keputusan (2026-09-06):** build produksi TIDAK memuat frontend dari
 `tauri://localhost`, melainkan dari server HTTP kecil di dalam aplikasi
-(`desktop/src-tauri/src/local_server.rs`) yang bind ke `127.0.0.1` pada port
+(`apps/desktop/src-tauri/src/local_server.rs`, dipindah oleh docs/25 P2) yang bind ke `127.0.0.1` pada port
 acak dan mengirim header COOP/COEP/CORP + CSP untuk setiap asset bundel.
 Hasil spike D0 (tabel di kepala dokumen) yang memaksa ini: WKWebView
 menerima header di `tauri://` tapi tidak menerapkannya, sehingga
@@ -210,8 +216,11 @@ ditutup.
 
 ### e) Letak proyek: `desktop/src-tauri`, anggota workspace, dikecualikan di job CI Ubuntu
 
+> Dipindah oleh docs/25 P2 ke `apps/desktop/src-tauri` — di samping frontend
+> desktop yang ia bungkus. Isinya tidak berubah.
+
 ```
-desktop/
+desktop/                 ← kini apps/desktop/ (docs/25 P2)
   src-tauri/
     Cargo.toml            package `daw-desktop`
     tauri.conf.json
@@ -263,25 +272,29 @@ byte lewat IPC menghindari seluruh pertanyaan itu.
 ```
 scripts/build-wasm.sh ──► packages/engine/src/wasm/{mt,st}
                                │
-bun run --cwd apps/web build ──┴──► apps/web/dist ──┬──► Vercel (seperti sekarang)
-                                                     └──► cargo tauri build (bundel)
+bun run --cwd apps/web build ──┼──► apps/web/dist ──────► Vercel (seperti sekarang)
+bun run --cwd apps/desktop build ┴──► apps/desktop/dist ──► cargo tauri build (bundel)
 
-(Path `apps/web` sejak docs/25 P0; sebelumnya `web/`. P2 mengganti sumber
-bundel Tauri menjadi `apps/desktop/dist`.)
+(Path `apps/web` sejak docs/25 P0; sebelumnya `web/`. Sejak P2 bundel Tauri
+datang dari `apps/desktop/dist`, aplikasi Vite kedua di `apps/desktop`.)
 ```
 
 Skrip root yang ditambahkan:
 
 | Skrip | Isi |
 |---|---|
-| `dev:desktop` | `cargo tauri dev` — `beforeDevCommand` menjalankan Vite; header COI sudah dipasang `vite.config.ts`, jadi dev desktop = dev web + jendela. |
-| `build:desktop` | `build:wasm` → `bun run --cwd apps/web build` → `cargo tauri build`. |
+| `dev:desktop` | `cargo tauri dev` dari `apps/desktop/src-tauri` — `beforeDevCommand` menjalankan Vite `apps/desktop` (port 5174); header COI sudah dipasang base Vite bersama, jadi dev desktop = dev app desktop + jendela. |
+| `build:desktop` | `build:wasm` → `bun run --cwd apps/desktop build` → `cargo tauri build` (docs/25 P2). |
 
 Vite mendapat `envPrefix: ['VITE_', 'TAURI_ENV_']` supaya `TAURI_ENV_PLATFORM`
 terbaca kalau suatu saat perlu, dan `clearScreen: false` supaya log Rust tidak
 tertimpa. `base` tetap `/`.
 
 ### b) Routing di dalam `tauri://`
+
+> Sejak docs/25 P2 app desktop punya tabel route sendiri
+> (`apps/desktop/src/app-shell/routes.ts`): studio, dj, roblox, proof-stem —
+> tanpa landing/legal, dan `/` = studio.
 
 `app-shell/routes.ts` memetakan **path** (`/studio`, `/dj`). Di produksi Tauri,
 halaman dibuka dari `tauri://localhost/index.html`; `pushState` ke `/studio`
@@ -292,7 +305,7 @@ ulang** (tidak ada `location.reload`, tidak ada `href=` internal), dan
 diperlukan (mis. pulih dari fault engine), jatuh ke hash-route hanya saat
 `isTauri()` — satu baris di `routes.ts`, bukan perombakan.
 
-### c) Adapter platform — `web/src/platform/`
+### c) Adapter platform — `web/src/platform/` (sejak docs/25 P2: kontrak di `packages/platform`, implementasi web di `apps/web/src/platform/`, desktop di `apps/desktop/src/platform/`)
 
 ```ts
 export interface PlatformHost {
@@ -322,7 +335,7 @@ Implementasi web = **kode yang sudah ada dipindah**, bukan ditulis ulang.
 Tes yang sudah ada untuk `encoders` dan `library/api` tetap lewat karena
 adapter web-nya identik.
 
-### d) Sisi Rust (`desktop/src-tauri/src/lib.rs`)
+### d) Sisi Rust (`desktop/src-tauri/src/lib.rs` — kini `apps/desktop/src-tauri/src/lib.rs`, dipindah oleh docs/25 P2)
 
 Sengaja tipis. Isinya:
 

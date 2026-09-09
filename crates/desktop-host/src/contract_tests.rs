@@ -1,12 +1,19 @@
-//! Tes bentuk kontrak: `apps/web/src/platform/local-commands.ts` adalah sumber
-//! kebenaran, dan sisi Rust harus mengikutinya PERSIS (docs/21 §2a).
+//! Tes bentuk kontrak: `apps/desktop/src/platform/local-commands.ts` adalah
+//! sumber kebenaran, dan sisi Rust harus mengikutinya PERSIS (docs/21 §2a).
+//!
+//! Sejak docs/25 P2 kontraknya terbagi di EMPAT berkas TS, dan tes ini membaca
+//! gabungannya: `local-commands.ts` (nama command, event, tipe yang hanya
+//! desktop) plus tipe DTO yang juga dipakai UI web dan karena itu tinggal di
+//! `apps/web/src/library/model.ts`, `apps/web/src/roblox/model.ts`, dan
+//! `apps/web/src/local-error.ts`. Bundel web tidak boleh menarik kontrak Tauri
+//! hanya untuk tipe — itu alasan pemisahannya.
 //!
 //! Dua hal yang dijaga, keduanya dengan parser teks sederhana — bukan parser
 //! TypeScript, cukup untuk bentuk berkas kontrak yang memang ditulis supaya
 //! bisa dibaca begini:
 //!
 //! 1. Setiap nama di `LOCAL_COMMAND_NAMES` terdaftar di `generate_handler!`
-//!    crate Tauri (`desktop/src-tauri/src/commands/mod.rs`), dan tidak ada
+//!    crate Tauri (`apps/desktop/src-tauri/src/commands/mod.rs`), dan tidak ada
 //!    command `library_*`/`roblox_*`/`store_*`/`secret_*` di Rust yang tidak
 //!    ada di TS.
 //! 2. Kunci JSON tiap struct `types.rs` sama dengan field interface TS-nya.
@@ -29,14 +36,28 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
+/// Berkas-berkas yang bersama-sama membentuk kontrak (lihat kepala modul).
+const CONTRACT_FILES: &[&str] = &[
+    "apps/desktop/src/platform/local-commands.ts",
+    "apps/web/src/library/model.ts",
+    "apps/web/src/roblox/model.ts",
+    "apps/web/src/local-error.ts",
+];
+
 fn contract_ts() -> String {
-    std::fs::read_to_string(repo_root().join("apps/web/src/platform/local-commands.ts"))
-        .expect("kontrak apps/web/src/platform/local-commands.ts harus ada")
+    CONTRACT_FILES
+        .iter()
+        .map(|rel| {
+            std::fs::read_to_string(repo_root().join(rel))
+                .unwrap_or_else(|_| panic!("kontrak {rel} harus ada"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn commands_rs() -> String {
-    std::fs::read_to_string(repo_root().join("desktop/src-tauri/src/commands/mod.rs"))
-        .expect("desktop/src-tauri/src/commands/mod.rs harus ada")
+    std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/src/commands/mod.rs"))
+        .expect("apps/desktop/src-tauri/src/commands/mod.rs harus ada")
 }
 
 /// Isi `LOCAL_COMMAND_NAMES = [ 'a', 'b', ... ]`.
@@ -340,7 +361,7 @@ fn enums_serialize_as_contract_string_literals() {
 
 // ---------------------------------------------------------------------------
 // Izin per command untuk origin REMOTE (build produksi memuat frontend dari
-// http://127.0.0.1:<port>, lihat desktop/src-tauri/src/local_server.rs).
+// http://127.0.0.1:<port>, lihat apps/desktop/src-tauri/src/local_server.rs).
 //
 // Tanpa `allow-<command>` di capability, setiap `invoke` dari origin itu
 // ditolak dengan "not allowed. Plugin not found" — halaman terlihat normal,
@@ -348,13 +369,15 @@ fn enums_serialize_as_contract_string_literals() {
 // membuat lupa menambahkan satu baris terlihat di CI, bukan di tangan user.
 
 fn build_rs() -> String {
-    std::fs::read_to_string(repo_root().join("desktop/src-tauri/build.rs")).expect("build.rs ada")
+    std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/build.rs"))
+        .expect("build.rs ada")
 }
 
 fn capability_permissions() -> BTreeSet<String> {
-    let raw =
-        std::fs::read_to_string(repo_root().join("desktop/src-tauri/capabilities/default.json"))
-            .expect("capabilities/default.json ada");
+    let raw = std::fs::read_to_string(
+        repo_root().join("apps/desktop/src-tauri/capabilities/default.json"),
+    )
+    .expect("capabilities/default.json ada");
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     json["permissions"]
         .as_array()
@@ -410,9 +433,10 @@ fn capability_allows_every_command_for_the_loopback_origin() {
         "izin yang belum ada di capabilities/default.json: {missing:?}"
     );
 
-    let raw =
-        std::fs::read_to_string(repo_root().join("desktop/src-tauri/capabilities/default.json"))
-            .unwrap();
+    let raw = std::fs::read_to_string(
+        repo_root().join("apps/desktop/src-tauri/capabilities/default.json"),
+    )
+    .unwrap();
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let urls = json["remote"]["urls"].as_array().expect("remote.urls ada");
     assert!(

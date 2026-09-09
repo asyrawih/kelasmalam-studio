@@ -18,7 +18,7 @@
 import { useState } from 'react';
 
 import { Badge, Button, Card } from '@kelasmalam/ui/cyber';
-import type { RobloxTaxonomy } from '../../platform/local-commands';
+import type { RobloxTaxonomy } from '../model';
 import {
   MAX_DESC_LEN,
   MAX_NAME_LEN,

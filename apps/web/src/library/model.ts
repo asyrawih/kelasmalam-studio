@@ -95,6 +95,65 @@ export interface LocalStoreSummary {
   readonly bytes: number;
 }
 
+// ── Bentuk kepustakaan LOKAL (docs/21 §2c) ──────────────────────────────────
+//
+// Ini bagian dari KONTRAK command Tauri (`apps/desktop/src/platform/
+// local-commands.ts` mengimpornya dari sini), tapi tinggal di web karena
+// `LibraryApi` — antarmuka yang dipakai kedua implementasi — menyebut
+// `ImportedTrack` dan `StoreInfo` di tanda tangannya. Tipe yang disebut
+// kontrak bersama tidak boleh bergantung pada app yang mengimplementasikannya
+// (docs/25 §1c). `crates/desktop-host/src/contract_tests.rs` membaca berkas
+// ini bersama `local-commands.ts` untuk memeriksa bentuknya lawan `types.rs`:
+// pertahankan gaya `readonly x:` satu field per baris.
+
+export interface StoreInfo {
+  /** Path absolut folder kepustakaan (docs/21 §1b). */
+  readonly dir: string;
+  readonly bytes: number;
+  readonly tracks: number;
+  readonly projects: number;
+  readonly schemaVersion: number;
+}
+
+export interface LocalTrack {
+  readonly hash: string;
+  readonly name: string;
+  readonly bytes: number;
+  readonly mime: string;
+  /** 0 = tidak diketahui, sama dengan kontrak Worker. */
+  readonly frames: number;
+  readonly sampleRate: number;
+  readonly marks: unknown | null;
+  readonly createdAt: number;
+}
+
+export interface TrackMetaInput {
+  readonly hash: string;
+  readonly name: string;
+  readonly bytes: number;
+  readonly mime: string;
+  readonly frames: number;
+  readonly sampleRate: number;
+}
+
+/** Hasil `library_import_path`: berkas sudah disalin & di-hash oleh Rust. */
+export interface ImportedTrack extends LocalTrack {
+  /** `true` = hash-nya sudah ada; tidak ada berkas baru yang ditulis. */
+  readonly existed: boolean;
+}
+
+export interface LocalProjectSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly updatedAt: number;
+  readonly version: number;
+}
+
+export interface LocalProjectBody extends LocalProjectSummary {
+  readonly json: unknown;
+  readonly tracks: readonly string[];
+}
+
 export interface LibraryState {
   readonly status: LibraryStatus;
   readonly user: LibraryUser | null;
