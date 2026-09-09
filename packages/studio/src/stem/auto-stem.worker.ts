@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
-import { loadScnetModel } from '../proof-stem/scnet-model';
-import { separateScnetPcm, type ScnetResult } from '../proof-stem/scnet-separate';
+import { loadScnetModel } from '@kelasmalam/proof-stem/proof-stem/scnet-model';
+import { separateScnetPcm, type ScnetResult } from '@kelasmalam/proof-stem/proof-stem/scnet-separate';
 
 const TARGET_SAMPLE_RATE = 44_100;
 

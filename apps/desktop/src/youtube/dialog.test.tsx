@@ -29,12 +29,12 @@ vi.mock('./api', async (importOriginal) => ({
 }));
 
 const importBytesToLane = vi.fn();
-vi.mock('@app-web/studio/timeline/audio-import', async (importOriginal) => ({ // TODO(P3)
-  ...(await importOriginal<typeof import('@app-web/studio/timeline/audio-import')>()), // TODO(P3)
+vi.mock('@kelasmalam/studio/studio/timeline/audio-import', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@kelasmalam/studio/studio/timeline/audio-import')>()),
   importBytesToLane: (...args: unknown[]) => importBytesToLane(...args),
 }));
 
-import { studioActions, studioStore } from '@app-web/studio/store'; // TODO(P3)
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 import { YouTubeDialog } from './YouTubeDialog';
 
 const INFO = {

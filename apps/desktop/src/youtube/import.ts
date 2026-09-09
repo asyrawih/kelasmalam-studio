@@ -12,8 +12,8 @@
  * Pesannya menunjuk ke dialog YOUTUBE, tempat unduhan itu terlihat.
  */
 
-import { importBytesToLane, type DropResult, type LaneImportOptions } from '@app-web/studio/timeline/audio-import'; // TODO(P3)
-import type { UrlImporter } from '@app-web/studio/timeline/url-to-lane'; // TODO(P3)
+import { importBytesToLane, type DropResult, type LaneImportOptions } from '@kelasmalam/studio/studio/timeline/audio-import';
+import type { UrlImporter } from '@kelasmalam/studio/studio/timeline/url-to-lane';
 import { isLocalError } from '../platform/local-invoke';
 import { subscribeYoutubeProgress, youtubeAudio, youtubeFileName, youtubeInfo, youtubeStatus } from './api';
 

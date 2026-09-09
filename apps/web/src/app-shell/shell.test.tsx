@@ -11,9 +11,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AppShell } from './AppShell';
-import { djActions, djStore } from '../dj/store';
-import { isSpaceHeld } from '../studio/shortcuts/space-pan';
-import { studioActions, studioStore } from '../studio/store';
+import { djActions, djStore } from '@kelasmalam/dj/dj/store';
+import { isSpaceHeld } from '@kelasmalam/studio/studio/shortcuts/space-pan';
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 const SR = 48_000;
 const RECT = {

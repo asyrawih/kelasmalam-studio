@@ -21,8 +21,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { audioBufferPcmSource, type ExportPayload } from './payload';
-import { ExportCancelled } from './run-export';
-import { BlobSink } from './sinks';
+import { ExportCancelled } from '@kelasmalam/engine/export/run-export';
+import { BlobSink } from '@kelasmalam/engine/export/sinks';
 import { ExportWorkerUnavailable, runExportInWorker } from './worker-host';
 
 type Msg = Record<string, unknown> & { type: string };

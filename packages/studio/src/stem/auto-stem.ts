@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
-import { prefetchModelBytes } from '../proof-stem/scnet-model';
-import type { ScnetResult, ScnetStem } from '../proof-stem/scnet-separate';
+import { prefetchModelBytes } from '@kelasmalam/proof-stem/proof-stem/scnet-model';
+import type { ScnetResult, ScnetStem } from '@kelasmalam/proof-stem/proof-stem/scnet-separate';
 
 const STORAGE_KEY = 'dawonweb.auto-stem.enabled.v1';
 const STEMS: readonly ScnetStem[] = ['vocals', 'drums', 'bass', 'other'];

@@ -25,9 +25,9 @@
  */
 
 import type { ExportAssetInfo, ExportAssetSource, ExportPayload } from './payload';
-import { ExportCancelled, type ExportResult } from './run-export';
-import type { ExportSink } from './sinks';
-import type { LoudnessAnalysis } from './loudness-analyzer';
+import { ExportCancelled, type ExportResult } from '@kelasmalam/engine/export/run-export';
+import type { ExportSink } from '@kelasmalam/engine/export/sinks';
+import type { LoudnessAnalysis } from '@kelasmalam/engine/export/loudness-analyzer';
 
 /**
  * Worker tidak bisa dipakai — dan **belum satu byte pun ditulis** ke sink.

@@ -1,5 +1,11 @@
 /**
- * Audio Studio — halaman aplikasi.
+ * Audio Studio — halaman aplikasi (`StudioPage`; sebelum docs/25 P3 bernama
+ * `App` di `apps/web/src/App.tsx`).
+ *
+ * Halaman ini TIDAK tahu kepustakaan maupun dialog impor mana yang ada:
+ * `dock` (dok kepustakaan) dan `extras` (tombol + dialog SoundCloud, YouTube)
+ * disuntik app yang merendernya. Alasannya graf paket: `library → studio`
+ * dan `soundcloud → studio` sudah ada, dan panah balik berarti siklus.
  *
  * Susunannya mengikuti `design/Audio Studio.dc.html` baris per baris:
  *   header bar → readout strip → body 2 kolom
@@ -12,7 +18,7 @@
  * alih "READY" — tapi playhead tetap berjalan supaya timeline bisa diuji.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { ReadoutStrip, StudioHeader, StudioLayout } from './studio/shell';
 import type { ImportAction } from './studio/shell/StudioHeader';
 import { MenuBar } from './studio/shell/MenuBar';
@@ -23,14 +29,12 @@ import { studioActions, studioStore } from './studio/store';
 import { registerExportHost } from './studio/rail/export-bridge';
 import { bufferLookup } from './studio/preview/audio-preview';
 import { BeatProvider, TimelinePanel } from './studio/timeline';
-import { LibraryDock } from './library';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { studioCommands } from './studio/commands';
 import { useCommands } from '@kelasmalam/shell/useCommands';
-import { SoundCloudDialog } from './soundcloud/SoundCloudDialog';
 import { SnapToggle } from './studio/shell/SnapToggle';
 
-export interface AppProps {
+export interface StudioPageProps {
   /**
    * Dipanggil sekali untuk mencoba membangun lapisan audio. Mengembalikan
    * objek apa pun kalau berhasil, atau null/melempar kalau lingkungan ini
@@ -48,24 +52,30 @@ export interface AppProps {
   readonly railWidth?: number;
   /**
    * Yang disuntik APP ke halaman ini (docs/25 §1c): tombol impor tambahan di
-   * header dan dialog yang menyertainya. Desktop memberi YOUTUBE + dialognya
-   * (docs/23); web tidak memberi apa-apa. Halaman tidak bertanya di mana ia
+   * header dan dialog yang menyertainya. Web memberi SOUNDCLOUD; desktop
+   * memberi SOUNDCLOUD + YOUTUBE (docs/23). Halaman tidak bertanya di mana ia
    * berjalan — yang tahu fitur mana yang ada adalah yang memasangnya.
    */
   readonly extras?: StudioExtras;
+  /**
+   * Dok kepustakaan, disuntik app (`<LibraryDock/>` dari `@kelasmalam/library`).
+   * Alasannya bukan pilihan: library mengimpor studio, jadi studio tidak boleh
+   * mengimpor library. Tanpa dok, halaman tetap utuh — hanya tanpa strip di
+   * dasar layar.
+   */
+  readonly dock?: ReactNode;
 }
 
 export interface StudioExtras {
   readonly importActions?: readonly ImportAction[];
-  /** Dirender di dalam `BeatProvider`, sejajar dengan dialog SoundCloud. */
+  /** Dirender di dalam `BeatProvider`, di atas tata letak. */
   readonly dialogs?: ReactNode;
 }
 
 /** Periode tick playhead. 60 ms = angka yang sama dengan interval di design. */
 const TICK_MS = 60;
 
-export function App({ createEngine, onClose, onOpenDj, onOpenRoblox, extras }: AppProps): JSX.Element {
-  const [soundCloudOpen, setSoundCloudOpen] = useState(false);
+export function StudioPage({ createEngine, onClose, onOpenDj, onOpenRoblox, extras, dock }: StudioPageProps): JSX.Element {
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
   // Sambungkan rail ke project + cache PCM. Cache-nya SAMA dengan yang dipakai
@@ -118,7 +128,6 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox, extras }: A
 
   return (
     <BeatProvider>
-      {soundCloudOpen ? <SoundCloudDialog onClose={() => setSoundCloudOpen(false)} /> : null}
       {extras?.dialogs}
       <StudioLayout
         header={
@@ -126,7 +135,6 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox, extras }: A
             onClose={onClose}
             onOpenDj={onOpenDj}
             onOpenRoblox={onOpenRoblox}
-            onOpenSoundCloud={() => setSoundCloudOpen(true)}
             importActions={extras?.importActions}
           />
         }
@@ -137,8 +145,9 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox, extras }: A
          * diminta. Alasannya di kepala `LibraryDock`: ia tempat mengambil
          * bahan, bukan permukaan kerja, dan panel yang memakan kolom permanen
          * di samping timeline membayar ruang tetap untuk pemakaian sesekali.
+         * Komponennya milik app (lihat `dock` di props).
          */
-        dock={<LibraryDock />}
+        dock={dock}
         main={
           /*
            * Yang tersisa di kolom kerja HANYA timeline.

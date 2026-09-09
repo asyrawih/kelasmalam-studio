@@ -11,7 +11,7 @@
 // Diimpor dari modulnya langsung, bukan dari barrel `../../app-shell`: barrel
 // itu ikut memuat `AppShell` → `App`/`DjPage`, dan header tidak perlu menyeret
 // seluruh aplikasi hanya untuk menampilkan nomor versi.
-import { VersionTag } from '../../app-shell/VersionTag';
+import { VersionTag } from '@kelasmalam/shell/VersionTag';
 import { Badge, Button } from '@kelasmalam/ui/cyber';
 import { studioActions, useStudio } from '../store';
 import { AutoStemToggle } from '../../stem/AutoStemToggle';
@@ -23,12 +23,11 @@ export interface StudioHeaderProps {
   readonly onOpenDj?: () => void;
   /** Buka halaman upload dan grant access Roblox. */
   readonly onOpenRoblox?: () => void;
-  readonly onOpenSoundCloud?: () => void;
   /**
-   * Tombol impor TAMBAHAN di grup TOOLS, disuntik app (docs/25 §1c). Desktop
-   * memberi YOUTUBE (docs/23); web tidak memberi apa-apa — bukan tombol yang
-   * mati, melainkan tidak ada, karena di browser fitur itu memang tidak ada.
-   * Header tidak tahu tombol apa yang mungkin ada; ia hanya merendernya.
+   * Tombol impor di grup TOOLS, disuntik app (docs/25 §1c). Web memberi
+   * SOUNDCLOUD; desktop memberi SOUNDCLOUD + YOUTUBE (docs/23) — bukan tombol
+   * yang mati, melainkan tidak ada, karena di browser YouTube memang tidak
+   * ada. Header tidak tahu tombol apa yang mungkin ada; ia hanya merendernya.
    */
   readonly importActions?: readonly ImportAction[];
 }
@@ -63,7 +62,7 @@ function HeaderGroup({ label, children }: { readonly label: string; readonly chi
   );
 }
 
-export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud, importActions = [] }: StudioHeaderProps): JSX.Element {
+export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, importActions = [] }: StudioHeaderProps): JSX.Element {
   const laneCount = useStudio((s) => s.lanes.length);
   const sampleRate = useStudio((s) => s.sampleRate);
   const engineReady = useStudio((s) => s.engineReady);
@@ -122,7 +121,6 @@ export function StudioHeader({ onClose, onOpenDj, onOpenRoblox, onOpenSoundCloud
         <HeaderDivider />
         <HeaderGroup label="TOOLS">
           <AutoStemToggle />
-          {onOpenSoundCloud !== undefined && <Button size="sm" variant="outline" onClick={onOpenSoundCloud}>SOUNDCLOUD</Button>}
           {importActions.map((a) => <Button key={a.id} size="sm" variant="outline" onClick={a.run}>{a.label}</Button>)}
         </HeaderGroup>
         <HeaderDivider />

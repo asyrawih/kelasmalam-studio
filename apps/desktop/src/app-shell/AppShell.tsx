@@ -17,19 +17,23 @@
  *   - Halaman Studio menerima `extras`: tombol YOUTUBE + dialognya (docs/23).
  *   - `KeymapEditor` diberi `<StoreSettings/>` (folder kepustakaan lokal).
  *
- * Halaman-halamannya sendiri masih dari `@app-web/*` (TODO(P3)): yang
- * berbeda antara dua app hanya kerangkanya.
+ * Halaman-halamannya paket `@kelasmalam/*` yang sama dengan web (docs/25
+ * P3): yang berbeda antara dua app hanya kerangkanya dan apa yang disuntik
+ * ke halaman — di sini `StudioPage` menerima dok kepustakaan, SoundCloud, DAN
+ * YouTube; web tanpa YouTube.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { App } from '@app-web/App'; // TODO(P3)
-import { KeymapEditor } from '@app-web/app-shell/KeymapEditor'; // TODO(P3)
-import { DjPage } from '@app-web/dj'; // TODO(P3)
-import { ProofStemPage } from '@app-web/proof-stem'; // TODO(P3)
-import { RobloxRoute } from '@app-web/roblox'; // TODO(P3)
-import { selectProjectDirty, studioStore, useStudio } from '@app-web/studio/store'; // TODO(P3)
+import { DjPage } from '@kelasmalam/dj/dj';
+import { LibraryDock } from '@kelasmalam/library/library';
+import { ProofStemPage } from '@kelasmalam/proof-stem/proof-stem';
+import { RobloxRoute } from '@kelasmalam/roblox/roblox';
+import { useSoundCloudImport } from '@kelasmalam/soundcloud/soundcloud/studio-import';
+import { StudioPage } from '@kelasmalam/studio/StudioPage';
+import { selectProjectDirty, studioStore, useStudio } from '@kelasmalam/studio/studio/store';
 import { CommandPalette } from '@kelasmalam/shell/CommandPalette';
+import { KeymapEditor } from '@kelasmalam/shell/KeymapEditor';
 import { windowTitle } from '@kelasmalam/shell/title';
 import { useCommands } from '@kelasmalam/shell/useCommands';
 import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
@@ -51,6 +55,7 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
   // Stabil: dialog memakainya di efek/ref — closure baru tiap render tidak
   // boleh berarti pemeriksaan perkakas (proses yt-dlp) ulang.
   const closeYoutube = useCallback(() => setYoutubeOpen(false), []);
+  const soundCloud = useSoundCloudImport();
 
   useEffect(() => {
     const onPopState = (): void => setRoute(routeOf(window.location.pathname));
@@ -144,14 +149,21 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
       ) : route === 'proof-stem' ? (
         <ProofStemPage onClose={() => navigate(STUDIO_PATH)} />
       ) : (
-        <App
+        <StudioPage
           createEngine={createEngine}
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
+          dock={<LibraryDock />}
           extras={{
-            // Impor YouTube HANYA di desktop (docs/23): yt-dlp dijalankan Rust.
-            importActions: [{ id: 'youtube', label: 'YOUTUBE', run: () => setYoutubeOpen(true) }],
-            dialogs: youtubeOpen ? <YouTubeDialog onClose={closeYoutube} /> : null,
+            // SoundCloud di kedua app; YouTube HANYA di desktop (docs/23):
+            // yt-dlp dijalankan Rust.
+            importActions: [soundCloud.action, { id: 'youtube', label: 'YOUTUBE', run: () => setYoutubeOpen(true) }],
+            dialogs: (
+              <>
+                {soundCloud.dialog}
+                {youtubeOpen ? <YouTubeDialog onClose={closeYoutube} /> : null}
+              </>
+            ),
           }}
         />
       )}

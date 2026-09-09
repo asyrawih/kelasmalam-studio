@@ -16,7 +16,7 @@ import {
   ROBLOX_SAFE_TARGET_LUFS,
   type LoudnessAnalysis,
   type RobloxSafeStatus,
-} from '../export/loudness-analyzer';
+} from '@kelasmalam/engine/export/loudness-analyzer';
 import {
   analyzeCompile,
   resolveExportName,

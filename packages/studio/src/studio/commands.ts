@@ -33,12 +33,31 @@
  */
 
 import { runCommand, type Command } from '@kelasmalam/shell/command';
-import { libraryActions } from '../library/store';
 import { pressSpace, releaseSpace, resetSpace } from './shortcuts/space-pan';
 import { studioActions, studioStore } from './store';
 import { getTimelineCursor } from './timeline/timeline-cursor';
 
 const s = () => studioStore.getState();
+
+/**
+ * Jalan cadangan ⌘S kalau `library.project.save` tidak bisa dijalankan —
+ * DIDAFTARKAN dok kepustakaan, bukan diimpor dari sana (docs/25 P3).
+ *
+ * Studio tidak boleh mengimpor paket library (`library → studio` sudah ada,
+ * dan dua arah berarti siklus), tapi ⌘S yang tidak menjawab apa-apa juga
+ * bukan pilihan (lihat `openSave`). Jadi yang tahu cara "mengantar user ke
+ * tombol simpan" — membuka dok, memfokuskan tombolnya — adalah dok itu
+ * sendiri, dan ia mendaftarkannya di sini selama ia hidup. Tanpa dok
+ * (halaman tanpa kepustakaan), ⌘S memang tidak punya tujuan.
+ */
+let saveFallback: (() => void) | null = null;
+
+export function registerSaveFallback(fn: (() => void) | null): () => void {
+  saveFallback = fn;
+  return () => {
+    if (saveFallback === fn) saveFallback = null;
+  };
+}
 
 /** Pre-roll saat mulai play dari area timeline, dalam detik. */
 const PRE_ROLL_SEC = 3;
@@ -84,25 +103,14 @@ function allClipIds(): string[] {
  *
  * Kalau `runCommand` menjawab `false` — dok belum terdaftar, atau terdaftar
  * tapi sedang tidak bisa (belum masuk, kepustakaan tidak dipasang, sedang
- * sibuk) — yang dilakukan adalah mengantar user ke tombolnya: dok terbuka,
- * tombol SIMPAN PROJECT fokus, Enter menekan; kalau belum ada project yang
- * dibuka, yang difokuskan kotak nama. Bukan diam: ⌘S yang tidak menjawab
- * apa-apa membuat orang menekan lagi, sedangkan dok yang terbuka MENUNJUKKAN
- * kenapa belum bisa (ajakan masuk, atau kalimat "belum tersedia").
+ * sibuk) — yang dilakukan adalah mengantar user ke tombolnya lewat
+ * [`registerSaveFallback`]: dok terbuka, tombol SIMPAN PROJECT fokus, Enter
+ * menekan. Bukan diam: ⌘S yang tidak menjawab apa-apa membuat orang menekan
+ * lagi, sedangkan dok yang terbuka MENUNJUKKAN kenapa belum bisa.
  */
 function openSave(): void {
   if (runCommand('library.project.save')) return;
-  libraryActions.setCollapsed(false);
-  // Isi dok baru ada di DOM pada render sesudah `collapsed` berubah.
-  setTimeout(() => {
-    const dock = document.querySelector('[data-testid="library-dock"]');
-    if (dock === null) return;
-    const save = [...dock.querySelectorAll<HTMLButtonElement>('button')].find(
-      (b) => b.textContent?.trim() === 'SIMPAN PROJECT',
-    );
-    const target = save ?? dock.querySelector<HTMLElement>('input[aria-label="nama project baru"]');
-    target?.focus();
-  }, 0);
+  saveFallback?.();
 }
 
 /** Buka (bukan toggle) satu menu toolbar. Dari command, "buka" harus idempoten. */

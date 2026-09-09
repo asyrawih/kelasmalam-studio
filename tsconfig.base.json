@@ -38,9 +38,9 @@
        keduanya tidak pernah berbeda — kalau tsc dan Vite meresolusi ke berkas
        yang berbeda, typecheck hijau tidak membuktikan apa-apa tentang bundel.
 
-       `@app-web/*` adalah alias SEMENTARA untuk kode app yang belum jadi paket;
-       tiap pemakaiannya di packages/* wajib berkomentar TODO(P3)/TODO(P4) dan
-       dihitung `no-platform-leak.test.ts`. */
+       Tidak ada alias ke `apps/*`: sejak P3 semua modul halaman adalah paket,
+       dan `apps/desktop/src/__tests__/app-web-imports.test.ts` menjaga alias
+       sementara P2 itu tidak pernah kembali. */
     "baseUrl": ".",
     "paths": {
       "@kelasmalam/engine/*": ["packages/engine/src/*"],
@@ -49,7 +49,12 @@
       "@kelasmalam/shell/*": ["packages/shell/src/*"],
       "@kelasmalam/platform": ["packages/platform/src/index.ts"],
       "@kelasmalam/platform/*": ["packages/platform/src/*"],
-      "@app-web/*": ["apps/web/src/*"]
+      "@kelasmalam/studio/*": ["packages/studio/src/*"],
+      "@kelasmalam/dj/*": ["packages/dj/src/*"],
+      "@kelasmalam/library/*": ["packages/library/src/*"],
+      "@kelasmalam/roblox/*": ["packages/roblox/src/*"],
+      "@kelasmalam/soundcloud/*": ["packages/soundcloud/src/*"],
+      "@kelasmalam/proof-stem/*": ["packages/proof-stem/src/*"]
     }
   }
 }

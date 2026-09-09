@@ -29,7 +29,7 @@ import { getBuffer } from '../preview/audio-preview';
 import { studioActions } from '../store';
 import { STEM_LABELS, stemOf, stemSummary } from './stem';
 import { bakeClipStem } from './stem-bake';
-import type { ScnetStem } from '../../proof-stem/scnet-separate';
+import type { ScnetStem } from '@kelasmalam/proof-stem/proof-stem/scnet-separate';
 import {
   getAutoStemMask,
   hasPlayableAutoStem,

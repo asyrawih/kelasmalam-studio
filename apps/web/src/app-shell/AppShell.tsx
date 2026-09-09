@@ -27,23 +27,28 @@
  * `apps/desktop/src/app-shell/AppShell.tsx` + `window/`, yang punya tabel
  * route dan gerbangnya sendiri. Yang tersisa di sini murni web: gerbang login,
  * `document.title`, dan `beforeunload`.
+ *
+ * ## Halaman adalah paket; yang MENYUSUNNYA adalah shell ini (docs/25 P3)
+ *
+ * `StudioPage` tidak tahu kepustakaan maupun SoundCloud: dok kepustakaan
+ * (`<LibraryDock/>`) dan tombol + dialog SoundCloud disuntik dari sini lewat
+ * `dock` dan `extras`. Desktop menyusun yang sama plus YouTube.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { App } from '../App';
-import { DjPage } from '../dj';
 import { LandingPage, LegalPage } from '../landing';
-import { createLibraryApi, normalizeBase } from '../library/api';
-import { libraryActions, useLibrary } from '../library/store';
-import type { LibraryUser } from '../library/model';
 import { getPlatformHost } from '../platform';
-import { RobloxRoute } from '../roblox';
-import { ProofStemPage } from '../proof-stem';
-import { selectProjectDirty, studioStore, useStudio } from '../studio/store';
+import { DjPage } from '@kelasmalam/dj/dj';
+import { LibraryDock, createLibraryApi, libraryActions, normalizeBase, useLibrary, type LibraryUser } from '@kelasmalam/library/library';
+import { ProofStemPage } from '@kelasmalam/proof-stem/proof-stem';
+import { RobloxRoute } from '@kelasmalam/roblox/roblox';
+import { useSoundCloudImport } from '@kelasmalam/soundcloud/soundcloud/studio-import';
+import { StudioPage } from '@kelasmalam/studio/StudioPage';
+import { selectProjectDirty, studioStore, useStudio } from '@kelasmalam/studio/studio/store';
 import { Button } from '@kelasmalam/ui/cyber';
 import { CommandPalette } from '@kelasmalam/shell/CommandPalette';
-import { KeymapEditor } from './KeymapEditor';
+import { KeymapEditor } from '@kelasmalam/shell/KeymapEditor';
 import { closeGuardReason, windowTitle } from '@kelasmalam/shell/title';
 import { useCommands } from '@kelasmalam/shell/useCommands';
 import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
@@ -80,6 +85,7 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
   // juga bisa, tapi di Tauri shell tidak pernah memuat ulang (docs/20 §2b) —
   // jadi jalur pulihnya harus ada di dalam aplikasi.
   const [authAttempt, setAuthAttempt] = useState(0);
+  const soundCloud = useSoundCloudImport();
   const authStatus = useLibrary((s) => s.status);
   const apiBase = (import.meta.env.VITE_LIBRARY_API ?? '').trim();
   const authApi = useMemo<AuthApi | null>(
@@ -307,11 +313,13 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onRetry={() => setAuthAttempt((n) => n + 1)}
         />
       ) : route === 'studio' ? (
-        <App
+        <StudioPage
           createEngine={createEngine}
           onClose={() => navigate(HOME_PATH)}
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
+          dock={<LibraryDock />}
+          extras={{ importActions: [soundCloud.action], dialogs: soundCloud.dialog }}
         />
       ) : route === 'dj' ? (
         <DjPage onClose={() => navigate(HOME_PATH)} />

@@ -34,7 +34,7 @@ import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
 import { clearTimelineCursor, setTimelineCursor } from './timeline-cursor';
 import { snapClipMove } from './clip-snap';
-import { useAudioFilePicker, useNativeFileDrop } from '../../platform/hooks';
+import { useAudioFilePicker, useNativeFileDrop } from '@kelasmalam/platform/hooks';
 
 export interface ClipAreaProps {
   readonly scrollerRef: RefObject<HTMLDivElement>;

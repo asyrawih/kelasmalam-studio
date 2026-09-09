@@ -38,7 +38,7 @@ import { createFxNode } from './fx-node';
 import { fadeCurveArray, fadeOutGain } from '../timeline/fade';
 import { stemOf } from '../timeline/stem';
 import { buildStemChain, type StemNodes } from './stem-chain';
-import type { ScnetStem } from '../../proof-stem/scnet-separate';
+import type { ScnetStem } from '@kelasmalam/proof-stem/proof-stem/scnet-separate';
 import type { AutoStemAudio, AutoStemMask } from '../../stem/auto-stem';
 
 /** Ramp pendek supaya perubahan parameter tidak menimbulkan klik. */

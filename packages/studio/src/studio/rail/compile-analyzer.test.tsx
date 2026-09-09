@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AnalyzerDialog } from './CompileCard';
-import type { LoudnessAnalysis } from '../export/loudness-analyzer';
+import type { LoudnessAnalysis } from '@kelasmalam/engine/export/loudness-analyzer';
 
 afterEach(cleanup);
 

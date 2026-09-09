@@ -19,8 +19,8 @@ import {
   type ExportEngine,
   type ExportResult,
   type RenderHandle,
-} from './run-export';
-import { BlobSink } from './sinks';
+} from '@kelasmalam/engine/export/run-export';
+import { BlobSink } from '@kelasmalam/engine/export/sinks';
 import type { ExportAssetSource, ExportPayload } from './payload';
 import type { StudioState } from '../model';
 

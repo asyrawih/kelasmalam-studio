@@ -15,8 +15,8 @@ import { AppShell } from '../app-shell/AppShell';
 import { pathOf, type Route } from '../app-shell/routes';
 import { listCommands } from '@kelasmalam/shell/command';
 import { DESKTOP_MENU_COMMAND_IDS, menuCommandRoute } from './menu-ids';
-import { djActions } from '@app-web/dj/store'; // TODO(P3)
-import { studioActions } from '@app-web/studio/store'; // TODO(P3)
+import { djActions } from '@kelasmalam/dj/dj/store';
+import { studioActions } from '@kelasmalam/studio/studio/store';
 
 // Shell desktop memasang judul jendela, listener menu, dan penjaga tutup saat
 // mount; yang diuji di sini registry-nya, jadi pintu Tauri-nya dibisukan.

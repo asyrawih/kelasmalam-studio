@@ -1,5 +1,5 @@
 /**
- * Smoke test Audio Studio: render App dan tiap panel di jsdom, lalu jalankan
+ * Smoke test Audio Studio: render StudioPage dan tiap panel di jsdom, lalu jalankan
  * aksi store yang dipakai UI. Tujuannya menangkap kelas bug yang membunuh UI
  * sebelum sempat dilihat: getSnapshot yang tidak stabil (loop render), NaN dari
  * pembagian nol, dan crash saat elemen belum di-layout (ukuran 0).
@@ -8,7 +8,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { App } from '../../App';
+import { StudioPage } from '../../StudioPage';
 import { DEFAULT_FADE_CURVE, findClip, samplesToSec } from '../model';
 import { studioActions, studioStore } from '../store';
 import {
@@ -50,10 +50,10 @@ function expectNoConsoleError(fn: () => void): void {
   expect(errors, `console.error: ${JSON.stringify(errors)}`).toEqual([]);
 }
 
-describe('App', () => {
+describe('StudioPage', () => {
   it('render tanpa engine', () => {
     expectNoConsoleError(() => {
-      render(<App />);
+      render(<StudioPage />);
     });
     expect(screen.getByText('KELAS MALAM STUDIO')).toBeTruthy();
     expect(screen.getByText(/TIMELINE MIX/)).toBeTruthy();
@@ -63,7 +63,7 @@ describe('App', () => {
   it('render dengan createEngine yang gagal', () => {
     expectNoConsoleError(() => {
       render(
-        <App
+        <StudioPage
           createEngine={async () => {
             throw new Error('wasm belum dibuild');
           }}
@@ -75,7 +75,7 @@ describe('App', () => {
   it('playhead maju saat playing (tanpa engine)', () => {
     vi.useFakeTimers();
     try {
-      render(<App />);
+      render(<StudioPage />);
       const before = studioStore.getState().playhead;
       act(() => {
         studioActions.setPlaying(true);
@@ -91,13 +91,13 @@ describe('App', () => {
 
   it('tombol ROBLOX di header memanggil navigasi Roblox', () => {
     const openRoblox = vi.fn();
-    render(<App onOpenRoblox={openRoblox} />);
+    render(<StudioPage onOpenRoblox={openRoblox} />);
     fireEvent.click(screen.getByRole('button', { name: 'ROBLOX' }));
     expect(openRoblox).toHaveBeenCalledOnce();
   });
 
   it('toolbar header memisahkan aksi berdasarkan konteks', () => {
-    render(<App onOpenDj={() => {}} onOpenRoblox={() => {}} />);
+    render(<StudioPage onOpenDj={() => {}} onOpenRoblox={() => {}} />);
     expect(screen.getByRole('group', { name: 'EDIT' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'TOOLS' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'STATUS' })).toBeTruthy();
@@ -105,7 +105,7 @@ describe('App', () => {
   });
 
   it('tombol SNAP di toolbar men-toggle magnetic snapping', () => {
-    render(<App />);
+    render(<StudioPage />);
     const button = screen.getByRole('button', { name: 'SNAP' });
     expect(button.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(button);

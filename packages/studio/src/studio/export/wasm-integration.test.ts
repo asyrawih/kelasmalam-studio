@@ -32,9 +32,9 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { buildExportPayload } from './payload';
-import { runExport, type ExportEncoder, type ExportEngine } from './run-export';
-import { BlobSink } from './sinks';
-import { createWasmExportEngine } from './wasm-engine';
+import { runExport, type ExportEncoder, type ExportEngine } from '@kelasmalam/engine/export/run-export';
+import { BlobSink } from '@kelasmalam/engine/export/sinks';
+import { createWasmExportEngine } from '@kelasmalam/engine/export/wasm-engine';
 import { EXPECTED_ABI_VERSION } from '@kelasmalam/engine/audio/wasm-loader';
 import { WASM_URLS } from '@kelasmalam/engine/audio/wasm-urls';
 import type { LoadedWasm } from '@kelasmalam/engine/audio/wasm-loader';

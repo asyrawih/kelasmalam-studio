@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { createEncoder } from '@kelasmalam/engine/encoders';
 import type { EncoderFormat } from '@kelasmalam/engine/encoders';
-import { getPlatformHost } from '../../platform';
+import { getPlatformHost } from '@kelasmalam/platform';
 import { loadWasm, type LoadedWasm } from '@kelasmalam/engine/audio/wasm-loader';
 import {
   buildExportPayload,
@@ -28,15 +28,15 @@ import {
   runExport,
   type ExportEncoder,
   type ExportResult,
-} from '../export/run-export';
-import { BlobSink, type ExportSink } from '../export/sinks';
-import type { LoudnessAnalysis } from '../export/loudness-analyzer';
+} from '@kelasmalam/engine/export/run-export';
+import { BlobSink, type ExportSink } from '@kelasmalam/engine/export/sinks';
+import type { LoudnessAnalysis } from '@kelasmalam/engine/export/loudness-analyzer';
 import {
   ExportWorkerUnavailable,
   canRunExportInWorker,
   runExportInWorker,
 } from '../export/worker-host';
-import { createWasmExportEngine } from '../export/wasm-engine';
+import { createWasmExportEngine } from '@kelasmalam/engine/export/wasm-engine';
 import type { StudioState } from '../model';
 
 /**
