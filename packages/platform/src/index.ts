@@ -29,4 +29,7 @@ export type {
   PlatformHost,
   PlatformKind,
   SaveTarget,
+  ScnetModelDownloadProgress,
+  ScnetModelId,
 } from './host';
+export type { ExportSink } from './export-sink';

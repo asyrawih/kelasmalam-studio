@@ -25,10 +25,10 @@
 
 import type { LocalError } from '../platform/local-commands';
 import { LOCAL_EVENTS } from '../platform/local-commands';
-import { isLocalError } from '@app-web/roblox/persistence'; // TODO(P3)
+import { isLocalError } from '@kelasmalam/roblox/roblox/persistence';
 import { localInvoke, localListen } from './invoke';
-import type { QueueItem } from '@app-web/roblox/model'; // TODO(P3)
-import { UploadError, type OperationState, type StartedUpload, type Transport } from '@app-web/roblox/backend/transport'; // TODO(P3)
+import type { QueueItem } from '@kelasmalam/roblox/roblox/model';
+import { UploadError, type OperationState, type StartedUpload, type Transport } from '@kelasmalam/roblox/roblox/backend/transport';
 
 export interface DesktopTransportOptions {
   /** Creator id saat ini — dibaca ULANG tiap `health()`, bukan ditangkap sekali. */

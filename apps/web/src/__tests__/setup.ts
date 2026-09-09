@@ -1,5 +1,17 @@
 import 'vitest-canvas-mock';
 
+/*
+ * Host platform untuk SEMUA tes yang dijalankan dari sini — termasuk tes
+ * `packages/*` (docs/25 §1h). Paket tidak mendaftarkan host (mereka tidak
+ * tahu di mana mereka berjalan), jadi komponen paket yang dirender sendirian
+ * di tes butuh app yang memasangnya, persis seperti di produksi: modul
+ * `../platform` mendaftarkan host web sebagai resolver BAWAAN saat dimuat.
+ * Tes yang butuh host lain memakai `setPlatformHostForTests`, dan
+ * `apps/desktop` (yang mengimpor setup ini) menimpanya dengan resolver
+ * desktop dari `./platform`-nya sendiri — resolver app selalu menang.
+ */
+import '../platform';
+
 // jsdom tidak punya ResizeObserver.
 if (!('ResizeObserver' in globalThis)) {
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {

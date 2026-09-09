@@ -12,7 +12,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown, opts?: unknown) => invoke(cmd, args, opts),
 }));
 
-import { LibraryError, VersionConflict } from '@app-web/library/api'; // TODO(P3)
+import { LibraryError, VersionConflict } from '@kelasmalam/library/library/api';
 import { createLocalLibraryApi, extOfMime, LOCAL_USER } from './local-api';
 
 const HASH = 'a'.repeat(64);

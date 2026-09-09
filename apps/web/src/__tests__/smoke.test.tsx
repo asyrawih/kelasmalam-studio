@@ -5,7 +5,7 @@
  */
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { App } from '../App';
+import { StudioPage } from '@kelasmalam/studio/StudioPage';
 import * as panels from '@kelasmalam/ui/panels';
 
 // jsdom melaporkan semua elemen berukuran 0. Itu membuat `fitCanvas` bail out
@@ -26,18 +26,18 @@ Element.prototype.getBoundingClientRect = () => RECT as DOMRect;
 
 afterEach(cleanup);
 
-describe('App', () => {
+describe('StudioPage', () => {
   it('mounts tanpa engine (degraded mode)', () => {
     const errors: unknown[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((...a) => errors.push(a));
-    expect(() => render(<App />)).not.toThrow();
+    expect(() => render(<StudioPage />)).not.toThrow();
     spy.mockRestore();
     expect(errors, `console.error saat mount: ${JSON.stringify(errors)}`).toEqual([]);
   });
 
   it('mounts dengan createEngine yang gagal', () => {
     expect(() =>
-      render(<App createEngine={async () => { throw new Error('no wasm'); }} />),
+      render(<StudioPage createEngine={async () => { throw new Error('no wasm'); }} />),
     ).not.toThrow();
   });
 });

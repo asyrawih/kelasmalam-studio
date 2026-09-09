@@ -1,45 +1,25 @@
 /**
- * Tabel path → route. Dipisah dari komponen supaya bisa dites tanpa React, dan
- * supaya halaman keempat cukup menambah SATU baris di sini.
+ * Tabel route milik app WEB: semua halaman, termasuk landing dan dua halaman
+ * legal; path yang tidak dikenal jatuh ke landing. Konstanta path dan
+ * `pathOf` datang dari `@kelasmalam/shell/routes` (docs/25 P3) supaya kedua
+ * app menyebut string yang sama; yang milik app hanya DAFTAR-nya.
  */
 
-export type Route =
-  | 'landing'
-  | 'studio'
-  | 'dj'
-  | 'roblox'
-  | 'proof-stem'
-  | 'privacy-policy'
-  | 'terms-of-service';
+import { makeRouteOf, type Route } from '@kelasmalam/shell/routes';
 
-export const HOME_PATH = '/';
-export const STUDIO_PATH = '/studio';
-export const DJ_PATH = '/dj';
-export const ROBLOX_PATH = '/roblox';
-export const PROOF_STEM_PATH = '/proof-stem';
-export const PRIVACY_POLICY_PATH = '/privacy-policy';
-export const TERMS_OF_SERVICE_PATH = '/terms-of-service';
+export {
+  DJ_PATH,
+  HOME_PATH,
+  PRIVACY_POLICY_PATH,
+  PROOF_STEM_PATH,
+  ROBLOX_PATH,
+  STUDIO_PATH,
+  TERMS_OF_SERVICE_PATH,
+  pathOf,
+  type Route,
+} from '@kelasmalam/shell/routes';
 
-const TABLE: Readonly<Record<string, Route>> = {
-  [STUDIO_PATH]: 'studio',
-  [DJ_PATH]: 'dj',
-  [ROBLOX_PATH]: 'roblox',
-  [PROOF_STEM_PATH]: 'proof-stem',
-  [PRIVACY_POLICY_PATH]: 'privacy-policy',
-  [TERMS_OF_SERVICE_PATH]: 'terms-of-service',
-};
-
-/** Trailing slash diabaikan supaya `/studio/` tidak jatuh ke landing. */
-export function routeOf(pathname: string): Route {
-  return TABLE[pathname.replace(/\/+$/, '')] ?? 'landing';
-}
-
-export function pathOf(route: Route): string {
-  if (route === 'studio') return STUDIO_PATH;
-  if (route === 'dj') return DJ_PATH;
-  if (route === 'roblox') return ROBLOX_PATH;
-  if (route === 'proof-stem') return PROOF_STEM_PATH;
-  if (route === 'privacy-policy') return PRIVACY_POLICY_PATH;
-  if (route === 'terms-of-service') return TERMS_OF_SERVICE_PATH;
-  return HOME_PATH;
-}
+export const routeOf: (pathname: string) => Route = makeRouteOf<Route>(
+  ['studio', 'dj', 'roblox', 'proof-stem', 'privacy-policy', 'terms-of-service'],
+  'landing',
+);

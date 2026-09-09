@@ -21,8 +21,8 @@
 import { createDesktopTransport, hasStoredApiKey } from './desktop-transport';
 import { createLocalGrantApi } from './grant-local-api';
 import { localInvoke } from './invoke';
-import type { RobloxBackend } from '@app-web/roblox/backend/backend'; // TODO(P3)
-import { restoreRobloxQueue, robloxActions, robloxStore } from '@app-web/roblox/store'; // TODO(P3)
+import type { RobloxBackend } from '@kelasmalam/roblox/roblox/backend/backend';
+import { restoreRobloxQueue, robloxActions, robloxStore } from '@kelasmalam/roblox/roblox/store';
 
 export function createDesktopRobloxBackend(): RobloxBackend {
   const transport = createDesktopTransport({
@@ -32,7 +32,7 @@ export function createDesktopRobloxBackend(): RobloxBackend {
   });
 
   return {
-    platform: 'desktop',
+    variant: 'local',
     transport,
     grantApi: createLocalGrantApi(),
 

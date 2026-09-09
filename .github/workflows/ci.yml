@@ -186,7 +186,7 @@ jobs:
       # `wasm-pack test --headless --chrome` yang sudah lebih dulu dihapus.
       # `crates/wasm-bridge` tidak punya satu pun tes browser, jadi Chrome
       # dipasang 11 detik di tiap run untuk sesuatu yang tidak pernah dijalankan.
-      # Cakupan yang SUNGGUHAN ada: `apps/web/src/studio/export/wasm-integration.test.ts`
+      # Cakupan yang SUNGGUHAN ada: `packages/studio/src/studio/export/wasm-integration.test.ts`
       # di job `web`, yang memuat artefak `st` hasil build ini.
 
       # Binari siap pakai, bukan `cargo install` (61 detik) + `apt-get` (76 detik,

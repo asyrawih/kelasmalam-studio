@@ -1,0 +1,27 @@
+{
+  "name": "@kelasmalam/dj",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Halaman DJ (docs/25 P3): deck, mixer, grid, browser koleksi. Bergantung pada studio (model, store, peaks, waveform, stem) sampai studio-core lahir di P4.",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@kelasmalam/engine": "workspace:*",
+    "@kelasmalam/platform": "workspace:*",
+    "@kelasmalam/proof-stem": "workspace:*",
+    "@kelasmalam/shell": "workspace:*",
+    "@kelasmalam/studio": "workspace:*",
+    "@kelasmalam/ui": "workspace:*",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.3.12",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

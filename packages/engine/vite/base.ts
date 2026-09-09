@@ -247,7 +247,7 @@ export const workerConfig: NonNullable<UserConfig['worker']> = { format: 'es' };
  *     (`ort-dist.ts`). Dipakai `proof-stem/scnet-model.ts` lewat
  *     `new URL('@ort-dist/…', import.meta.url)`; Vite meresolusi alias di
  *     dalam `new URL` dan menerbitkan berkasnya sebagai asset ber-hash.
- *   - `@kelasmalam/*` dan `@app-web/*` diturunkan dari `paths`
+ *   - `@kelasmalam/*` diturunkan dari `paths`
  *     tsconfig.base.json (`workspace-aliases.ts`), bukan ditulis ulang.
  */
 export function dawAliases(repoRoot: string): AliasOptions {

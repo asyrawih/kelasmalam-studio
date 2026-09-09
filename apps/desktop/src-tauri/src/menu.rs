@@ -99,7 +99,7 @@ const APP_ITEMS: &[CommandItem] = &[item_with_key(
 
 // File: simpan ke kepustakaan dan export. `studio.project.save` membuka dok
 // kepustakaan dan memfokuskan tombol simpan — simpan yang sebenarnya adalah
-// tombol itu (lihat `apps/web/src/studio/commands.ts`); di desktop dok menjawab
+// tombol itu (lihat `packages/studio/src/studio/commands.ts`); di desktop dok menjawab
 // "belum tersedia" (docs/20 §1d), dan itu jawaban yang jujur untuk ⌘S.
 const FILE_ITEMS: &[CommandItem] = &[
     item_with_key("studio.project.save", "Simpan Project", "CmdOrCtrl+S"),

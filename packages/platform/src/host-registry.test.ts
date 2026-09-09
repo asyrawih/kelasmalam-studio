@@ -24,7 +24,7 @@ describe('host-registry: app vs bawaan', () => {
     expect(r.getPlatformHost().kind).toBe('web');
   });
 
-  it('app dulu, bawaan belakangan → app tetap menang (desktop: modul @app-web dimuat sesudah ./platform)', async () => {
+  it('app dulu, bawaan belakangan → app tetap menang (desktop: setup tes web dimuat sesudah ./platform)', async () => {
     const r = await fresh();
     r.registerPlatformHostResolver(() => hostOf('desktop'));
     r.registerDefaultPlatformHostResolver(() => hostOf('web'));

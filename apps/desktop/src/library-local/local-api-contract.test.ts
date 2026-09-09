@@ -8,7 +8,7 @@
 import { vi } from 'vitest';
 
 import { createLocalLibraryApi } from './local-api';
-import { libraryApiContract, type Backend, type Step } from '@app-web/library/api-contract'; // TODO(P3)
+import { libraryApiContract, type Backend, type Step } from '@kelasmalam/library/library/api-contract';
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown, _opts?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({

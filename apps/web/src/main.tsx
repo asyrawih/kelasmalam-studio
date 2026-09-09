@@ -19,7 +19,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import { AppShell } from './app-shell';
+import { libraryApiBaseFromEnv } from './platform/web';
 import type { UiEngine } from '@kelasmalam/engine/state';
+import { createLibraryApi, registerLibraryApi } from '@kelasmalam/library/library';
 import './index.css';
 // Suffix `?worklet&url` WAJIB: ia melewati `audioWorkletPlugin()` yang mem-build
 // worklet jadi IIFE tanpa `import`. Memakai `new URL(...)` biasa membuat Vite
@@ -36,6 +38,15 @@ async function createEngine(): Promise<UiEngine | null> {
     },
   });
 }
+
+// Kepustakaan app ini: klien Worker dari `VITE_LIBRARY_API`, atau tidak ada
+// sama sekali kalau build ini memang tanpa backend (docs/16 §6) — dok tetap
+// tampil dan mengatakan kenapa kosong. Didaftarkan di sini, bukan ditanya ke
+// host platform: kepustakaan bukan soal platform (docs/25 P3, `registry.ts`).
+registerLibraryApi(() => {
+  const base = libraryApiBaseFromEnv();
+  return base === '' ? null : createLibraryApi(base);
+});
 
 const container = document.getElementById('root');
 if (container === null) throw new Error('#root tidak ditemukan di index.html');

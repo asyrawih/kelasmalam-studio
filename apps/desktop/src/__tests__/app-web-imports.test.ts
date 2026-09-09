@@ -1,18 +1,17 @@
 /**
  * @vitest-environment node
  *
- * Alias `@app-web/*` di `apps/desktop` adalah UTANG YANG DINYATAKAN (docs/25
- * P2 → P3): modul `apps/web/src` yang belum jadi paket (studio, dj, library,
- * roblox, soundcloud, proof-stem, `App`, `KeymapEditor`) masih ditarik
- * sebagai sumber. P3 menurunkannya ke NOL dengan memindahkan modul-modul itu
- * ke `packages/*`.
+ * Alias sementara P2 ke sumber `apps/web` (docs/25 P2 → P3) sudah TIDAK ADA:
+ * setiap modul halaman adalah paket `@kelasmalam/*`, dan `apps/desktop` tidak
+ * boleh menarik satu berkas pun dari `apps/web` — lewat alias, lewat path
+ * relatif, maupun lewat `vi.mock`. Tes ini menjaga alias itu tidak lahir
+ * kembali "sementara": string aliasnya dilarang di SELURUH repo (kode,
+ * konfigurasi, CSS), bukan hanya di app ini, karena yang membuatnya bekerja
+ * adalah satu entri `paths` di `tsconfig.base.json`.
  *
- * Supaya penurunan itu terjadi dengan SADAR — bukan diam-diam bertambah —
- * daftar berkas pemakainya dikunci di sini. Menambah pemakai baru berarti
- * mengubah daftar ini; menghapus yang sudah bersih juga, supaya daftar ini
- * tidak jadi museum. Tiap baris impor `@app-web/*` juga wajib berkomentar
- * `TODO(P3)` (aturan yang sama dengan `no-platform-leak.test.ts` untuk
- * `packages/*`).
+ * Specifier-nya disusun dari potongan supaya berkas ini sendiri tidak
+ * mengandung string yang dicarinya — `grep -rn` di dokumen verifikasi harus
+ * KOSONG, termasuk untuk penjaganya.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -20,92 +19,50 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-const SRC = fileURLToPath(new URL('..', import.meta.url));
+const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
+const DESKTOP_SRC = fileURLToPath(new URL('..', import.meta.url));
 
-/**
- * Berkas `apps/desktop/src/**` yang mengimpor `@app-web/*`, relatif terhadap
- * `apps/desktop/src`. Harus SAMA PERSIS dengan kenyataan.
- *
- * Pengelompokan (apa yang ditarik, ke mana ia pergi di P3):
- *   - halaman & kerangka: `App`, `KeymapEditor`, `dj`, `proof-stem`, `roblox`,
- *     `studio/store` → paket `studio`, `dj`, `roblox`, `proof-stem`;
- *   - kepustakaan: `library/{api,model,store,fake-api,LibraryDock,api-contract}`
- *     → paket `library`;
- *   - roblox: `roblox/{model,persistence,store,backend/*,grant/*}` → paket `roblox`;
- *   - studio-core: `studio/timeline/{audio-import,content-hash,import-sink,
- *     url-to-lane}`, `studio/export/sinks` → paket `studio-core` (P4);
- *   - soundcloud: `soundcloud/api` → paket `soundcloud`;
- *   - kontrak: `local-error`, `library/model`, `roblox/model` → paket kontrak.
- */
-const APP_WEB_ALLOWLIST: readonly string[] = [
-  'app-shell/AppShell.tsx',
-  'app-shell/desktop.test.tsx',
-  'library-local/StoreSettings.test.tsx',
-  'library-local/StoreSettings.tsx',
-  'library-local/dock.test.tsx',
-  'library-local/local-api-contract.test.ts',
-  'library-local/local-api.test.ts',
-  'library-local/local-api.ts',
-  'library-local/store-settings.ts',
-  'main.tsx',
-  'platform/desktop.ts',
-  'platform/local-commands.ts',
-  'roblox-local/GrantAccess.desktop.test.tsx',
-  'roblox-local/backend.ts',
-  'roblox-local/desktop-transport.test.ts',
-  'roblox-local/desktop-transport.ts',
-  'roblox-local/grant-local-api.test.ts',
-  'roblox-local/grant-local-api.ts',
-  'roblox-local/queue-persistence.test.ts',
-  'roblox-local/queue-persistence.ts',
-  'roblox-local/route.test.tsx',
-  'soundcloud/desktop-transport.test.ts',
-  'soundcloud/desktop-transport.ts',
-  'window/menu-ids.test.tsx',
-  'youtube/YouTubeDialog.tsx',
-  'youtube/dialog.test.tsx',
-  'youtube/import.test.ts',
-  'youtube/import.ts',
-];
+/** Nama alias lama, tanpa menuliskannya utuh. */
+const LEGACY_ALIAS = ['@app', 'web'].join('-');
 
-function* sources(dir: string): Generator<string> {
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'target', '.git', 'wasm', 'src-tauri', '.claude']);
+
+function* files(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name === 'dist' || name === 'src-tauri' || name === '__tests__') continue;
+    if (SKIP_DIRS.has(name)) continue;
     const full = join(dir, name);
     if (statSync(full).isDirectory()) {
-      yield* sources(full);
+      yield* files(full);
       continue;
     }
-    if (/\.(ts|tsx)$/.test(name)) yield full;
+    if (/\.(ts|tsx|json|css|mjs|cjs|js)$/.test(name)) yield full;
   }
 }
 
-const FILES = [...sources(SRC)];
-
-describe('pemakai @app-web/* di apps/desktop (utang P3)', () => {
-  it('daftar berkas pemakai @app-web/* sama persis dengan allowlist', () => {
-    const actual = FILES.filter((f) => readFileSync(f, 'utf8').includes("from '@app-web/"))
-      .map((f) => relative(SRC, f))
-      .sort();
-    expect(actual).toEqual([...APP_WEB_ALLOWLIST].sort());
+describe('alias sementara ke apps/web tidak ada lagi (docs/25 P3)', () => {
+  it(`string "${LEGACY_ALIAS}" tidak muncul di berkas ts/tsx/json/css mana pun di repo`, () => {
+    const hits = [...files(ROOT)]
+      .filter((f) => readFileSync(f, 'utf8').includes(LEGACY_ALIAS))
+      .map((f) => relative(ROOT, f));
+    expect(hits).toEqual([]);
   });
 
-  it('tiap impor @app-web/* berkomentar TODO(P3) di baris yang sama', () => {
-    const bad: string[] = [];
-    for (const f of FILES) {
-      readFileSync(f, 'utf8')
-        .split('\n')
-        .forEach((line, i) => {
-          if (line.includes("'@app-web/") && !/TODO\(P[34]\)/.test(line)) bad.push(`${relative(SRC, f)}:${i + 1}`);
-        });
-    }
-    expect(bad).toEqual([]);
+  it('tsconfig.base.json tidak punya entri paths ke apps/*', () => {
+    const raw = readFileSync(join(ROOT, 'tsconfig.base.json'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const paths = (JSON.parse(raw) as { compilerOptions: { paths: Record<string, string[]> } }).compilerOptions.paths;
+    const toApps = Object.entries(paths).filter(([, targets]) => targets.some((t) => t.startsWith('apps/')));
+    expect(toApps).toEqual([]);
   });
 
-  it('tidak mengimpor apps/web lewat path relatif (hanya lewat alias yang dihitung)', () => {
-    const hits = FILES.filter((f) => /from\s+['"](?:\.\.\/)+web\//.test(readFileSync(f, 'utf8'))).map((f) =>
-      relative(SRC, f),
-    );
+  it('apps/desktop/src tidak mengimpor apps/web lewat path relatif', () => {
+    // `__tests__/setup.ts` sengaja mengimpor setup vitest web (shim jsdom yang
+    // sama untuk komponen yang sama) — itu perkakas tes, bukan kode app.
+    const hits = [...files(DESKTOP_SRC)]
+      .filter((f) => /\.(ts|tsx)$/.test(f) && !f.includes('/__tests__/'))
+      .filter((f) => /from\s+['"](?:\.\.\/)+web\//.test(readFileSync(f, 'utf8')))
+      .map((f) => relative(DESKTOP_SRC, f));
     expect(hits).toEqual([]);
   });
 });

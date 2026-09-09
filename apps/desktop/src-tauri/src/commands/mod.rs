@@ -2,8 +2,8 @@
 //! di atas `daw-desktop-host`.
 //!
 //! Kontraknya `apps/desktop/src/platform/local-commands.ts` (docs/25 P2;
-//! tipe DTO yang juga dipakai web ada di `apps/web/src/{library,roblox}/model.ts`
-//! dan `apps/web/src/local-error.ts`): nama command, argumen
+//! tipe DTO yang juga dipakai web ada di `packages/{library,roblox}/src/*/model.ts`
+//! dan `packages/library/src/local-error.ts`): nama command, argumen
 //! `camelCase`, bentuk hasil, kode galat `LocalError`, nama event. Tes bentuk
 //! di `crates/desktop-host/src/contract_tests.rs` membaca daftar
 //! `generate_handler!` di bawah dan memastikan tiap nama kontrak ada di sana

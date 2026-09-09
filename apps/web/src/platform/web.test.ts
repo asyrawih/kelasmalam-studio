@@ -107,40 +107,12 @@ describe('login / openExternal / authHeaders', () => {
     expect(await createWebHost().authHeaders()).toEqual({});
   });
 
-  it('tidak menyediakan dialog native maupun drop native', () => {
+  it('tidak menyediakan dialog native, drop native, maupun modelBytes', () => {
     const host = createWebHost();
     expect(host.openAudioFiles).toBeUndefined();
     expect(host.onFilesDropped).toBeUndefined();
-  });
-});
-
-describe('modelBytes (tanpa OPFS)', () => {
-  it('fetch dari URL katalog dan menolak unduhan yang terpotong', async () => {
-    const storage = navigator.storage;
-    Object.defineProperty(navigator, 'storage', { value: undefined, configurable: true });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Uint8Array(10), { status: 200 }),
-    );
-    try {
-      await expect(createWebHost().modelBytes('base', () => {})).rejects.toThrow(/tidak lengkap/);
-      expect(fetchSpy).toHaveBeenCalledWith('/models/scnet/scnet-base.onnx');
-    } finally {
-      Object.defineProperty(navigator, 'storage', { value: storage, configurable: true });
-    }
-  });
-});
-
-describe('libraryApi', () => {
-  it('basis kosong = build tanpa backend → null, bukan klien yang menunjuk ke mana-mana', () => {
-    expect(createWebHost({ libraryApiBase: '' }).libraryApi()).toBeNull();
-    expect(createWebHost({ libraryApiBase: '   ' }).libraryApi()).toBeNull();
-  });
-
-  it('dengan basis: klien Worker, satu objek yang sama tiap panggilan', () => {
-    const host = createWebHost({ libraryApiBase: 'https://api.test/' });
-    const api = host.libraryApi();
-    expect(api?.base).toBe('https://api.test');
-    expect(host.libraryApi()).toBe(api);
-    expect(api?.loginUrl('/studio')).toBe('https://api.test/auth/google?next=%2Fstudio');
+    // Tanpa `modelBytes`, worker inferensi mengambil modelnya sendiri
+    // (`proof-stem/scnet-model.ts`) — jalur browser umum, bukan milik host.
+    expect(host.modelBytes).toBeUndefined();
   });
 });

@@ -24,13 +24,13 @@ vi.mock('./api', async (importOriginal) => ({
 }));
 
 const importBytesToLane = vi.fn();
-vi.mock('@app-web/studio/timeline/audio-import', async (importOriginal) => ({ // TODO(P3)
-  ...(await importOriginal<typeof import('@app-web/studio/timeline/audio-import')>()), // TODO(P3)
+vi.mock('@kelasmalam/studio/studio/timeline/audio-import', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@kelasmalam/studio/studio/timeline/audio-import')>()),
   importBytesToLane: (...args: unknown[]) => importBytesToLane(...args),
 }));
 
 import { LocalCommandError } from '../platform/local-invoke';
-import { importUrlToLane, registerUrlImporter } from '@app-web/studio/timeline/url-to-lane'; // TODO(P3)
+import { importUrlToLane, registerUrlImporter } from '@kelasmalam/studio/studio/timeline/url-to-lane';
 import { importYoutubeToLane, youtubeUrlImporter, YOUTUBE_TOOLS_MISSING } from './import';
 
 const URL_YT = 'https://youtu.be/abc';

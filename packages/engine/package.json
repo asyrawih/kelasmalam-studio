@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "EngineClient, worklet, tata letak SAB, encoder, dan mirror state engine — dikonsumsi sebagai sumber TypeScript (docs/25 P1).",
+  "description": "EngineClient, worklet, tata letak SAB, encoder, mirror state engine, dan pipeline export (run-export, sink, wasm-engine — cicilan P4) — dikonsumsi sebagai sumber TypeScript (docs/25 P1, P3).",
   "exports": {
     "./*": "./src/*"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
+    "@kelasmalam/platform": "workspace:*",
     "react": "^18.3.1",
     "vorbis-encoder-js": "^1.0.2",
     "wasm-feature-detect": "^1.6.2"

@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Registry command, keymap, dispatcher keyboard, dan command palette (docs/15) — tanpa satu pun cabang platform (docs/25 P1).",
+  "description": "Registry command, keymap, dispatcher keyboard, command palette (docs/15), editor pintasan, konstanta route, dan penanda versi build — tanpa satu pun cabang platform (docs/25 P1, P3).",
   "exports": {
     ".": "./src/index.ts",
     "./*": "./src/*"
   },
   "dependencies": {
+    "@kelasmalam/ui": "workspace:*",
     "react": "^18.3.1"
   },
   "devDependencies": {

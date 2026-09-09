@@ -13,9 +13,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppShell } from './AppShell';
-import { djActions } from '../dj/store';
+import { djActions } from '@kelasmalam/dj/dj/store';
 import { setPlatformHostForTests, type PlatformHost } from '../platform';
-import { studioActions, studioStore } from '../studio/store';
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 const SR = 48_000;
 const RECT = {
@@ -113,7 +113,6 @@ describe('login lewat adapter platform', () => {
       modelBytes: vi.fn(),
       // Tes ini tidak menyentuh kepustakaan; `null` = "tidak dikonfigurasi",
       // sama dengan build web tanpa VITE_LIBRARY_API.
-      libraryApi: () => null,
       ...(login === undefined ? {} : { login }),
     };
   }

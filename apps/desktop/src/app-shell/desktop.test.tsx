@@ -14,8 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppShell } from './AppShell';
 import { __resetMenuWarningsForTest } from '../window/desktop';
-import { djActions, djStore } from '@app-web/dj/store'; // TODO(P3)
-import { studioActions, studioStore } from '@app-web/studio/store'; // TODO(P3)
+import { djActions, djStore } from '@kelasmalam/dj/dj/store';
+import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 type Listener = (e: { payload: unknown }) => void;
 type CloseHandler = (ev: { preventDefault(): void }) => Promise<void> | void;

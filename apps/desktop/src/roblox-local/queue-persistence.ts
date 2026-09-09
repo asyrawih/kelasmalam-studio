@@ -32,9 +32,9 @@
  */
 
 import type { RobloxUploadRow } from '../platform/local-commands';
-import { sha256Hex } from '@app-web/studio/timeline/content-hash'; // TODO(P3)
-import { extOf, fromUploadRow, toUploadRow, type UploadStatus } from '@app-web/roblox/model'; // TODO(P3)
-import { isLocalError, type PersistedRobloxQueue, type PersistenceAdapter } from '@app-web/roblox/persistence'; // TODO(P3)
+import { sha256Hex } from '@kelasmalam/studio/studio/timeline/content-hash';
+import { extOf, fromUploadRow, toUploadRow, type UploadStatus } from '@kelasmalam/roblox/roblox/model';
+import { isLocalError, type PersistedRobloxQueue, type PersistenceAdapter } from '@kelasmalam/roblox/roblox/persistence';
 import { localInvoke, localPutBytes } from './invoke';
 
 /** Baris yang runner masih akan kirim, jadi byte-nya perlu ada di `fileOf`. */

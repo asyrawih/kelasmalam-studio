@@ -1,0 +1,27 @@
+{
+  "name": "@kelasmalam/studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Halaman Studio lane (docs/25 P3): StudioPage, store, timeline, rail, fx, preview, persist, dan lapisan stem — dipakai apps/web selamanya dan apps/desktop sampai docs/24 F8. Kepustakaan dan dialog impor (SoundCloud, YouTube) DISUNTIK app lewat prop, bukan diimpor dari sini.",
+  "exports": {
+    "./*": "./src/*",
+    "./studio.css": "./src/studio.css"
+  },
+  "dependencies": {
+    "@kelasmalam/engine": "workspace:*",
+    "@kelasmalam/platform": "workspace:*",
+    "@kelasmalam/proof-stem": "workspace:*",
+    "@kelasmalam/shell": "workspace:*",
+    "@kelasmalam/ui": "workspace:*",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.3.12",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

@@ -4,10 +4,11 @@
  *
  * Dulu dua describe di `apps/web/src/library/dock.test.tsx` dengan
  * `createDesktopHost()`; sejak docs/25 P2 host desktop hanya ada di app ini,
- * jadi tesnya ikut. Komponennya sendiri (`LibraryDock`) masih dari `@app-web`
- * (TODO(P3)) — yang diuji di sini adalah apa yang dilakukannya ketika
- * host-nya desktop: `libraryApi()` lokal, tanpa MASUK/KELUAR, jalur cepat
- * `library_import_path` untuk berkas dari Finder.
+ * jadi tesnya ikut. Komponennya sendiri (`LibraryDock`) dari paket
+ * `@kelasmalam/library` — yang diuji di sini adalah apa yang dilakukannya
+ * dengan susunan desktop: kepustakaan LOKAL yang didaftarkan lewat
+ * `registerLibraryApi` (seperti `main.tsx`), host tanpa `login` (tanpa
+ * MASUK/KELUAR), jalur cepat `library_import_path` untuk berkas dari Finder.
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -19,13 +20,15 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { createDesktopHost } from '../platform/desktop';
+import { createLocalLibraryApi } from './local-api';
 import { setPlatformHostForTests } from '../platform';
-import type { LibraryApi } from '@app-web/library/api'; // TODO(P3)
-import { fakeLibraryApi } from '@app-web/library/fake-api'; // TODO(P3)
-import { LibraryDock } from '@app-web/library/LibraryDock'; // TODO(P3)
-import type { LibraryTrack } from '@app-web/library/model'; // TODO(P3)
-import { libraryActions, libraryStore } from '@app-web/library/store'; // TODO(P3)
-import { notifyImported } from '@app-web/studio/timeline/import-sink'; // TODO(P3)
+import { registerLibraryApi } from '@kelasmalam/library/library/registry';
+import type { LibraryApi } from '@kelasmalam/library/library/api';
+import { fakeLibraryApi } from '@kelasmalam/library/library/fake-api';
+import { LibraryDock } from '@kelasmalam/library/library/LibraryDock';
+import type { LibraryTrack } from '@kelasmalam/library/library/model';
+import { libraryActions, libraryStore } from '@kelasmalam/library/library/store';
+import { notifyImported } from '@kelasmalam/studio/studio/timeline/import-sink';
 
 const HASH = 'a'.repeat(64);
 
@@ -49,10 +52,13 @@ beforeEach(() => {
   libraryActions.__resetForTest();
   invoke.mockReset();
   invoke.mockResolvedValue(null);
+  // Seperti `main.tsx`: kepustakaan lokal didaftarkan app, bukan dijawab host.
+  registerLibraryApi(() => createLocalLibraryApi());
 });
 afterEach(() => {
   cleanup();
   setPlatformHostForTests(null);
+  registerLibraryApi(null);
   vi.restoreAllMocks();
 });
 

@@ -38,10 +38,10 @@
  * yang hilang dengan memilih `st`.
  */
 
-import { PCM_CHUNK_FRAMES, type ExportPayload } from '@app-web/studio/export/payload'; // TODO(P4): pindah ke studio-core
-import { ExportCancelled, runExport, type ExportEncoder } from '@app-web/studio/export/run-export'; // TODO(P4): pindah ke studio-core
-import { PostMessageSink, type ExportChunkMessage } from '@app-web/studio/export/sinks'; // TODO(P4): pindah ke studio-core
-import { createWasmExportEngine } from '@app-web/studio/export/wasm-engine'; // TODO(P4): pindah ke studio-core
+import { PCM_CHUNK_FRAMES, type ExportPayload } from '../export/payload';
+import { ExportCancelled, runExport, type ExportEncoder } from '../export/run-export';
+import { PostMessageSink, type ExportChunkMessage } from '../export/sinks';
+import { createWasmExportEngine } from '../export/wasm-engine';
 import { createEncoder } from '../encoders';
 import { WASM_URLS } from './wasm-urls';
 import {

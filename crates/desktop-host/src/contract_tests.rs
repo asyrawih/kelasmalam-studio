@@ -4,8 +4,8 @@
 //! Sejak docs/25 P2 kontraknya terbagi di EMPAT berkas TS, dan tes ini membaca
 //! gabungannya: `local-commands.ts` (nama command, event, tipe yang hanya
 //! desktop) plus tipe DTO yang juga dipakai UI web dan karena itu tinggal di
-//! `apps/web/src/library/model.ts`, `apps/web/src/roblox/model.ts`, dan
-//! `apps/web/src/local-error.ts`. Bundel web tidak boleh menarik kontrak Tauri
+//! `packages/library/src/library/model.ts`, `packages/roblox/src/roblox/model.ts`,
+//! dan `packages/library/src/local-error.ts` (paket, sejak docs/25 P3). Bundel web tidak boleh menarik kontrak Tauri
 //! hanya untuk tipe — itu alasan pemisahannya.
 //!
 //! Dua hal yang dijaga, keduanya dengan parser teks sederhana — bukan parser
@@ -39,9 +39,9 @@ fn repo_root() -> PathBuf {
 /// Berkas-berkas yang bersama-sama membentuk kontrak (lihat kepala modul).
 const CONTRACT_FILES: &[&str] = &[
     "apps/desktop/src/platform/local-commands.ts",
-    "apps/web/src/library/model.ts",
-    "apps/web/src/roblox/model.ts",
-    "apps/web/src/local-error.ts",
+    "packages/library/src/library/model.ts",
+    "packages/roblox/src/roblox/model.ts",
+    "packages/library/src/local-error.ts",
 ];
 
 fn contract_ts() -> String {

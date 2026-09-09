@@ -15,8 +15,8 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
-import { studioActions, studioStore, useStudio } from '@app-web/studio/store'; // TODO(P3)
-import { importBytesToLane } from '@app-web/studio/timeline/audio-import'; // TODO(P3)
+import { studioActions, studioStore, useStudio } from '@kelasmalam/studio/studio/store';
+import { importBytesToLane } from '@kelasmalam/studio/studio/timeline/audio-import';
 import { Button, ProgressBar } from '@kelasmalam/ui/cyber';
 import { isLocalError } from '../platform/local-invoke';
 import {

@@ -28,7 +28,7 @@
 // ── Tipe bersama (didefinisikan di apps/web, lihat kepala berkas) ──────────
 
 // TODO(P3): `LocalError` ikut ke paket kontrak kepustakaan/roblox.
-import type { LocalError } from '@app-web/local-error'; // TODO(P3)
+import type { LocalError } from '@kelasmalam/library/local-error';
 // TODO(P3): DTO kepustakaan lokal ikut `packages/library`.
 import type {
   ImportedTrack,
@@ -37,7 +37,7 @@ import type {
   LocalTrack,
   StoreInfo,
   TrackMetaInput,
-} from '@app-web/library/model'; // TODO(P3)
+} from '@kelasmalam/library/library/model';
 // TODO(P3): DTO Roblox ikut `packages/roblox`.
 import type {
   RobloxCategory,
@@ -48,7 +48,7 @@ import type {
   RobloxTaxonomy,
   RobloxUploadRow,
   RobloxUploadStatus,
-} from '@app-web/roblox/model'; // TODO(P3)
+} from '@kelasmalam/roblox/roblox/model';
 
 export type {
   ImportedTrack,

@@ -35,7 +35,7 @@ import type { StoreInfo } from '../platform/local-commands';
 import { LOCAL_EVENTS } from '../platform/local-commands';
 import { callLocal, toLocalError } from '../platform/local-invoke';
 import { Button, ProgressBar } from '@kelasmalam/ui/cyber';
-import { formatBytes } from '@app-web/library/model'; // TODO(P3)
+import { formatBytes } from '@kelasmalam/library/library/model';
 import {
   confirmRelocateMessage,
   formatStoreBytes,

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const callLocal = vi.fn();
 vi.mock('../platform/local-invoke', () => ({ callLocal: (...args: unknown[]) => callLocal(...args) }));
 
-import { SoundCloudApi } from '@app-web/soundcloud/api'; // TODO(P3)
+import { SoundCloudApi } from '@kelasmalam/soundcloud/soundcloud/api';
 import { desktopTransport } from './desktop-transport';
 
 describe('desktopTransport (SoundCloud lewat Rust)', () => {
