@@ -11,6 +11,16 @@ Dokumen ini adalah keputusan dan fase. Kode datang setelahnya, per fase, lewat
 `pengoding` (AGENT.md), dengan fase yang tidak saling bergantung dikerjakan
 paralel di worktree terpisah.
 
+> **Lingkup: desktop saja.** Web tetap web — `apps/web` mempertahankan Studio
+> lane yang ada hari ini tanpa batas waktu. Studio ala FL dibangun sebagai
+> `packages/studio-fl` dan dipakai `apps/desktop`. Pemisahan web/desktop yang
+> membuat itu mungkin ada di [docs/25](25-pisah-web-desktop.md); **F0 di sini
+> baru dimulai setelah docs/25 P2 selesai**, dan F8 mencabut lane dari
+> desktop, bukan dari web. Bagian yang menyebut "Studio" di bawah ini
+> berarti Studio desktop, dan bagian yang dipakai bersama dua Studio
+> (waveform, import, BPM, stem, export) hidup di `packages/studio-core`
+> (docs/25 P4).
+
 ---
 
 ## 0. Dari mana kita mulai
@@ -516,12 +526,12 @@ baru, sampler pitch, PAT/SONG, swing, `render_insert`.
 3. Realtime vs offline null-test untuk song dengan synth: residual < −100
    dBFS (fase osilator harus deterministik dari sample absolut).
 
-### F8 — Cabut lane dan preview Web Audio, dokumen
+### F8 — Cabut lane dan preview Web Audio dari desktop, dokumen
 
 **Done:**
-1. `studio/preview/audio-preview.ts`, `StudioLane`, `LaneHeaders`,
-   `lane-*.ts`, `ui/panels/*` shell lama, dan flag F0 dihapus; `grep -ri
-   "lane" web/src/studio` hanya menyisakan komentar migrasi §6.
+1. `apps/desktop` tidak lagi mengimpor `packages/studio` (lane) maupun
+   preview Web Audio; `ui/panels/*` shell lama dan flag F0 dihapus.
+   `packages/studio` tetap utuh untuk `apps/web`.
 2. docs/06, 07, 08, 09, 12, 13 diperbarui: "lane/track" → channel / insert /
    playlist track; docs/08 §8c dihapus (bukan lagi DITUNDA).
 3. Desktop (docs/20) dan `/dj` tidak tersentuh dan tesnya lolos.
