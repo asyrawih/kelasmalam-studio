@@ -104,6 +104,46 @@ fn status_is_not_ready_until_both_tools_exist() {
     assert_eq!(status.yt_dlp_version.as_deref(), Some("2026.08.19"));
 }
 
+/// Dialog memanggil `status()` tiap dibuka; yt-dlp asli butuh 1–3 detik
+/// per `--version`. Panggilan kedua dengan berkas yang sama TIDAK boleh
+/// menjalankan yt-dlp lagi; berkas yang diganti harus terbaca ulang.
+#[test]
+fn status_caches_the_version_until_the_binaries_change() {
+    let (_tmp, tools) = fake_tools();
+    let args_file = format!("{}.args", tools.yt_dlp_path().display());
+
+    let first = rt().block_on(tools.status());
+    assert_eq!(first.yt_dlp_version.as_deref(), Some("2026.08.19"));
+    assert!(
+        Path::new(&args_file).is_file(),
+        "panggilan pertama menjalankan yt-dlp"
+    );
+
+    std::fs::remove_file(&args_file).unwrap();
+    // Clone berbagi cache — begitulah `AppState` memakainya per command.
+    let second = rt().block_on(tools.clone().status());
+    assert_eq!(second, first);
+    assert!(
+        !Path::new(&args_file).exists(),
+        "panggilan kedua tidak menjalankan yt-dlp"
+    );
+
+    // Binari diganti (PERBARUI, atau disalin tangan): versi baru terbaca.
+    // Panjang skripnya beda supaya sidik jarinya pasti berubah walau mtime
+    // sistem berkasnya sekasar 1 detik.
+    write_exe(
+        &tools.yt_dlp_path(),
+        &FAKE_YT_DLP.replace("2026.08.19", "2026.09.01.1"),
+    );
+    let third = rt().block_on(tools.status());
+    assert_eq!(third.yt_dlp_version.as_deref(), Some("2026.09.01.1"));
+    assert!(Path::new(&args_file).is_file());
+
+    // qjs hilang: belum siap, dan cache tidak menyamarkannya.
+    std::fs::remove_file(tools.qjs_path()).unwrap();
+    assert!(!rt().block_on(tools.status()).ready);
+}
+
 #[test]
 fn info_passes_our_runtime_and_reads_the_json() {
     let (_tmp, tools) = fake_tools();
