@@ -64,7 +64,9 @@ fn open_state(app: &App) -> Result<AppState, Box<dyn std::error::Error>> {
         secrets: SecretStore::at(config_dir.join(SECRETS_FILE)),
         discovery: Arc::new(discovery),
         location_file,
-        tools_dir: default_dir.join(daw_desktop_host::youtube::TOOLS_SUBDIR),
+        youtube: daw_desktop_host::youtube::Tools::new(
+            default_dir.join(daw_desktop_host::youtube::TOOLS_SUBDIR),
+        ),
     })
 }
 

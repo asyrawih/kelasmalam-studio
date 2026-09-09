@@ -89,6 +89,12 @@ export function YouTubeDialog({ onClose }: YouTubeDialogProps): JSX.Element {
   /** Unduhan yang sedang berjalan, per nama (binari atau id video). */
   const [progress, setProgress] = useState<Readonly<Record<string, YoutubeProgress>>>({});
   const alive = useRef(true);
+  // `onClose` dari App dibuat ulang tiap render-nya. Kalau efek di bawah
+  // bergantung padanya, tiap render App menjalankan `youtubeStatus()` lagi —
+  // dan itu satu proses yt-dlp (PyInstaller, 1–3 detik) per render. Maka
+  // efeknya hanya saat mount, dan Escape membaca `onClose` lewat ref.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     alive.current = true;
@@ -107,7 +113,7 @@ export function YouTubeDialog({ onClose }: YouTubeDialogProps): JSX.Element {
       setProgress((cur) => ({ ...cur, [`${p.phase}:${p.name}`]: p }));
     });
     const close = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
     };
     window.addEventListener('keydown', close);
     return () => {
@@ -115,7 +121,7 @@ export function YouTubeDialog({ onClose }: YouTubeDialogProps): JSX.Element {
       unsubscribe();
       window.removeEventListener('keydown', close);
     };
-  }, [onClose]);
+  }, []);
 
   const ready = status?.ready === true;
   const inputIsYoutube = useMemo(() => isYoutubeUrl(url), [url]);

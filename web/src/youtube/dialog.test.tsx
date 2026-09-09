@@ -78,6 +78,28 @@ describe('perkakas', () => {
     expect(screen.getByText(/yt-dlp 2026\.08\.19 terpasang/)).toBeDefined();
   });
 
+  it('status diperiksa SEKALI per buka — render ulang induk dengan onClose baru tidak memeriksa lagi', async () => {
+    const view = render(<YouTubeDialog onClose={() => {}} />);
+    await waitFor(() => expect(status().textContent).toMatch(/SIAP/));
+    // Seperti App: closure `onClose` baru tiap render induk.
+    view.rerender(<YouTubeDialog onClose={() => {}} />);
+    view.rerender(<YouTubeDialog onClose={() => {}} />);
+    await act(async () => {});
+    expect(api.youtubeStatus).toHaveBeenCalledTimes(1);
+    expect(api.subscribeYoutubeProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape memanggil onClose yang TERBARU walau efeknya hanya saat mount', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const view = render(<YouTubeDialog onClose={first} />);
+    await waitFor(() => expect(status().textContent).toMatch(/SIAP/));
+    view.rerender(<YouTubeDialog onClose={second} />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   it('sudah ada: PERBARUI, dan jawabannya disebut', async () => {
     api.youtubeUpdate.mockResolvedValue(false);
     render(<YouTubeDialog onClose={() => {}} />);

@@ -26,7 +26,7 @@ struct YoutubeProgress<'a> {
 }
 
 fn tools(state: &State<'_, AppState>) -> Tools {
-    Tools::new(&state.tools_dir)
+    state.youtube.clone()
 }
 
 fn emitter(app: &AppHandle) -> impl FnMut(Phase, &str, u64, u64) + '_ {

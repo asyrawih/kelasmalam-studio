@@ -12,7 +12,7 @@
  * alih "READY" — tapi playhead tetap berjalan supaya timeline bisa diuji.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ReadoutStrip, StudioHeader, StudioLayout } from './studio/shell';
 import { MenuBar } from './studio/shell/MenuBar';
 import { STUDIO_MENUS } from './studio/shell/StudioMenus';
@@ -58,6 +58,9 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps)
   // bukan sekadar mati — di browser tidak ada jalan untuk fitur itu.
   const desktop = useMemo(() => getPlatformHost().kind === 'desktop', []);
   const [youtubeOpen, setYoutubeOpen] = useState(false);
+  // Stabil: dialog memakainya di efek/ref — closure baru tiap render tidak
+  // boleh berarti pemeriksaan perkakas (proses yt-dlp) ulang.
+  const closeYoutube = useCallback(() => setYoutubeOpen(false), []);
   // Preview playback lewat Web Audio, sementara engine WASM belum di-build.
   usePreviewPlayback();
   // Sambungkan rail ke project + cache PCM. Cache-nya SAMA dengan yang dipakai
@@ -111,7 +114,7 @@ export function App({ createEngine, onClose, onOpenDj, onOpenRoblox }: AppProps)
   return (
     <BeatProvider>
       {soundCloudOpen ? <SoundCloudDialog onClose={() => setSoundCloudOpen(false)} /> : null}
-      {desktop && youtubeOpen ? <YouTubeDialog onClose={() => setYoutubeOpen(false)} /> : null}
+      {desktop && youtubeOpen ? <YouTubeDialog onClose={closeYoutube} /> : null}
       <StudioLayout
         header={
           <StudioHeader
