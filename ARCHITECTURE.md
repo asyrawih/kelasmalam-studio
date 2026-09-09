@@ -2,6 +2,9 @@
 
 Browser-based DAW. Rust → `wasm32-unknown-unknown` untuk engine/DSP/timeline/export,
 TypeScript + React 18 + Vite untuk UI, AudioWorklet sebagai host realtime.
+Frontend hidup di `apps/web` (workspace bun; docs/25 memecahnya lebih lanjut
+menjadi `apps/desktop` dan `packages/*`). Dokumen lama yang menulis `web/src/…`
+maksudnya `apps/web/src/…`.
 
 Dokumen ini adalah index. Detail per bagian:
 
@@ -21,6 +24,7 @@ Dokumen ini adalah index. Detail per bagian:
 | [docs/21-desktop-lokal.md](docs/21-desktop-lokal.md) | Desktop lokal — SQLite + folder berkas di mesin user menggantikan Worker: kepustakaan lokal (K0–K3) dan revamp halaman Roblox dengan kategori/genre + katalog + unggah langsung dari Rust (R1–R5) |
 | [docs/22-rilis-desktop.md](docs/22-rilis-desktop.md) | Rilis desktop (D6) dari mesin lokal — `scripts/release-desktop.sh`: kunci updater minisign, Developer ID + notarization, Windows di mesin Windows, `latest.json` GitHub Releases, penggabungan lintas mesin, gejala kegagalan; status yang sudah/belum terbukti |
 | [docs/24-studio-fl.md](docs/24-studio-fl.md) | Revamp Studio ala FL Studio — lane dihapus; Channel Rack, Pattern, Playlist (tick, PPQ 960), Piano Roll, Mixer insert; sequencer di engine Rust menggantikan preview Web Audio; migrasi skema 1→2; fase F0–F8 |
+| [docs/25-pisah-web-desktop.md](docs/25-pisah-web-desktop.md) | Memisahkan ulang komponen web dan desktop — `apps/web` + `apps/desktop` di atas `packages/*` (engine, ui, shell, platform, studio, studio-core, dj, library); aturan impor ditegakkan tes; fase P0–P4; merevisi docs/20 §1a |
 | [recordbox/00-plan.md](recordbox/00-plan.md) | Halaman `/dj` — mixer 2 deck ala rekordbox: keputusan, empat utang yang dinyatakan terbuka, fase D0–D9 |
 
 ---
@@ -79,12 +83,12 @@ Dokumen ini adalah index. Detail per bagian:
 Kode konkret ada di repo ini (bukan di dokumen):
 
 - **b)** `Cargo.toml` (root workspace) + tiap `crates/*/Cargo.toml` + `.cargo/config.toml`
-  (RUSTFLAGS atomics) + `web/package.json` + `package.json` root.
+  (RUSTFLAGS atomics) + `apps/web/package.json` + `package.json` root.
 - **c)** SPSC ring: `crates/rt/src/ring.rs` · biquad TDF-II: `crates/dsp/src/biquad.rs` ·
   SIMD mixing: `crates/dsp/src/mix.rs`
-- **d)** worklet: `web/src/audio/worklet-processor.ts` · export worker:
-  `web/src/audio/export-worker.ts`
-- **e)** Vite + header produksi: `web/vite.config.ts`, `web/public/_headers`, `deploy/nginx.conf`
+- **d)** worklet: `packages/engine/src/audio/worklet-processor.ts` · export worker:
+  `packages/engine/src/audio/export-worker.ts`
+- **e)** Vite + header produksi: `apps/web/vite.config.ts`, `apps/web/public/_headers`, `deploy/nginx.conf`
 - **f)** Tabel keputusan MP3/OGG: [docs/03-export.md §3c](docs/03-export.md)
 - **h)** Struct + JSON schema: `crates/timeline-core/src/model.rs`, `schema/project.schema.json`
 - **i)** Cubic Hermite + fractional cursor: `crates/dsp/src/resample.rs`
@@ -93,7 +97,7 @@ Kode konkret ada di repo ini (bukan di dokumen):
 
 Tambahan di luar daftar semula:
 
-- Deteksi tempo (BPM) gaya DJ: `crates/analysis/` + `web/src/audio/tempo-worker.ts` —
+- Deteksi tempo (BPM) gaya DJ: `crates/analysis/` + `packages/engine/src/audio/tempo-worker.ts` —
   [docs/10-tempo-detection.md](docs/10-tempo-detection.md)
 - Beat loop cut & pembuangan stem (mid/side) di Clip Detail —
   [docs/11-beat-loop-stem.md](docs/11-beat-loop-stem.md)
@@ -106,7 +110,7 @@ Tambahan di luar daftar semula:
   berikutnya (MIDI, macro, remote) jadi satu penerjemah, bukan satu salinan
   daftar aksi.
 - Halaman ketiga `/dj`, mixer DJ 2 deck ala rekordbox — [recordbox/](recordbox/).
-  Berbunyi lewat Web Audio (`web/src/dj/audio/`), memakai ulang `AudioContext`
+  Berbunyi lewat Web Audio (`apps/web/src/dj/audio/`), memakai ulang `AudioContext`
   dan cache PCM milik preview Studio. Menarik jog atau waveform terdengar —
   scrub granular yang meredam source utama selama tangan menempel
   (`dj/audio/scrub-voice.ts`). MASTER TEMPO, scratch (memutar balik), dan

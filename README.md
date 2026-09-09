@@ -21,7 +21,7 @@ valid sebagai tes korektnes.
 
 ```bash
 bun install
-bun run build:wasm        # build engine-mt + engine-st ke web/src/wasm/
+bun run build:wasm        # build engine-mt + engine-st ke packages/engine/src/wasm/
 bun run dev               # Vite dev server (sudah mengirim header COOP/COEP)
 ```
 
@@ -29,7 +29,7 @@ Perintah lain:
 
 ```bash
 bun run test              # cargo test --workspace + tes web
-bun run build             # build wasm + bundle produksi ke web/dist
+bun run build             # build wasm + bundle produksi ke apps/web/dist
 bun run size-check        # gate ukuran: engine < 300 KB gzipped
 cargo run -p daw-native-host --release   # putar engine lewat speaker (dev/profiling)
 ```
@@ -37,7 +37,7 @@ cargo run -p daw-native-host --release   # putar engine lewat speaker (dev/profi
 > **Catatan COOP/COEP.** `SharedArrayBuffer` hanya aktif kalau
 > `crossOriginIsolated === true`. Untuk produksi lihat `deploy/nginx.conf`.
 > Tanpa isolasi, aplikasi tetap jalan dalam *degraded mode* (command lewat
-> `postMessage`, export single-thread) memakai artefak `web/src/wasm/st/`.
+> `postMessage`, export single-thread) memakai artefak `packages/engine/src/wasm/st/`.
 
 ## Deploy (Vercel)
 
@@ -93,7 +93,7 @@ npx vercel deploy --prebuilt --prod
   itu, tiap push memicu DUA jalur: CI yang benar, dan build Vercel sendiri yang
   pasti gagal karena runner-nya tidak punya Rust. Berkas ini sengaja tidak
   memuat header apa pun supaya tidak ada dua sumber yang bertentangan.
-- `web/public/_headers` ikut ter-copy tapi **tidak berpengaruh di Vercel**; itu
+- `apps/web/public/_headers` ikut ter-copy tapi **tidak berpengaruh di Vercel**; itu
   untuk Cloudflare Pages / Netlify.
 - Sourcemap mati di produksi (`VITE_SOURCEMAP=1` untuk menyalakannya).
 - `scripts/vercel-build.sh` menggagalkan build kalau menemukan berkas `.ts`
@@ -114,7 +114,7 @@ WAV sampai berkasnya terunduh.
 
 ## Desktop (Tauri 2, macOS + Windows)
 
-Aplikasi desktop memakai frontend yang sama (`web/dist` ditanam ke binary;
+Aplikasi desktop memakai frontend yang sama (`apps/web/dist` ditanam ke binary;
 [docs/20](docs/20-desktop-tauri.md)). Rilisnya **dibangun di mesin lokal**,
 bukan CI — sertifikat Developer ID dan kunci updater ada di sana:
 
@@ -138,7 +138,7 @@ crates/engine/         ProcessPlan, VoicePool, Transport, render_block()
 crates/export/         render offline + WAV writer + dither
 crates/wasm-bridge/    satu-satunya crate yang tahu wasm-bindgen
 crates/native-host/    [dev] host cpal untuk debugging di desktop
-web/                   UI React + Vite, worklet, worker
+apps/web/              UI React + Vite, worklet, worker (docs/25: `apps/desktop` dan `packages/*` menyusul)
 scripts/               build-wasm.sh, size-check.sh, vercel-build.sh
 deploy/                vercel-config.json (sumber header/rute produksi)
                        nginx.conf (alternatif self-host: COOP/COEP + mime wasm)

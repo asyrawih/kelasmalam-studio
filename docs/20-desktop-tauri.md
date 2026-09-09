@@ -104,6 +104,12 @@ Tiga fakta dari repo yang menentukan bentuk rencana ini:
 
 ### a) Satu frontend, satu build Vite
 
+> **Direvisi oleh [docs/25](25-pisah-web-desktop.md):** frontend dipecah
+> menjadi `apps/web` dan `apps/desktop` di atas paket bersama, supaya desktop
+> boleh berbeda (Studio ala FL, docs/24) tanpa mengubah web. Yang tetap
+> berlaku dari bagian ini: perbedaan platform masuk lewat kontrak, bukan
+> `if (isTauri)` yang tersebar.
+
 `web/dist` yang sama dipakai Vercel dan Tauri. `tauri.conf.json` menunjuk
 `frontendDist: ../../web/dist` dan `devUrl: http://localhost:5173`. Tidak ada
 `web-desktop/`, tidak ada fork komponen. Yang membedakan hanya **satu modul
@@ -255,10 +261,13 @@ byte lewat IPC menghindari seluruh pertanyaan itu.
 ### a) Alur build
 
 ```
-scripts/build-wasm.sh ──► web/src/wasm/{mt,st}
+scripts/build-wasm.sh ──► packages/engine/src/wasm/{mt,st}
                                │
-pnpm -C web build ─────────────┴──► web/dist  ──┬──► Vercel (seperti sekarang)
-                                                 └──► cargo tauri build (bundel)
+bun run --cwd apps/web build ──┴──► apps/web/dist ──┬──► Vercel (seperti sekarang)
+                                                     └──► cargo tauri build (bundel)
+
+(Path `apps/web` sejak docs/25 P0; sebelumnya `web/`. P2 mengganti sumber
+bundel Tauri menjadi `apps/desktop/dist`.)
 ```
 
 Skrip root yang ditambahkan:
@@ -266,7 +275,7 @@ Skrip root yang ditambahkan:
 | Skrip | Isi |
 |---|---|
 | `dev:desktop` | `cargo tauri dev` — `beforeDevCommand` menjalankan Vite; header COI sudah dipasang `vite.config.ts`, jadi dev desktop = dev web + jendela. |
-| `build:desktop` | `build:wasm` → `pnpm -C web build` → `cargo tauri build`. |
+| `build:desktop` | `build:wasm` → `bun run --cwd apps/web build` → `cargo tauri build`. |
 
 Vite mendapat `envPrefix: ['VITE_', 'TAURI_ENV_']` supaya `TAURI_ENV_PLATFORM`
 terbaca kalau suatu saat perlu, dan `clearScreen: false` supaya log Rust tidak
@@ -494,7 +503,7 @@ dimuat Studio"): salin `web/dist` ke direktori sementara, sisipkan
 `<script src="/reporter.js">` setelah `<div id="root">` yang membungkus
 `fetch` dan setelah 15 detik melaporkan URL `engine_bg-*.wasm` yang diminta
 (`BN89mABI` = mt, `BWSYtPMo` = st — cocokkan ukurannya dengan
-`web/src/wasm/{mt,st}/engine_bg.wasm`), arahkan `frontendDist` ke salinan itu
+`packages/engine/src/wasm/{mt,st}/engine_bg.wasm`), arahkan `frontendDist` ke salinan itu
 dan `windows[0].url` ke `/studio`. **Aset ditanam saat compile** — setiap
 perubahan di salinan `dist` butuh `cargo build` lagi, kalau tidak yang jalan
 adalah salinan lama. Untuk baris `http://localhost`, server statis Node

@@ -84,7 +84,7 @@ confirm you're not a bot"), kode `YOUTUBE` di `LocalError`.
 
 | Command | Isi |
 |---|---|
-| `youtube_status()` | `{ ready, ytDlpVersion }` — `ready` hanya kalau kedua binari ada DAN `yt-dlp --version` menjawab |
+| `youtube_status()` | `{ ready, ytDlpVersion }` — `ready` hanya kalau kedua binari ada DAN `yt-dlp --version` menjawab. Versinya di-cache bersama sidik jari berkas (ukuran + mtime): yt-dlp adalah bundel PyInstaller yang butuh 1–3 detik per start, dan dialog memanggil `status` tiap dibuka. `--version` dijalankan lagi hanya kalau berkasnya berganti |
 | `youtube_setup()` | unduh yang belum ada; idempoten; progres `phase: 'tools'` |
 | `youtube_update()` | ganti yt-dlp kalau hash rilis terbaru berbeda; `true` = diganti |
 | `youtube_info({url})` | `--dump-single-json`: id, judul, kanal, durasi, thumbnail, ekstensi dan perkiraan ukuran format audio |

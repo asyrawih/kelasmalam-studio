@@ -1,7 +1,7 @@
 //! Command Tauri untuk penyimpanan lokal (docs/21 §2a) — pembungkus tipis
 //! di atas `daw-desktop-host`.
 //!
-//! Kontraknya `web/src/platform/local-commands.ts`: nama command, argumen
+//! Kontraknya `apps/web/src/platform/local-commands.ts`: nama command, argumen
 //! `camelCase`, bentuk hasil, kode galat `LocalError`, nama event. Tes bentuk
 //! di `crates/desktop-host/src/contract_tests.rs` membaca daftar
 //! `generate_handler!` di bawah dan memastikan tiap nama kontrak ada di sana
@@ -62,9 +62,10 @@ pub struct AppState {
     /// Ditulis `store_relocate` supaya peluncuran berikutnya membuka folder
     /// yang baru (lihat `lib.rs`).
     pub location_file: std::path::PathBuf,
-    /// `<app_data_dir>/tools`: yt-dlp + qjs untuk impor YouTube (docs/23).
-    /// Di folder data bawaan, bukan folder kepustakaan — ia cache.
-    pub tools_dir: std::path::PathBuf,
+    /// yt-dlp + qjs di `<app_data_dir>/tools` untuk impor YouTube (docs/23).
+    /// Di folder data bawaan, bukan folder kepustakaan — ia cache. SATU
+    /// instance supaya cache versi `status()`-nya bertahan antar command.
+    pub youtube: daw_desktop_host::youtube::Tools,
 }
 
 /// Galat yang menyeberang IPC — `LocalError` kontrak, dibungkus karena aturan

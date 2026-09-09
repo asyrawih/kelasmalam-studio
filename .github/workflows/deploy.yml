@@ -40,13 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Hanya untuk menjalankan `npx vercel`. Tidak ada `npm ci` di sini —
-      # frontend-nya sudah jadi, dependensinya tidak dibutuhkan lagi.
+      # Hanya untuk menjalankan `npx vercel`. Tidak ada instal dependensi di
+      # sini — frontend-nya sudah jadi, dependensinya tidak dibutuhkan lagi.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       # Kedua artefak berasal dari run CI yang sama dengan yang memanggil
       # workflow ini, jadi tidak perlu run-id maupun token lintas-workflow.
@@ -54,13 +52,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: wasm
-          path: web/src/wasm/
+          path: packages/engine/src/wasm/
 
       - name: Ambil hasil build frontend
         uses: actions/download-artifact@v4
         with:
           name: web-dist
-          path: web/dist/
+          path: apps/web/dist/
 
       # SKIP_WASM + SKIP_WEB_BUILD: keduanya sudah ada, diunduh di atas. Yang
       # dikerjakan skrip di sini tinggal gerbang ukuran, verifikasi worklet, dan

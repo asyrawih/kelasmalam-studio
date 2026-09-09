@@ -28,8 +28,8 @@
 #                     platform-nya dipertahankan saat menulis latest.json baru.
 #   --notes <file>    catatan rilis (masuk ke latest.json `notes` dan badan
 #                     release). Default: satu baris berisi versi.
-#   --skip-wasm       pakai web/src/wasm yang sudah ada (SKIP_WASM=1).
-#   --skip-web        pakai web/dist yang sudah ada (SKIP_WEB_BUILD=1).
+#   --skip-wasm       pakai packages/engine/src/wasm yang sudah ada (SKIP_WASM=1).
+#   --skip-web        pakai apps/web/dist yang sudah ada (SKIP_WEB_BUILD=1).
 #   --unsigned        build uji: lepas semua env APPLE_* dan TAURI_SIGNING_*
 #                     walau ada di shell/.env.release — tidak ada codesign,
 #                     tidak ada kiriman ke notarization Apple, tidak ada
@@ -251,7 +251,7 @@ esac
 log "3/7 WASM (engine mt + st)"
 if [ "$SKIP_WASM" = 1 ]; then
   for v in mt st; do
-    [ -f "$ROOT/web/src/wasm/$v/engine_bg.wasm" ] || die "SKIP_WASM tapi web/src/wasm/$v/engine_bg.wasm tidak ada."
+    [ -f "$ROOT/packages/engine/src/wasm/$v/engine_bg.wasm" ] || die "SKIP_WASM tapi packages/engine/src/wasm/$v/engine_bg.wasm tidak ada."
   done
   note "lewati (artefak mt/st sudah ada)"
 else
@@ -259,18 +259,19 @@ else
 fi
 
 # --- 4. web ---------------------------------------------------------------------
-log "4/7 Frontend (vite build → web/dist)"
+log "4/7 Frontend (vite build → apps/web/dist)"
 if [ "$SKIP_WEB_BUILD" = 1 ]; then
-  [ -f "$ROOT/web/dist/index.html" ] || die "SKIP_WEB_BUILD tapi web/dist/index.html tidak ada."
-  note "lewati (web/dist sudah ada)"
+  [ -f "$ROOT/apps/web/dist/index.html" ] || die "SKIP_WEB_BUILD tapi apps/web/dist/index.html tidak ada."
+  note "lewati (apps/web/dist sudah ada)"
 else
-  [ -x "$ROOT/web/node_modules/.bin/vite" ] || die "web/node_modules/.bin/vite tidak ada: cd web && npm ci"
+  # Workspace bun: dependensi di-hoist ke node_modules ROOT (docs/25 §1a).
+  [ -x "$ROOT/node_modules/.bin/vite" ] || die "node_modules/.bin/vite tidak ada: jalankan 'bun install' di root."
   # Alamat backend ditanam SAAT BUILD (sama dengan job web di ci.yml). Kosong
   # bukan error — halaman yang bergantung padanya berkata "belum dipasang" —
   # tapi untuk rilis publik itu hampir pasti bukan yang dimaksud.
   [ -n "${VITE_ROBLOX_API:-}" ]  || warn "VITE_ROBLOX_API kosong — halaman /roblox akan UI ONLY di build ini."
   [ -n "${VITE_LIBRARY_API:-}" ] || warn "VITE_LIBRARY_API kosong — kepustakaan daring tidak terpasang di build ini."
-  ( cd "$ROOT/web" && run ./node_modules/.bin/vite build )
+  ( cd "$ROOT/apps/web" && run "$ROOT/node_modules/.bin/vite" build )
 fi
 
 # --- 5. tauri build per target ---------------------------------------------------

@@ -34,6 +34,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -133,11 +135,32 @@ impl Sources {
     }
 }
 
-/// Perkakas YouTube di satu folder.
+/// Perkakas YouTube di satu folder. `Clone` berbagi cache versinya — satu
+/// instance dipegang `AppState` desktop dan di-clone per command.
 #[derive(Clone, Debug)]
 pub struct Tools {
     dir: PathBuf,
     sources: Sources,
+    /// Versi yt-dlp yang terakhir terbaca, bersama sidik jari berkas yang
+    /// menghasilkannya. Lihat `status()`.
+    version_cache: Arc<Mutex<Option<(Fingerprint, String)>>>,
+}
+
+/// Sidik jari kedua binari: ukuran + mtime. Berubah kalau salah satunya
+/// diganti (SIAPKAN/PERBARUI, atau user menyalin berkas sendiri) — cukup
+/// untuk tahu bahwa versi yang di-cache mungkin sudah tidak berlaku.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Fingerprint {
+    yt_dlp: (u64, Option<SystemTime>),
+    qjs: (u64, Option<SystemTime>),
+}
+
+async fn file_fingerprint(path: &Path) -> Option<(u64, Option<SystemTime>)> {
+    let meta = tokio::fs::metadata(path).await.ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    Some((meta.len(), meta.modified().ok()))
 }
 
 fn exe(name: &str) -> String {
@@ -158,6 +181,7 @@ impl Tools {
         Self {
             dir: dir.into(),
             sources,
+            version_cache: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -176,18 +200,54 @@ impl Tools {
 
     /// Keadaan sekarang. Menjalankan `yt-dlp --version` kalau berkasnya ada
     /// — satu-satunya bukti binari itu utuh dan bisa dieksekusi di mesin ini.
+    ///
+    /// Jawabannya di-cache bersama sidik jari berkas (ukuran + mtime): binari
+    /// yt-dlp adalah bundel PyInstaller yang tiap start membongkar runtime
+    /// Python-nya dulu — 1–3 detik dan berat CPU. Dialog memanggil `status`
+    /// tiap dibuka; tanpa cache tiap buka-tutup berarti satu proses Python
+    /// lagi. Sidik jari yang berubah (SIAPKAN/PERBARUI, berkas diganti
+    /// tangan) menjalankan `--version` lagi; jawaban gagal tidak di-cache
+    /// supaya binari yang baru diperbaiki langsung terbaca.
     pub async fn status(&self) -> YoutubeStatus {
-        if !self.yt_dlp_path().is_file() || !self.qjs_path().is_file() {
+        let (Some(yt_dlp), Some(qjs)) = (
+            file_fingerprint(&self.yt_dlp_path()).await,
+            file_fingerprint(&self.qjs_path()).await,
+        ) else {
             return YoutubeStatus {
                 ready: false,
                 yt_dlp_version: None,
             };
+        };
+        let fingerprint = Fingerprint { yt_dlp, qjs };
+        if let Some(version) = self.cached_version(&fingerprint) {
+            return YoutubeStatus {
+                ready: true,
+                yt_dlp_version: Some(version),
+            };
         }
         let version = self.yt_dlp_version().await.ok();
+        if let Some(v) = &version {
+            *self.version_cache.lock().unwrap_or_else(|p| p.into_inner()) =
+                Some((fingerprint, v.clone()));
+        }
         YoutubeStatus {
             ready: version.is_some(),
             yt_dlp_version: version,
         }
+    }
+
+    fn cached_version(&self, fingerprint: &Fingerprint) -> Option<String> {
+        let guard = self.version_cache.lock().unwrap_or_else(|p| p.into_inner());
+        match guard.as_ref() {
+            Some((cached, version)) if cached == fingerprint => Some(version.clone()),
+            _ => None,
+        }
+    }
+
+    /// Lupakan versi yang di-cache. Dipanggil sesudah berkas diganti; sidik
+    /// jarinya memang sudah berubah, ini hanya memastikan.
+    fn forget_version(&self) {
+        *self.version_cache.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     async fn yt_dlp_version(&self) -> Result<String, HostError> {
@@ -226,6 +286,7 @@ impl Tools {
             )
             .await?;
         }
+        self.forget_version();
         Ok(self.status().await)
     }
 
@@ -252,6 +313,7 @@ impl Tools {
             progress,
         )
         .await?;
+        self.forget_version();
         Ok(true)
     }
 

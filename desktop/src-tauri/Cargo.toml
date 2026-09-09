@@ -1,6 +1,6 @@
 [package]
 name = "daw-desktop"
-description = "Aplikasi desktop Tauri 2 (macOS + Windows) di atas frontend web/ — docs/20."
+description = "Aplikasi desktop Tauri 2 (macOS + Windows) di atas frontend apps/web/ — docs/20, docs/25."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

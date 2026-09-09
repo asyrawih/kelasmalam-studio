@@ -4,8 +4,8 @@
   "identifier": "app.kelasmalam.studio",
   "build": {
     "devUrl": "http://localhost:5173",
-    "frontendDist": "../../web/dist",
-    "beforeDevCommand": "cd ../web && ./node_modules/.bin/vite",
+    "frontendDist": "../../apps/web/dist",
+    "beforeDevCommand": "cd ../../apps/web && bunx vite",
     "beforeBuildCommand": ""
   },
   "app": {

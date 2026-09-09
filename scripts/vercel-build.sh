@@ -3,7 +3,7 @@
 # Rakit `.vercel/output` (Build Output API v3) untuk deploy `--prebuilt`.
 #
 # KENAPA PREBUILT, BUKAN GIT INTEGRATION VERCEL:
-# `pnpm build` menjalankan `build:wasm`, yang butuh Rust nightly + rust-src +
+# `bun run build` menjalankan `build:wasm`, yang butuh Rust nightly + rust-src +
 # wasm-bindgen-cli + binaryen, dan `-Z build-std` mengompilasi ulang `std`.
 # Build image Vercel tidak punya semua itu; memasangnya tiap build berarti
 # belasan menit dan bergantung pada cache yang tidak dijamin. Jadi CI yang
@@ -26,7 +26,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/.vercel/output"
 CONFIG="$ROOT/deploy/vercel-config.json"
-DIST="$ROOT/web/dist"
+DIST="$ROOT/apps/web/dist"
 
 log() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
@@ -36,7 +36,7 @@ log() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 if [ "${SKIP_WASM:-0}" = "1" ]; then
   log "Lewati build WASM (SKIP_WASM=1)"
   for v in mt st; do
-    [ -f "$ROOT/web/src/wasm/$v/engine_bg.wasm" ] || {
+    [ -f "$ROOT/packages/engine/src/wasm/$v/engine_bg.wasm" ] || {
       echo "GAGAL: SKIP_WASM=1 tapi artefak $v tidak ada." >&2; exit 1; }
   done
 else
@@ -57,7 +57,7 @@ if [ "${SKIP_WEB_BUILD:-0}" = "1" ]; then
     echo "GAGAL: SKIP_WEB_BUILD=1 tapi $DIST kosong/tidak ada." >&2; exit 1; }
 else
   log "Build frontend"
-  ( cd "$ROOT/web" && npm run build )
+  ( cd "$ROOT" && bun run --cwd apps/web build )
 fi
 
 # Worklet WAJIB berupa JavaScript. `audioWorklet.addModule()` memuatnya sebagai
@@ -86,7 +86,7 @@ if grep -qE '(^|[^A-Za-z0-9_$.])import[[:space:]]*[({*'"'"'"]' "$WORKLET"; then
   exit 1
 fi
 for v in mt st; do
-  [ -f "$DIST/../src/wasm/$v/engine_bg.wasm" ] || {
+  [ -f "$ROOT/packages/engine/src/wasm/$v/engine_bg.wasm" ] || {
     echo "GAGAL: artefak $v tidak ada." >&2; exit 1; }
 done
 

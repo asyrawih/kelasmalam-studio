@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  /* `apps/web/src/*.d.ts` ikut karena impor `@app-web/*` (TODO(P3)/(P4)) masih
+     menarik kode app yang bergantung pada deklarasi ambient-nya
+     (`onnxruntime-web.d.ts`, `vite-env.d.ts`). Hilang bersama alias itu. */
+  "include": ["src", "../../apps/web/src/*.d.ts"]
+}

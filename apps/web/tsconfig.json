@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  /* `packages/*\/src` ikut di-include supaya SATU `tsc --noEmit` memeriksa semua
+     sumber yang benar-benar masuk bundel web — paket dikonsumsi sebagai
+     sumber, bukan hasil build, jadi tidak ada langkah lain yang memeriksanya.
+     `engine/src/wasm` dikecualikan: itu artefak build wasm-bindgen
+     (gitignored), bukan sumber. */
+  "include": ["src", "vite.config.ts", "../../packages/*/src"],
+  "exclude": ["dist", "../../packages/engine/src/wasm"]
+}
