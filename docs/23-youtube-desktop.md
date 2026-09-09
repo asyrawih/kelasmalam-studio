@@ -8,9 +8,9 @@ YOUTUBE di header tidak dirender di sana.
 | Bagian | Yang berubah |
 |---|---|
 | `crates/desktop-host/src/youtube.rs` | perkakas (yt-dlp + qjs): unduh, verifikasi, status, `info`, `download` |
-| `desktop/src-tauri/src/commands/youtube.rs` | `youtube_status/setup/update/info/bytes` + event `daw://youtube-progress` |
-| `web/src/youtube/` | `api.ts` (pembungkus + pengenal URL), `import.ts` (link di-drop/paste → lane), `YouTubeDialog.tsx` |
-| `web/src/studio/timeline/url-to-lane.ts` | link YouTube dibelokkan ke yt-dlp **hanya di desktop** |
+| `apps/desktop/src-tauri/src/commands/youtube.rs` (dipindah oleh docs/25 P2) | `youtube_status/setup/update/info/bytes` + event `daw://youtube-progress` |
+| `apps/desktop/src/youtube/` (sejak docs/25 P2; dulu `web/src/youtube/`) | `api.ts` (pembungkus + pengenal URL), `import.ts` (link di-drop/paste → lane + `youtubeUrlImporter`), `YouTubeDialog.tsx` |
+| `apps/web/src/studio/timeline/url-to-lane.ts` | `registerUrlImporter`: app desktop mendaftarkan importer YouTube di `main.tsx`; web tidak mendaftarkan apa pun (docs/25 P2) |
 
 ---
 

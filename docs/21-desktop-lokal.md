@@ -48,7 +48,9 @@ kedua di balik antarmuka yang sudah ada — bukan cabang UI.
 
 5. **Yang sudah ada dari wave 1** (docs/20): `crates/desktop-host` (unduh
    model, PR #44), `web/src/platform/` (adapter save/open/drop, PR #46),
-   `desktop/src-tauri` (PR #47). Rencana ini dibangun di atas ketiganya dan
+   `desktop/src-tauri` (PR #47; dipindah oleh docs/25 P2 ke
+   `apps/desktop/src-tauri`, adapter desktop ke `apps/desktop/src/platform/`).
+   Rencana ini dibangun di atas ketiganya dan
    tidak dimulai sebelum ketiganya di-merge. `TokenStore` keychain yang dicabut
    di PR #44 (commit `7f9d34e`) dipulihkan di K0 sebagai `SecretStore` — kali ini
    untuk API key Roblox, bukan sesi.

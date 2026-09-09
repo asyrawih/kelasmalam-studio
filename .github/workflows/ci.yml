@@ -267,10 +267,11 @@ jobs:
       # sama — dan, lebih buruk, mengirim ke produksi berkas yang BUKAN berkas
       # yang baru saja diuji.
       #
-      # Dulu langkah ini hanya jalan saat deploy. Sekarang SELALU: job `desktop`
-      # menanam `apps/web/dist` ke dalam binary Tauri (tauri-build gagal kalau
-      # direktorinya tidak ada), dan ia juga jalan di pull request. Harganya
-      # ~60 MB artefak per run yang dibuang setelah sehari.
+      # Sejak docs/25 P2 job `desktop` TIDAK lagi memakai artefak ini — ia
+      # membangun frontend-nya sendiri (`apps/desktop`). Artefak ini hanya
+      # untuk deploy, tapi tetap diunggah di tiap run supaya `workflow_dispatch`
+      # dengan `deploy: true` punya sesuatu untuk dikirim; ~60 MB per run,
+      # dibuang setelah sehari.
       - name: Upload dist
         uses: actions/upload-artifact@v4
         with:
@@ -320,16 +321,19 @@ jobs:
         run: bun run --cwd backend typecheck
 
   # --------------------------------------------------------------- desktop
-  # Aplikasi desktop Tauri (docs/20 §3). Dua runner, dua WebView: WKWebView di
-  # macOS dan WebView2 di Windows. Yang dibuktikan di sini adalah crate-nya
-  # mengompilasi, link dengan toolchain OS masing-masing (MSVC di Windows), dan
-  # tes unit menu lewat — BUKAN bahwa suara keluar. Itu tetap butuh mesin
-  # sungguhan (docs/20 §5b).
+  # Aplikasi desktop Tauri (docs/20 §3, docs/25 P2). Dua runner, dua WebView:
+  # WKWebView di macOS dan WebView2 di Windows. Yang dibuktikan di sini: frontend
+  # desktop (`apps/desktop`, aplikasi Vite sendiri) terbangun, crate-nya
+  # mengompilasi, link dengan toolchain OS masing-masing (MSVC di Windows),
+  # aset ditanam (`frontendDist: ../dist`), dan tes unit menu + server loopback
+  # lewat — BUKAN bahwa suara keluar. Itu tetap butuh mesin sungguhan
+  # (docs/20 §5b).
   #
-  # `needs: [wasm, web]`: `apps/web/dist` ditanam ke binary saat compile, jadi
-  # artefak `web-dist` harus sudah ada. Artefak `wasm` TIDAK diunduh terpisah:
-  # isinya sudah ikut ke dalam `apps/web/dist` (vite meng-copy artefak `mt`/`st`
-  # sebagai asset), dan crate Rust-nya sendiri tidak menyentuh WASM sama sekali.
+  # `needs: [wasm]` saja — bukan `web` lagi. Dulu job ini menanam artefak
+  # `web-dist` karena desktop memakai bundel web yang sama; sejak docs/25 P2
+  # desktop punya frontend sendiri, jadi ia membangunnya di sini dari artefak
+  # `wasm` (engine mt/st yang ditanam Vite sebagai asset) dan tidak menunggu
+  # job `web`. Job `web` dan `deploy` tidak menyentuh desktop sama sekali.
   #
   # Job ini SENGAJA tidak ada di `needs:` job deploy: runner macOS/Windows
   # lebih lambat dan lebih jarang tersedia daripada Ubuntu, dan kegagalan
@@ -337,7 +341,7 @@ jobs:
   # sini tetap terlihat di run — hanya tidak menyandera.
   desktop:
     name: desktop (${{ matrix.os }})
-    needs: [wasm, web]
+    needs: [wasm]
     strategy:
       fail-fast: false
       matrix:
@@ -360,25 +364,45 @@ jobs:
           # saling membuang cache.
           key: desktop-${{ matrix.os }}
 
+      # Artefak WASM: Vite menerbitkan `engine_bg.wasm` mt/st sebagai asset
+      # ber-hash ke `apps/desktop/dist`, dan tanpa itu `vite build` tetap hijau
+      # sementara Studio di .app jatuh ke "engine belum dibangun".
       - uses: actions/download-artifact@v4
         with:
-          name: web-dist
-          path: apps/web/dist/
+          name: wasm
+          path: packages/engine/src/wasm/
 
-      # tauri-cli lewat npm, BUKAN `cargo install tauri-cli` — yang terakhir
-      # mengompilasi CLI-nya dari source (~5 menit per runner, per run) untuk
-      # binary yang sudah tersedia jadi di npm sebagai dependensi opsional
-      # per-platform. Versinya dipin sama dengan yang dipakai di mesin
-      # pengembang supaya `tauri.conf.json` dibaca skema yang sama.
+      # bun + Node, alasan yang sama dengan job `web` (bun = pengelola paket dan
+      # pelari skrip; vite/tsc berjalan di Node). tauri-cli lewat npx, BUKAN
+      # `cargo install tauri-cli` — yang terakhir mengompilasi CLI-nya dari
+      # source (~5 menit per runner) untuk binary yang sudah tersedia jadi di
+      # npm. Versinya dipin sama dengan mesin pengembang supaya
+      # `tauri.conf.json` dibaca skema yang sama.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
 
+      - name: Install deps (workspace)
+        run: bun install --frozen-lockfile
+
+      # Frontend desktop: `tsc --noEmit && vite build` → `apps/desktop/dist`.
+      # Env `VITE_*` sama dengan job web — alamat backend ditanam saat build,
+      # dan kosong berarti halaman yang bergantung padanya berkata "belum
+      # dipasang", bukan galat.
+      - name: Build frontend desktop
+        env:
+          VITE_ROBLOX_API: ${{ vars.VITE_ROBLOX_API }}
+          VITE_LIBRARY_API: ${{ vars.VITE_LIBRARY_API }}
+        run: bun run --cwd apps/desktop build
+
       - run: cargo clippy -p daw-desktop --all-targets -- -D warnings
 
       # `--no-bundle`: yang diuji adalah compile + link + penanaman aset, bukan
-      # .dmg/.msi — bundling adalah urusan `release-desktop.yml` (D6) dan butuh
-      # sertifikat yang tidak ada di PR.
+      # .dmg/.msi — bundling adalah urusan `scripts/release-desktop.sh` (docs/22)
+      # dan butuh sertifikat yang tidak ada di PR.
       - name: tauri build (debug, tanpa bundel)
         working-directory: apps/desktop/src-tauri
         run: npx --yes @tauri-apps/cli@2.11.4 build --debug --no-bundle
