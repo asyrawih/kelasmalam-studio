@@ -26,7 +26,7 @@
 
 import type { LocalCommandName, LocalCommands } from '../platform/local-commands';
 import { localInvoke } from './invoke';
-import { GrantError, type GrantApi } from '@app-web/roblox/grant/api'; // TODO(P3)
+import { GrantError, type GrantApi } from '@kelasmalam/roblox/roblox/grant/api';
 
 function messageOf(reason: unknown): string {
   if (reason instanceof Error) return reason.message;

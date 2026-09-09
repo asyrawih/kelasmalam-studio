@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { PlatformKind } from '../../platform';
+import type { RobloxUiVariant } from '../ui-variant';
 import { Button, Card } from '@kelasmalam/ui/cyber';
 import type { QueueItem, RobloxTarget } from '../model';
 import { robloxActions } from '../store';
@@ -16,11 +16,11 @@ export interface GrantAccessProps {
   readonly api: GrantApi | null;
   readonly uploadTarget: RobloxTarget;
   readonly uploadItems: readonly QueueItem[];
-  readonly platform?: PlatformKind;
+  readonly variant?: RobloxUiVariant;
 }
 
-export function GrantAccess({ api, uploadTarget, uploadItems, platform = 'web' }: GrantAccessProps): JSX.Element {
-  const desktop = platform === 'desktop';
+export function GrantAccess({ api, uploadTarget, uploadItems, variant = 'web' }: GrantAccessProps): JSX.Element {
+  const desktop = variant === 'local';
   const [assets, setAssets] = useState<readonly RobloxCatalogAsset[]>([]);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');

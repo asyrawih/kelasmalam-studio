@@ -23,8 +23,8 @@
 
 import { useCallback, useState } from 'react';
 
-import { useCommands } from '../app-shell';
-import type { PlatformKind } from '../platform';
+import { useCommands } from '@kelasmalam/shell';
+import type { RobloxUiVariant } from './ui-variant';
 import { Button } from '@kelasmalam/ui/cyber';
 import { RobloxHeader } from './header/RobloxHeader';
 import { GrantAccess } from './grant/GrantAccess';
@@ -53,8 +53,9 @@ export interface RobloxPageProps {
   readonly onUpload?: (items: readonly QueueItem[]) => void;
   readonly grantApi?: GrantApi | null;
   readonly onSaveTarget?: (target: RobloxTarget) => Promise<void>;
-  /** Mengubah kalimat & badge, bukan perilaku: tidak ada `if (isTauri)` di sini. */
-  readonly platform?: PlatformKind;
+  /** Mengubah kalimat & badge, bukan perilaku: tidak ada cabang platform di sini. */
+  /** Varian teks UI: `'local'` = kunci/target di mesin ini; `'web'` = di Worker. */
+  readonly variant?: RobloxUiVariant;
 }
 
 export function RobloxPage({
@@ -63,7 +64,7 @@ export function RobloxPage({
   onUpload,
   grantApi,
   onSaveTarget,
-  platform = 'web',
+  variant = 'web',
 }: RobloxPageProps): JSX.Element {
   const state = useRoblox();
   const [rejected, setRejected] = useState<readonly string[]>([]);
@@ -101,7 +102,7 @@ export function RobloxPage({
    */
   const blockedBecause =
     onUpload === undefined || !state.backendReady
-      ? platform === 'desktop'
+      ? variant === 'local'
         ? !state.apiKeyStored
           ? 'API key Open Cloud belum tersimpan — tempel di panel TUJUAN lalu SIMPAN.'
           : 'ID pemilik belum diisi — isi di panel TUJUAN lalu SIMPAN.'
@@ -168,7 +169,7 @@ export function RobloxPage({
         flexDirection: 'column',
       }}
     >
-      <RobloxHeader onClose={onClose} onOpenStudio={onOpenStudio} platform={platform} />
+      <RobloxHeader onClose={onClose} onOpenStudio={onOpenStudio} variant={variant} />
 
       <nav className="rbx-tabs" aria-label="Fitur Roblox">
         {tabs.map((t) => (
@@ -245,7 +246,7 @@ export function RobloxPage({
                 onGenreToDescription={robloxActions.setGenreToDescription}
                 onSave={onSaveTarget}
                 storageNote={
-                  platform === 'desktop'
+                  variant === 'local'
                     ? 'Disimpan dalam berkas lokal di mesin ini, di luar folder kepustakaan. Tidak pernah masuk basis data maupun log aplikasi.'
                     : 'Disimpan terenkripsi di D1 untuk akun Google yang sedang login.'
                 }
@@ -305,7 +306,7 @@ export function RobloxPage({
       ) : tab === 'taxonomy' ? (
         <TaxonomyPanel taxonomy={state.taxonomy} items={state.items} catalog={state.catalog} />
       ) : (
-        <GrantAccess api={grantApi ?? null} uploadTarget={state.target} uploadItems={state.items} platform={platform} />
+        <GrantAccess api={grantApi ?? null} uploadTarget={state.target} uploadItems={state.items} variant={variant} />
       )}
     </div>
   );

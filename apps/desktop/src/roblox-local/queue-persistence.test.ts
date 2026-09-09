@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RobloxTaxonomy, RobloxTargetSettings, RobloxUploadRow } from '../platform/local-commands';
 import { createLocalQueuePersistence } from './queue-persistence';
-import { fileOf, registerRobloxPersistence, restoreRobloxQueue, robloxActions, robloxStore } from '@app-web/roblox/store'; // TODO(P3)
+import { fileOf, registerRobloxPersistence, restoreRobloxQueue, robloxActions, robloxStore } from '@kelasmalam/roblox/roblox/store';
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown, _opts?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({

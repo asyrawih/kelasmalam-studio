@@ -1,5 +1,5 @@
 /**
- * Backend halaman ROBLOX yang DISUNTIK app, bukan dipilih dari `isTauri`
+ * Backend halaman ROBLOX yang DISUNTIK app, bukan dipilih dari pemeriksaan Tauri
  * (docs/25 §1c).
  *
  * Web tidak mendaftarkan apa pun: `RobloxRoute` memakai bawaannya —
@@ -19,15 +19,20 @@
  * menyediakan apa".
  */
 
-import type { PlatformKind } from '../../platform';
 import type { RobloxTarget } from '../model';
+import type { RobloxUiVariant } from '../ui-variant';
 import type { GrantApi } from '../grant/api';
 import type { RunnerOptions } from './runner';
 import type { Transport } from './transport';
 
 export interface RobloxBackend {
-  /** Label untuk teks UI (badge, kalimat bantuan). TODO(P3): pindah ke prop UI. */
-  readonly platform: PlatformKind;
+  /**
+   * Varian TEKS UI (badge kesiapan, kalimat bantuan, catatan penyimpanan):
+   * `'local'` = kunci dan target disimpan di mesin ini (backend desktop),
+   * `'web'` = di Worker + D1. Ini soal apa yang dilihat user tentang backend
+   * ini, bukan platformnya — karena itu bukan `PlatformKind`.
+   */
+  readonly variant: RobloxUiVariant;
   /** Kabel unggah — `runner.ts` yang memakainya. */
   readonly transport: Transport;
   /** Grant Access; `null` = tab-nya berkata belum tersedia. */

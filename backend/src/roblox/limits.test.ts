@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import * as web from '../../../apps/web/src/roblox/model';
+import * as web from '../../../packages/roblox/src/roblox/model';
 import { AUDIO_EXTS, MAX_BYTES, MAX_DESC_LEN, MAX_NAME_LEN, MAX_SECONDS, extOf } from './limits';
 
 describe('batas server = batas UI', () => {

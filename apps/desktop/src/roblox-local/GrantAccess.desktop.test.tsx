@@ -10,8 +10,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createLocalGrantApi } from './grant-local-api';
-import { GrantAccess } from '@app-web/roblox/grant/GrantAccess'; // TODO(P3)
-import { robloxActions, robloxStore } from '@app-web/roblox/store'; // TODO(P3)
+import { GrantAccess } from '@kelasmalam/roblox/roblox/grant/GrantAccess';
+import { robloxActions, robloxStore } from '@kelasmalam/roblox/roblox/store';
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({
@@ -49,7 +49,7 @@ afterEach(cleanup);
 describe('GrantAccess di desktop', () => {
   it('merender daftar dari roblox_assets_list dan menandai kunci ada tanpa menampilkan nilainya', async () => {
     table();
-    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} platform="desktop" />);
+    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} variant="local" />);
     await waitFor(() => expect(screen.getByText('Audio Lama')).toBeDefined());
     expect(screen.getByText('Jingle')).toBeDefined();
     expect(screen.getByText('2 asset')).toBeDefined();
@@ -63,7 +63,7 @@ describe('GrantAccess di desktop', () => {
 
   it('GRANT memanggil roblox_grant dengan asset terpilih — tanpa API key di argumen', async () => {
     table();
-    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} platform="desktop" />);
+    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} variant="local" />);
     await waitFor(() => expect(screen.getByText('Audio Lama')).toBeDefined());
 
     fireEvent.click(screen.getByLabelText(/Audio Lama/));
@@ -81,7 +81,7 @@ describe('GrantAccess di desktop', () => {
 
   it('tanpa kunci di berkas rahasia tombol GRANT mati; SIMPAN cookie → roblox_grant_cookie_set lalu kolom kosong', async () => {
     table({ hasApiKey: false });
-    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} platform="desktop" />);
+    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} variant="local" />);
     await waitFor(() => expect(screen.getByText('Audio Lama')).toBeDefined());
     fireEvent.click(screen.getByLabelText(/Audio Lama/));
     fireEvent.change(screen.getByPlaceholderText('Universe ID'), { target: { value: '77' } });
@@ -108,7 +108,7 @@ describe('GrantAccess di desktop', () => {
 
   it('SYNC ROBLOX memanggil roblox_assets_sync dan menyebut katalog lokal, bukan D1', async () => {
     table({ hasCookie: true });
-    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} platform="desktop" />);
+    render(<GrantAccess api={createLocalGrantApi()} uploadTarget={target} uploadItems={[]} variant="local" />);
     await waitFor(() => expect(screen.getByText('Audio Lama')).toBeDefined());
     fireEvent.click(screen.getByRole('button', { name: 'SYNC ROBLOX' }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('roblox_assets_sync', {}));

@@ -14,8 +14,8 @@
  * karena penyebab itulah yang bisa diperbaiki user dari panel TUJUAN.
  */
 
-import { VersionTag } from '../../app-shell/VersionTag';
-import type { PlatformKind } from '../../platform';
+import { VersionTag } from '@kelasmalam/shell/VersionTag';
+import type { RobloxUiVariant } from '../ui-variant';
 import { Badge, Button } from '@kelasmalam/ui/cyber';
 import { MAX_BYTES, MAX_SECONDS, formatBytes, formatDuration } from '../model';
 import { useRoblox } from '../store';
@@ -24,10 +24,10 @@ export interface RobloxHeaderProps {
   readonly onClose?: () => void;
   /** Buka Studio. Halaman ini sering jadi langkah terakhir setelah export. */
   readonly onOpenStudio?: () => void;
-  readonly platform?: PlatformKind;
+  readonly variant?: RobloxUiVariant;
 }
 
-export function RobloxHeader({ onClose, onOpenStudio, platform = 'web' }: RobloxHeaderProps): JSX.Element {
+export function RobloxHeader({ onClose, onOpenStudio, variant = 'web' }: RobloxHeaderProps): JSX.Element {
   const backendReady = useRoblox((s) => s.backendReady);
   const quotaLeft = useRoblox((s) => s.quotaLeft);
   const apiKeyStored = useRoblox((s) => s.apiKeyStored);
@@ -38,7 +38,7 @@ export function RobloxHeader({ onClose, onOpenStudio, platform = 'web' }: Roblox
     <Badge tone="success" dot>
       SIAP
     </Badge>
-  ) : platform === 'desktop' ? (
+  ) : variant === 'local' ? (
     !apiKeyStored ? (
       <Badge
         tone="warning"
@@ -107,7 +107,7 @@ export function RobloxHeader({ onClose, onOpenStudio, platform = 'web' }: Roblox
        */}
       <div style={{ fontSize: '10px', color: 'var(--cy-text-dim)', letterSpacing: '.1em' }}>
         MP3/OGG · MAKS {formatDuration(MAX_SECONDS)} · {formatBytes(MAX_BYTES)}
-        {quotaLeft !== null ? ` · SISA KUOTA ${quotaLeft}` : platform === 'desktop' ? ' · KUOTA —' : ''}
+        {quotaLeft !== null ? ` · SISA KUOTA ${quotaLeft}` : variant === 'local' ? ' · KUOTA —' : ''}
       </div>
 
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>

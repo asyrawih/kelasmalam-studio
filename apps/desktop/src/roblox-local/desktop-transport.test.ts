@@ -9,8 +9,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDesktopTransport } from './desktop-transport';
-import { UploadError } from '@app-web/roblox/backend/transport'; // TODO(P3)
-import type { QueueItem } from '@app-web/roblox/model'; // TODO(P3)
+import { UploadError } from '@kelasmalam/roblox/roblox/backend/transport';
+import type { QueueItem } from '@kelasmalam/roblox/roblox/model';
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null);
 let progress: ((e: { payload: unknown }) => void) | null = null;

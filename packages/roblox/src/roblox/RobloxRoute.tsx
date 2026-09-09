@@ -14,7 +14,7 @@
  * Desktop: app-nya mendaftarkan `RobloxBackend` (`backend/backend.ts`) —
  * transport command Tauri, Grant Access lokal, target ke SQLite, API key ke
  * berkas rahasia — dan berkas ini memakainya tanpa tahu Tauri ada (docs/25
- * §1c). Dulu ada `if (kind === 'desktop')` di sini yang mengimpor semua itu;
+ * §1c). Dulu ada cabang platform di sini yang mengimpor semua itu;
  * sekarang bundel web tidak membawa satu byte pun dari jalur desktop.
  * `runner.ts` sama untuk keduanya.
  *
@@ -28,8 +28,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import type { PlatformKind } from '../platform';
 import { RobloxPage } from './RobloxPage';
+import type { RobloxUiVariant } from './ui-variant';
 import { getRobloxBackend, type RobloxBackend } from './backend/backend';
 import { createRunner, type Runner } from './backend/runner';
 import { createHttpTransport } from './backend/transport';
@@ -50,11 +50,10 @@ export interface RobloxRouteProps {
   readonly libraryBase?: string;
   readonly makeGrantApi?: (base: string) => GrantApi;
   /**
-   * Ditimpa di tes. Default: `backend.platform` kalau ada backend terdaftar,
-   * kalau tidak `'web'`. TODO(P3): hanya untuk teks UI (badge, kalimat
-   * bantuan); saat roblox jadi paket, teks itu ikut disuntik.
+   * Ditimpa di tes. Default: `backend.variant` kalau ada backend terdaftar,
+   * kalau tidak `'web'`. Hanya memilih TEKS UI (badge, kalimat bantuan).
    */
-  readonly platform?: PlatformKind;
+  readonly variant?: RobloxUiVariant;
   /** Ditimpa di tes. Default: `getRobloxBackend()` — yang didaftarkan app. */
   readonly backend?: RobloxBackend | null;
 }
@@ -76,12 +75,12 @@ export function RobloxRoute({
   probe,
   libraryBase,
   makeGrantApi,
-  platform: platformProp,
+  variant: variantProp,
   backend: backendProp,
 }: RobloxRouteProps): JSX.Element {
   const backend = backendProp === undefined ? getRobloxBackend() : backendProp;
   const injected = backend !== null;
-  const platform = platformProp ?? backend?.platform ?? 'web';
+  const variant = variantProp ?? backend?.variant ?? 'web';
   const base = injected ? INJECTED_BASE : (apiBase ?? import.meta.env.VITE_ROBLOX_API ?? '').trim();
   const catalogBase = injected ? '' : (libraryBase ?? import.meta.env.VITE_LIBRARY_API ?? '').trim();
   // Naik setiap kali user menyimpan target lewat backend yang disuntik:
@@ -218,7 +217,7 @@ export function RobloxRoute({
       onOpenStudio={onOpenStudio}
       grantApi={grantApi}
       onSaveTarget={onSaveTarget}
-      platform={platform}
+      variant={variant}
       {...(runner === null ? null : { onUpload: runner.run })}
     />
   );

@@ -15,7 +15,7 @@
  * dan TAKSONOMI satu UI untuk dua platform.
  */
 
-import type { LocalError } from '../local-error';
+import type { LocalError } from '@kelasmalam/library/local-error';
 import {
   toUploadRow,
   type QueueItem,

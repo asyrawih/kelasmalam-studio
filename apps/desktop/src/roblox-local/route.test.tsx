@@ -16,8 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDesktopRobloxBackend } from './backend';
 import { createLocalQueuePersistence } from './queue-persistence';
-import { RobloxRoute } from '@app-web/roblox/RobloxRoute'; // TODO(P3)
-import { registerRobloxPersistence, robloxActions, robloxStore } from '@app-web/roblox/store'; // TODO(P3)
+import { RobloxRoute } from '@kelasmalam/roblox/roblox/RobloxRoute';
+import { registerRobloxPersistence, robloxActions, robloxStore } from '@kelasmalam/roblox/roblox/store';
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({

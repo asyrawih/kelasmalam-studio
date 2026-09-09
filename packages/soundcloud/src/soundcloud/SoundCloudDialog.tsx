@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { studioActions, studioStore, useStudio } from '../studio/store';
-import { ensureContext } from '../studio/preview/audio-preview';
-import { importBytesToLane } from '../studio/timeline/audio-import';
+import { studioActions, studioStore, useStudio } from '@kelasmalam/studio/studio/store';
+import { ensureContext } from '@kelasmalam/studio/studio/preview/audio-preview';
+import { importBytesToLane } from '@kelasmalam/studio/studio/timeline/audio-import';
 import { Button } from '@kelasmalam/ui/cyber';
-import { getPlatformHost } from '../platform';
+import { getPlatformHost } from '@kelasmalam/platform';
 import { createSoundCloudApi, soundCloudApiBase, type SoundCloudProfile, type SoundCloudTrack } from './api';
 
 export interface SoundCloudDialogProps { readonly onClose: () => void }
@@ -172,10 +172,9 @@ export function SoundCloudDialog({ onClose }: SoundCloudDialogProps): JSX.Elemen
         {results.map((track) => <article key={track.id} style={{ display:'grid', gridTemplateColumns:'48px minmax(120px,1fr) auto', alignItems:'center', gap:12, padding:10, border:'1px solid var(--cy-border)', background:'var(--cy-surface-2)' }}>
           <TrackThumbnail track={track} />
           <button type="button" onClick={() => void togglePreview(track)} style={{ minWidth:0, padding:0, border:0, textAlign:'left', cursor:'pointer', background:'transparent' }}><strong style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'var(--cy-text)', fontSize:12 }}>{track.title}</strong><span style={{ color:'var(--cy-text-dim)', fontSize:10 }}>{track.username}{track.durationMs === null ? '' : ` · ${duration(track.durationMs)}`}</span></button>
-          <div style={{ display:'flex', gap:6 }}><Button variant="ghost" active={preview?.id === track.id} disabled={busy !== null && busy !== `preview-${track.id}`} onClick={() => void togglePreview(track)}>{busy === `preview-${track.id}` ? 'LOADING…' : preview?.id === track.id ? '■ STOP' : '▶ PREVIEW'}</Button><Button variant="ghost" disabled={busy !== null} onClick={() => void showRelated(track)}>RELATED</Button>{host.kind === 'desktop'
-            /* Unduhan dari <a download> tidak jalan di WebView Tauri; di desktop tautannya dibuka di browser OS, yang menangani unduhannya sendiri.
-               TODO(P3): cabang `kind` ini pertanyaan ke KONTRAK host (openExternal vs <a download>), diganti kemampuan yang disuntik saat soundcloud jadi paket. */
-            ? <Button variant="ghost" disabled={busy !== null} onClick={() => void host.openExternal(api.downloadUrl(track.permalinkUrl))}>DOWNLOAD</Button>
+          <div style={{ display:'flex', gap:6 }}><Button variant="ghost" active={preview?.id === track.id} disabled={busy !== null && busy !== `preview-${track.id}`} onClick={() => void togglePreview(track)}>{busy === `preview-${track.id}` ? 'LOADING…' : preview?.id === track.id ? '■ STOP' : '▶ PREVIEW'}</Button><Button variant="ghost" disabled={busy !== null} onClick={() => void showRelated(track)}>RELATED</Button>{host.downloadUrl !== undefined
+            /* Host yang punya `downloadUrl` (desktop: WebView tidak mengunduh dari <a download>, tautannya dibuka di browser OS) memakainya; yang tidak, memakai anchor — pertanyaan ke KONTRAK host, bukan "ini desktop?". */
+            ? <Button variant="ghost" disabled={busy !== null} onClick={() => void host.downloadUrl?.(api.downloadUrl(track.permalinkUrl))}>DOWNLOAD</Button>
             : <a href={api.downloadUrl(track.permalinkUrl)} download style={{ textDecoration:'none' }}><Button variant="ghost" disabled={busy !== null}>DOWNLOAD</Button></a>}<Button variant="outline" disabled={busy !== null || laneId === ''} onClick={() => void add(track)}>{busy === `add-${track.id}` ? 'IMPORTING…' : '+ LANE'}</Button></div>
         </article>)}
         {busy === null && results.length === 0 ? <p style={{ textAlign:'center', color:'var(--cy-text-dim)', fontSize:11, padding:28 }}>Cari lagu, buka playlist, atau jelajahi likes sebuah profil.</p> : null}
