@@ -7,7 +7,7 @@
  * searah dengan sinyalnya saat mencari masalah gain.
  */
 
-import { formatDb } from '@kelasmalam/studio/studio/rail/fader';
+import { formatDb } from '@kelasmalam/ui/lib/fader';
 import {
   DJ_EQ_BANDS,
   EQ_KILL_DB,

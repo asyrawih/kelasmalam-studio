@@ -13,6 +13,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 
 import { hashesIn, saveProject, unsavedAssets } from './projects';
 import { VersionConflict, type LibraryApi } from './api';
@@ -25,7 +26,7 @@ const SR = 48_000;
 
 /** Daftarkan satu asset + satu clip yang memakainya. */
 function seedProject(contentHash: string): void {
-  studioActions.registerAsset({
+  assetActions.registerAsset({
     id: 5,
     name: 'Kelas Malam',
     contentHash,
@@ -38,7 +39,7 @@ function seedProject(contentHash: string): void {
     bpmOverride: null,
     beatOffsetOverride: null,
     analysisLock: false,
-  } as unknown as Parameters<typeof studioActions.registerAsset>[0]);
+  } as unknown as Parameters<typeof assetActions.registerAsset>[0]);
 
   const laneId = studioStore.getState().lanes[0]?.id ?? '';
   studioActions.addClip(laneId, {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import type { BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import {
   EMPTY_TRACK_CUES,
   bandDb,

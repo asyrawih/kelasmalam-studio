@@ -16,14 +16,15 @@
  */
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DjPage } from '../DjPage';
 import { djActions, djStore } from '../store';
-import { studioActions, studioStore, type StudioAsset } from '@kelasmalam/studio/studio/store';
-import { buildEnvelope } from '@kelasmalam/studio/studio/timeline/envelope';
-import { resolveBeatGrid, BEATS_PER_BAR } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { rawAnchorSec } from '@kelasmalam/studio/studio/analysis/grid-edit';
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
+import { resolveBeatGrid, BEATS_PER_BAR } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { rawAnchorSec } from '@kelasmalam/studio-core/analysis/grid-edit';
 import { __resetGridHistoryForTest } from './grid-history';
 import { setDownbeatHere, toggleGridEditFor } from './grid-ops';
 
@@ -72,9 +73,9 @@ const fakeAsset = (id: number, over: Partial<StudioAsset> = {}): StudioAsset =>
 beforeEach(() => {
   Element.prototype.getBoundingClientRect = () => RECT as DOMRect;
   djActions.__resetForTest();
-  studioActions.__resetForTest?.();
+  assetActions.__resetForTest();
   __resetGridHistoryForTest();
-  studioActions.registerAsset(fakeAsset(1));
+  assetActions.registerAsset(fakeAsset(1));
   djActions.loadDeck('A', {
     assetId: 1,
     frames: TRACK_FRAMES,
@@ -91,7 +92,7 @@ const run = (fn: () => void): void => {
   });
 };
 
-const asset = (): StudioAsset => studioStore.getState().assets[1] as StudioAsset;
+const asset = (): StudioAsset => assetStore.getState().assets[1] as StudioAsset;
 const anchor = (): number => rawAnchorSec(asset());
 const bpm = (): number => resolveBeatGrid(asset())!.bpm;
 const playhead = (): number => djStore.getState().decks.A.playhead;
@@ -366,7 +367,7 @@ describe('tombol panel', () => {
   it('AUTO juga membersihkan koreksi oktaf yang dibuat dari tempat lain', () => {
     render(<DjPage />);
     // Tombol ×2 di DeckReadout menulis `tempoOctave`, bukan `bpmOverride`.
-    run(() => studioActions.shiftAssetTempoOctave(1, -1));
+    run(() => assetActions.shiftAssetTempoOctave(1, -1));
     expect(bpm()).toBeCloseTo(64, 6);
 
     openGrid();
@@ -389,7 +390,7 @@ describe('tombol panel', () => {
   it('PAS DI SINI mengunci BPM sehingga kedua ujung lagu duduk di garis bar', () => {
     // Grid sengaja dirusak: 128.3 BPM pada lagu yang sebenarnya 128.000.
     render(<DjPage />);
-    run(() => studioActions.setAssetBeatGrid(1, { bpm: 128.3, offsetSec: 0.15 }));
+    run(() => assetActions.setAssetBeatGrid(1, { bpm: 128.3, offsetSec: 0.15 }));
 
     const trueBar = (60 / 128) * BEATS_PER_BAR;
     const t2 = 0.15 + trueBar * 64;
@@ -431,7 +432,7 @@ describe('keselamatan saat mengudara', () => {
 describe('kunci analisis', () => {
   it('menolak suntingan di STORE, bukan hanya meredupkan tombol', () => {
     render(<DjPage />);
-    run(() => studioActions.setAnalysisLock(1, true));
+    run(() => assetActions.setAnalysisLock(1, true));
 
     const before = anchor();
     run(() => djActions.seek('A', SR * 90));
@@ -447,8 +448,8 @@ describe('kunci analisis', () => {
 
   it('menolak AUTO — satu klik yang bisa membuang sepuluh menit kerja', () => {
     render(<DjPage />);
-    run(() => studioActions.setAssetBeatGrid(1, { bpm: 131.5, offsetSec: 12 }));
-    run(() => studioActions.setAnalysisLock(1, true));
+    run(() => assetActions.setAssetBeatGrid(1, { bpm: 131.5, offsetSec: 12 }));
+    run(() => assetActions.setAnalysisLock(1, true));
 
     openGrid();
     run(() => fireEvent.click(button(/AUTO/)));
@@ -456,14 +457,14 @@ describe('kunci analisis', () => {
   });
 
   it('lagu terkunci dilewati analisis batch', () => {
-    studioActions.setAnalysisLock(1, true);
-    studioActions.markAssetTempoPending(1);
+    assetActions.setAnalysisLock(1, true);
+    assetActions.markAssetTempoPending(1);
     expect(asset().tempoPending).toBe(false);
   });
 
   it('membuka kunci selalu boleh', () => {
     render(<DjPage />);
-    run(() => studioActions.setAnalysisLock(1, true));
+    run(() => assetActions.setAnalysisLock(1, true));
     openGrid();
     run(() => fireEvent.click(button(/🔒/)));
     expect(asset().analysisLock).toBe(false);

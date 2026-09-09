@@ -22,9 +22,10 @@
  * lagunya memang sudah tidak ada.
  */
 
-import { unregisterBuffer } from '@kelasmalam/studio/studio/preview/audio-preview';
-import { removeAutoStem } from '@kelasmalam/studio/stem/auto-stem';
-import { assetUsage, studioActions, studioStore } from '@kelasmalam/studio/studio/store';
+import { unregisterBuffer } from '@kelasmalam/studio-core/preview/audio-context';
+import { assetUsage } from '@kelasmalam/studio-core/assets/usage';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
+import { removeAutoStem } from '@kelasmalam/studio-core/stem/auto-stem';
 import { DECK_IDS, type DeckId } from '../model';
 import { djActions, djStore } from '../store';
 import { forgetGridHistory } from '../grid/grid-history';
@@ -39,13 +40,19 @@ export interface RemovalReport {
   readonly hasCues: boolean;
 }
 
-/** Apa yang akan terjadi kalau lagu ini dihapus. Murni; tidak mengubah apa pun. */
+/**
+ * Apa yang akan terjadi kalau lagu ini dihapus. Murni; tidak mengubah apa pun.
+ *
+ * Pemakaian di Studio dijawab lewat registry `assets/usage.ts` core — halaman
+ * ini tidak tahu lane (docs/25 P4); `studio/store.ts` yang mendaftarkan
+ * penghitungnya saat dimuat.
+ */
 export function inspectRemoval(assetId: number): RemovalReport {
-  const usage = assetUsage(studioStore.getState(), assetId);
+  const usage = assetUsage(assetId);
   const dj = djStore.getState();
   return {
-    clips: usage.clips,
-    lanes: usage.lanes,
+    clips: usage.count,
+    lanes: usage.where,
     decks: DECK_IDS.filter((id) => dj.decks[id].assetId === assetId),
     hasCues: dj.cues[assetId] !== undefined,
   };
@@ -63,7 +70,7 @@ export interface RemoveResult {
  * pemanggil dua kali untuk keadaan sementara.
  */
 export async function removeAssetFromLibrary(assetId: number): Promise<RemoveResult> {
-  const asset = studioStore.getState().assets[assetId];
+  const asset = assetStore.getState().assets[assetId];
   if (asset === undefined) return { ok: false, reason: 'lagu itu sudah tidak ada' };
 
   const report = inspectRemoval(assetId);
@@ -87,7 +94,7 @@ export async function removeAssetFromLibrary(assetId: number): Promise<RemoveRes
     djActions.selectBrowseAsset(null);
   }
 
-  studioActions.removeAsset(assetId);
+  assetActions.removeAsset(assetId);
   unregisterBuffer(assetId);
   removeAutoStem(assetId);
 

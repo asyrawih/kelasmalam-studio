@@ -15,13 +15,13 @@
  */
 
 import { chordFor, chordLabel } from '@kelasmalam/shell';
+import { assetStore } from '@kelasmalam/studio-core/assets/store';
 import { VersionTag } from '@kelasmalam/shell/VersionTag';
 import { Badge, Button } from '@kelasmalam/ui/cyber';
 import { QUANTIZE_DIVS, DECK_ACCENT, type QuantizeDiv } from '../model';
 import { djActions, djStore, useDj } from '../store';
 import { deckView } from '../deck-view';
-import { studioStore } from '@kelasmalam/studio/studio/store';
-import { AutoStemToggle } from '@kelasmalam/studio/stem/AutoStemToggle';
+import { AutoStemToggle } from '@kelasmalam/studio-core/stem/AutoStemToggle';
 
 export interface DjHeaderProps {
   readonly onClose?: () => void;
@@ -50,7 +50,7 @@ export function DjHeader({ onClose, tooNarrow, tooShort }: DjHeaderProps): JSX.E
       : (() => {
           const d = djStore.getState().decks[masterDeck];
           if (d.assetId === null) return null;
-          return deckView(d, studioStore.getState().assets[d.assetId]).effBpm;
+          return deckView(d, assetStore.getState().assets[d.assetId]).effBpm;
         })();
 
   return (

@@ -19,8 +19,8 @@
  */
 
 import { useMemo } from 'react';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 
-import { useStudio } from '@kelasmalam/studio/studio/store';
 import { deckView } from '../deck-view';
 import { DECK_ACCENT, type DeckId, type DeckSide } from '../model';
 import { djActions, selectDeck, selectTrackCues, useDj } from '../store';
@@ -48,7 +48,7 @@ export function Deck({ id, side, compact }: DeckProps): JSX.Element {
   const focused = useDj((s) => s.focusedDeck === id);
   // Selector di-index dengan -1 saat deck kosong: `assets` berkunci number, dan
   // -1 tidak pernah dipakai sebagai id asset.
-  const asset = useStudio((s) => s.assets[deck.assetId ?? -1]);
+  const asset = useAssets((s) => s.assets[deck.assetId ?? -1]);
 
   const view = useMemo(() => deckView(deck, asset), [deck, asset]);
   const accent = DECK_ACCENT[id];

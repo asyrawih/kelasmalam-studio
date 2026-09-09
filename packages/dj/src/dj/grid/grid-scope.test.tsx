@@ -12,13 +12,14 @@
  */
 
 import { act, cleanup, render } from '@testing-library/react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DjPage } from '../DjPage';
 import { djActions, djStore } from '../store';
-import { studioActions, studioStore, type StudioAsset } from '@kelasmalam/studio/studio/store';
-import { buildEnvelope } from '@kelasmalam/studio/studio/timeline/envelope';
-import { resolveBeatGridAt } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
+import { resolveBeatGridAt } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { __resetGridHistoryForTest } from './grid-history';
 import {
   autoGrid,
@@ -73,9 +74,9 @@ const fakeAsset = (): StudioAsset =>
 beforeEach(() => {
   Element.prototype.getBoundingClientRect = () => RECT as DOMRect;
   djActions.__resetForTest();
-  studioActions.__resetForTest?.();
+  assetActions.__resetForTest();
   __resetGridHistoryForTest();
-  studioActions.registerAsset(fakeAsset());
+  assetActions.registerAsset(fakeAsset());
   djActions.loadDeck('A', { assetId: 1, frames: TRACK_FRAMES, name: 'LAGU 1', sampleRate: SR });
 });
 
@@ -87,7 +88,7 @@ const run = (fn: () => void): void => {
   });
 };
 
-const asset = (): StudioAsset => studioStore.getState().assets[1] as StudioAsset;
+const asset = (): StudioAsset => assetStore.getState().assets[1] as StudioAsset;
 const bpmAt = (sec: number): number => resolveBeatGridAt(asset(), sec)!.bpm;
 const anchors = (): readonly { atSec: number; bpm: number }[] => asset().beatAnchors ?? [];
 

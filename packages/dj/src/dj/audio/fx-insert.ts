@@ -30,8 +30,8 @@
  */
 
 import { PFLAG, fromNorm, type EffectDesc } from '@kelasmalam/engine/audio/fx-catalog';
-import { createFxNode, pushFxParams, pushFxTempo } from '@kelasmalam/studio/studio/preview/fx-node';
-import type { FxInsert } from '@kelasmalam/studio/studio/model';
+import { createFxNode, pushFxParams, pushFxTempo } from '@kelasmalam/studio-core/preview/fx-node';
+import type { FxInsert } from '@kelasmalam/studio-core/assets/model';
 import type { FxState, FxTargetDj } from '../model';
 import type { DjGraph } from './dj-graph';
 

@@ -3,8 +3,9 @@
  * paling mudah salah (urutan nilai yang tidak diketahui) bisa dites langsung.
  */
 
-import { resolveBeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import type { StudioAsset } from '@kelasmalam/studio/studio/store';
+import { resolveBeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+
 import type { BrowseSort } from '../model';
 
 export interface CollectionRow {

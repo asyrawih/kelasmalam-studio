@@ -29,9 +29,9 @@
  */
 
 import { useSyncExternalStore } from 'react';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 
-import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
-import type { BeatAnchor } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import type { BeatAnchor } from '@kelasmalam/studio-core/analysis/beat-grid';
 
 /** Keadaan grid sebuah asset yang bisa dikembalikan seutuhnya. */
 export interface GridSnapshot {
@@ -77,7 +77,7 @@ function stackOf(assetId: number): Stack {
 
 /** Keadaan grid sebuah asset SEKARANG. `null` kalau asset-nya tidak ada. */
 export function snapshotOf(assetId: number): GridSnapshot | null {
-  const asset = studioStore.getState().assets[assetId];
+  const asset = assetStore.getState().assets[assetId];
   if (asset === undefined) return null;
   return {
     bpm: asset.bpmOverride,
@@ -108,11 +108,11 @@ function sameSnapshot(a: GridSnapshot, b: GridSnapshot): boolean {
 
 /** Tulis sebuah snapshot kembali ke store. Tidak menyentuh riwayat. */
 function applySnapshot(assetId: number, snap: GridSnapshot): void {
-  studioActions.setAssetBeatGrid(assetId, { bpm: snap.bpm, offsetSec: snap.offsetSec });
-  studioActions.setAssetBeatAnchors(assetId, snap.anchors);
-  const asset = studioStore.getState().assets[assetId];
+  assetActions.setAssetBeatGrid(assetId, { bpm: snap.bpm, offsetSec: snap.offsetSec });
+  assetActions.setAssetBeatAnchors(assetId, snap.anchors);
+  const asset = assetStore.getState().assets[assetId];
   if (asset !== undefined && asset.tempoOctave !== snap.octave) {
-    studioActions.shiftAssetTempoOctave(assetId, snap.octave - asset.tempoOctave);
+    assetActions.shiftAssetTempoOctave(assetId, snap.octave - asset.tempoOctave);
   }
 }
 

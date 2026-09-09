@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BEATS_PER_BAR, type BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
+import { BEATS_PER_BAR, type BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { DEFAULT_TEMPO, type DeckTempo, type TempoRange } from './model';
 import {
   foldToOctave,

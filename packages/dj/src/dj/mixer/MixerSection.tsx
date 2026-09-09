@@ -21,7 +21,7 @@ import { Crossfader } from './Crossfader';
 import { CueOutputPicker } from './CueOutputPicker';
 import { Knob } from './Knob';
 import { LevelMeter } from './LevelMeter';
-import { formatDb } from '@kelasmalam/studio/studio/rail/fader';
+import { formatDb } from '@kelasmalam/ui/lib/fader';
 
 export interface MixerSectionProps {
   readonly compact: boolean;

@@ -16,13 +16,12 @@
  * Berkas ini TIDAK meng-import React, store, maupun Web Audio. Semua yang bisa
  * salah diam-diam — konversi tempo, kurva crossfader, penempelan ke grid — ada
  * di sini sebagai fungsi murni supaya bisa dites tanpa merender apa pun. Pola
- * yang sama dengan `studio/analysis/beat-grid.ts` dan `studio/timeline/fade.ts`.
+ * yang sama dengan `studio-core/analysis/beat-grid.ts` dan `studio-core/timeline/fade.ts`.
  */
 
-import type { Samples } from '@kelasmalam/studio/studio/model';
-import type { BeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { samplesPerBeat, snapSourceToGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-
+import type { Samples } from '@kelasmalam/studio-core/assets/model';
+import type { BeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { samplesPerBeat, snapSourceToGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 export type { Samples };
 
 const clamp = (v: number, lo: number, hi: number): number =>
@@ -458,7 +457,7 @@ export interface ChannelState {
   /**
    * Channel fader, TRAVEL 0..1 (0 = bawah/senyap, 1 = atas/unity).
    *
-   * TRAVEL, bukan dB — beda dari lane Studio (`studio/rail/fader.ts` menyimpan
+   * TRAVEL, bukan dB — beda dari lane Studio (`ui/lib/fader.ts` menyimpan
    * dB dengan unity di 75% travel). Fader DJ punya unity DI PUNCAK dan nol
    * MUTLAK di dasar; itu kontrol pertunjukan yang posisinya sendiri adalah
    * kebenarannya. Bolak-balik lewat dB membuat "benar-benar nol" jadi −∞ yang

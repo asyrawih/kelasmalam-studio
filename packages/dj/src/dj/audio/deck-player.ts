@@ -50,7 +50,7 @@
  */
 
 import { ScrubVoice } from './scrub-voice';
-import type { AutoStemAudio, AutoStemMask } from '@kelasmalam/studio/stem/auto-stem';
+import type { AutoStemAudio, AutoStemMask } from '@kelasmalam/studio-core/stem/auto-stem';
 import type { ScnetStem } from '@kelasmalam/proof-stem/proof-stem/scnet-separate';
 
 /** Fade masuk/keluar saat melompat. Cukup untuk membunuh klik, terlalu pendek

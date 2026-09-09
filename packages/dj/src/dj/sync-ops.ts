@@ -14,8 +14,8 @@
  * deck-nya.
  */
 
-import { resolveBeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { studioStore } from '@kelasmalam/studio/studio/store';
+import { resolveBeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { assetStore } from '@kelasmalam/studio-core/assets/store';
 import { DECK_IDS, type DeckId } from './model';
 import { djActions, djStore, type SyncResult } from './store';
 import { phaseErrorBeats, planSync, type SyncDeck } from './sync';
@@ -24,7 +24,7 @@ import { phaseErrorBeats, planSync, type SyncDeck } from './sync';
 export function syncDeckOf(id: DeckId): SyncDeck | null {
   const deck = djStore.getState().decks[id];
   if (deck.assetId === null) return null;
-  const asset = studioStore.getState().assets[deck.assetId];
+  const asset = assetStore.getState().assets[deck.assetId];
   return {
     grid: asset === undefined ? null : resolveBeatGrid(asset),
     playhead: deck.playhead,

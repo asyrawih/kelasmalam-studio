@@ -34,7 +34,7 @@
  * kalah versi butuh KEPUTUSAN user, bukan pesan merah.
  */
 
-import { MIME_OF_FORMAT } from '@kelasmalam/studio/studio/timeline/content-hash';
+import { MIME_OF_FORMAT } from '@kelasmalam/studio-core/timeline/content-hash';
 import type { ImportedTrack, LocalTrack, StoreInfo } from '../platform/local-commands';
 import { callLocal, putLocalBytes, toLocalError } from '../platform/local-invoke';
 import {

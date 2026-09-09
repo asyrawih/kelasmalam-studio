@@ -13,6 +13,7 @@
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LibraryDock } from './LibraryDock';
@@ -36,7 +37,7 @@ const SR = 48_000;
 
 /** Satu asset + satu clip yang memakainya — cara termurah membuat project "kotor". */
 function seedClip(contentHash: string): void {
-  studioActions.registerAsset({
+  assetActions.registerAsset({
     id: 5,
     name: 'Kelas Malam',
     contentHash,
@@ -49,7 +50,7 @@ function seedClip(contentHash: string): void {
     bpmOverride: null,
     beatOffsetOverride: null,
     analysisLock: false,
-  } as unknown as Parameters<typeof studioActions.registerAsset>[0]);
+  } as unknown as Parameters<typeof assetActions.registerAsset>[0]);
   const laneId = studioStore.getState().lanes[0]?.id ?? '';
   studioActions.addClip(laneId, {
     id: 'c1',

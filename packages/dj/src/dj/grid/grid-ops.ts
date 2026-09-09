@@ -8,7 +8,7 @@
  *
  * Ada sebagai lapisan tersendiri karena tiap operasi punya tiga pintu masuk —
  * tombol di panel, chord keyboard lewat `commands.ts`, dan (nanti) MIDI. Kalau
- * masing-masing memanggil `studioActions.setAssetBeatGrid` sendiri, tiga hal
+ * masing-masing memanggil `assetActions.setAssetBeatGrid` sendiri, tiga hal
  * ikut tersalin tiga kali: penjagaan kunci analisis, pencatatan undo, dan
  * pemilihan anchor mentah. Yang ketiga adalah jebakan 1 di kepala
  * `analysis/grid-edit.ts`, dan menyalinnya tiga kali berarti menyediakan tiga
@@ -19,6 +19,8 @@
  * perlu memeriksa apa pun sebelum memanggil.
  */
 
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 import {
   MIN_FIT_BARS,
   NUDGE_STEP_SEC,
@@ -35,10 +37,9 @@ import {
   shiftOctave,
   widenBeat,
   type GridPatch,
-} from '@kelasmalam/studio/studio/analysis/grid-edit';
-import { BEATS_PER_BAR, gridSegments } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { tapTempo } from '@kelasmalam/studio/studio/analysis/tap-tempo';
-import { studioActions, studioStore, type StudioAsset } from '@kelasmalam/studio/studio/store';
+} from '@kelasmalam/studio-core/analysis/grid-edit';
+import { BEATS_PER_BAR, gridSegments } from '@kelasmalam/studio-core/analysis/beat-grid';
+import { tapTempo } from '@kelasmalam/studio-core/analysis/tap-tempo';
 import { djActions, djStore } from '../store';
 import type { DeckId, GridScope } from '../model';
 import { canRedoGrid, canUndoGrid, recordGrid, redoGrid, undoGrid } from './grid-history';
@@ -91,7 +92,7 @@ export function gridTarget(deckId?: DeckId): GridTarget | null {
 
   const deck = s.decks[id];
   if (deck.assetId === null) return null;
-  const asset = studioStore.getState().assets[deck.assetId];
+  const asset = assetStore.getState().assets[deck.assetId];
   if (asset === undefined) return null;
 
   const bpm = currentBpm(asset);
@@ -141,7 +142,7 @@ export function gridBlockedReason(deckId: DeckId | null): string | null {
   if (deckId === null) return 'tidak ada deck yang dipilih';
   const deck = djStore.getState().decks[deckId];
   if (deck.assetId === null) return `deck ${deckId} kosong`;
-  const asset = studioStore.getState().assets[deck.assetId];
+  const asset = assetStore.getState().assets[deck.assetId];
   if (asset === undefined) return `asset deck ${deckId} hilang dari kepustakaan`;
   if (asset.analysisLock) return `${asset.name} terkunci — buka 🔒 untuk menyunting grid`;
   if (currentBpm(asset) === null) {
@@ -186,12 +187,12 @@ function commit(t: GridTarget, patch: GridPatch): boolean {
       : (t.segStartSec ?? nearestBarSec(t.anchorSec, t.bpm, t.atSec, BEATS_PER_BAR));
 
     recordGrid(t.assetId);
-    studioActions.setAssetBeatAnchor(t.assetId, { atSec, bpm });
+    assetActions.setAssetBeatAnchor(t.assetId, { atSec, bpm });
     return true;
   }
 
   recordGrid(t.assetId);
-  studioActions.setAssetBeatGrid(t.assetId, {
+  assetActions.setAssetBeatGrid(t.assetId, {
     bpm: patch.bpm ?? t.asset.bpmOverride,
     offsetSec: patch.offsetSec ?? t.asset.beatOffsetOverride,
   });
@@ -217,7 +218,7 @@ export function removeSegmentHere(deckId?: DeckId): boolean {
     return false;
   }
   recordGrid(t.assetId);
-  studioActions.removeAssetBeatAnchorNear(t.assetId, t.segStartSec, 0.001);
+  assetActions.removeAssetBeatAnchorNear(t.assetId, t.segStartSec, 0.001);
   return true;
 }
 
@@ -368,7 +369,7 @@ export function autoGrid(deckId?: DeckId): boolean {
     return false;
   }
   recordGrid(t.assetId);
-  studioActions.resetAssetBeatGrid(t.assetId);
+  assetActions.resetAssetBeatGrid(t.assetId);
   return true;
 }
 
@@ -379,10 +380,10 @@ export function toggleGridLock(deckId?: DeckId): boolean {
   if (id === null) return fail(null);
   const assetId = s.decks[id].assetId;
   if (assetId === null) return fail(id);
-  const asset = studioStore.getState().assets[assetId];
+  const asset = assetStore.getState().assets[assetId];
   if (asset === undefined) return fail(id);
 
-  studioActions.setAnalysisLock(assetId, !asset.analysisLock);
+  assetActions.setAnalysisLock(assetId, !asset.analysisLock);
   djActions.setNotice(asset.analysisLock ? null : `${asset.name} dikunci — grid tidak bisa diubah`);
   return true;
 }
@@ -413,7 +414,7 @@ export function beginAnchorDrag(deckId: DeckId): number | null {
 export function dragAnchorTo(deckId: DeckId, anchorSec: number): boolean {
   const t = gridTarget(deckId);
   if (t === null || t.asset.analysisLock) return false;
-  studioActions.setAssetBeatGrid(t.assetId, {
+  assetActions.setAssetBeatGrid(t.assetId, {
     bpm: t.asset.bpmOverride,
     offsetSec: anchorSec,
   });

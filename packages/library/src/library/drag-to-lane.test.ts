@@ -7,6 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 
 import {
   hasLibraryDropHandler,
@@ -22,7 +23,7 @@ import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 const SR = 48_000;
 
 function seedAsset(id: number, name: string): void {
-  studioActions.registerAsset({
+  assetActions.registerAsset({
     id,
     name,
     contentHash: 'a'.repeat(64),
@@ -35,7 +36,7 @@ function seedAsset(id: number, name: string): void {
     bpmOverride: null,
     beatOffsetOverride: null,
     analysisLock: false,
-  } as unknown as Parameters<typeof studioActions.registerAsset>[0]);
+  } as unknown as Parameters<typeof assetActions.registerAsset>[0]);
 }
 
 const laneId = (): string => studioStore.getState().lanes[0]?.id ?? '';

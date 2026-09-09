@@ -7,13 +7,14 @@
  */
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DjPage } from '../DjPage';
 import { djActions, djStore, selectTrackCues } from '../store';
-import { studioActions } from '@kelasmalam/studio/studio/store';
-import type { StudioAsset } from '@kelasmalam/studio/studio/store';
-import { buildEnvelope } from '@kelasmalam/studio/studio/timeline/envelope';
+
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
 
 const SR = 48_000;
 const RECT = {
@@ -64,8 +65,8 @@ const fakeAsset = (id: number): StudioAsset =>
 beforeEach(() => {
   Element.prototype.getBoundingClientRect = () => RECT as DOMRect;
   djActions.__resetForTest();
-  studioActions.__resetForTest?.();
-  studioActions.registerAsset(fakeAsset(1));
+  assetActions.__resetForTest();
+  assetActions.registerAsset(fakeAsset(1));
   djActions.loadDeck('A', { assetId: 1, frames: SR * 120, name: 'LAGU 1', sampleRate: SR });
 });
 

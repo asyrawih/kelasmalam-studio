@@ -25,10 +25,10 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 
 import { useCommands } from '@kelasmalam/shell';
-import { registerAssetRoot } from '@kelasmalam/studio/studio/persist/asset-roots';
-import { useStudio } from '@kelasmalam/studio/studio/store';
+import { registerAssetRoot } from '@kelasmalam/studio-core/persist/asset-roots';
 import { useDjAudio } from './audio/useDjAudio';
 import { CollectionBrowser } from './browser/CollectionBrowser';
 import { Deck } from './deck/Deck';
@@ -63,7 +63,7 @@ export function DjPage({ onClose }: DjPageProps): JSX.Element {
 
   const deckA = useDj((s) => s.decks.A);
   const deckB = useDj((s) => s.decks.B);
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
 
   const views = useMemo(
     () => ({ A: deckView(deckA, assets[deckA.assetId ?? -1]), B: deckView(deckB, assets[deckB.assetId ?? -1]) }),

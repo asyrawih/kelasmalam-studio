@@ -23,8 +23,8 @@
  * jalan, yang gagal hanya sisanya, bukan semuanya.
  */
 
-import { MIME_OF_FORMAT } from '@kelasmalam/studio/studio/timeline/content-hash';
-import type { ImportedForLibrary } from '@kelasmalam/studio/studio/timeline/import-sink';
+import { MIME_OF_FORMAT } from '@kelasmalam/studio-core/timeline/content-hash';
+import type { ImportedForLibrary } from '@kelasmalam/studio-core/timeline/import-sink';
 import type { LibraryApi, TrackMeta } from './api';
 import { libraryActions, libraryStore } from './store';
 

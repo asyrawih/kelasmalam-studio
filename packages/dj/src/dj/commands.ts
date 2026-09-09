@@ -32,8 +32,8 @@
  */
 
 import type { Command } from '@kelasmalam/shell';
-import { resolveBeatGrid } from '@kelasmalam/studio/studio/analysis/beat-grid';
-import { studioStore } from '@kelasmalam/studio/studio/store';
+import { assetStore } from '@kelasmalam/studio-core/assets/store';
+import { resolveBeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { removeAssetFromLibrary } from './browser/dj-remove';
 import { BEAT_LOOP_PRESETS, DECK_IDS, HOT_CUE_SLOTS, type DeckId } from './model';
 import { djActions, djStore } from './store';
@@ -60,7 +60,7 @@ const s = () => djStore.getState();
 function gridOf(id: DeckId) {
   const assetId = s().decks[id].assetId;
   if (assetId === null) return null;
-  const asset = studioStore.getState().assets[assetId];
+  const asset = assetStore.getState().assets[assetId];
   return asset === undefined ? null : resolveBeatGrid(asset);
 }
 
@@ -355,7 +355,7 @@ function globalCommands(): Command[] {
 function browserCommands(): Command[] {
   /** Urutan baris yang TERLIHAT, supaya ↑/↓ mengikuti apa yang dilihat user. */
   const rows = (): readonly number[] => {
-    const assets = studioStore.getState().assets;
+    const assets = assetStore.getState().assets;
     return Object.values(assets).map((a) => a.id);
   };
 
@@ -392,7 +392,7 @@ function browserCommands(): Command[] {
       run: () => {
         const assetId = s().browse.selectedAssetId;
         if (assetId === null) return;
-        const asset = studioStore.getState().assets[assetId];
+        const asset = assetStore.getState().assets[assetId];
         if (asset === undefined) return;
         djActions.loadDeck(s().focusedDeck, {
           assetId,
@@ -435,7 +435,7 @@ function browserCommands(): Command[] {
       run: () => {
         const assetId = s().browse.selectedAssetId;
         if (assetId === null) return;
-        const asset = studioStore.getState().assets[assetId];
+        const asset = assetStore.getState().assets[assetId];
         if (asset === undefined) return;
         djActions.loadDeck(id, {
           assetId,

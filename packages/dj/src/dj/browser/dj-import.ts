@@ -11,8 +11,9 @@
  * membuang satu-satunya petunjuk yang dimiliki user.
  */
 
-import { importFileToAsset } from '@kelasmalam/studio/studio/timeline/audio-import';
+
 import type { DeckId } from '../model';
+import { importFileToAsset } from '@kelasmalam/studio-core/timeline/audio-import';
 import { djActions } from '../store';
 
 export interface DjImportResult {

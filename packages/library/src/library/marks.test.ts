@@ -9,18 +9,19 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 
 import { applyMarks, collectMarks, createMarksSync } from './marks';
 import { fakeLibraryApi } from './fake-api';
 import { djActions, djStore } from '@kelasmalam/dj/dj/store';
-import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
+import { studioActions } from '@kelasmalam/studio/studio/store';
 import { EMPTY_TRACK_CUES } from '@kelasmalam/dj/dj/model';
 
 const SR = 48_000;
 const HASH = 'a'.repeat(64);
 
 function seedAsset(id = 5): void {
-  studioActions.registerAsset({
+  assetActions.registerAsset({
     id,
     name: 'Kelas Malam',
     contentHash: HASH,
@@ -33,7 +34,7 @@ function seedAsset(id = 5): void {
     bpmOverride: null,
     beatOffsetOverride: null,
     analysisLock: false,
-  } as unknown as Parameters<typeof studioActions.registerAsset>[0]);
+  } as unknown as Parameters<typeof assetActions.registerAsset>[0]);
 }
 
 beforeEach(() => {
@@ -51,14 +52,14 @@ describe('collectMarks', () => {
 
   it('mengumpulkan koreksi BPM yang diketik user', () => {
     seedAsset();
-    studioActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: 0.25 });
+    assetActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: 0.25 });
 
     expect(collectMarks(5)).toMatchObject({ grid: { bpm: 128, offsetSec: 0.25, lock: false } });
   });
 
   it('kunci analisis ikut, walau tanpa koreksi apa pun', () => {
     seedAsset();
-    studioActions.setAnalysisLock(5, true);
+    assetActions.setAnalysisLock(5, true);
     // "Hasil deteksinya sudah benar, jangan disentuh lagi" adalah keputusan
     // user juga — dan ia hilang tiap sesi kalau tidak ikut tersimpan.
     expect(collectMarks(5)).toMatchObject({ grid: { lock: true } });
@@ -81,7 +82,7 @@ describe('applyMarks', () => {
     });
 
     expect(djStore.getState().cues[5]?.cuePoint).toBe(2 * SR);
-    expect(studioStore.getState().assets[5]).toMatchObject({
+    expect(assetStore.getState().assets[5]).toMatchObject({
       bpmOverride: 174,
       analysisLock: true,
     });
@@ -109,7 +110,7 @@ describe('applyMarks', () => {
 describe('pengiriman yang ditunda', () => {
   it('puluhan perubahan jadi SATU permintaan', async () => {
     seedAsset();
-    studioActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: null });
+    assetActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: null });
 
     const putMarks = vi.fn(async (_hash: string, _marks: unknown) => {});
     const sync = createMarksSync(fakeLibraryApi({ putMarks }), { delayMs: 0 });
@@ -126,9 +127,9 @@ describe('pengiriman yang ditunda', () => {
     const putMarks = vi.fn(async (_hash: string, _marks: unknown) => {});
     const sync = createMarksSync(fakeLibraryApi({ putMarks }), { delayMs: 0 });
 
-    studioActions.setAssetBeatGrid(5, { bpm: 100, offsetSec: null });
+    assetActions.setAssetBeatGrid(5, { bpm: 100, offsetSec: null });
     sync.touch(5, HASH);
-    studioActions.setAssetBeatGrid(5, { bpm: 174, offsetSec: null });
+    assetActions.setAssetBeatGrid(5, { bpm: 174, offsetSec: null });
 
     await sync.flush();
     expect(putMarks.mock.calls[0]?.[1]).toMatchObject({ grid: { bpm: 174 } });
@@ -145,7 +146,7 @@ describe('pengiriman yang ditunda', () => {
 
   it('kegagalan kirim TIDAK meledak — perubahan berikutnya mengirim ulang semuanya', async () => {
     seedAsset();
-    studioActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: null });
+    assetActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: null });
     const sync = createMarksSync(
       fakeLibraryApi({
         putMarks: async () => {
@@ -161,7 +162,7 @@ describe('pengiriman yang ditunda', () => {
 
   it('stop membatalkan yang tertunda', async () => {
     seedAsset();
-    studioActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: null });
+    assetActions.setAssetBeatGrid(5, { bpm: 128, offsetSec: null });
     const putMarks = vi.fn(async () => {});
     const sync = createMarksSync(fakeLibraryApi({ putMarks }), { delayMs: 50 });
 

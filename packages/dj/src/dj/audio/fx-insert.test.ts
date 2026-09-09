@@ -19,7 +19,7 @@ import { defaultFx, type FxState } from '../model';
 import { FxInsertSlot } from './fx-insert';
 import type { DjGraph } from './dj-graph';
 
-vi.mock('@kelasmalam/studio/studio/preview/fx-node', () => ({
+vi.mock('@kelasmalam/studio-core/preview/fx-node', () => ({
   createFxNode: vi.fn(() => ({
     port: { postMessage: vi.fn(), onmessage: null },
     onprocessorerror: null,

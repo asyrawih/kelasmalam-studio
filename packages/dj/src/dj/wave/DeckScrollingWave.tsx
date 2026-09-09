@@ -1,7 +1,7 @@
 /**
  * ADAPTOR: `DeckView` → props `ScrollingWave`.
  *
- * Ini SATU-SATUNYA berkas di `web/src/dj/` yang tahu bahwa komponen waveform-nya
+ * Ini SATU-SATUNYA berkas di `packages/dj` yang tahu bahwa komponen waveform-nya
  * berasal dari timeline Studio dan berbicara dalam kosakata "clip". Semua yang
  * lain hanya mengenal deck.
  *
@@ -33,12 +33,15 @@
  */
 
 import { useMemo, useRef } from 'react';
+import { BAND_COLORS } from '@kelasmalam/studio-core/timeline/waveform';
+import { ScrollingWave } from '@kelasmalam/studio-core/timeline/ScrollingWave';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
 
-import { BAND_COLORS, ScrollingWave } from '@kelasmalam/studio/studio/timeline';
-import { rawAnchorSec } from '@kelasmalam/studio/studio/analysis/grid-edit';
-import { gridSegments } from '@kelasmalam/studio/studio/analysis/beat-grid';
+
+import { rawAnchorSec } from '@kelasmalam/studio-core/analysis/grid-edit';
+import { gridSegments } from '@kelasmalam/studio-core/analysis/beat-grid';
 import { deckClockSec } from '../audio/deck-clock';
-import type { StudioAsset } from '@kelasmalam/studio/studio/store';
+
 import { loopRegion, type DeckView } from '../deck-view';
 import { beginAnchorDrag, dragAnchorTo } from '../grid/grid-ops';
 import type { Samples } from '../model';
