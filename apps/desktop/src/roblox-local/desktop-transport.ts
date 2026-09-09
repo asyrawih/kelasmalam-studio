@@ -23,12 +23,12 @@
  * jujur: ia bergerak hanya saat Rust bilang begitu.
  */
 
-import type { LocalError } from '../../platform/local-commands';
-import { LOCAL_EVENTS } from '../../platform/local-commands';
-import { isLocalError } from '../persistence';
-import { localInvoke, localListen } from '../local/invoke';
-import type { QueueItem } from '../model';
-import { UploadError, type OperationState, type StartedUpload, type Transport } from './transport';
+import type { LocalError } from '../platform/local-commands';
+import { LOCAL_EVENTS } from '../platform/local-commands';
+import { isLocalError } from '@app-web/roblox/persistence'; // TODO(P3)
+import { localInvoke, localListen } from './invoke';
+import type { QueueItem } from '@app-web/roblox/model'; // TODO(P3)
+import { UploadError, type OperationState, type StartedUpload, type Transport } from '@app-web/roblox/backend/transport'; // TODO(P3)
 
 export interface DesktopTransportOptions {
   /** Creator id saat ini — dibaca ULANG tiap `health()`, bukan ditangkap sekali. */

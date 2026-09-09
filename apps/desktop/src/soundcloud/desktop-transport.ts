@@ -17,7 +17,7 @@
  */
 
 import { callLocal } from '../platform/local-invoke';
-import type { SoundCloudTransport } from './api';
+import type { SoundCloudTransport } from '@app-web/soundcloud/api'; // TODO(P3)
 
 function abortError(): Error {
   const err = new Error('dibatalkan');

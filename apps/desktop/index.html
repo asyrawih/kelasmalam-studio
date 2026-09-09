@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#ffd400" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>KELAS MALAM STUDIO</title>
+
+    <!--
+      Header COOP/COEP TIDAK bisa dipasang lewat <meta>; ia harus datang dari
+      server: vite.config.ts (base bersama) untuk dev, dan server loopback di
+      dalam aplikasi (src-tauri/src/local_server.rs) untuk build produksi —
+      tidak ada `public/_headers` di sini, itu milik deploy web. Kalau hilang,
+      `crossOriginIsolated` false dan engine jatuh ke varian `st` (docs/20 §1c).
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>KELAS MALAM STUDIO membutuhkan JavaScript.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

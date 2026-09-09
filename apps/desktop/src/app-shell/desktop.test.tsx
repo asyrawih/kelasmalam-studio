@@ -1,21 +1,21 @@
 /**
- * Rasa desktop (docs/20 D5): menu native → registry, judul jendela, penjaga
- * tutup. Semua API Tauri di-mock — yang diuji adalah bahwa shell memanggilnya
- * dengan benar SAAT di desktop, dan TIDAK SAMA SEKALI saat di web.
+ * Shell DESKTOP (docs/20 D5, docs/25 P2): menu native → registry, judul
+ * jendela, penjaga tutup, dan TANPA gerbang login. Semua API Tauri di-mock —
+ * yang diuji adalah bahwa shell memanggilnya dengan benar.
  *
- * Yang kedua bukan formalitas: `@tauri-apps/api/window` melempar di browser
- * biasa karena `window.__TAURI_INTERNALS__` tidak ada, dan satu panggilan yang
- * bocor ke jalur web berarti setiap user web mendapat error di konsol.
+ * Bagian "di web (isTauri false)" yang dulu ada di sini kini di
+ * `apps/web/src/app-shell/web-shell.test.tsx`: shell web tidak punya cabang
+ * desktop untuk diuji "tidak dipanggil" — ia tidak mengimpornya sama sekali
+ * (`no-desktop-leak.test.ts`).
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppShell } from './AppShell';
-import { __resetMenuWarningsForTest, closeGuardReason, windowTitle } from './desktop';
-import { djActions, djStore } from '../dj/store';
-import { setPlatformHostForTests, type PlatformHost } from '../platform';
-import { studioActions, studioStore } from '../studio/store';
+import { __resetMenuWarningsForTest } from '../window/desktop';
+import { djActions, djStore } from '@app-web/dj/store'; // TODO(P3)
+import { studioActions, studioStore } from '@app-web/studio/store'; // TODO(P3)
 
 type Listener = (e: { payload: unknown }) => void;
 type CloseHandler = (ev: { preventDefault(): void }) => Promise<void> | void;
@@ -25,7 +25,6 @@ type CloseHandler = (ev: { preventDefault(): void }) => Promise<void> | void;
  * factory di-hoist ke atas seluruh import, termasuk `const` biasa.
  */
 const tauri = vi.hoisted(() => ({
-  desktop: false,
   listeners: new Map<string, (e: { payload: unknown }) => void>(),
   closeHandlers: [] as Array<(ev: { preventDefault(): void }) => Promise<void> | void>,
   listen: vi.fn(),
@@ -33,10 +32,6 @@ const tauri = vi.hoisted(() => ({
   setTitle: vi.fn(),
   destroy: vi.fn(),
   ask: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({
-  isTauri: () => tauri.desktop,
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -112,10 +107,6 @@ beforeEach(() => {
   djActions.__resetForTest();
   studioActions.__resetForTest();
   __resetMenuWarningsForTest();
-  tauri.desktop = true;
-  // Host platform di-cache sekali per proses; tiap tes memilih ulang supaya
-  // `tauri.desktop` yang diubah di describe benar-benar menentukan host-nya.
-  setPlatformHostForTests(null);
   tauri.listeners.clear();
   tauri.closeHandlers = [];
   vi.clearAllMocks();
@@ -127,67 +118,10 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('windowTitle', () => {
-  it('nama project — aplikasi, dengan • di depan saat kotor', () => {
-    expect(windowTitle('KELAS_MALAM.STUDIO', false)).toBe('KELAS_MALAM.STUDIO — KELAS MALAM STUDIO');
-    expect(windowTitle('KELAS_MALAM.STUDIO', true)).toBe('• KELAS_MALAM.STUDIO — KELAS MALAM STUDIO');
-  });
-
-  it('nama kosong tidak menghasilkan judul yang dimulai dengan tanda pisah', () => {
-    expect(windowTitle('   ', false)).toBe('Tanpa nama — KELAS MALAM STUDIO');
-  });
-});
-
-describe('closeGuardReason', () => {
-  it('export menang atas kotor — pesannya harus menyebut berkas yang terpotong', () => {
-    expect(closeGuardReason({ exportProgress: 0.4, dirty: true })).toBe('export');
-    expect(closeGuardReason({ exportProgress: null, dirty: true })).toBe('dirty');
-    expect(closeGuardReason({ exportProgress: null, dirty: false })).toBeNull();
-  });
-});
-
-describe('di web (isTauri false)', () => {
-  beforeEach(() => {
-    tauri.desktop = false;
-  });
-
-  it('tidak menyentuh satu pun API Tauri', async () => {
-    render(<AppShell />);
-    // Beri kesempatan pada impor dinamis yang (seharusnya tidak) terjadi.
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(tauri.listen).not.toHaveBeenCalled();
-    expect(tauri.getCurrentWindow).not.toHaveBeenCalled();
-    expect(tauri.ask).not.toHaveBeenCalled();
-  });
-
-  it('document.title tetap mengikuti nama project + tanda kotor', () => {
-    render(<AppShell />);
-    const name = studioStore.getState().projectName;
-    expect(document.title).toBe(`${name} — KELAS MALAM STUDIO`);
-    act(() => studioActions.setMasterGain(-3));
-    expect(document.title).toBe(`• ${name} — KELAS MALAM STUDIO`);
-    act(() => studioActions.markSaved());
-    expect(document.title).toBe(`${name} — KELAS MALAM STUDIO`);
-  });
-
-  it('beforeunload dicegah hanya saat kotor atau export berjalan', () => {
-    render(<AppShell />);
-    const fire = (): boolean => {
-      const e = new Event('beforeunload', { cancelable: true });
-      window.dispatchEvent(e);
-      return e.defaultPrevented;
-    };
-    expect(fire()).toBe(false);
-    act(() => studioActions.setMasterGain(-3));
-    expect(fire()).toBe(true);
-    act(() => studioActions.markSaved());
-    expect(fire()).toBe(false);
-    act(() => studioActions.setExportProgress(0.2));
-    expect(fire()).toBe(true);
-  });
-});
+/*
+ * `windowTitle` dan `closeGuardReason` diuji di `packages/shell/src/title.test.ts`;
+ * yang di sini adalah pintu Tauri-nya.
+ */
 
 describe('menu native → registry', () => {
   it('event daw://menu-command menjalankan command yang sama dengan keyboard', async () => {
@@ -427,138 +361,47 @@ describe('penjaga tutup jendela', () => {
 });
 
 /**
- * DESKTOP TANPA LOGIN. Di produksi web, `authRequired` mengunci /studio, /dj,
- * /roblox di balik sesi Google. Di jendela Tauri cookie sesi tidak pernah ikut
- * (origin `tauri://`), jadi tanpa pengecualian ini seluruh .app terkunci di
- * balik tombol MASUK yang menavigasi WebView ke Google tanpa jalan pulang.
+ * DESKTOP TANPA LOGIN — bukan gerbang yang dilewati, melainkan tidak ada:
+ * shell ini tidak punya `AuthApi` sama sekali (docs/20 §1d, docs/25 P2).
  */
-describe('gerbang auth di desktop', () => {
-  const api = () => ({
-    me: vi.fn(async () => null),
-    loginUrl: vi.fn((next: string) => `https://auth.test/google?next=${next}`),
-  });
-
-  it('/studio terbuka langsung tanpa login, dan tidak ada navigasi keluar', async () => {
+describe('tanpa gerbang auth', () => {
+  it('/studio terbuka langsung; / juga Studio (tidak ada landing)', () => {
     window.history.pushState(null, '', '/studio');
-    const authApi = api();
-    const href = window.location.href;
-    // `authApi` disuntikkan = di web ini berarti `authRequired` TRUE.
-    render(<AppShell authApi={authApi} />);
+    const view = render(<AppShell />);
     expect(screen.queryByTestId('auth-guard')).toBeNull();
     expect(screen.getByText('KELAS MALAM STUDIO')).toBeTruthy();
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(authApi.me).not.toHaveBeenCalled();
-    expect(authApi.loginUrl).not.toHaveBeenCalled();
-    expect(window.location.href).toBe(href);
+    view.unmount();
+
+    window.history.pushState(null, '', '/');
+    render(<AppShell />);
+    expect(screen.getByText('KELAS MALAM STUDIO')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'MASUK' })).toBeNull();
   });
 
   it('/dj dan /roblox juga terbuka', () => {
     window.history.pushState(null, '', '/dj');
-    const view = render(<AppShell authApi={api()} />);
+    const view = render(<AppShell />);
     expect(screen.queryByTestId('auth-guard')).toBeNull();
     expect(screen.getByText('KELAS MALAM DJ')).toBeTruthy();
     view.unmount();
 
     window.history.pushState(null, '', '/roblox');
-    render(<AppShell authApi={api()} />);
+    render(<AppShell />);
     expect(screen.queryByTestId('auth-guard')).toBeNull();
   });
 
-  it('landing di desktop tidak menampilkan tombol MASUK, tautan aplikasi terbuka', () => {
-    window.history.pushState(null, '', '/');
-    render(<AppShell authApi={api()} />);
-    expect(screen.queryByRole('button', { name: 'MASUK' })).toBeNull();
-    expect(screen.getAllByRole('button', { name: 'BUKA STUDIO' }).length).toBeGreaterThan(0);
-  });
-
-  it('di web (isTauri false) gerbangnya tetap ada — perilaku web tidak berubah', async () => {
-    tauri.desktop = false;
+  it('halaman Studio punya tombol YOUTUBE yang membuka dialognya (docs/23)', async () => {
     window.history.pushState(null, '', '/studio');
-    const authApi = api();
-    render(<AppShell authApi={authApi} />);
-    await waitFor(() => expect(screen.getByTestId('auth-guard')).toBeTruthy());
-    expect(authApi.me).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('KELAS MALAM STUDIO')).toBeNull();
-  });
-});
-
-/**
- * Login lewat `PlatformHost.login()`, bukan `location.href` — satu-satunya
- * jalan keluar dari WebView ada di `platform/` (`guard.test.ts`). `login`
- * OPSIONAL di host: tanpa itu tombol MASUK tidak dirender sama sekali.
- */
-describe('login lewat adapter platform', () => {
-  const api = () => ({
-    me: vi.fn(async () => null),
-    loginUrl: vi.fn((next: string) => `https://lib.test/auth/google?next=${next}`),
-    base: 'https://lib.test',
+    render(<AppShell />);
+    fireEvent.click(screen.getByRole('button', { name: 'YOUTUBE' }));
+    expect(await screen.findByRole('dialog', { name: /youtube/i })).toBeTruthy();
   });
 
-  function fakeHost(login?: PlatformHost['login']): PlatformHost {
-    return {
-      kind: 'web',
-      pickSaveTarget: vi.fn(),
-      openExternal: vi.fn(),
-      authHeaders: async () => ({}),
-      modelBytes: vi.fn(),
-      // Tes ini tidak menyentuh kepustakaan; `null` = "tidak dikonfigurasi",
-      // sama dengan build web tanpa VITE_LIBRARY_API.
-      libraryApi: () => null,
-      ...(login === undefined ? {} : { login }),
-    };
-  }
-
-  beforeEach(() => {
-    tauri.desktop = false;
-  });
-  afterEach(() => setPlatformHostForTests(null));
-
-  it('gerbang halaman: MASUK DENGAN GOOGLE memanggil host.login dengan path saat ini', async () => {
-    const login = vi.fn(() => new Promise<void>(() => {}));
-    setPlatformHostForTests(fakeHost(login));
+  it('layar pengaturan (⌘,) memuat bagian PENYIMPANAN', () => {
     window.history.pushState(null, '', '/studio');
-    const href = window.location.href;
-    const authApi = api();
-    render(<AppShell authApi={authApi} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'MASUK DENGAN GOOGLE' }));
-    expect(login).toHaveBeenCalledWith({ apiBase: 'https://lib.test', nextPath: '/studio' });
-    // Shell tidak lagi membangun URL login sendiri, apalagi menavigasi.
-    expect(authApi.loginUrl).not.toHaveBeenCalled();
-    expect(window.location.href).toBe(href);
-  });
-
-  it('landing: MASUK menitipkan /studio sebagai tujuan pulang', async () => {
-    const login = vi.fn(() => new Promise<void>(() => {}));
-    setPlatformHostForTests(fakeHost(login));
-    window.history.pushState(null, '', '/');
-    render(<AppShell authApi={api()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'MASUK' }));
-    expect(login).toHaveBeenCalledWith({ apiBase: 'https://lib.test', nextPath: '/studio' });
-  });
-
-  it('host tanpa login: tidak ada tombol MASUK di landing maupun di gerbang', async () => {
-    setPlatformHostForTests(fakeHost());
-    window.history.pushState(null, '', '/');
-    const view = render(<AppShell authApi={api()} />);
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(screen.queryByRole('button', { name: 'MASUK' })).toBeNull();
-    view.unmount();
-
-    window.history.pushState(null, '', '/studio');
-    render(<AppShell authApi={api()} />);
-    await waitFor(() => expect(screen.getByText('LOGIN DIPERLUKAN')).toBeTruthy());
-    expect(screen.queryByRole('button', { name: 'MASUK DENGAN GOOGLE' })).toBeNull();
-  });
-});
-
-describe('pintasan ⌘,', () => {
-  it('membuka editor pintasan lewat command shell.preferences', () => {
     render(<AppShell />);
     fireEvent.keyDown(window, { code: 'Comma', metaKey: true, ctrlKey: true });
-    expect(screen.getByRole('dialog', { name: 'pintasan keyboard' })).toBeTruthy();
+    const dialog = screen.getByRole('dialog', { name: 'pintasan keyboard' });
+    expect(within(dialog).getByText('PENYIMPANAN')).toBeTruthy();
   });
 });

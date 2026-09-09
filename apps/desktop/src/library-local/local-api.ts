@@ -34,7 +34,7 @@
  * kalah versi butuh KEPUTUSAN user, bukan pesan merah.
  */
 
-import { MIME_OF_FORMAT } from '../studio/timeline/content-hash';
+import { MIME_OF_FORMAT } from '@app-web/studio/timeline/content-hash'; // TODO(P3)
 import type { ImportedTrack, LocalTrack, StoreInfo } from '../platform/local-commands';
 import { callLocal, putLocalBytes, toLocalError } from '../platform/local-invoke';
 import {
@@ -45,8 +45,8 @@ import {
   type ProjectBody,
   type ProjectSummary,
   type TrackMeta,
-} from './api';
-import type { LibraryTrack, LibraryUser } from './model';
+} from '@app-web/library/api'; // TODO(P3)
+import type { LibraryTrack, LibraryUser } from '@app-web/library/model'; // TODO(P3)
 
 export const LOCAL_USER: LibraryUser = { id: 'lokal', email: '', name: 'KEPUSTAKAAN LOKAL' };
 

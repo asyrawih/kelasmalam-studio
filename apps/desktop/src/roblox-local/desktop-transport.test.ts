@@ -9,15 +9,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDesktopTransport } from './desktop-transport';
-import { UploadError } from './transport';
-import type { QueueItem } from '../model';
+import { UploadError } from '@app-web/roblox/backend/transport'; // TODO(P3)
+import type { QueueItem } from '@app-web/roblox/model'; // TODO(P3)
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null);
 let progress: ((e: { payload: unknown }) => void) | null = null;
 const unlisten = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
-  isTauri: () => true,
 }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: async (_name: string, h: (e: { payload: unknown }) => void) => {

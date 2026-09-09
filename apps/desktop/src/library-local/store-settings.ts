@@ -11,7 +11,7 @@
  */
 
 import type { LocalError, StoreInfo } from '../platform/local-commands';
-import { formatBytes } from './model';
+import { formatBytes } from '@app-web/library/model'; // TODO(P3)
 
 /** Kalimat bantuan yang jujur (docs/21 §1b, §5) — satu sumber untuk UI dan tes. */
 export const STORE_HELP = 'Backup = salin folder ini. Kepustakaan ini hanya di mesin ini.';

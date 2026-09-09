@@ -1,25 +1,26 @@
 /**
- * RASA DESKTOP — satu-satunya tempat di app-shell yang tahu ia sedang berjalan
- * di dalam jendela Tauri (docs/20 fase D5).
+ * JENDELA — judul, permintaan tutup, dan menu native (docs/20 fase D5).
  *
- * ## Kenapa satu modul kecil, bukan `if (isTauri())` yang tersebar
+ * Sejak docs/25 P2 modul ini milik `apps/desktop` dan tidak lagi bertanya
+ * `isTauri()`: app ini selalu berjalan di dalam jendela Tauri, jadi tidak ada
+ * "ada jendela atau tidak" yang perlu dijawab. Aturan MURNI-nya — bentuk judul
+ * (`windowTitle`) dan alasan penjaga tutup (`closeGuardReason`) — tinggal di
+ * `@kelasmalam/shell/title`, dipakai juga oleh shell web untuk
+ * `document.title` dan `beforeunload`. Yang ada di sini hanya pintu Tauri-nya.
  *
- * Perbedaan web vs desktop harus masuk lewat satu pintu (docs/20 §0 butir 3).
- * Adapter platform yang sebenarnya (`web/src/platform/`, §2c) mengurus berkas,
- * login, dan model; modul ini mengurus JENDELA: judul, permintaan tutup, dan
- * menu native. Ketiganya tidak butuh adapter — mereka butuh tahu "ada jendela
- * atau tidak", dan itu dijawab `isTauri()`.
+ * Adapter platform (`../platform/desktop.ts`, docs/20 §2c) mengurus berkas,
+ * dialog, drop, dan model; modul ini mengurus JENDELA saja.
  *
  * ## Impor dinamis
  *
- * Hanya `isTauri` yang diimpor statis (beberapa byte). `@tauri-apps/api/window`,
- * `/event`, dan `plugin-dialog` diimpor di dalam cabang desktop supaya bundel
- * web — yang dipakai jauh lebih banyak orang — tidak membawa kode yang tidak
- * pernah bisa jalan di browser.
+ * `@tauri-apps/api/window`, `/event`, dan `plugin-dialog` diimpor di dalam
+ * fungsi — kebiasaan dari masa bundelnya masih dibagi dengan web — dan tetap
+ * dipertahankan karena mocker vitest bekerja paling jujur dengan `import()`
+ * yang dipanggil di dalam fungsi (lihat `tauriWindow()`).
  *
  * ## Menu native = pintu KETIGA ke registry
  *
- * Menu Rust (`desktop/src-tauri/src/menu.rs`) tidak tahu satu pun aksi. Ia
+ * Menu Rust (`src-tauri/src/menu.rs`) tidak tahu satu pun aksi. Ia
  * mengirim event `daw://menu-command` berisi id command, dan modul ini
  * menyerahkannya ke `runCommand` — fungsi yang SAMA dengan yang dipakai
  * keyboard dan palette. Tidak ada salinan daftar aksi (docs/15 "Menambah
@@ -27,9 +28,8 @@
  * `menu-ids.ts`, dan tesnya memastikan tiap id itu benar-benar terdaftar.
  */
 
-import { isTauri } from '@tauri-apps/api/core';
-
 import { getCommand, runCommand } from '@kelasmalam/shell/command';
+import { APP_TITLE, closeGuardReason, type CloseGuardReason } from '@kelasmalam/shell/title';
 
 /**
  * Modul jendela diimpor SEKALI dan janjinya disimpan.
@@ -46,30 +46,15 @@ function tauriWindow(): Promise<typeof import('@tauri-apps/api/window')> {
   return windowApi;
 }
 
+/** Sama untuk `@tauri-apps/api/event` — satu janji bersama, alasan yang sama. */
+let eventApi: Promise<typeof import('@tauri-apps/api/event')> | null = null;
+function tauriEvent(): Promise<typeof import('@tauri-apps/api/event')> {
+  eventApi ??= import('@tauri-apps/api/event');
+  return eventApi;
+}
+
 /** Nama event yang dikirim menu native. Kontrak dengan `menu.rs` — jangan diubah sepihak. */
 export const MENU_COMMAND_EVENT = 'daw://menu-command';
-
-/** Nama aplikasi di judul jendela — sama dengan `<title>` di `index.html`. */
-export const APP_TITLE = 'KELAS MALAM STUDIO';
-
-/** True kalau berjalan di dalam WebView Tauri. Dibungkus supaya bisa di-mock di tes. */
-export function isDesktop(): boolean {
-  return isTauri();
-}
-
-/**
- * Judul jendela: `<project> — KELAS MALAM STUDIO`, dengan `•` di depan saat
- * ada perubahan belum disimpan.
- *
- * Titik di DEPAN mengikuti konvensi macOS (titik di tombol tutup / judul
- * dokumen), dan diletakkan di depan bukan belakang supaya tetap terlihat saat
- * judul panjang terpotong di tengah oleh OS. Aturan yang sama dipakai
- * `document.title` di web — tab browser yang bertanda sama bergunanya.
- */
-export function windowTitle(projectName: string, dirty: boolean): string {
-  const name = projectName.trim() === '' ? 'Tanpa nama' : projectName.trim();
-  return `${dirty ? '• ' : ''}${name} — ${APP_TITLE}`;
-}
 
 // ── Menu native → registry ───────────────────────────────────────────────────
 
@@ -129,7 +114,7 @@ export function listenMenuCommands(): () => void {
   let disposed = false;
   void (async () => {
     try {
-      const { listen } = await import('@tauri-apps/api/event');
+      const { listen } = await tauriEvent();
       const stop = await listen<unknown>(MENU_COMMAND_EVENT, (e) => {
         dispatchMenuCommand(e.payload);
       });
@@ -163,23 +148,6 @@ export async function setWindowTitle(title: string): Promise<void> {
 }
 
 // ── Konfirmasi tutup ─────────────────────────────────────────────────────────
-
-export type CloseGuardReason = 'export' | 'dirty';
-
-/**
- * Kenapa penutupan harus ditanya dulu — atau `null` kalau boleh langsung.
- *
- * Export didahulukan: berkas yang terpotong di tengah lebih mahal daripada
- * edit yang hilang, dan pesannya harus menyebut itu, bukan "belum disimpan".
- */
-export function closeGuardReason(s: {
-  readonly exportProgress: number | null;
-  readonly dirty: boolean;
-}): CloseGuardReason | null {
-  if (s.exportProgress !== null) return 'export';
-  if (s.dirty) return 'dirty';
-  return null;
-}
 
 const CLOSE_MESSAGE: Readonly<Record<CloseGuardReason, string>> = {
   export: 'Export sedang berjalan. Menutup sekarang meninggalkan berkas yang tidak lengkap. Tutup?',

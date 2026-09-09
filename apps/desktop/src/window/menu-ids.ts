@@ -1,10 +1,10 @@
 /**
  * Id command yang boleh dipakai MENU NATIVE desktop (docs/20 §2d, fase D5).
  *
- * Menu Rust di `desktop/src-tauri/src/menu.rs` harus memakai SUBSET dari
- * daftar ini — tiap item menu mengirim `daw://menu-command` dengan salah satu
- * id di bawah, dan `app-shell/desktop.ts` menyerahkannya ke registry yang sama
- * dengan keyboard dan palette `⌘K`.
+ * Menu Rust di `src-tauri/src/menu.rs` harus memakai SUBSET dari daftar ini —
+ * tiap item menu mengirim `daw://menu-command` dengan salah satu id di bawah,
+ * dan `window/desktop.ts` menyerahkannya ke registry yang sama dengan
+ * keyboard dan palette `⌘K`.
  *
  * Daftar ini adalah daftar yang DIHARAPKAN, bukan yang dibaca dari registry
  * saat runtime: gunanya justru supaya ada tes (`menu-ids.test.tsx`) yang
@@ -20,7 +20,7 @@
  * `dispatchMenuCommand`.
  */
 
-import type { Route } from './routes';
+import type { Route } from '../app-shell/routes';
 
 export const DESKTOP_MENU_COMMAND_IDS = [
   // ── Aplikasi (menu app / File / View) — semua halaman ──

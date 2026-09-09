@@ -1,9 +1,10 @@
 /**
  * Link YouTube → clip di lane, HANYA desktop (docs/23).
  *
- * Dipanggil `url-to-lane.ts` untuk link YouTube yang di-drop atau di-paste
- * ke lane. Jalurnya sama dengan `YouTubeDialog`: `youtube_info` untuk judul
- * dan ekstensi, `youtube_bytes` untuk audionya, lalu `importBytesToLane` —
+ * Dipanggil `url-to-lane.ts` (lewat `youtubeUrlImporter` yang didaftarkan
+ * `main.tsx`, docs/25 §1c) untuk link YouTube yang di-drop atau di-paste ke
+ * lane. Jalurnya sama dengan `YouTubeDialog`: `youtube_info` untuk judul dan
+ * ekstensi, `youtube_bytes` untuk audionya, lalu `importBytesToLane` —
  * decoder dan bentuk clip yang SAMA dengan drop berkas.
  *
  * Perkakas yang belum terpasang TIDAK diunduh diam-diam dari sini: drop
@@ -11,7 +12,8 @@
  * Pesannya menunjuk ke dialog YOUTUBE, tempat unduhan itu terlihat.
  */
 
-import { importBytesToLane, type DropResult, type LaneImportOptions } from '../studio/timeline/audio-import';
+import { importBytesToLane, type DropResult, type LaneImportOptions } from '@app-web/studio/timeline/audio-import'; // TODO(P3)
+import type { UrlImporter } from '@app-web/studio/timeline/url-to-lane'; // TODO(P3)
 import { isLocalError } from '../platform/local-invoke';
 import { subscribeYoutubeProgress, youtubeAudio, youtubeFileName, youtubeInfo, youtubeStatus } from './api';
 
@@ -56,3 +58,15 @@ export async function importYoutubeToLane(
     return { ok: false, reason: reasonOf(cause) };
   }
 }
+
+/**
+ * Importer yang didaftarkan `main.tsx` ke `registerUrlImporter` (docs/25 §1c):
+ * hanya link yang `classifyUrl` golongkan sebagai YouTube; host lain yang
+ * butuh server (SoundCloud, Mixcloud) TIDAK ikut dibelokkan — mereka tetap
+ * mendapat pesan lama dari `url-to-lane.ts`.
+ */
+export const youtubeUrlImporter: UrlImporter = {
+  matches: (cls) => cls.kind === 'needs-server' && cls.service === 'YouTube',
+  import: (text, laneId, startSamples, projectSampleRate, opts) =>
+    importYoutubeToLane(text, laneId, startSamples, projectSampleRate, opts),
+};

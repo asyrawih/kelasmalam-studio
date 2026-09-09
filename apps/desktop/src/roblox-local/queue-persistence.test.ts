@@ -10,17 +10,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { RobloxTaxonomy, RobloxTargetSettings, RobloxUploadRow } from '../../platform/local-commands';
-import { setPlatformHostForTests } from '../../platform';
-import { createDesktopHost } from '../../platform/desktop';
-import { createWebHost } from '../../platform/web';
+import type { RobloxTaxonomy, RobloxTargetSettings, RobloxUploadRow } from '../platform/local-commands';
 import { createLocalQueuePersistence } from './queue-persistence';
-import { fileOf, restoreRobloxQueue, robloxActions, robloxStore } from '../store';
+import { fileOf, registerRobloxPersistence, restoreRobloxQueue, robloxActions, robloxStore } from '@app-web/roblox/store'; // TODO(P3)
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown, _opts?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown, opts?: unknown) => invoke(cmd, args, opts),
-  isTauri: () => true,
 }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: async () => () => {},
@@ -63,10 +59,12 @@ const mp3 = (name = 'lagu.mp3'): File => new File([new Uint8Array([9, 9, 9])], n
 beforeEach(() => {
   invoke.mockReset();
   installTable([]);
-  setPlatformHostForTests(createDesktopHost());
+  // Seperti `main.tsx` desktop: penyimpanan antrean lokal DIDAFTARKAN ke
+  // store, bukan dipilih dari host (docs/25 §1c).
+  registerRobloxPersistence(createLocalQueuePersistence);
   robloxActions.__resetForTest();
 });
-afterEach(() => setPlatformHostForTests(null));
+afterEach(() => registerRobloxPersistence(null));
 
 describe('restore dari tabel', () => {
   it('memuat antrean, taksonomi, katalog, dan target dari empat command — bukan IndexedDB', async () => {
@@ -94,8 +92,8 @@ describe('restore dari tabel', () => {
     expect(fileOf(state().items[1]!.id)).toBeUndefined();
   });
 
-  it('adapter dipilih dari platform host: di web tidak ada satu pun invoke', async () => {
-    setPlatformHostForTests(createWebHost());
+  it('tanpa pendaftaran (bawaan web): tidak ada satu pun invoke', async () => {
+    registerRobloxPersistence(null);
     robloxActions.__resetForTest();
     await restoreRobloxQueue();
     expect(invoke).not.toHaveBeenCalled();

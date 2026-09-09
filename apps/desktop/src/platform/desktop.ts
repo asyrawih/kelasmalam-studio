@@ -7,7 +7,7 @@
  * method: bundel web tidak perlu membawa kode yang hanya hidup di Tauri, dan
  * Vite memecahnya jadi chunk yang tidak pernah diminta browser.
  *
- * Yang disediakan sisi Rust (`desktop/src-tauri/src/lib.rs`, dikawinkan
+ * Yang disediakan sisi Rust (`src-tauri/src/lib.rs`, dikawinkan
  * setelah merge): `model_download({id}) -> path` dengan event
  * `daw://model-progress` `{id, done, total}`, lalu `model_read({id}) -> byte`.
  *
@@ -18,10 +18,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { createLocalLibraryApi } from '../library/local-api';
-import type { LibraryApi } from '../library/api';
-import { assertModelSize, SCNET_MODELS, type ScnetModelId } from '../proof-stem/scnet-catalog';
-import type { ExportSink } from '../studio/export/sinks';
+import { createLocalLibraryApi } from '../library-local/local-api';
+import type { LibraryApi } from '@app-web/library/api'; // TODO(P3)
+import { assertModelSize, SCNET_MODELS, type ScnetModelId } from '@app-web/proof-stem/scnet-catalog'; // TODO(P3)
+import type { ExportSink } from '@app-web/studio/export/sinks'; // TODO(P3)
 import type { DropPoint, ModelBytes, OpenAudioFilesOptions, PlatformHost, SaveTarget } from '@kelasmalam/platform/host';
 
 export const AUDIO_EXTENSIONS: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'aif', 'aiff', 'm4a', 'aac'];

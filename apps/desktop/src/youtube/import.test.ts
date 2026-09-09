@@ -24,15 +24,14 @@ vi.mock('./api', async (importOriginal) => ({
 }));
 
 const importBytesToLane = vi.fn();
-vi.mock('../studio/timeline/audio-import', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../studio/timeline/audio-import')>()),
+vi.mock('@app-web/studio/timeline/audio-import', async (importOriginal) => ({ // TODO(P3)
+  ...(await importOriginal<typeof import('@app-web/studio/timeline/audio-import')>()), // TODO(P3)
   importBytesToLane: (...args: unknown[]) => importBytesToLane(...args),
 }));
 
-import { setPlatformHostForTests, type PlatformHost } from '../platform';
 import { LocalCommandError } from '../platform/local-invoke';
-import { importUrlToLane } from '../studio/timeline/url-to-lane';
-import { importYoutubeToLane, YOUTUBE_TOOLS_MISSING } from './import';
+import { importUrlToLane, registerUrlImporter } from '@app-web/studio/timeline/url-to-lane'; // TODO(P3)
+import { importYoutubeToLane, youtubeUrlImporter, YOUTUBE_TOOLS_MISSING } from './import';
 
 const URL_YT = 'https://youtu.be/abc';
 const INFO = {
@@ -55,11 +54,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.clearAllMocks();
-  setPlatformHostForTests(null);
 });
-
-const asDesktop = (): void => setPlatformHostForTests({ kind: 'desktop' } as PlatformHost);
-const asWeb = (): void => setPlatformHostForTests({ kind: 'web' } as PlatformHost);
 
 describe('importYoutubeToLane', () => {
   it('info → audio → importBytesToLane dengan nama judul.ekstensi', async () => {
@@ -116,28 +111,37 @@ describe('importYoutubeToLane', () => {
   });
 });
 
-describe('importUrlToLane: YouTube dibelokkan hanya di desktop', () => {
-  it('desktop: link YouTube lewat yt-dlp, bukan fetch', async () => {
-    asDesktop();
+/**
+ * `importUrlToLane` dengan importer YouTube TERDAFTAR — seperti yang dilakukan
+ * `main.tsx` desktop (docs/25 §1c). Jalur "tanpa importer" (web) diuji di
+ * `apps/web/src/studio/timeline/url-to-lane.test.ts`.
+ */
+describe('importUrlToLane dengan youtubeUrlImporter terdaftar', () => {
+  let unregister: () => void = () => {};
+  beforeEach(() => {
+    unregister = registerUrlImporter(youtubeUrlImporter);
+  });
+  afterEach(() => unregister());
+
+  it('link YouTube lewat yt-dlp, bukan fetch', async () => {
     const r = await importUrlToLane(URL_YT, 'lane-1', 0, 48_000);
     expect(r).toEqual({ ok: true });
     expect(api.youtubeAudio).toHaveBeenCalledWith(URL_YT);
   });
 
-  it('web: pesan lama (unduh dulu, drop berkasnya), tanpa menyentuh command', async () => {
-    asWeb();
+  it('host lain yang butuh server (SoundCloud) TIDAK ikut dibelokkan', async () => {
+    const r = await importUrlToLane('https://soundcloud.com/a/b', 'lane-1', 0, 48_000);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/SoundCloud/);
+    expect(api.youtubeStatus).not.toHaveBeenCalled();
+  });
+
+  it('sesudah pendaftaran dilepas: pesan lama, tanpa menyentuh command', async () => {
+    unregister();
     const r = await importUrlToLane(URL_YT, 'lane-1', 0, 48_000);
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/link YouTube tidak bisa diunduh langsung dari browser/);
     expect(api.youtubeStatus).not.toHaveBeenCalled();
     expect(api.youtubeAudio).not.toHaveBeenCalled();
-  });
-
-  it('desktop: host lain yang butuh server (SoundCloud) TIDAK ikut dibelokkan', async () => {
-    asDesktop();
-    const r = await importUrlToLane('https://soundcloud.com/a/b', 'lane-1', 0, 48_000);
-    expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/SoundCloud/);
-    expect(api.youtubeStatus).not.toHaveBeenCalled();
   });
 });

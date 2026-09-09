@@ -1,10 +1,10 @@
 /**
  * Panel PENYIMPANAN di layar pengaturan (⌘,) — docs/21 K3.
  *
- * Hanya hidup di desktop: web tidak punya folder (kepustakaannya R2/D1,
- * docs/16), jadi di web komponen ini mengembalikan `null` SEBELUM menyentuh
- * `invoke` — bukan merender kerangka kosong, dan bukan memanggil `store_info`
- * yang di browser melempar karena `__TAURI_INTERNALS__` tidak ada.
+ * Hanya ada di desktop: web tidak punya folder (kepustakaannya R2/D1,
+ * docs/16). Sejak docs/25 P2 komponen ini milik `apps/desktop` dan TIDAK lagi
+ * bertanya `isDesktop()` — web tidak pernah memasangnya; slot `storeSettings`
+ * di `KeymapEditor` kosong di sana.
  *
  * ## Alur pindah folder
  *
@@ -31,12 +31,11 @@
 
 import { useEffect, useState } from 'react';
 
-import { isDesktop } from '../app-shell/desktop';
 import type { StoreInfo } from '../platform/local-commands';
 import { LOCAL_EVENTS } from '../platform/local-commands';
 import { callLocal, toLocalError } from '../platform/local-invoke';
 import { Button, ProgressBar } from '@kelasmalam/ui/cyber';
-import { formatBytes } from './model';
+import { formatBytes } from '@app-web/library/model'; // TODO(P3)
 import {
   confirmRelocateMessage,
   formatStoreBytes,
@@ -57,14 +56,7 @@ type Phase =
   | { readonly kind: 'confirm'; readonly newDir: string }
   | { readonly kind: 'relocating'; readonly newDir: string; readonly progress: Progress };
 
-export function StoreSettings(): JSX.Element | null {
-  // Diperiksa di dalam komponen, bukan oleh pemasangnya, supaya SETIAP tempat
-  // yang memasang panel ini otomatis aman di web — tidak ada yang bisa lupa.
-  if (!isDesktop()) return null;
-  return <DesktopStoreSettings />;
-}
-
-function DesktopStoreSettings(): JSX.Element {
+export function StoreSettings(): JSX.Element {
   const [info, setInfo] = useState<StoreInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });

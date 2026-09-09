@@ -16,7 +16,7 @@
  * yang bisa ditolak (Rust juga menolak dengan `LocalError`).
  */
 
-import type { LocalCommandName, LocalCommands } from '../../platform/local-commands';
+import type { LocalCommandName, LocalCommands } from '../platform/local-commands';
 
 // Satu promise import per modul, dipakai bersama: `Promise.all` empat command
 // saat restore memulai empat `import()` serempak, dan modul yang sama dimuat

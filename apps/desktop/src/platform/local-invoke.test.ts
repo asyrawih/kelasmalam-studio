@@ -13,7 +13,6 @@ import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 const invoke = vi.fn(async (_cmd: string, _args?: unknown, _opts?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown, opts?: unknown) => invoke(cmd, args, opts),
-  isTauri: () => true,
 }));
 
 import { LOCAL_COMMAND_NAMES, type LocalCommands, type LocalTrack } from './local-commands';

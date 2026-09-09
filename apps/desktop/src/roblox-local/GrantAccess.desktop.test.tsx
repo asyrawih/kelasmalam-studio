@@ -9,14 +9,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { GrantAccess } from './GrantAccess';
-import { createLocalGrantApi } from './local-api';
-import { robloxActions, robloxStore } from '../store';
+import { createLocalGrantApi } from './grant-local-api';
+import { GrantAccess } from '@app-web/roblox/grant/GrantAccess'; // TODO(P3)
+import { robloxActions, robloxStore } from '@app-web/roblox/store'; // TODO(P3)
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
-  isTauri: () => true,
 }));
 
 const target = { creatorKind: 'user' as const, creatorId: '123', apiKey: '', genreToDescription: true };

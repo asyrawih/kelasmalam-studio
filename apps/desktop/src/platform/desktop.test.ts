@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
-  isTauri: () => true,
 }));
 
 const openUrl = vi.fn(async (_u: string) => {});

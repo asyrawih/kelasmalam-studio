@@ -6,13 +6,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createLocalGrantApi } from './local-api';
-import { GrantError } from './api';
+import { createLocalGrantApi } from './grant-local-api';
+import { GrantError } from '@app-web/roblox/grant/api'; // TODO(P3)
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
-  isTauri: () => true,
 }));
 
 const api = createLocalGrantApi();

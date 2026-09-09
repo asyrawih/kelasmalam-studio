@@ -10,10 +10,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const invoke = vi.fn(async (_cmd: string, _args?: unknown, _opts?: unknown): Promise<unknown> => null);
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (cmd: string, args?: unknown, opts?: unknown) => invoke(cmd, args, opts),
-  isTauri: () => false,
 }));
 
-import { LibraryError, VersionConflict } from './api';
+import { LibraryError, VersionConflict } from '@app-web/library/api'; // TODO(P3)
 import { createLocalLibraryApi, extOfMime, LOCAL_USER } from './local-api';
 
 const HASH = 'a'.repeat(64);

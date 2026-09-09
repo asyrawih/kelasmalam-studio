@@ -13,7 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StoreInfo } from '../platform/local-commands';
-import { KeymapEditor } from '../app-shell/KeymapEditor';
+import { KeymapEditor } from '@app-web/app-shell/KeymapEditor'; // TODO(P3)
 import { StoreSettings } from './StoreSettings';
 import {
   confirmRelocateMessage,
@@ -29,7 +29,6 @@ type Listener = (e: { payload: unknown }) => void;
 
 /** `vi.hoisted`: factory `vi.mock` di-hoist ke atas semua import, termasuk `const`. */
 const tauri = vi.hoisted(() => ({
-  desktop: false,
   invoke: vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => null),
   listeners: new Map<string, (e: { payload: unknown }) => void>(),
   listen: vi.fn(),
@@ -38,7 +37,6 @@ const tauri = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
-  isTauri: () => tauri.desktop,
   invoke: (cmd: string, args?: unknown) => tauri.invoke(cmd, args),
 }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }));
@@ -63,7 +61,6 @@ function emitProgress(done: number, total: number): void {
 }
 
 beforeEach(() => {
-  tauri.desktop = true;
   tauri.listeners.clear();
   tauri.invoke.mockReset();
   tauri.invoke.mockImplementation(async (cmd: string) => {
@@ -86,24 +83,6 @@ afterEach(() => {
 
 const panel = (): HTMLElement => screen.getByRole('region', { name: 'penyimpanan' });
 
-describe('di web', () => {
-  it('tidak dirender sama sekali dan tidak ada invoke', () => {
-    tauri.desktop = false;
-    const { container } = render(<StoreSettings />);
-    expect(container.innerHTML).toBe('');
-    expect(screen.queryByRole('region', { name: 'penyimpanan' })).toBeNull();
-    expect(tauri.invoke).not.toHaveBeenCalled();
-  });
-
-  it('layar pengaturan (⌘,) tetap tanpa bagian PENYIMPANAN', () => {
-    tauri.desktop = false;
-    render(<KeymapEditor open onClose={() => {}} onCaptureChange={() => {}} />);
-    expect(screen.getByRole('dialog', { name: 'pintasan keyboard' })).toBeTruthy();
-    expect(screen.queryByText('PENYIMPANAN')).toBeNull();
-    expect(tauri.invoke).not.toHaveBeenCalled();
-  });
-});
-
 describe('di desktop', () => {
   it('menampilkan path, ukuran, jumlah lagu/project, versi skema dari store_info', async () => {
     render(<StoreSettings />);
@@ -115,8 +94,8 @@ describe('di desktop', () => {
     expect(within(panel()).getByText(STORE_HELP)).toBeTruthy();
   });
 
-  it('muncul sebagai bagian PENYIMPANAN di layar pengaturan (⌘,)', async () => {
-    render(<KeymapEditor open onClose={() => {}} onCaptureChange={() => {}} />);
+  it('muncul sebagai bagian PENYIMPANAN di layar pengaturan (⌘,) lewat slot storeSettings', async () => {
+    render(<KeymapEditor open onClose={() => {}} onCaptureChange={() => {}} storeSettings={<StoreSettings />} />);
     const dialog = screen.getByRole('dialog', { name: 'pintasan keyboard' });
     expect(within(dialog).getByText('PENYIMPANAN')).toBeTruthy();
     await waitFor(() => expect(within(dialog).getByTestId('store-dir').textContent).toBe(INFO.dir));

@@ -9,14 +9,21 @@
  */
 
 import { act, cleanup, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AppShell } from './AppShell';
+import { AppShell } from '../app-shell/AppShell';
+import { pathOf, type Route } from '../app-shell/routes';
 import { listCommands } from '@kelasmalam/shell/command';
 import { DESKTOP_MENU_COMMAND_IDS, menuCommandRoute } from './menu-ids';
-import { pathOf, type Route } from './routes';
-import { djActions } from '../dj/store';
-import { studioActions } from '../studio/store';
+import { djActions } from '@app-web/dj/store'; // TODO(P3)
+import { studioActions } from '@app-web/studio/store'; // TODO(P3)
+
+// Shell desktop memasang judul jendela, listener menu, dan penjaga tutup saat
+// mount; yang diuji di sini registry-nya, jadi pintu Tauri-nya dibisukan.
+vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => {} }));
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: () => ({ setTitle: async () => {}, onCloseRequested: async () => () => {}, destroy: async () => {} }),
+}));
 
 const RECT = {
   x: 0,
@@ -57,7 +64,9 @@ describe('DESKTOP_MENU_COMMAND_IDS', () => {
   });
 
   it('tiap id terdaftar oleh halaman pemiliknya', () => {
-    const pages: readonly Route[] = ['landing', 'studio', 'dj', 'roblox'];
+    // Tidak ada `landing` di desktop (`../app-shell/routes`): `shell.*` diperiksa
+    // di tiga halaman aplikasi.
+    const pages: readonly Route[] = ['studio', 'dj', 'roblox'];
     const byRoute = new Map<Route, ReadonlySet<string>>();
     for (const route of pages) byRoute.set(route, registeredAt(route));
 

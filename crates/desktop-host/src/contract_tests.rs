@@ -1,5 +1,12 @@
-//! Tes bentuk kontrak: `apps/web/src/platform/local-commands.ts` adalah sumber
-//! kebenaran, dan sisi Rust harus mengikutinya PERSIS (docs/21 §2a).
+//! Tes bentuk kontrak: `apps/desktop/src/platform/local-commands.ts` adalah
+//! sumber kebenaran, dan sisi Rust harus mengikutinya PERSIS (docs/21 §2a).
+//!
+//! Sejak docs/25 P2 kontraknya terbagi di EMPAT berkas TS, dan tes ini membaca
+//! gabungannya: `local-commands.ts` (nama command, event, tipe yang hanya
+//! desktop) plus tipe DTO yang juga dipakai UI web dan karena itu tinggal di
+//! `apps/web/src/library/model.ts`, `apps/web/src/roblox/model.ts`, dan
+//! `apps/web/src/local-error.ts`. Bundel web tidak boleh menarik kontrak Tauri
+//! hanya untuk tipe — itu alasan pemisahannya.
 //!
 //! Dua hal yang dijaga, keduanya dengan parser teks sederhana — bukan parser
 //! TypeScript, cukup untuk bentuk berkas kontrak yang memang ditulis supaya
@@ -29,9 +36,23 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
+/// Berkas-berkas yang bersama-sama membentuk kontrak (lihat kepala modul).
+const CONTRACT_FILES: &[&str] = &[
+    "apps/desktop/src/platform/local-commands.ts",
+    "apps/web/src/library/model.ts",
+    "apps/web/src/roblox/model.ts",
+    "apps/web/src/local-error.ts",
+];
+
 fn contract_ts() -> String {
-    std::fs::read_to_string(repo_root().join("apps/web/src/platform/local-commands.ts"))
-        .expect("kontrak apps/web/src/platform/local-commands.ts harus ada")
+    CONTRACT_FILES
+        .iter()
+        .map(|rel| {
+            std::fs::read_to_string(repo_root().join(rel))
+                .unwrap_or_else(|_| panic!("kontrak {rel} harus ada"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn commands_rs() -> String {

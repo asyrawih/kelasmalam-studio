@@ -10,6 +10,15 @@
  * `'../platform'` — modul ini — dan dengan begitu resolver ikut terdaftar di
  * worker.
  *
+ * Didaftarkan sebagai resolver BAWAAN (`registerDefaultPlatformHostResolver`),
+ * bukan resolver app: modul-modul di `apps/web/src` yang belum jadi paket
+ * (studio, roblox, kepustakaan — TODO(P3)) juga dimuat app DESKTOP lewat
+ * `@app-web/*`, dan mereka mengimpor modul ini. Bawaan tidak menimpa resolver
+ * yang didaftarkan `apps/desktop/src/platform/index.ts`, apa pun urutan
+ * pemuatannya; di worker desktop hanya bawaan ini yang ada, dan host web
+ * memang yang benar di sana (tidak ada IPC di worker). Di app web tidak ada
+ * resolver lain, jadi bawaan = satu-satunya.
+ *
  * Yang HILANG dari sini dibanding sebelum P2: `isTauri()` dan
  * `createDesktopHost()`. Keduanya kini milik `apps/desktop/src/platform/`,
  * yang mendaftarkan resolvernya sendiri. Bundel web tidak lagi membawa
@@ -21,10 +30,10 @@
  * `@kelasmalam/platform`).
  */
 
-import { registerPlatformHostResolver } from '@kelasmalam/platform';
+import { registerDefaultPlatformHostResolver } from '@kelasmalam/platform';
 import { createWebHost } from './web';
 
-registerPlatformHostResolver(() => createWebHost());
+registerDefaultPlatformHostResolver(() => createWebHost());
 
 export {
   getPlatformHost,
