@@ -21,6 +21,7 @@ sini selesai.
 | P0 | #78 | Selesai di branch. Dua hal yang baru ketahuan saat verifikasi dan masuk PR: (1) linker bun harus `hoisted` (`bunfig.toml`), karena linker `isolated` bawaan bun 1.3 membuat `tsc` tidak menemukan types `onnxruntime-web/wasm`; (2) `scnet-model.ts` menunjuk `../../node_modules/onnxruntime-web/dist` dan `vite build` tetap hijau saat path itu tidak ada — `ort-wasm-simd-threaded.{mjs,wasm}` lenyap dari `dist`. Kini alias `@ort-dist` lewat `require.resolve` + tes `ort-dist.test.ts`. Dua tes Rust yang membaca berkas frontend (`contract_tests.rs`, `local_server.rs`) ikut dipindah path-nya. |
 | P1 | #79 | Selesai di branch, ditumpuk di atas #78. Bentuk aktual sedikit berbeda dari rencana awal — lihat §1a (letak wasm), §1d (resolver platform), §2 (lingkup `shell`), §1h (vitest). 156 berkas / 1817 tes; gzip JS +0,05%. |
 | P2 | #80 | Selesai di branch, ditumpuk di atas #79. `apps/desktop` lahir (port dev 5174), `src-tauri` pindah, bundel web bebas Tauri (gzip −3,1%), Vite base bersama `packages/engine/vite/base.ts` (`defineDawApp`). Registry host **dua tingkat** (web mendaftar bawaan, desktop menang) karena modul `apps/web` yang ditarik desktop ikut mendaftar host web. 28 berkas `apps/desktop/src` masih memakai `@app-web` (allowlist `app-web-imports.test.ts`) — P3 menurunkannya ke nol. Uji manual docs/22 dan job CI `desktop` di runner macOS/Windows belum dijalankan. |
+| P4 | branch `feat/p4-studio-core` | `packages/studio-core` lahir: registry aset (`assetStore`) keluar dari store project, analisis/waveform/import/stem/cache PCM pindah; `dj → studio-core` dan TIDAK lagi `→ studio` (dijaga tes). Bentuk aktual sedikit berbeda dari rencana — §3 P4: import job tetap di studio (UI lane), `stem.ts`/`stem-bake`/`beat-cut`/`clip-*`/`library-drop` tetap di studio karena tahu clip/lane, `fader` ke `ui/lib`, `ScrollingWave` menerima jam lewat prop. Undo/penanda kotor untuk aset dipertahankan lewat snapshot gabungan di store project. |
 | P3 | branch `feat/p3-paket-halaman` | Enam paket halaman lahir (`studio` berikut `stem/` dan `StudioPage`, `dj`, `library` berikut `local-error`, `roblox`, `soundcloud`, `proof-stem`); alias `@app-web/*` dihapus total dan dijaga tidak kembali (`app-web-imports.test.ts` kini memindai seluruh repo). Graf paket jadi DAG yang ditegakkan tes (`no-package-cycles.test.ts`, §1b). Cicilan P4 ikut masuk: pipeline export (`run-export`, `sinks`, `wasm-engine`, `loudness-analyzer`, bentuk payload) pindah ke `packages/engine/src/export/` supaya `export-worker` tidak mengimpor studio. Kontrak host kehilangan `libraryApi()` (diganti `registerLibraryApi` di paket library) dan `modelBytes` jadi opsional; NOL cabang `kind === 'desktop'` di `packages/*` dan `apps/web`. Detail di §1c, §1d, §2, P3. |
 
 ---
@@ -255,8 +256,9 @@ menyebut path lama diperbarui dalam PR yang sama — daftar lengkapnya dari
 | `roblox/` | `packages/roblox/src/roblox/` + `apps/desktop/src/roblox-local/` | prop `platform: PlatformKind` yang hanya memilih TEKS jadi `variant: 'web' \| 'local'` (`ui-variant.ts`) — sifat backend yang disuntik, bukan platform |
 | `soundcloud/` | `packages/soundcloud/src/soundcloud/` + `apps/desktop/src/soundcloud/desktop-transport.ts` | `studio-import.tsx` baru: `useSoundCloudImport()` untuk `extras` StudioPage |
 | `youtube/` | `apps/desktop/src/youtube/` | seluruhnya desktop; mengimpor `@kelasmalam/studio` |
-| `studio/`, `stem/`, `App.tsx` | `packages/studio/src/studio/`, `packages/studio/src/stem/`, `packages/studio/src/StudioPage.tsx` | `stem/` ikut studio, bukan proof-stem: `AutoStemToggle` menulis ke store studio dan `audio-preview` membaca `auto-stem` — dua arah, satu paket. `StudioPage` menerima `dock` + `extras`; `commands.ts` menerima `registerSaveFallback` dari dok (studio tidak mengimpor library). CSS Studio → `packages/studio/src/studio.css` |
-| `dj/` | `packages/dj/src/dj/` | `CollectionBrowser` memakai hook kontrak, sudah benar; masih `dj → studio` sampai P4 |
+| `studio/`, `stem/`, `App.tsx` | `packages/studio/src/studio/`, `packages/studio/src/StudioPage.tsx` | `StudioPage` menerima `dock` + `extras`; `commands.ts` menerima `registerSaveFallback` dari dok (studio tidak mengimpor library). CSS Studio → `packages/studio/src/studio.css`. **P4:** `stem/` dan bagian studio yang tidak tahu lane pindah ke `studio-core` (baris berikut) |
+| `studio/{model,store}` bagian aset; `studio/analysis/{beat-grid,grid-edit,tap-tempo,tempo-client}`; `studio/timeline/{envelope,wave-window,waveform,content-hash,sniff,url-import,import-sink,normalize,fade,fade-draw,beat-draw,ScrollingWave}`; `audio-import` bagian aset; `stem/*`; `preview/fx-node`; `fx/useFxCatalog`; `persist/{asset-roots,decode-asset}`; cache PCM + AudioContext dari `preview/audio-preview` | `packages/studio-core/src/{assets,analysis,timeline,stem,preview,fx,persist}/` (**P4**) | `assets/model.ts` (`StudioAsset`, `AssetTempo`, `Samples`, `FxInsert`, `FadeCurve`), `assets/store.ts` (`assetStore`/`assetActions`/`useAssets`), `assets/usage.ts` (registry pemakaian — studio mendaftarkan penghitung lane), `preview/audio-context.ts` (`ensureContext`, `registerBuffer`, `getBuffer`, `previewSampleRate`). `rail/fader.ts` → `packages/ui/src/lib/fader.ts` (matematika UI murni) |
+| `dj/` | `packages/dj/src/dj/` | `CollectionBrowser` memakai hook kontrak, sudah benar. **P4:** `dj → studio-core`, nol impor `@kelasmalam/studio/` (dijaga `no-package-cycles`); pemakaian aset oleh clip dijawab registry `assets/usage.ts`, sample rate untuk decode dari `previewSampleRate()` |
 | `proof-stem/` | `packages/proof-stem/src/proof-stem/` | satu paket (tanpa `stem/`, lihat baris studio); `onnxruntime-web.d.ts` ikut ke sini |
 | `landing/`, `main.tsx`, `index.css`, `public/` | `apps/web/src/` | `index.css` app-level saja + `@import` CSS ui dan studio |
 | `desktop/src-tauri/` (di luar `web/`) | `apps/desktop/src-tauri/` | utuh, `git mv`; rujukan path di §1g |
@@ -374,11 +376,12 @@ Graf dependensi paket (dari `package.json`, dijaga `no-package-cycles`):
 platform, ui → engine, engine → platform (tipe ExportSink saja)
 shell → ui
 proof-stem → platform, ui
-studio → engine, ui, shell, platform, proof-stem
-dj → studio, proof-stem, engine, ui, shell, platform
-library → studio, dj, ui, shell, platform
+studio-core → engine, ui, proof-stem                       (P4)
+studio → studio-core, engine, ui, shell, platform, proof-stem
+dj → studio-core, proof-stem, engine, ui, shell, platform  (P4: bukan studio)
+library → studio, studio-core, dj, ui, shell, platform
 roblox → ui, shell, platform, library (local-error)
-soundcloud → studio, ui, platform
+soundcloud → studio, studio-core, ui, platform
 ```
 
 Penyimpangan dari sasaran awal yang dicatat: `engine → platform` (tipe) ada
@@ -403,22 +406,69 @@ bergantung pada engine, dan platform harus tinggal di dasar.
 
 ### P4 — `studio-core`: lapisan yang tidak tahu lane
 
-Dari `packages/studio` diekstrak: `model.ts` bagian asset/peaks, `timeline/`
-non-lane (`waveform`, `wave-window`, `fade`, `clip-trim`, `clip-snap`,
-`normalize`, `content-hash`, `sniff`, `audio-import`, `url-import`,
-`import-sink`, `beat-*`, `envelope`, `stem*`), `analysis/`,
-`persist/decode-asset`, dan `stem/`. `dj/` dialihkan ke `studio-core`.
-Pipeline export (`run-export`, `sinks`, `wasm-engine`, `loudness-analyzer`,
-bentuk payload) SUDAH di `packages/engine/src/export/` sejak P3 — yang
-tersisa di `studio/export/` hanya `buildExportPayload` dan `worker-host`.
+Rencana awal: ekstrak `model.ts` bagian asset/peaks, `timeline/` non-lane,
+`analysis/`, `persist/decode-asset`, dan `stem/`; alihkan `dj/` ke
+`studio-core`. Pipeline export SUDAH di `packages/engine/src/export/` sejak P3.
 
-**Done:**
-1. `packages/dj` tidak mengimpor `@kelasmalam/studio` sama sekali (hanya
-   `studio-core`).
-2. `packages/studio` (lane) hanya berisi: `StudioLane`, `store`, `shell/`,
-   `rail/`, `fx/`, `timeline/{ClipArea,LaneHeaders,…}`, `preview/`,
-   `persist/persistence`, `commands`.
-3. Semua tes lolos; ini gerbang docs/24 F0.
+**Bentuk aktual (branch `feat/p4-studio-core`):**
+
+```
+packages/studio-core/src/
+  assets/model.ts       StudioAsset, AssetTempo, TEMPO_UNCERTAIN, AssetMap, ImportStage,
+                        Samples, FxInsert, FadeCurve, DEFAULT_FADE_CURVE, DEFAULT_SAMPLE_RATE
+  assets/store.ts       assetStore / useAssets / assetActions (register, remove, tempo,
+                        grid, anchor, lock, newAssetId, restoreAssets)
+  assets/usage.ts       registerAssetUsage / assetUsage — studio mendaftarkan penghitung lane
+  analysis/             beat-grid (+correctedBpm), grid-edit, tap-tempo, tempo-client
+  timeline/             envelope, wave-window, waveform (+loopTileCount), content-hash, sniff,
+                        url-import, import-sink, audio-import (byte → aset), normalize,
+                        fade (generik atas field fade), fade-draw, beat-draw, ScrollingWave
+  stem/                 auto-stem, auto-stem.worker, AutoStemToggle
+  preview/              fx-node, audio-context (AudioContext + cache PCM, previewSampleRate)
+  fx/useFxCatalog.ts
+  persist/              asset-roots, decode-asset
+```
+
+Keputusan yang menyimpang dari rencana, dan alasannya:
+
+- **Store aset terpisah, riwayat tetap milik project.** `assets` keluar dari
+  `StudioAppState`; `studio/store.ts` MEMBACA `assetStore` dan BERLANGGANAN
+  padanya: perubahan aset direkam sebagai langkah undo (snapshot gabungan
+  `{project, assets}`) dan menaikkan `projectSerial`, persis perilaku sebelum
+  pemisahan (`undo.test.ts` menjaganya). `hydrate` dan `__resetForTest` tetap
+  satu pintu.
+- **Yang tahu clip/lane tetap di studio** walau rencana menyebutnya:
+  `stem.ts`, `stem-bake.ts`, `beat-cut`, `beat-pulse`, `clip-loop`,
+  `clip-trim`, `clip-snap`, `library-drop` (punya `LaneLocator`),
+  `lane-import`, `url-to-lane`, `playhead-tempo` (membaca lane; `correctedBpm`
+  yang asset-murni pindah ke `beat-grid`), dan DAFTAR import job (bar progres
+  per lane). `audio-import` dibelah: byte → aset di core, aset → clip di studio
+  dengan nama berkas yang sama.
+- **`ScrollingWave` tidak mengimpor pemutar mana pun**: jam transport dan jam
+  audisi disuntikkan lewat prop (`positionSourceSec`, `auditionSourceSec`);
+  `ClipPanels` menyuntikkan jam Studio, deck DJ jamnya sendiri.
+- **`sampleRate` untuk `/dj`** datang dari `previewSampleRate()` core (milik
+  AudioContext, atau `DEFAULT_SAMPLE_RATE`), bukan dari project Studio.
+- **`rail/fader.ts` → `packages/ui/src/lib/fader.ts`** (taper + label dB,
+  tanpa dependensi). **`fx-node` tinggal di core**, bukan engine, karena ia
+  butuh `FxInsert`; memindahkannya ke engine berarti engine mengimpor model.
+- `StudioHeader` dan `commands` TIDAK dipakai dj (DjHeader hanya meniru
+  bentuknya) — keduanya tetap di studio.
+
+**Done (aktual):**
+1. `packages/dj/package.json` tanpa `@kelasmalam/studio`; `grep -rn
+   "@kelasmalam/studio/" packages/dj/src` kosong — keduanya diasersi
+   `no-package-cycles.test.ts`, bersama "studio-core tidak mengimpor
+   studio/dj/library".
+2. `packages/studio` (lane) berisi `StudioPage`, `model` (lane/clip), `store`
+   (project + langganan aset), `shell/`, `rail/`, `fx/FxCard`, `timeline/`
+   (ClipArea, LaneHeaders, ClipPanels, BeatSection, StemSection, clip-*,
+   beat-cut/pulse, lane-import, url-to-lane, library-drop, stem, stem-bake,
+   audio-import bagian lane), `preview/` (pemutar), `persist/persistence`,
+   `commands`, `shortcuts/`, `export/{payload,worker-host}`.
+3. Semua tes lolos di lokasi baru; tes baru: `assets/store.test`,
+   `assets/usage.test` (core), `asset-usage.test` (studio mendaftarkan
+   penghitung lane), lima kasus aset di `undo.test`. Ini gerbang docs/24 F0.
 
 ---
 

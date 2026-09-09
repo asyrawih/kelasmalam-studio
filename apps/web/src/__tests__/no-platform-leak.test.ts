@@ -55,6 +55,7 @@ describe('packages/* tidak tahu platformnya (docs/25 §1b)', () => {
         'shell',
         'platform',
         'studio',
+        'studio-core',
         'dj',
         'library',
         'roblox',

@@ -3,8 +3,10 @@
 Browser-based DAW. Rust → `wasm32-unknown-unknown` untuk engine/DSP/timeline/export,
 TypeScript + React 18 + Vite untuk UI, AudioWorklet sebagai host realtime.
 Frontend hidup di `apps/web` (workspace bun; docs/25 memecahnya lebih lanjut
-menjadi `apps/desktop` dan `packages/*`). Dokumen lama yang menulis `web/src/…`
-maksudnya `apps/web/src/…`.
+menjadi `apps/desktop` dan `packages/*`). Sejak P4, `packages/studio-core`
+(registry aset, analisis, waveform, import, stem — tanpa lane) adalah lapisan
+yang dibagi Studio lane, Studio FL (docs/24), dan DJ; itu gerbang docs/24 F0.
+Dokumen lama yang menulis `web/src/…` maksudnya `apps/web/src/…`.
 
 Dokumen ini adalah index. Detail per bagian:
 
