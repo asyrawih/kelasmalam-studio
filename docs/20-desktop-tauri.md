@@ -104,6 +104,12 @@ Tiga fakta dari repo yang menentukan bentuk rencana ini:
 
 ### a) Satu frontend, satu build Vite
 
+> **Direvisi oleh [docs/25](25-pisah-web-desktop.md):** frontend dipecah
+> menjadi `apps/web` dan `apps/desktop` di atas paket bersama, supaya desktop
+> boleh berbeda (Studio ala FL, docs/24) tanpa mengubah web. Yang tetap
+> berlaku dari bagian ini: perbedaan platform masuk lewat kontrak, bukan
+> `if (isTauri)` yang tersebar.
+
 `web/dist` yang sama dipakai Vercel dan Tauri. `tauri.conf.json` menunjuk
 `frontendDist: ../../web/dist` dan `devUrl: http://localhost:5173`. Tidak ada
 `web-desktop/`, tidak ada fork komponen. Yang membedakan hanya **satu modul
