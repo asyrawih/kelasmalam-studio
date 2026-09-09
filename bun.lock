@@ -19,6 +19,7 @@
         "@kelasmalam/shell": "workspace:*",
         "@kelasmalam/soundcloud": "workspace:*",
         "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/studio-core": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "@tauri-apps/api": "^2.11.1",
         "@tauri-apps/plugin-deep-link": "^2.4.10",
@@ -60,6 +61,7 @@
         "@kelasmalam/shell": "workspace:*",
         "@kelasmalam/soundcloud": "workspace:*",
         "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/studio-core": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "@vercel/analytics": "^2.0.1",
         "react": "^18.3.1",
@@ -99,7 +101,7 @@
         "@kelasmalam/platform": "workspace:*",
         "@kelasmalam/proof-stem": "workspace:*",
         "@kelasmalam/shell": "workspace:*",
-        "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/studio-core": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "react": "^18.3.1",
       },
@@ -139,6 +141,7 @@
         "@kelasmalam/platform": "workspace:*",
         "@kelasmalam/shell": "workspace:*",
         "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/studio-core": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "react": "^18.3.1",
       },
@@ -205,6 +208,7 @@
       "name": "@kelasmalam/shell",
       "version": "0.1.0",
       "dependencies": {
+        "@kelasmalam/ui": "workspace:*",
         "react": "^18.3.1",
       },
       "devDependencies": {
@@ -219,6 +223,7 @@
       "dependencies": {
         "@kelasmalam/platform": "workspace:*",
         "@kelasmalam/studio": "workspace:*",
+        "@kelasmalam/studio-core": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "react": "^18.3.1",
       },
@@ -239,6 +244,25 @@
         "@kelasmalam/platform": "workspace:*",
         "@kelasmalam/proof-stem": "workspace:*",
         "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/studio-core": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
+    "packages/studio-core": {
+      "name": "@kelasmalam/studio-core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/engine": "workspace:*",
+        "@kelasmalam/proof-stem": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
         "react": "^18.3.1",
       },
@@ -408,6 +432,8 @@
     "@kelasmalam/soundcloud": ["@kelasmalam/soundcloud@workspace:packages/soundcloud"],
 
     "@kelasmalam/studio": ["@kelasmalam/studio@workspace:packages/studio"],
+
+    "@kelasmalam/studio-core": ["@kelasmalam/studio-core@workspace:packages/studio-core"],
 
     "@kelasmalam/ui": ["@kelasmalam/ui@workspace:packages/ui"],
 

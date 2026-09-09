@@ -23,6 +23,7 @@
     "@kelasmalam/shell": "workspace:*",
     "@kelasmalam/soundcloud": "workspace:*",
     "@kelasmalam/studio": "workspace:*",
+    "@kelasmalam/studio-core": "workspace:*",
     "@kelasmalam/ui": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-deep-link": "^2.4.10",

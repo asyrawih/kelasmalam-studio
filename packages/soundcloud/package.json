@@ -10,6 +10,7 @@
   "dependencies": {
     "@kelasmalam/platform": "workspace:*",
     "@kelasmalam/studio": "workspace:*",
+    "@kelasmalam/studio-core": "workspace:*",
     "@kelasmalam/ui": "workspace:*",
     "react": "^18.3.1"
   },

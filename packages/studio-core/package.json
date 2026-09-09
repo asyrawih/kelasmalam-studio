@@ -1,18 +1,15 @@
 {
-  "name": "@kelasmalam/dj",
+  "name": "@kelasmalam/studio-core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Halaman DJ (docs/25 P3): deck, mixer, grid, browser koleksi. Bergantung pada studio-core (registry aset, beat grid, waveform, stem, cache PCM) — TIDAK pada studio lane (docs/25 P4).",
+  "description": "Lapisan Studio yang TIDAK tahu lane (docs/25 P4): registry aset (assetStore), analisis tempo/beat grid, envelope dan waveform, import/decode audio, cache PCM + AudioContext, node FX preview, dan auto-stem. Dipakai studio (lane), studio-fl (docs/24), dan dj — dj hanya bergantung ke sini, tidak ke studio.",
   "exports": {
     "./*": "./src/*"
   },
   "dependencies": {
     "@kelasmalam/engine": "workspace:*",
-    "@kelasmalam/platform": "workspace:*",
     "@kelasmalam/proof-stem": "workspace:*",
-    "@kelasmalam/shell": "workspace:*",
-    "@kelasmalam/studio-core": "workspace:*",
     "@kelasmalam/ui": "workspace:*",
     "react": "^18.3.1"
   },
