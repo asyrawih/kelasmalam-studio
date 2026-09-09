@@ -29,7 +29,7 @@
 #   --notes <file>    catatan rilis (masuk ke latest.json `notes` dan badan
 #                     release). Default: satu baris berisi versi.
 #   --skip-wasm       pakai packages/engine/src/wasm yang sudah ada (SKIP_WASM=1).
-#   --skip-web        pakai apps/web/dist yang sudah ada (SKIP_WEB_BUILD=1).
+#   --skip-web        pakai apps/desktop/dist yang sudah ada (SKIP_WEB_BUILD=1).
 #   --unsigned        build uji: lepas semua env APPLE_* dan TAURI_SIGNING_*
 #                     walau ada di shell/.env.release — tidak ada codesign,
 #                     tidak ada kiriman ke notarization Apple, tidak ada
@@ -50,7 +50,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-TAURI_DIR="$ROOT/desktop/src-tauri"
+# Frontend desktop adalah aplikasi Vite sendiri (docs/25 P2): `apps/desktop`,
+# dengan `src-tauri` di sampingnya. `frontendDist` di tauri.conf.json menunjuk
+# `../dist` = `apps/desktop/dist`.
+TAURI_DIR="$ROOT/apps/desktop/src-tauri"
+APP_DIR="$ROOT/apps/desktop"
 TAURI_CONF="$TAURI_DIR/tauri.conf.json"
 OUT_ROOT="$ROOT/dist-desktop"
 
@@ -259,10 +263,10 @@ else
 fi
 
 # --- 4. web ---------------------------------------------------------------------
-log "4/7 Frontend (vite build → apps/web/dist)"
+log "4/7 Frontend (vite build → apps/desktop/dist)"
 if [ "$SKIP_WEB_BUILD" = 1 ]; then
-  [ -f "$ROOT/apps/web/dist/index.html" ] || die "SKIP_WEB_BUILD tapi apps/web/dist/index.html tidak ada."
-  note "lewati (apps/web/dist sudah ada)"
+  [ -f "$APP_DIR/dist/index.html" ] || die "SKIP_WEB_BUILD tapi apps/desktop/dist/index.html tidak ada."
+  note "lewati (apps/desktop/dist sudah ada)"
 else
   # Workspace bun: dependensi di-hoist ke node_modules ROOT (docs/25 §1a).
   [ -x "$ROOT/node_modules/.bin/vite" ] || die "node_modules/.bin/vite tidak ada: jalankan 'bun install' di root."
@@ -271,7 +275,10 @@ else
   # tapi untuk rilis publik itu hampir pasti bukan yang dimaksud.
   [ -n "${VITE_ROBLOX_API:-}" ]  || warn "VITE_ROBLOX_API kosong — halaman /roblox akan UI ONLY di build ini."
   [ -n "${VITE_LIBRARY_API:-}" ] || warn "VITE_LIBRARY_API kosong — kepustakaan daring tidak terpasang di build ini."
-  ( cd "$ROOT/apps/web" && run "$ROOT/node_modules/.bin/vite" build )
+  # `tsc --noEmit` sengaja TIDAK dijalankan di sini (skrip `build` app
+  # menjalankannya): typecheck sudah urusan CI, dan rilis dari mesin lokal
+  # tidak boleh gagal karena tipe yang tidak memengaruhi bundel.
+  ( cd "$APP_DIR" && run "$ROOT/node_modules/.bin/vite" build )
 fi
 
 # --- 5. tauri build per target ---------------------------------------------------

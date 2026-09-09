@@ -6,7 +6,7 @@
 //! bisa dibaca begini:
 //!
 //! 1. Setiap nama di `LOCAL_COMMAND_NAMES` terdaftar di `generate_handler!`
-//!    crate Tauri (`desktop/src-tauri/src/commands/mod.rs`), dan tidak ada
+//!    crate Tauri (`apps/desktop/src-tauri/src/commands/mod.rs`), dan tidak ada
 //!    command `library_*`/`roblox_*`/`store_*`/`secret_*` di Rust yang tidak
 //!    ada di TS.
 //! 2. Kunci JSON tiap struct `types.rs` sama dengan field interface TS-nya.
@@ -35,8 +35,8 @@ fn contract_ts() -> String {
 }
 
 fn commands_rs() -> String {
-    std::fs::read_to_string(repo_root().join("desktop/src-tauri/src/commands/mod.rs"))
-        .expect("desktop/src-tauri/src/commands/mod.rs harus ada")
+    std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/src/commands/mod.rs"))
+        .expect("apps/desktop/src-tauri/src/commands/mod.rs harus ada")
 }
 
 /// Isi `LOCAL_COMMAND_NAMES = [ 'a', 'b', ... ]`.
@@ -340,7 +340,7 @@ fn enums_serialize_as_contract_string_literals() {
 
 // ---------------------------------------------------------------------------
 // Izin per command untuk origin REMOTE (build produksi memuat frontend dari
-// http://127.0.0.1:<port>, lihat desktop/src-tauri/src/local_server.rs).
+// http://127.0.0.1:<port>, lihat apps/desktop/src-tauri/src/local_server.rs).
 //
 // Tanpa `allow-<command>` di capability, setiap `invoke` dari origin itu
 // ditolak dengan "not allowed. Plugin not found" — halaman terlihat normal,
@@ -348,12 +348,13 @@ fn enums_serialize_as_contract_string_literals() {
 // membuat lupa menambahkan satu baris terlihat di CI, bukan di tangan user.
 
 fn build_rs() -> String {
-    std::fs::read_to_string(repo_root().join("desktop/src-tauri/build.rs")).expect("build.rs ada")
+    std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/build.rs"))
+        .expect("build.rs ada")
 }
 
 fn capability_permissions() -> BTreeSet<String> {
     let raw =
-        std::fs::read_to_string(repo_root().join("desktop/src-tauri/capabilities/default.json"))
+        std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/capabilities/default.json"))
             .expect("capabilities/default.json ada");
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     json["permissions"]
@@ -411,7 +412,7 @@ fn capability_allows_every_command_for_the_loopback_origin() {
     );
 
     let raw =
-        std::fs::read_to_string(repo_root().join("desktop/src-tauri/capabilities/default.json"))
+        std::fs::read_to_string(repo_root().join("apps/desktop/src-tauri/capabilities/default.json"))
             .unwrap();
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let urls = json["remote"]["urls"].as_array().expect("remote.urls ada");

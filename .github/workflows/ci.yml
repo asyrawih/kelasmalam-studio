@@ -380,7 +380,7 @@ jobs:
       # .dmg/.msi — bundling adalah urusan `release-desktop.yml` (D6) dan butuh
       # sertifikat yang tidak ada di PR.
       - name: tauri build (debug, tanpa bundel)
-        working-directory: desktop/src-tauri
+        working-directory: apps/desktop/src-tauri
         run: npx --yes @tauri-apps/cli@2.11.4 build --debug --no-bundle
 
       - run: cargo test -p daw-desktop

@@ -3,11 +3,12 @@
 //! Yang hidup di sini hanya: registrasi plugin, menu native, urusan siklus
 //! hidup proses, dan pembungkus command untuk penyimpanan lokal (docs/21;
 //! `commands/`). Tidak ada logika audio, tidak ada logika project —
-//! semuanya tetap di `web/` dan berjalan di dalam WebView, persis seperti di
+//! semuanya tetap di `apps/` (frontend desktop `apps/desktop`, kode bersama
+//! `apps/web`/`packages/*`) dan berjalan di dalam WebView, persis seperti di
 //! browser. Aturan kepustakaan lokal pun tidak di sini melainkan di
 //! `crates/desktop-host`, yang diuji tanpa Tauri. Kalau ada dorongan menaruh
 //! sesuatu di sini, pertanyaannya: "apakah ini hanya mungkin dilakukan proses
-//! native?" Kalau tidak, tempatnya di `web/src/platform/`.
+//! native?" Kalau tidak, tempatnya di `apps/desktop/src/platform/`.
 
 mod commands;
 mod local_server;

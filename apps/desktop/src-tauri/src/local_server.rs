@@ -38,7 +38,8 @@ use tauri::{AppHandle, Asset, Runtime};
 use tiny_http::{Header, Response, Server};
 
 /// Header yang membuat `crossOriginIsolated` true — sama persis dengan
-/// `web/vite.config.ts` dan `web/public/_headers`, sengaja tidak dibagi
+/// `COI_HEADERS` di `packages/engine/vite/base.ts` dan `apps/web/public/_headers`,
+/// sengaja tidak dibagi
 /// lewat konstanta lintas bahasa: kalau salah satu berubah, yang lain harus
 /// ikut berubah SADAR, bukan diam-diam.
 const ISOLATION_HEADERS: &[(&str, &str)] = &[
@@ -172,15 +173,17 @@ mod tests {
     #[test]
     fn isolation_headers_match_the_web_deploy() {
         // Cermin apps/web/public/_headers: kalau salah satu berubah, tes ini yang
-        // meminta yang lain ikut.
+        // meminta yang lain ikut. `apps/desktop` sendiri tidak punya `_headers`
+        // (header COI-nya server ini) — jadi cerminnya tetap deploy web, dan
+        // path relatifnya dari `apps/desktop/src-tauri` (docs/25 P2).
         let headers = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/web/public/_headers"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/public/_headers"),
         )
         .expect("apps/web/public/_headers ada");
         for (name, value) in ISOLATION_HEADERS {
             assert!(
                 headers.contains(&format!("{name}: {value}")),
-                "{name}: {value} harus ada di web/public/_headers"
+                "{name}: {value} harus ada di apps/web/public/_headers"
             );
         }
     }

@@ -15,7 +15,7 @@
 //! 3. [`finish_upload`] — SQLite lagi, di bawah kunci.
 //!
 //! (Sama untuk poll: [`prepare_poll`] → [`send_poll`] → [`finish_poll`].)
-//! Command Tauri di `desktop/src-tauri/src/commands/roblox.rs` merangkai
+//! Command Tauri di `apps/desktop/src-tauri/src/commands/roblox.rs` merangkai
 //! ketiganya lewat `with_store`; [`upload_start`] dan [`operation_poll`] di
 //! sini merangkainya di atas `&Store` polos — itu rujukan urutannya dan yang
 //! diuji terhadap server HTTP tiruan (`roblox_upload_tests.rs`).

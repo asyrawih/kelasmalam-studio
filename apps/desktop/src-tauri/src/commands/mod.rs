@@ -1,7 +1,9 @@
 //! Command Tauri untuk penyimpanan lokal (docs/21 §2a) — pembungkus tipis
 //! di atas `daw-desktop-host`.
 //!
-//! Kontraknya `apps/web/src/platform/local-commands.ts`: nama command, argumen
+//! Kontraknya `apps/desktop/src/platform/local-commands.ts` (docs/25 P2;
+//! tipe DTO yang juga dipakai web ada di `apps/web/src/{library,roblox}/model.ts`
+//! dan `apps/web/src/local-error.ts`): nama command, argumen
 //! `camelCase`, bentuk hasil, kode galat `LocalError`, nama event. Tes bentuk
 //! di `crates/desktop-host/src/contract_tests.rs` membaca daftar
 //! `generate_handler!` di bawah dan memastikan tiap nama kontrak ada di sana
