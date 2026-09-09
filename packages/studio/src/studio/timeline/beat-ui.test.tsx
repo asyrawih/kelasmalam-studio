@@ -4,13 +4,15 @@
  */
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore, useAssets } from '@kelasmalam/studio-core/assets/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { studioActions, studioStore, useStudio, type StudioAsset } from '../store';
+import { studioActions, studioStore, useStudio } from '../store';
 import { ClipEditPanel, ClipWavePanel } from './ClipPanels';
 import { BeatProvider, useBeatShared } from './beat-context';
 import { BeatControls } from './BeatSection';
-import { buildEnvelope } from './envelope';
+import { buildEnvelope } from '@kelasmalam/studio-core/timeline/envelope';
 
 const SR = 48_000;
 const RECT = {
@@ -72,7 +74,7 @@ function clips() {
  * lebih dulu — yang diuji di sini adalah kontrolnya, bukan cara membukanya.
  */
 function AllBeatControls(): JSX.Element {
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const sampleRate = useStudio((s) => s.sampleRate);
   const { shown, beat } = useBeatShared();
   if (shown === null) return <span />;
@@ -99,7 +101,7 @@ function Studio(): JSX.Element {
 
 beforeEach(() => {
   studioActions.__resetForTest();
-  studioActions.registerAsset(asset());
+  assetActions.registerAsset(asset());
   const lane = studioStore.getState().lanes[0]!;
   const clip = lane.clips[0]!;
   // Clip 16 detik = 8 bar pada 120 BPM.
@@ -135,17 +137,17 @@ describe('kontrol beat di topbar', () => {
     const field = screen.getByLabelText('BPM');
     fireEvent.change(field, { target: { value: '90' } });
     fireEvent.blur(field);
-    expect(studioStore.getState().assets[ASSET_ID]!.bpmOverride).toBe(90);
+    expect(assetStore.getState().assets[ASSET_ID]!.bpmOverride).toBe(90);
     expect(screen.getByText('grid manual')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'AUTO' }));
-    expect(studioStore.getState().assets[ASSET_ID]!.bpmOverride).toBeNull();
+    expect(assetStore.getState().assets[ASSET_ID]!.bpmOverride).toBeNull();
   });
 
   it('menggeser downbeat menyimpan offset di asset', () => {
     render(<Studio />);
     fireEvent.click(screen.getByTitle('geser grid ke kanan (Shift = 1 ms)'));
-    expect(studioStore.getState().assets[ASSET_ID]!.beatOffsetOverride).toBeCloseTo(0.01, 6);
+    expect(assetStore.getState().assets[ASSET_ID]!.beatOffsetOverride).toBeCloseTo(0.01, 6);
   });
 
   it('LOOP CUT memotong clip jadi region 4 bar dan mengulanginya', () => {
@@ -214,7 +216,7 @@ describe('kontrol beat di topbar', () => {
   });
 
   it('tanpa BPM, LOOP CUT dinonaktifkan dan alasannya terbaca', () => {
-    studioActions.setAssetTempo(ASSET_ID, null);
+    assetActions.setAssetTempo(ASSET_ID, null);
     render(<Studio />);
     expect(screen.getByRole('button', { name: 'LOOP CUT' })).toHaveProperty('disabled', true);
     expect(document.querySelector('[data-loop-picker]')).toBeNull();

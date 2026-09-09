@@ -28,16 +28,13 @@
  */
 
 import { DEFAULT_LANE_HEIGHT, type StudioLane, type StudioState } from '../model';
-import {
-  DEFAULT_PANEL_ORDER,
-  DEFAULT_RAIL_ORDER,
-  studioActions,
-  type StudioAppState,
-} from '../store';
+import type { AssetMap } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
+import { DEFAULT_PANEL_ORDER, DEFAULT_RAIL_ORDER, studioActions, type StudioAppState } from '../store';
 import { normalizeClipLoop } from '../timeline/clip-loop';
-import { normalizeClipFade } from '../timeline/fade';
+import { normalizeClipFade } from '@kelasmalam/studio-core/timeline/fade';
 import { normalizeClipStem } from '../timeline/stem';
-import { collectAssetRoots } from './asset-roots';
+import { collectAssetRoots } from '@kelasmalam/studio-core/persist/asset-roots';
 
 /** Naikkan kalau bentuk data berubah dan yang lama tidak bisa dibaca lagi. */
 const SCHEMA_VERSION = 1;
@@ -123,9 +120,9 @@ interface PersistedGrid {
  * jangan disentuh lagi" — akan kehilangan kuncinya tiap refresh kalau
  * syaratnya hanya melihat kedua override.
  */
-function collectAssetGrids(s: StudioAppState): Record<number, PersistedGrid> {
+function collectAssetGrids(assets: AssetMap): Record<number, PersistedGrid> {
   const out: Record<number, PersistedGrid> = {};
-  for (const a of Object.values(s.assets)) {
+  for (const a of Object.values(assets)) {
     const anchors = a.beatAnchors ?? null;
     if (
       a.bpmOverride === null &&
@@ -159,33 +156,38 @@ function collectAssetGrids(s: StudioAppState): Record<number, PersistedGrid> {
  * memang tidak punya identitas yang bertahan, dan §8e belum memutuskan
  * nasibnya. Yang tidak boleh terjadi adalah ia hilang diam-diam dari project.
  */
-function laneWithHashes(s: StudioAppState): PersistedLane[] {
+function laneWithHashes(s: StudioAppState, assets: AssetMap): PersistedLane[] {
   return s.lanes.map((lane) => ({
     ...lane,
     clips: lane.clips.map((clip) => {
-      const hash = s.assets[clip.assetId]?.contentHash ?? '';
+      const hash = assets[clip.assetId]?.contentHash ?? '';
       return hash === '' ? clip : { ...clip, contentHash: hash };
     }),
   }));
 }
 
 /** `collectAssetGrids`, tapi ber-kunci hash. Asset tanpa hash dilewati. */
-function collectAssetGridsByHash(s: StudioAppState): Record<string, PersistedGrid> {
-  const byId = collectAssetGrids(s);
+function collectAssetGridsByHash(assets: AssetMap): Record<string, PersistedGrid> {
+  const byId = collectAssetGrids(assets);
   const out: Record<string, PersistedGrid> = {};
   for (const [id, grid] of Object.entries(byId)) {
-    const hash = s.assets[Number(id)]?.contentHash ?? '';
+    const hash = assets[Number(id)]?.contentHash ?? '';
     if (hash !== '') out[hash] = grid;
   }
   return out;
 }
 
-export function serialize(s: StudioAppState): string {
+/**
+ * `assets` = registry `studio-core` (docs/25 P4); default-nya keadaan sekarang.
+ * Jadi argumen, bukan dibaca diam-diam, supaya tes bisa menyerialisasi
+ * project rekaan tanpa menyentuh registry global.
+ */
+export function serialize(s: StudioAppState, assets: AssetMap = assetStore.getState().assets): string {
   const data: PersistedProject = {
     version: SCHEMA_VERSION,
     projectName: s.projectName,
     sampleRate: s.sampleRate,
-    lanes: laneWithHashes(s),
+    lanes: laneWithHashes(s, assets),
     playhead: s.playhead,
     speed: s.speed,
     loop: s.loop,
@@ -201,8 +203,8 @@ export function serialize(s: StudioAppState): string {
     exportFileName: s.exportFileName,
     selectedLaneId: s.selectedLaneId,
     selectedClipId: s.selectedClipId,
-    assetGrids: collectAssetGrids(s),
-    assetGridsByHash: collectAssetGridsByHash(s),
+    assetGrids: collectAssetGrids(assets),
+    assetGridsByHash: collectAssetGridsByHash(assets),
   };
   return JSON.stringify(data);
 }
@@ -374,17 +376,17 @@ export async function restoreProject(
     // Grid DULU, kunci belakangan. `setAssetBeatGrid` menolak asset yang
     // terkunci, jadi urutan terbalik akan memulihkan kuncinya dan membuang
     // justru koreksi yang dikunci itu.
-    studioActions.setAssetBeatGrid(Number(id), { bpm: grid.bpm, offsetSec: grid.offsetSec });
-    studioActions.setAssetBeatAnchors(Number(id), grid.anchors ?? null);
-    if (grid.lock === true) studioActions.setAnalysisLock(Number(id), true);
+    assetActions.setAssetBeatGrid(Number(id), { bpm: grid.bpm, offsetSec: grid.offsetSec });
+    assetActions.setAssetBeatAnchors(Number(id), grid.anchors ?? null);
+    if (grid.lock === true) assetActions.setAnalysisLock(Number(id), true);
   }
 
   for (const [hash, grid] of Object.entries(data.assetGridsByHash ?? {})) {
     const id = byHash.get(hash);
     if (id === undefined) continue;
-    studioActions.setAssetBeatGrid(id, { bpm: grid.bpm, offsetSec: grid.offsetSec });
-    studioActions.setAssetBeatAnchors(id, grid.anchors ?? null);
-    if (grid.lock === true) studioActions.setAnalysisLock(id, true);
+    assetActions.setAssetBeatGrid(id, { bpm: grid.bpm, offsetSec: grid.offsetSec });
+    assetActions.setAssetBeatAnchors(id, grid.anchors ?? null);
+    if (grid.lock === true) assetActions.setAnalysisLock(id, true);
   }
 
   return { restored: true, missingAssets: missing };

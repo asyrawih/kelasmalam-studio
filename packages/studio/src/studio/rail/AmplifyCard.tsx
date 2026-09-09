@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge, Card } from '@kelasmalam/ui/cyber';
 import { MAX_MASTER_GAIN_DB, MIN_MASTER_GAIN_DB } from '../model';
 import { readMasterPeak } from '../preview/audio-preview';
-import { formatDb } from './fader';
+import { formatDb } from '@kelasmalam/ui/lib/fader';
 import { studioActions, useStudio } from './store-adapter';
 import { useDragFraction } from './useDragFraction';
 

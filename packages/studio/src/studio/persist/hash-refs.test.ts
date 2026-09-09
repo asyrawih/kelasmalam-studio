@@ -12,8 +12,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { relinkLanes, serialize } from './persistence';
+import type { AssetMap } from '@kelasmalam/studio-core/assets/model';
 import type { StudioAppState } from '../store';
 import type { StudioLane } from '../model';
+
+/** Project rekaan + registry asetnya — `serialize` menerima keduanya terpisah. */
+type Fixture = StudioAppState & { readonly assets: AssetMap };
 
 const SR = 48_000;
 
@@ -35,7 +39,7 @@ function clip(id: string, assetId: number): StudioLane['clips'][number] {
   } as unknown as StudioLane['clips'][number];
 }
 
-function state(over: Partial<StudioAppState> = {}): StudioAppState {
+function state(over: Partial<Fixture> = {}): Fixture {
   const lane = { id: 'lane-1', clips: [clip('c1', 7)], chain: [] } as unknown as StudioLane;
   return {
     projectName: 'UJI',
@@ -68,11 +72,11 @@ function state(over: Partial<StudioAppState> = {}): StudioAppState {
       },
     },
     ...over,
-  } as unknown as StudioAppState;
+  } as unknown as Fixture;
 }
 
-const parse = (s: StudioAppState): Record<string, unknown> =>
-  JSON.parse(serialize(s)) as Record<string, unknown>;
+const parse = (s: Fixture): Record<string, unknown> =>
+  JSON.parse(serialize(s, s.assets)) as Record<string, unknown>;
 
 describe('serialize menulis hash', () => {
   it('tiap clip membawa contentHash asetnya', () => {
@@ -99,7 +103,7 @@ describe('serialize menulis hash', () => {
           beatOffsetOverride: null,
           analysisLock: false,
         },
-      } as unknown as StudioAppState['assets'],
+      } as unknown as AssetMap,
     });
     const lanes = parse(s).lanes as { clips: { assetId: number; contentHash?: string }[] }[];
 

@@ -15,8 +15,10 @@
  *      akan menghasilkan bunyi yang berbeda.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
 
-import { studioActions, studioStore, type StudioAsset } from '../store';
+import { studioActions, studioStore } from '../store';
 import { buildProjectGraph } from './graph-builder';
 
 const SR = 48_000;
@@ -154,9 +156,9 @@ describe('clip dengan region loop terpasang', () => {
     // Clip yang loop boleh lebih panjang dari file-nya; sesudah loop dilepas
     // panjang itu tidak lagi punya materi, dan `src.start()` yang melempar
     // membuat `buildProjectGraph` MELEWATI clip tanpa satu pun tanda di layar.
-    const asset = studioStore.getState().assets[theClip().assetId];
+    const asset = assetStore.getState().assets[theClip().assetId];
     if (asset === undefined) {
-      studioActions.registerAsset({
+      assetActions.registerAsset({
         id: theClip().assetId,
         name: 'uji',
         envelope: { levels: [], frames: 10 * SR } as unknown as StudioAsset['envelope'],

@@ -13,6 +13,7 @@
  */
 
 import { useState } from 'react';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 
 import { AmplifyCard } from '../rail/AmplifyCard';
 import { CompileCard } from '../rail/CompileCard';
@@ -40,7 +41,7 @@ function ClipScoped({ children }: { readonly children: React.ReactNode }): JSX.E
 }
 
 function BeatMenu({ groups }: { readonly groups: readonly ('grid' | 'view' | 'loop' | 'cut')[] }): JSX.Element {
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const sampleRate = useStudio((s) => s.sampleRate);
   const { shown, beat } = useBeatShared();
   const [note, setNote] = useState<string | null>(null);
@@ -80,7 +81,7 @@ function LoopMenu(): JSX.Element {
 
 /** Bagian kontrol menu LOOP, dipisah supaya `ClipHeader` tidak dobel. */
 function BeatMenuBody(): JSX.Element {
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const sampleRate = useStudio((s) => s.sampleRate);
   const { shown, beat } = useBeatShared();
   const [note, setNote] = useState<string | null>(null);

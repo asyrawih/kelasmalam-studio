@@ -17,6 +17,8 @@
  */
 
 import { memo, useEffect, useState } from 'react';
+import { TEMPO_UNCERTAIN } from '@kelasmalam/studio-core/assets/model';
+import { assetActions, useAssets } from '@kelasmalam/studio-core/assets/store';
 
 import {
   bpmSyncPlan,
@@ -25,7 +27,7 @@ import {
   selectPlayheadTempo,
   type PlayheadTempo,
 } from '../analysis/playhead-tempo';
-import { TEMPO_UNCERTAIN, studioActions, useStudio } from '../store';
+import { studioActions, useStudio } from '../store';
 
 /** Selisih BPM di bawah ini dianggap "sudah match" dan tidak dilaporkan. */
 const MATCH_EPSILON = 0.05;
@@ -72,7 +74,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
   // Tombol sync tetap membandingkan clip yang benar-benar bertumpuk di
   // playhead; readout boleh mengikuti pilihan yang berada di tempat lain.
   const playheadTempo = useStudio(selectPlayheadTempo);
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const selectedClipId = useStudio((s) => s.selectedClipId);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -82,7 +84,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
     const assetFor = (clipId: string) => {
       for (const lane of s.lanes) {
         const clip = lane.clips.find((entry) => entry.id === clipId);
-        if (clip !== undefined) return s.assets[clip.assetId];
+        if (clip !== undefined) return assets[clip.assetId];
       }
       return undefined;
     };
@@ -147,8 +149,8 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
       // Angka yang diketik adalah keputusan manual. Simpan override dahulu,
       // baru kunci asset; urutan sebaliknya akan membuat setter grid menolak
       // angka tersebut karena analysisLock memang melindungi semua edit grid.
-      studioActions.setAssetBeatGrid(activeAssetId, { bpm });
-      studioActions.setAnalysisLock(activeAssetId, true);
+      assetActions.setAssetBeatGrid(activeAssetId, { bpm });
+      assetActions.setAnalysisLock(activeAssetId, true);
     }
     setEditing(false);
   };
@@ -246,7 +248,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
                     ? 'Gandakan BPM — oktaf tempo memang ambigu; 85 dan 170 sama sahnya.'
                     : 'Bagi dua BPM.'
                 }
-                onClick={() => studioActions.shiftAssetTempoOctave(activeAssetId, d)}
+                onClick={() => assetActions.shiftAssetTempoOctave(activeAssetId, d)}
                 style={{
                   fontFamily: 'var(--cy-font-mono)',
                   fontSize: '9px',
@@ -274,7 +276,7 @@ export const BpmCell = memo(function BpmCell(): JSX.Element {
                 ? 'BPM terkunci: buka kunci untuk mengedit atau memakai ×2/÷2'
                 : 'Kunci BPM agar koreksi manual terlindungi dari perubahan grid'
             }
-            onClick={() => studioActions.setAnalysisLock(activeAssetId, !locked)}
+            onClick={() => assetActions.setAnalysisLock(activeAssetId, !locked)}
             style={{
               fontFamily: 'var(--cy-font-mono)',
               fontSize: '10px',

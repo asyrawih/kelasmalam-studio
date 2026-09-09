@@ -19,7 +19,7 @@
 
 import { useEffect, useRef } from 'react';
 
-import { chainShape, fxPreviewStatus } from './fx-node';
+import { chainShape, fxPreviewStatus } from '@kelasmalam/studio-core/preview/fx-node';
 import { isStemBypass } from '../model';
 import { activeLoopLen } from '../timeline/clip-loop';
 import { studioStore } from '../store';
@@ -39,7 +39,7 @@ import {
   getAutoStemMask,
   isFullStemMask,
   subscribeAutoStem,
-} from '../../stem/auto-stem';
+} from '@kelasmalam/studio-core/stem/auto-stem';
 
 /** Sidik jari hal-hal yang mengharuskan penjadwalan ulang saat sedang play.
  *  Diekspor untuk tes — lihat `mix-fingerprint.test.ts`. */

@@ -21,7 +21,7 @@ import { useEffect } from 'react';
 
 import { studioActions, studioStore } from '../store';
 import { importUrlToLane } from '../timeline/url-to-lane';
-import { classifyUrl } from '../timeline/url-import';
+import { classifyUrl } from '@kelasmalam/studio-core/timeline/url-import';
 
 function isTextEntry(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

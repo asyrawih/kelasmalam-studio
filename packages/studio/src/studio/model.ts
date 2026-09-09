@@ -11,20 +11,19 @@
  * engine memakai kata engine.
  */
 
-/** Posisi/panjang dalam sample pada sample rate project. */
-export type Samples = number;
-
-/**
- * Bentuk fade. Rumus dan alasan pemilihannya ada di `timeline/fade.ts` —
- * di sini cuma tipenya, supaya model tidak bergantung pada modul UI.
+/*
+ * Tipe dasar yang juga dipakai lapisan tanpa lane — `Samples`, `FadeCurve`,
+ * `DEFAULT_FADE_CURVE`, `FxInsert`, konversi detik↔sample — didefinisikan di
+ * `@kelasmalam/studio-core/assets/model` (docs/25 P4) dan diekspor ulang di
+ * sini supaya model lane tetap satu pintu bagi pemakainya.
  */
-export type FadeCurve = 'linear' | 'equalPower';
-
-/**
- * Default clip baru. Sengaja equal-power: kasus paling sering adalah menyusun
- * dua lagu yang saling menimpa, dan di sanalah linear terdengar melubang.
- */
-export const DEFAULT_FADE_CURVE: FadeCurve = 'equalPower';
+import type { FadeCurve, FxInsert, Samples } from '@kelasmalam/studio-core/assets/model';
+export type { FadeCurve, FxInsert, Samples };
+export {
+  DEFAULT_FADE_CURVE,
+  samplesToSec,
+  secToSamples,
+} from '@kelasmalam/studio-core/assets/model';
 
 export interface StudioClip {
   id: string;
@@ -178,23 +177,6 @@ export function clampStemMix(s: StemMix): StemMix {
       STEM_BYPASS.voiceTopHz,
     ),
   };
-}
-
-/**
- * Satu efek terpasang di insert chain.
- *
- * `kind` adalah id dari katalog Rust (`fxCatalogJson`), dan `params` bernama —
- * bukan berurutan. Itu yang membuat menambah efek ke-7 tidak mengubah satu
- * baris pun di model, store, maupun payload: efek baru hanya berarti `kind`
- * baru dan nama parameter baru, yang keduanya sudah dideklarasikan katalog.
- *
- * Parameter yang tidak diisi memakai default katalog (diterapkan di sisi Rust),
- * jadi menyimpan hanya yang benar-benar diubah user sudah cukup.
- */
-export interface FxInsert {
-  readonly kind: string;
-  readonly enabled: boolean;
-  readonly params: Readonly<Record<string, number>>;
 }
 
 /**
@@ -461,9 +443,6 @@ export interface StudioState {
 }
 
 // ── Helper murni (dipakai UI dan tes) ────────────────────────────────────────
-
-export const secToSamples = (sec: number, sr: number): Samples => Math.round(sec * sr);
-export const samplesToSec = (s: Samples, sr: number): number => s / sr;
 
 /** Format mm:ss seperti `time()` di design. */
 export function formatTime(sec: number): string {

@@ -12,9 +12,9 @@
  * telinga.
  */
 
-import { beatIndexAt, resolveBeatGrid } from '../analysis/beat-grid';
+import { beatIndexAt, resolveBeatGrid } from '@kelasmalam/studio-core/analysis/beat-grid';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
 import { isAudible, type StudioLane } from '../model';
-import type { StudioAsset } from '../store';
 
 /**
  * Porsi satu ketukan yang dipakai kilatan, lalu padam.

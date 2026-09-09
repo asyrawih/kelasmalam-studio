@@ -19,7 +19,8 @@
  */
 
 import { timelineLenFor, type Samples, type StudioClip } from '../model';
-import { clampFadeMs } from './fade';
+import { clampFadeMs } from '@kelasmalam/studio-core/timeline/fade';
+import { loopTileCount } from '@kelasmalam/studio-core/timeline/waveform';
 
 /** Loop lebih pendek dari ini tidak lagi berbunyi sebagai materi, hanya klik. */
 export const MIN_LOOP_LEN: Samples = 8;
@@ -114,12 +115,8 @@ export function loopSourceOffset(
   return clip.sourceStart + (into % loopLen);
 }
 
-/** Berapa kali region muncul di clip ini, pengulangan terakhir yang terpotong
- *  ikut dihitung. Untuk pembacaan angka di UI dan untuk menggambar ubinnya. */
-export function loopTileCount(sourceLen: Samples, loopLen: Samples): number {
-  if (!(loopLen > 0) || !(sourceLen > 0)) return 1;
-  return Math.max(1, Math.ceil(sourceLen / loopLen));
-}
+/** Matematika ubin loop hidup di core (dipakai waveform); diekspor ulang di sini. */
+export { loopTileCount };
 
 /**
  * Jabarkan clip yang loop jadi deretan clip lurus yang berbunyi SAMA PERSIS.

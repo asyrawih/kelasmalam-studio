@@ -15,6 +15,8 @@
  * lurus. Konversi ke timeline hanya terjadi di `applyLoopCut`.
  */
 
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
+import { assetActions } from '@kelasmalam/studio-core/assets/store';
 import {
   useEffect,
   useMemo,
@@ -34,12 +36,12 @@ import {
   snapSourceToBeat,
   snapSourceToGrid,
   type BeatGrid,
-} from '../analysis/beat-grid';
+} from '@kelasmalam/studio-core/analysis/beat-grid';
 import { samplesToSec, type Samples, type StudioClip } from '../model';
-import { studioActions, useStudio, type StudioAsset } from '../store';
+import { studioActions, useStudio } from '../store';
 import { MAX_LOOP_REPEAT, clampLoopSpec, type ClampedRegion } from './beat-cut';
 import { activeLoopLen } from './clip-loop';
-import { drawBeatGrid, drawPlayhead } from './beat-draw';
+import { drawBeatGrid, drawPlayhead } from '@kelasmalam/studio-core/timeline/beat-draw';
 
 /**
  * Panjang loop yang ditawarkan, dalam BAR. Bar (bukan detik) karena itulah
@@ -569,7 +571,7 @@ export function BeatControls({
 
   const nudgeOffset = (deltaSec: number): void => {
     if (assetId === undefined || grid === null) return;
-    studioActions.setAssetBeatGrid(assetId, { offsetSec: grid.offsetSec + deltaSec });
+    assetActions.setAssetBeatGrid(assetId, { offsetSec: grid.offsetSec + deltaSec });
   };
 
   /** Panjang putaran yang SUDAH terpasang di clip ini, atau null. */
@@ -592,7 +594,7 @@ export function BeatControls({
                 value={grid?.bpm ?? null}
                 suffix="BPM"
                 onCommit={(n) =>
-                  studioActions.setAssetBeatGrid(assetId, {
+                  assetActions.setAssetBeatGrid(assetId, {
                     bpm: n === null ? null : Math.min(MAX_GRID_BPM, Math.max(MIN_GRID_BPM, n)),
                   })
                 }
@@ -601,7 +603,7 @@ export function BeatControls({
                 size="sm"
                 variant="ghost"
                 title="anggap dua kali lebih cepat"
-                onClick={() => studioActions.shiftAssetTempoOctave(assetId, 1)}
+                onClick={() => assetActions.shiftAssetTempoOctave(assetId, 1)}
                 style={{ padding: '0 8px' }}
               >
                 ×2
@@ -610,7 +612,7 @@ export function BeatControls({
                 size="sm"
                 variant="ghost"
                 title="anggap dua kali lebih lambat"
-                onClick={() => studioActions.shiftAssetTempoOctave(assetId, -1)}
+                onClick={() => assetActions.shiftAssetTempoOctave(assetId, -1)}
                 style={{ padding: '0 8px' }}
               >
                 ÷2
@@ -620,7 +622,7 @@ export function BeatControls({
                 variant={grid?.manual === true ? 'outline' : 'ghost'}
                 disabled={grid?.manual !== true}
                 title="buang koreksi manual, kembali ke hasil deteksi"
-                onClick={() => studioActions.resetAssetBeatGrid(assetId)}
+                onClick={() => assetActions.resetAssetBeatGrid(assetId)}
                 style={{ padding: '0 8px' }}
               >
                 AUTO

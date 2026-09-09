@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
  * Kalau `.slice(0)` di `importBytesToAsset` hilang lagi, yang diterima jalur
  * itu adalah berkas kosong tanpa satu pun tanda bahwa ada yang salah.
  */
-vi.mock('../preview/audio-preview', () => ({
+vi.mock('@kelasmalam/studio-core/preview/audio-context', () => ({
   ensureContext: () => ({
     sampleRate: 48_000,
     // Meniru perilaku browser: buffer yang masuk dianggap habis terpakai.

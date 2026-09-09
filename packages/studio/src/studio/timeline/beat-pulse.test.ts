@@ -6,9 +6,10 @@
  * lane yang seharusnya DIAM (mute, tidak ada clip, tanpa BPM).
  */
 import { describe, expect, it } from 'vitest';
+import type { StudioAsset } from '@kelasmalam/studio-core/assets/model';
 
 import { DEFAULT_FADE_CURVE, defaultEq, type StudioClip, type StudioLane } from '../model';
-import type { StudioAsset } from '../store';
+
 import { FLASH_FRACTION, OFFBEAT_LEVEL, lanePulse } from './beat-pulse';
 
 const SR = 48_000;

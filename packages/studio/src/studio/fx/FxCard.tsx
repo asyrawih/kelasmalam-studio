@@ -19,7 +19,7 @@ import { defaultParams } from '@kelasmalam/engine/audio/fx-catalog';
 import type { FxInsert, FxTarget } from '../model';
 import { studioActions, useStudio } from '../rail/store-adapter';
 import { FxParamRow } from './FxParamRow';
-import { sortedEffects, useFxCatalog } from './useFxCatalog';
+import { sortedEffects, useFxCatalog } from '@kelasmalam/studio-core/fx/useFxCatalog';
 
 const MONO = 'var(--cy-font-mono)';
 

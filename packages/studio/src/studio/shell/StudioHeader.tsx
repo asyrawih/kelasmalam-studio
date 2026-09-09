@@ -14,7 +14,7 @@
 import { VersionTag } from '@kelasmalam/shell/VersionTag';
 import { Badge, Button } from '@kelasmalam/ui/cyber';
 import { studioActions, useStudio } from '../store';
-import { AutoStemToggle } from '../../stem/AutoStemToggle';
+import { AutoStemToggle } from '@kelasmalam/studio-core/stem/AutoStemToggle';
 import type { ReactNode } from 'react';
 
 export interface StudioHeaderProps {

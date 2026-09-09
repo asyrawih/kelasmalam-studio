@@ -18,6 +18,7 @@
  */
 
 import { createContext, useContext, useRef, type ReactNode } from 'react';
+import { useAssets } from '@kelasmalam/studio-core/assets/store';
 
 import { findClip, type StudioClip, type StudioLane } from '../model';
 import { useStudio } from '../store';
@@ -60,7 +61,7 @@ export function fallbackClip(lanes: readonly StudioLane[], playhead: number): Sh
 
 export function BeatProvider({ children }: { readonly children: ReactNode }): JSX.Element {
   const lanes = useStudio((s) => s.lanes);
-  const assets = useStudio((s) => s.assets);
+  const assets = useAssets((s) => s.assets);
   const selectedClipId = useStudio((s) => s.selectedClipId);
   const sampleRate = useStudio((s) => s.sampleRate);
   const playhead = useStudio((s) => s.playhead);

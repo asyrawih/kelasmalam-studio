@@ -51,7 +51,7 @@ const TESTFX: EffectDesc = {
   latencyFrames: 0,
 };
 
-vi.mock('../preview/fx-node', () => ({
+vi.mock('@kelasmalam/studio-core/preview/fx-node', () => ({
   ensureFxRuntime: () => Promise.resolve(true),
   fxCatalog: () => new Map([['testfx', TESTFX]]),
   fxPreviewStatus: () => ({ ready: true, error: null }),

@@ -27,13 +27,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
-import {
-  DEFAULT_PANEL_ORDER,
-  DEFAULT_RAIL_ORDER,
-  studioActions,
-  useStudio,
-  type PanelId,
-} from '../store';
+import { DEFAULT_PANEL_ORDER, DEFAULT_RAIL_ORDER, studioActions, useStudio, type PanelId } from '../store';
 
 /**
  * Panel yang dibentangkan penuh layar.

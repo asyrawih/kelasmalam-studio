@@ -22,7 +22,7 @@ import {
   isFullStemMask,
   type AutoStemAudio,
   type AutoStemMask,
-} from '../../stem/auto-stem';
+} from '@kelasmalam/studio-core/stem/auto-stem';
 import {
   EMPTY_PCM,
   PCM_CHUNK_FRAMES,

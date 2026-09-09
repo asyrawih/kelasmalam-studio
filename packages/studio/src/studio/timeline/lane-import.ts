@@ -16,12 +16,8 @@
  */
 
 import { studioActions } from '../store';
-import {
-  importFileToLane,
-  type DropResult,
-  type ImportProgressFn,
-  type LaneImportOptions,
-} from './audio-import';
+import type { ImportProgressFn } from '@kelasmalam/studio-core/timeline/audio-import';
+import { importFileToLane, type DropResult, type LaneImportOptions } from './audio-import';
 import { importUrlToLane } from './url-to-lane';
 
 /**
