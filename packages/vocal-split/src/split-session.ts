@@ -23,6 +23,21 @@
  * §1b). Dialog dan job tidak tahu runtime mana yang jalan kecuali untuk badge
  * dan pilihan akselerasi.
  *
+ * ## Akselerasi di jalur WASM: `wasmAccel` (`wasm` | `webgpu`)
+ *
+ * Terpisah dari `accel` native. `webgpu` hanya ditawarkan kalau
+ * `navigator.gpu.requestAdapter()` mengembalikan adapter (probe sekali,
+ * di-cache — [`probeWebGpu`]); kalau ada, itu bawaannya. EP-nya diteruskan ke
+ * `SplitClient.init` sebagai `executionProvider`. MDX-Net tidak punya LSTM,
+ * jadi catatan docs/14 §WebGPU tidak berlaku (docs/26 §4).
+ *
+ * WebGPU boleh gagal di tengah jalan (adapter hilang, shader tidak
+ * terkompilasi, op yang tidak didukung): `init` yang gagal DI SINI, dan
+ * `separate` yang gagal di `split-job.ts`, dicoba ulang SEKALI dengan `wasm`
+ * secara transparan ([`fallbackVocalSplitToWasm`]); alasannya dicatat di
+ * `runtimeNote` supaya dialog bisa bilang "WebGPU gagal, memakai WASM".
+ * AbortError bukan kegagalan runtime dan tidak memicu fallback.
+ *
  * Store-nya kecil dan tanpa pustaka (pola `useSyncExternalStore` seperti
  * `studio/store.ts`): satu snapshot immutable, satu daftar pendengar.
  */
@@ -39,6 +54,9 @@ export type { VocalSplitAccel };
 
 /** `native` = inferensi di host (Rust); `wasm` = worker ORT-web. */
 export type VocalSplitRuntime = 'wasm' | 'native';
+
+/** Akselerasi di jalur worker ORT-web: EP `wasm` (CPU) atau `webgpu`. */
+export type VocalSplitWasmAccel = VocalExecutionProvider;
 
 /**
  * Info sesi yang siap. Untuk `wasm` ada sesi ORT dengan nama tensornya; untuk
@@ -88,9 +106,20 @@ export const CANCEL_REASON_TEXT: Record<VocalSplitCancelReason, string> = {
   'job-tidak-terdaftar': 'proyek diganti saat job berjalan',
 };
 
-/** Hasil job terakhir yang berakhir tanpa galat; dialog memakainya untuk membedakan "batal" dari "gagal". */
+/**
+ * Hasil job terakhir yang berakhir tanpa galat; dialog memakainya untuk
+ * membedakan "batal" dari "gagal", dan untuk menampilkan waktu pemisahan
+ * (`totalMs` seluruh `separate`, `inferenceMs` hanya di dalam ORT — null di
+ * native yang tidak melaporkannya, `segments` jumlah segmen) supaya WASM vs
+ * WebGPU bisa dibandingkan tanpa DevTools.
+ */
 export type VocalSplitLastOutcome =
-  | { readonly laneIds: readonly string[] }
+  | {
+      readonly laneIds: readonly string[];
+      readonly totalMs: number;
+      readonly inferenceMs: number | null;
+      readonly segments: number;
+    }
   | { readonly cancelled: true; readonly reason: VocalSplitCancelReason };
 
 export interface VocalSplitSnapshot {
@@ -113,19 +142,26 @@ export interface VocalSplitSnapshot {
   readonly accels: readonly VocalSplitAccel[];
   /** Pilihan akselerasi job berikutnya. Default `coreml` kalau tersedia, selain itu `cpu`. */
   readonly accel: VocalSplitAccel;
+  /** Akselerasi jalur worker yang tersedia: `['wasm']` atau `['wasm', 'webgpu']`; hanya `['wasm']` sebelum probe. */
+  readonly wasmAccels: readonly VocalSplitWasmAccel[];
+  /** EP jalur worker untuk sesi berikutnya. Default `webgpu` kalau adapter ada, selain itu `wasm`. */
+  readonly wasmAccel: VocalSplitWasmAccel;
+  /** Catatan runtime untuk dialog, mis. "WebGPU gagal, memakai WASM"; null kalau tidak ada. */
+  readonly runtimeNote: string | null;
 }
 
 export interface VocalModelLoadOptions {
   readonly maxThreads?: number;
-  /** Default `'wasm'` (docs/26 §4). Hanya berarti untuk runtime worker. */
+  /** Default = `wasmAccel` sesi (docs/26 §4). Hanya berarti untuk runtime worker. */
   readonly executionProvider?: VocalExecutionProvider;
 }
 
 interface WasmSession {
   readonly kind: 'wasm';
-  readonly client: SplitClient;
+  /** Bukan `readonly`: fallback WebGPU → WASM menukar klien dan EP di sesi yang sama. */
+  client: SplitClient;
   readonly modelId: VocalModelId;
-  readonly executionProvider: VocalExecutionProvider;
+  executionProvider: VocalExecutionProvider;
   readonly maxThreads: number | undefined;
   /** `init` yang sedang berjalan atau sudah selesai. */
   readonly ready: Promise<VocalSessionInfo>;
@@ -151,11 +187,15 @@ const IDLE: VocalSplitSnapshot = {
   runtime: null,
   accels: [],
   accel: 'cpu',
+  wasmAccels: ['wasm'],
+  wasmAccel: 'wasm',
+  runtimeNote: null,
 };
 
 let snapshot: VocalSplitSnapshot = IDLE;
 let session: Session | null = null;
 let probe: Promise<VocalSplitRuntime> | null = null;
+let webgpuProbe: Promise<boolean> | null = null;
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<VocalSplitSnapshot>): void {
@@ -184,10 +224,23 @@ export function useVocalSplit<T>(selector?: (s: VocalSplitSnapshot) => T): T | V
   );
 }
 
-/** Jumlah thread bawaan dialog: `min(4, cores − 2)`, minimal 1 — sama dengan `loadScnetModel`. */
+/** Jumlah core yang dilaporkan browser; 2 kalau tidak ada. */
+function cores(): number {
+  return typeof navigator === 'undefined' ? 2 : navigator.hardwareConcurrency || 2;
+}
+
+/**
+ * Jumlah thread bawaan dialog: `min(8, cores − 2)`, minimal 1. Batas 8, bukan
+ * 4 seperti `loadScnetModel`: benchmark docs/26 §4 — 4 thread 5,2 s/segmen,
+ * 8 thread 4,3 s. Dua core disisakan untuk main thread dan audio.
+ */
 export function defaultVocalSplitThreads(): number {
-  const cores = typeof navigator === 'undefined' ? 2 : navigator.hardwareConcurrency || 2;
-  return Math.max(1, Math.min(4, cores - 2));
+  return Math.max(1, Math.min(8, cores() - 2));
+}
+
+/** Batas atas pilihan thread di dialog: `cores − 1`, minimal 1 — satu core untuk main thread. */
+export function maxVocalSplitThreads(): number {
+  return Math.max(1, cores() - 1);
 }
 
 /**
@@ -212,7 +265,15 @@ export function probeVocalSplitRuntime(): Promise<VocalSplitRuntime> {
   const native = nativeVocalSplitHost();
   if (native === undefined) {
     set({ runtime: 'wasm', accels: [], accel: 'cpu' });
-    probe = Promise.resolve<VocalSplitRuntime>('wasm');
+    probe = probeWebGpu().then((available): VocalSplitRuntime => {
+      // Sesi yang sudah mulai (UNDUH ditekan sebelum probe selesai) tidak
+      // diganggu: bawaan `webgpu` hanya dipasang kalau belum ada sesi.
+      set({
+        wasmAccels: available ? ['wasm', 'webgpu'] : ['wasm'],
+        wasmAccel: available && session === null ? 'webgpu' : snapshot.wasmAccel,
+      });
+      return 'wasm';
+    });
     return probe;
   }
   probe = native.accels().then(
@@ -234,6 +295,98 @@ export function probeVocalSplitRuntime(): Promise<VocalSplitRuntime> {
 export function setVocalSplitAccel(accel: VocalSplitAccel): void {
   if (!snapshot.accels.includes(accel) || snapshot.accel === accel) return;
   set({ accel });
+}
+
+interface GpuNavigator {
+  readonly gpu?: { requestAdapter(): Promise<unknown> };
+}
+
+/**
+ * WebGPU tersedia untuk ORT-web? `navigator.gpu` ada DAN `requestAdapter()`
+ * mengembalikan adapter (bukan null — browser yang punya API-nya tapi tidak
+ * punya GPU yang diizinkan menjawab null). Probe sekali, di-cache; gagal
+ * (exception) dihitung tidak tersedia.
+ */
+export function probeWebGpu(): Promise<boolean> {
+  if (webgpuProbe !== null) return webgpuProbe;
+  const nav = typeof navigator === 'undefined' ? undefined : (navigator as unknown as GpuNavigator);
+  const gpu = nav !== undefined && 'gpu' in nav ? nav.gpu : undefined;
+  if (gpu === undefined || typeof gpu.requestAdapter !== 'function') {
+    webgpuProbe = Promise.resolve(false);
+    return webgpuProbe;
+  }
+  webgpuProbe = Promise.resolve()
+    .then(() => gpu.requestAdapter())
+    .then(
+      (adapter) => adapter !== null && adapter !== undefined,
+      (reason: unknown) => {
+        console.warn('[vocal-split] requestAdapter() gagal; WebGPU tidak ditawarkan:', reason);
+        return false;
+      },
+    );
+  return webgpuProbe;
+}
+
+/**
+ * Pilih EP jalur worker untuk sesi berikutnya; nilai yang tidak tersedia
+ * diabaikan. Sesi worker yang sudah ada dengan EP lain DIBUANG dan dimuat
+ * ulang seketika (byte model sudah di OPFS/host, jadi yang dibayar hanya
+ * pembangunan sesi ORT) — supaya status "siap" di dialog selalu milik EP
+ * yang dipilih, bukan EP sebelumnya.
+ */
+export function setVocalSplitWasmAccel(accel: VocalSplitWasmAccel): void {
+  if (!snapshot.wasmAccels.includes(accel) || snapshot.wasmAccel === accel) return;
+  set({ wasmAccel: accel, runtimeNote: null });
+  const current = session;
+  if (current === null || current.kind !== 'wasm' || current.executionProvider === accel) return;
+  const { modelId, maxThreads } = current;
+  disposeVocalSplitSession();
+  // Galatnya sudah masuk snapshot (`model.kind === 'error'`); tidak ada yang menunggu di sini.
+  void ensureVocalModel(modelId, { maxThreads, executionProvider: accel }).catch(() => {});
+}
+
+/** EP sesi worker saat ini (`wasm`/`webgpu`), atau null tanpa sesi worker. */
+export function vocalSplitSessionExecutionProvider(): VocalExecutionProvider | null {
+  return session?.kind === 'wasm' ? session.executionProvider : null;
+}
+
+function isAbortError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError';
+}
+
+/** Teks `runtimeNote` + `console.warn` untuk fallback; `where` = `init` atau `separate`. */
+function noteWebGpuFallback(where: string, reason: unknown): string {
+  const message = vocalSplitErrorMessage(reason);
+  console.warn(`[vocal-split] webgpu gagal, jatuh ke wasm: ${where}: ${message}`);
+  return `WebGPU gagal (${where}: ${message}), memakai WASM`;
+}
+
+/**
+ * Jatuh dari WebGPU ke WASM setelah `separate` gagal (dipanggil
+ * `split-job.ts`; kegagalan `init` ditangani di dalam [`ensureVocalModel`]):
+ * catat alasannya, kunci `wasmAccel` ke `wasm` supaya sesi berikutnya tidak
+ * mencoba WebGPU lagi diam-diam, buang sesi WebGPU, dan muat ulang dengan
+ * `wasm`. Mengembalikan klien yang siap.
+ *
+ * Hanya SEKALI per kegagalan: sesudah ini EP sesinya `wasm`, jadi pemanggil
+ * yang memeriksa [`vocalSplitSessionExecutionProvider`] tidak akan mencoba
+ * fallback kedua.
+ */
+export async function fallbackVocalSplitToWasm(
+  modelId: VocalModelId,
+  options: { readonly maxThreads?: number },
+  reason: unknown,
+): Promise<SplitClient> {
+  const note = noteWebGpuFallback('separate', reason);
+  set({ wasmAccel: 'wasm' });
+  disposeVocalSplitSession();
+  const ready = ensureVocalModel(modelId, { maxThreads: options.maxThreads, executionProvider: 'wasm' });
+  // Setelah `ensureVocalModel`: sesi baru selalu mulai dengan `runtimeNote` kosong.
+  set({ runtimeNote: note });
+  await ready;
+  const client = readyVocalSplitClient(modelId);
+  if (client === null) throw new Error('sesi model hilang setelah fallback ke wasm');
+  return client;
 }
 
 /**
@@ -258,7 +411,7 @@ export function ensureVocalModel(
   onProgress?: (progress: VocalModelDownloadProgress) => void,
 ): Promise<VocalSessionInfo> {
   const native = nativeVocalSplitHost();
-  const executionProvider = options.executionProvider ?? 'wasm';
+  const executionProvider = options.executionProvider ?? snapshot.wasmAccel;
   const current = session;
   if (current !== null) {
     if (reusable(current, native, modelId, executionProvider, options.maxThreads)) {
@@ -276,7 +429,7 @@ export function ensureVocalModel(
     ? { kind: 'wasm', client: createSplitClient(), modelId, executionProvider, maxThreads: options.maxThreads, ready: ready.promise, info: null }
     : { kind: 'native', modelId, ready: ready.promise, info: null };
   session = next;
-  set({ model: { kind: 'loading', ratio: null, cacheHit: false }, modelId });
+  set({ model: { kind: 'loading', ratio: null, cacheHit: false }, modelId, runtimeNote: null });
 
   const report = (p: VocalModelDownloadProgress): void => {
     if (session !== next) return;
@@ -286,9 +439,7 @@ export function ensureVocalModel(
   const started = performance.now();
   let cacheHit = false;
   const run: Promise<VocalSessionInfo> = next.kind === 'wasm'
-    ? next.client
-        .init(modelId, report, { maxThreads: options.maxThreads, executionProvider })
-        .then((model) => ({ runtime: 'wasm', model }))
+    ? initWasmWithFallback(next, report, options.maxThreads)
     : native!
         .ensureModel(modelId, (p) => {
           cacheHit = p.cacheHit;
@@ -313,6 +464,33 @@ export function ensureVocalModel(
     },
   );
   return ready.promise;
+}
+
+/**
+ * `init` worker dengan EP sesi; kalau EP-nya `webgpu` dan ORT melempar
+ * (bukan AbortError), klien dibuang, klien BARU dibuat, dan `init` diulang
+ * SEKALI dengan `wasm` di sesi yang sama — `wasmAccel` dikunci ke `wasm` dan
+ * `runtimeNote` diisi. Kegagalan `wasm` (termasuk yang kedua) dilempar apa
+ * adanya: tidak ada lagi tempat untuk jatuh.
+ */
+async function initWasmWithFallback(
+  next: WasmSession,
+  report: (p: VocalModelDownloadProgress) => void,
+  maxThreads: number | undefined,
+): Promise<VocalSessionInfo> {
+  try {
+    const model = await next.client.init(next.modelId, report, { maxThreads, executionProvider: next.executionProvider });
+    return { runtime: 'wasm', model };
+  } catch (reason: unknown) {
+    if (next.executionProvider !== 'webgpu' || isAbortError(reason) || session !== next) throw reason;
+    const note = noteWebGpuFallback('init', reason);
+    next.client.dispose();
+    next.client = createSplitClient();
+    next.executionProvider = 'wasm';
+    set({ wasmAccel: 'wasm', runtimeNote: note, model: { kind: 'loading', ratio: null, cacheHit: false } });
+    const model = await next.client.init(next.modelId, report, { maxThreads, executionProvider: 'wasm' });
+    return { runtime: 'wasm', model };
+  }
 }
 
 interface Deferred<T> {
@@ -416,6 +594,7 @@ export function __resetVocalSplitSessionForTest(): void {
   const current = session;
   session = null;
   probe = null;
+  webgpuProbe = null;
   if (current?.kind === 'wasm') current.client.dispose();
   snapshot = IDLE;
   for (const l of listeners) l();

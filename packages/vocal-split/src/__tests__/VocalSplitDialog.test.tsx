@@ -7,7 +7,8 @@
  * Runtime (docs/26 P3b): host bawaan tes (web) → badge `WASM`; host palsu
  * dengan `vocalSplit` → badge `NATIVE · …`, pilihan akselerasi kalau lebih
  * dari satu, baris THREAD hanya untuk CPU, dan UNDUH lewat `ensureModel` host
- * tanpa menyentuh klien worker.
+ * tanpa menyentuh klien worker. Dengan `navigator.gpu` palsu → badge
+ * `WEBGPU`, tombol WASM/WEBGPU, `runtimeNote`, dan baris waktu job terakhir.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,17 +28,20 @@ import type { VocalModelInfo } from '../mdx-model';
 import type { SplitClient, SplitResult, SplitSeparateOptions } from '../split-client';
 import {
   __resetVocalSplitSessionForTest,
+  ensureVocalModel,
   markVocalSplitJob,
   setVocalSplitError,
   setVocalSplitOutcome,
   vocalSplitSnapshot,
 } from '../split-session';
-import { formatModelSize, runtimeBadgeText, VocalSplitDialog } from '../VocalSplitDialog';
+import { formatModelSize, runtimeBadgeText, splitTimingText, VocalSplitDialog } from '../VocalSplitDialog';
 
 const mocks = vi.hoisted(() => ({
   run: vi.fn(async () => ({ laneIds: ['a', 'b'] })),
   cancel: vi.fn(() => true),
   client: null as unknown,
+  /** Pabrik klien untuk tes yang butuh lebih dari satu (ganti EP, fallback); null → `client`. */
+  create: null as null | (() => unknown),
 }));
 
 vi.mock('../split-job', () => ({
@@ -46,7 +50,7 @@ vi.mock('../split-job', () => ({
 }));
 
 vi.mock('../split-client', () => ({
-  createSplitClient: () => mocks.client,
+  createSplitClient: () => (mocks.create === null ? mocks.client : mocks.create()),
 }));
 
 const READY: VocalModelInfo = {
@@ -160,18 +164,36 @@ let client: FakeClient;
 beforeEach(() => {
   client = new FakeClient();
   mocks.client = client;
+  mocks.create = null;
   mocks.run.mockClear();
   mocks.cancel.mockClear();
-  // 8 core → thread bawaan `min(4, 8 − 2)` = 4, batas atas 8.
+  // 8 core → thread bawaan `min(8, 8 − 2)` = 6, batas atas `8 − 1` = 7.
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: 8, configurable: true });
   __resetVocalSplitSessionForTest();
 });
 
 afterEach(() => {
   cleanup();
+  delete (navigator as unknown as { gpu?: unknown }).gpu;
   setPlatformHostForTests(null);
   __resetVocalSplitSessionForTest();
 });
+
+/** `navigator.gpu` palsu dengan adapter — WebGPU dianggap tersedia. */
+function installGpu(): void {
+  Object.defineProperty(navigator, 'gpu', { value: { requestAdapter: async () => ({}) }, configurable: true });
+}
+
+/** Tiap `createSplitClient` memberi klien baru, dicatat urut. */
+function clientFactory(): FakeClient[] {
+  const clients: FakeClient[] = [];
+  mocks.create = () => {
+    const c = new FakeClient();
+    clients.push(c);
+    return c;
+  };
+  return clients;
+}
 
 describe('VocalSplitDialog · sumber', () => {
   it('tanpa clip terpilih → PISAHKAN mati dengan alasan tertulis', () => {
@@ -222,7 +244,7 @@ describe('VocalSplitDialog · PISAHKAN', () => {
       overlap: 0.25,
       denoise: false,
       muteSource: true,
-      maxThreads: 4,
+      maxThreads: 6,
     });
   });
 
@@ -244,12 +266,15 @@ describe('VocalSplitDialog · PISAHKAN', () => {
     });
   });
 
-  it('thread dijepit ke [1, core]', () => {
+  it('thread dijepit ke [1, core − 1]', () => {
     const clip = withClip();
     render(<VocalSplitDialog onClose={() => {}} />);
-    fireEvent.change(screen.getByLabelText('thread'), { target: { value: '99' } });
+    const input = screen.getByLabelText('thread') as HTMLInputElement;
+    expect(input.max).toBe('7');
+    expect(screen.getByText('dari 7 core')).toBeTruthy();
+    fireEvent.change(input, { target: { value: '99' } });
     fireEvent.click(pisahkan());
-    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ clipId: clip.id, maxThreads: 8 }));
+    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ clipId: clip.id, maxThreads: 7 }));
   });
 
 });
@@ -315,12 +340,32 @@ describe('VocalSplitDialog · galat job', () => {
     expect(line.textContent).toBe('job terakhir dibatalkan: clip sumber hilang saat job berjalan');
   });
 
-  it('job sukses / belum ada job → tanpa baris galat maupun batal', () => {
+  it('job sukses → baris waktu (total, ms/segmen, inferensi), tanpa baris galat maupun batal', () => {
     withClip();
-    setVocalSplitOutcome({ laneIds: ['a', 'b'] });
+    setVocalSplitOutcome({ laneIds: ['a', 'b'], totalMs: 56_329, inferenceMs: 50_700, segments: 13 });
     render(<VocalSplitDialog onClose={() => {}} />);
     expect(document.querySelector('[data-split-error]')).toBeNull();
     expect(document.querySelector('[data-split-outcome]')).toBeNull();
+    const line = document.querySelector('[data-split-timing]')!;
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.textContent).toBe('job terakhir selesai dalam 56,3 s · 4 333 ms/segmen (13 segmen) · inferensi 3 900 ms/segmen');
+  });
+
+  it('belum ada job → tanpa baris galat, batal, maupun waktu', () => {
+    withClip();
+    render(<VocalSplitDialog onClose={() => {}} />);
+    expect(document.querySelector('[data-split-error]')).toBeNull();
+    expect(document.querySelector('[data-split-outcome]')).toBeNull();
+    expect(document.querySelector('[data-split-timing]')).toBeNull();
+  });
+
+  it('splitTimingText: native tanpa inferensi, nol segmen, batal/null', () => {
+    expect(splitTimingText({ laneIds: ['a'], totalMs: 24_000, inferenceMs: null, segments: 40 }))
+      .toBe('job terakhir selesai dalam 24,0 s · 600 ms/segmen (40 segmen)');
+    expect(splitTimingText({ laneIds: ['a'], totalMs: 1500, inferenceMs: 1000, segments: 0 }))
+      .toBe('job terakhir selesai dalam 1,5 s');
+    expect(splitTimingText({ cancelled: true, reason: 'signal' })).toBe('');
+    expect(splitTimingText(null)).toBe('');
   });
 });
 
@@ -381,11 +426,12 @@ describe('VocalSplitDialog · dialog', () => {
 });
 
 describe('VocalSplitDialog · runtime (docs/26 P3b)', () => {
-  it('runtimeBadgeText: kosong sebelum probe, WASM, NATIVE · CPU/COREML', () => {
+  it('runtimeBadgeText: kosong sebelum probe, WASM/WEBGPU, NATIVE · CPU/COREML', () => {
     expect(runtimeBadgeText(null, 'cpu')).toBe('');
     expect(runtimeBadgeText('wasm', 'coreml')).toBe('WASM');
+    expect(runtimeBadgeText('wasm', 'cpu', 'webgpu')).toBe('WEBGPU');
     expect(runtimeBadgeText('native', 'cpu')).toBe('NATIVE · CPU');
-    expect(runtimeBadgeText('native', 'coreml')).toBe('NATIVE · COREML');
+    expect(runtimeBadgeText('native', 'coreml', 'webgpu')).toBe('NATIVE · COREML');
   });
 
   it('host tanpa vocalSplit → badge WASM, tanpa pilihan akselerasi, THREAD ada', async () => {
@@ -422,7 +468,7 @@ describe('VocalSplitDialog · runtime (docs/26 P3b)', () => {
 
     // Pilihan hidup di sesi, bukan di parameter job — job membacanya sendiri.
     fireEvent.click(pisahkan());
-    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'kim-vocal-2', maxThreads: 4 }));
+    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'kim-vocal-2', maxThreads: 6 }));
     const params = (mocks.run.mock.calls as unknown as [[Record<string, unknown>]])[0][0];
     expect(params).not.toHaveProperty('accel');
   });
@@ -457,5 +503,90 @@ describe('VocalSplitDialog · runtime (docs/26 P3b)', () => {
     expect((screen.getByRole('button', { name: 'SIAP' }) as HTMLButtonElement).disabled).toBe(true);
     expect(vocalSplitSnapshot().model).toMatchObject({ kind: 'ready', info: { runtime: 'native' } });
     expect(mocks.run).not.toHaveBeenCalled();
+  });
+});
+
+describe('VocalSplitDialog · WebGPU di jalur worker', () => {
+  it('adapter ada → badge WEBGPU, tombol WASM/WEBGPU (WEBGPU bawaan), THREAD tetap; pilih WASM → badge WASM', async () => {
+    installGpu();
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    await vi.waitFor(() => expect(badge().textContent).toBe('WEBGPU'));
+    expect(document.querySelector('[data-split-accel]')).not.toBeNull();
+    const webgpu = screen.getByRole('button', { name: 'WEBGPU' });
+    const wasm = screen.getByRole('button', { name: 'WASM' });
+    expect(webgpu.getAttribute('aria-pressed')).toBe('true');
+    expect(wasm.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByLabelText('thread')).toBeTruthy();
+
+    fireEvent.click(wasm);
+    await vi.waitFor(() => expect(badge().textContent).toBe('WASM'));
+    expect(wasm.getAttribute('aria-pressed')).toBe('true');
+    expect(vocalSplitSnapshot().wasmAccel).toBe('wasm');
+    // Pilihan hidup di sesi (EP `ensureVocalModel`), bukan di parameter job.
+    fireEvent.click(pisahkan());
+    const params = (mocks.run.mock.calls as unknown as [[Record<string, unknown>]])[0][0];
+    expect(params).not.toHaveProperty('wasmAccel');
+    expect(params).not.toHaveProperty('executionProvider');
+  });
+
+  it('UNDUH dengan WEBGPU → init klien dengan executionProvider webgpu; ganti ke WASM → klien baru init wasm', async () => {
+    installGpu();
+    const clients = clientFactory();
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    await vi.waitFor(() => expect(badge().textContent).toBe('WEBGPU'));
+    fireEvent.click(screen.getByRole('button', { name: 'UNDUH' }));
+    expect(clients).toHaveLength(1);
+    await act(async () => clients[0]!.ready());
+    await vi.waitFor(() => expect(modelStatus().textContent).toBe('siap'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'WASM' }));
+    await vi.waitFor(() => expect(clients).toHaveLength(2));
+    await vi.waitFor(() => expect(modelStatus().textContent).toBe('mengunduh …'));
+    await act(async () => clients[1]!.ready());
+    await vi.waitFor(() => expect(modelStatus().textContent).toBe('siap'));
+    expect(vocalSplitSnapshot().model).toMatchObject({ kind: 'ready', info: { model: { executionProvider: 'wasm' } } });
+  });
+
+  it('init WebGPU gagal → jatuh ke WASM: badge WASM, WASM terpilih, catatan "WebGPU gagal" tampil', async () => {
+    installGpu();
+    const clients = clientFactory();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    await vi.waitFor(() => expect(badge().textContent).toBe('WEBGPU'));
+    // Seperti UNDUH/PISAHKAN: `ensureVocalModel` dengan EP bawaan sesi (webgpu).
+    act(() => {
+      void ensureVocalModel('kim-vocal-2').catch(() => {});
+    });
+    expect(clients).toHaveLength(1);
+    await act(async () => clients[0]!.fail('WebGPU: adapter hilang'));
+    await vi.waitFor(() => expect(clients).toHaveLength(2));
+    await act(async () => clients[1]!.ready());
+    await vi.waitFor(() => expect(badge().textContent).toBe('WASM'));
+    expect(screen.getByRole('button', { name: 'WASM' }).getAttribute('aria-pressed')).toBe('true');
+    const note = document.querySelector('[data-split-runtime-note]')!;
+    expect(note.getAttribute('role')).toBe('status');
+    expect(note.textContent).toBe('WebGPU gagal (init: WebGPU: adapter hilang), memakai WASM');
+    expect(modelStatus().textContent).toBe('siap');
+    expect(String(warn.mock.calls[0]![0])).toMatch(/webgpu gagal, jatuh ke wasm/);
+    warn.mockRestore();
+  });
+
+  it('tanpa adapter → tidak ada tombol akselerasi, tanpa catatan', async () => {
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    await vi.waitFor(() => expect(badge().textContent).toBe('WASM'));
+    expect(document.querySelector('[data-split-accel]')).toBeNull();
+    expect(document.querySelector('[data-split-runtime-note]')).toBeNull();
   });
 });

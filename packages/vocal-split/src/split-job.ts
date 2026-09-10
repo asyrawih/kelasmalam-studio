@@ -51,6 +51,7 @@ import type { VocalExecutionProvider } from './mdx-model';
 import type { StereoPcm } from './mdx-separate';
 import {
   ensureVocalModel,
+  fallbackVocalSplitToWasm,
   markVocalSplitJob,
   nativeVocalSplitHost,
   probeVocalSplitRuntime,
@@ -58,6 +59,7 @@ import {
   setVocalSplitError,
   setVocalSplitOutcome,
   vocalSplitErrorMessage,
+  vocalSplitSessionExecutionProvider,
   vocalSplitSnapshot,
   type VocalSplitAccel,
   type VocalSplitCancelReason,
@@ -79,13 +81,23 @@ export interface VocalSplitParams {
   readonly accel?: VocalSplitAccel;
 }
 
-/** Hasil job; `reason` menyebut jalur batal yang mana (docs/26 §3c) — juga masuk `lastOutcome` sesi. */
+/**
+ * Hasil job; `reason` menyebut jalur batal yang mana (docs/26 §3c) — juga
+ * masuk `lastOutcome` sesi. Sukses membawa waktu pemisahan (`totalMs` seluruh
+ * langkah 3, `inferenceMs` hanya di dalam ORT — null di native, `segments`)
+ * supaya dialog bisa menampilkan ms/segmen untuk membandingkan WASM vs WebGPU.
+ */
 export type VocalSplitOutcome =
-  | { readonly laneIds: readonly string[] }
+  | {
+      readonly laneIds: readonly string[];
+      readonly totalMs: number;
+      readonly inferenceMs: number | null;
+      readonly segments: number;
+    }
   | { readonly cancelled: true; readonly reason: VocalSplitCancelReason };
 
 export interface VocalSplitDeps {
-  /** Hanya untuk benchmark P1; produksi `'wasm'`. */
+  /** Paksa EP jalur worker (benchmark P1); tanpa ini dipakai `wasmAccel` sesi. */
   readonly executionProvider?: VocalExecutionProvider;
 }
 
@@ -184,6 +196,11 @@ async function runJob(
     // Native: tahap ini hanya unduhan (`ensureModel`); worker: unduh + sesi ORT.
     setStage('model');
     let t = performance.now();
+    // Probe dulu (di-cache): bawaan `wasmAccel` (webgpu kalau adapter ada)
+    // dan `accel` native baru terisi setelahnya, dan `ensureVocalModel`
+    // membaca yang pertama sebagai EP.
+    await probeVocalSplitRuntime();
+    if (signal.aborted) return cancelled('signal', started, 'setelah probe runtime');
     await ensureVocalModel(
       params.modelId,
       { maxThreads: params.maxThreads, executionProvider: deps.executionProvider },
@@ -206,17 +223,22 @@ async function runJob(
     studioActions.setImportStage(jobId, 'separating', 0);
     t = performance.now();
     let result: SeparationResult;
+    let segments = 0;
     try {
       result = await separate(
         input,
-        (done, total) => studioActions.setImportStage(jobId, 'separating', total > 0 ? done / total : null),
+        (done, total) => {
+          segments = total;
+          studioActions.setImportStage(jobId, 'separating', total > 0 ? done / total : null);
+        },
         signal,
       );
     } catch (err: unknown) {
       if (isAbortError(err)) return cancelled('signal', started, 'saat inferensi');
       throw err;
     }
-    console.info(`${TAG} pemisahan selesai dalam ${ms(t)}`);
+    const perSegment = segments > 0 ? ` (${Math.round(result.totalMs / segments)} ms/segmen × ${segments})` : '';
+    console.info(`${TAG} pemisahan selesai dalam ${ms(t)}${perSegment}`);
 
     // ── 4. Susun asset + lane ───────────────────────────────────────────
     setStage('assembling');
@@ -256,7 +278,7 @@ async function runJob(
       `${TAG} selesai: lane [${laneIds.join(', ')}] (${vocals.length} frame @${projectRate} Hz),` +
         ` susun ${ms(t)}, total ${ms(started)}`,
     );
-    return { laneIds };
+    return { laneIds, totalMs: result.totalMs, inferenceMs: result.inferenceMs, segments };
   } finally {
     studioActions.endImport(jobId);
     active = null;
@@ -269,6 +291,10 @@ async function runJob(
 interface SeparationResult {
   readonly vocals: StereoPcm;
   readonly instrumental: StereoPcm;
+  /** Seluruh langkah 3, ms (worker: `SplitResult.totalMs`; native: diukur di sini). */
+  readonly totalMs: number;
+  /** Hanya di dalam `session.run`, ms; null di native (host tidak melaporkannya). */
+  readonly inferenceMs: number | null;
 }
 
 type Separator = (
@@ -279,7 +305,7 @@ type Separator = (
 
 interface PickedSeparator {
   readonly separate: Separator;
-  /** Label untuk log: `native·coreml`, `native·cpu`, atau `wasm`. */
+  /** Label untuk log: `native·coreml`, `native·cpu`, `wasm`, atau `webgpu`. */
   readonly runtime: string;
 }
 
@@ -293,8 +319,9 @@ async function pickSeparator(params: VocalSplitParams): Promise<PickedSeparator>
     // Probe mengisi `accel` bawaan (coreml kalau ada); di-cache setelah pertama.
     await probeVocalSplitRuntime();
     const accel = params.accel ?? vocalSplitSnapshot().accel;
-    const separate: Separator = (input, onProgress, signal) =>
-      native.run(
+    const separate: Separator = async (input, onProgress, signal) => {
+      const t = performance.now();
+      const out = await native.run(
         {
           left: input.left,
           right: input.right,
@@ -309,21 +336,43 @@ async function pickSeparator(params: VocalSplitParams): Promise<PickedSeparator>
         onProgress,
         signal,
       );
+      return { ...out, totalMs: performance.now() - t, inferenceMs: null };
+    };
     return { separate, runtime: `native·${accel}` };
   }
   const client = readyVocalSplitClient(params.modelId);
   if (client === null) throw new Error('sesi model hilang setelah dimuat');
-  const separate: Separator = (input, onProgress, signal) =>
-    client.separate(
-      input.left,
-      input.right,
-      // `transfer`: PCM di `input` adalah salinan/hasil render milik job ini,
-      // bukan buffer asset — boleh dipindahkan tanpa salinan kedua.
-      { overlap: params.overlap, denoise: params.denoise, transfer: true },
-      (p) => onProgress(p.done, p.total),
-      signal,
-    );
-  return { separate, runtime: 'wasm' };
+  const executionProvider = vocalSplitSessionExecutionProvider() ?? 'wasm';
+  const options = { overlap: params.overlap, denoise: params.denoise };
+  const separate: Separator = async (input, onProgress, signal) => {
+    const report = (p: { done: number; total: number }): void => onProgress(p.done, p.total);
+    try {
+      return await client.separate(
+        input.left,
+        input.right,
+        // `transfer`: PCM di `input` adalah salinan/hasil render milik job ini,
+        // bukan buffer asset — boleh dipindahkan tanpa salinan kedua. KECUALI
+        // di WebGPU: kalau ia gagal, PCM yang sama masih harus dikirim ke
+        // sesi WASM pengganti, dan buffer yang sudah dipindahkan itu kosong.
+        { ...options, transfer: executionProvider !== 'webgpu' },
+        report,
+        signal,
+      );
+    } catch (err: unknown) {
+      // Fallback WebGPU → WASM, SEKALI: sesudah `fallbackVocalSplitToWasm`
+      // EP sesinya `wasm`, dan pemeriksaan di bawah tidak lolos lagi.
+      if (isAbortError(err) || signal.aborted || vocalSplitSessionExecutionProvider() !== 'webgpu') throw err;
+      const fallback = await fallbackVocalSplitToWasm(params.modelId, { maxThreads: params.maxThreads }, err);
+      if (signal.aborted) throw abortError();
+      console.info(`${TAG} mengulang pemisahan di wasm`);
+      return await fallback.separate(input.left, input.right, { ...options, transfer: true }, report, signal);
+    }
+  };
+  return { separate, runtime: executionProvider };
+}
+
+function abortError(): DOMException {
+  return new DOMException('Vocal split dibatalkan', 'AbortError');
 }
 
 /**

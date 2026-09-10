@@ -136,7 +136,7 @@ tersentuh** (prinsip docs/14: FFT tetap di worker, bukan di engine).
 | Model | `Kim_Vocal_2` | katalog `VOCAL_MODELS`; status: `belum diunduh (66,8 MB)` / `siap` / `mengunduh 40%` dengan tombol unduh terpisah — mengunduh **bukan** bagian dari tombol PISAHKAN |
 | Overlap | 0,25 | pilihan 0,25 / 0,5; makin besar makin halus dan makin lama (0 dibuang, lihat §1 temuan P0) |
 | Denoise | mati | 2× waktu |
-| Thread | `min(4, cores − 2)` | sama dengan `loadScnetModel` |
+| Thread | `min(8, cores − 2)`, batas atas `cores − 1` | batas 8 (bukan 4 seperti `loadScnetModel`): §4 — 8 thread 4,3 s/segmen vs 4 thread 5,2 s; berlaku juga di WebGPU untuk op yang jatuh ke CPU |
 | Mute lane sumber | ya | |
 
 Yang **sengaja tidak ada** di v1: batch banyak clip, pilih stem lain,
@@ -184,7 +184,7 @@ bukan menambah runtime diam-diam.
 | onnxruntime native CPU 1 thread | 2 411 ms | 2,46× | 2,2 mnt | — |
 | onnxruntime native CPU 4 thread | 1 051 ms | 5,64× | 1,0 mnt | — |
 | onnxruntime native CoreML | 388 ms | 15,3× | 0,4 mnt | — |
-| ORT-web WebGPU (Safari/WKWebView) | **belum diukur** — halaman benchmark disiapkan, user menguji manual | | | |
+| ORT-web WebGPU | tersedia sebagai opsi di web sejak 10 Sep 2026 (`wasmAccel` di `split-session.ts`), default bila `navigator.gpu.requestAdapter()` memberi adapter, fallback otomatis ke WASM kalau `init`/`separate` gagal (sekali, dicatat `runtimeNote`); angka RTF diukur user manual — dialog menampilkan total dan ms/segmen job terakhir | | | |
 
 WASM **gagal gerbang tipis** (4,0 > 3 mnt, dan ini di M4; mesin user lebih
 lambat). Native CPU lolos 3× lebih cepat, CoreML 8× lagi.

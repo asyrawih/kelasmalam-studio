@@ -21,7 +21,7 @@ export type { SplitProgress, SplitResult } from './split-protocol';
 
 export interface SplitInitOptions {
   readonly maxThreads?: number;
-  /** Default `'wasm'`; `'webgpu'` hanya untuk benchmark P1 (docs/26 §4). */
+  /** Default `'wasm'`; `'webgpu'` kalau sesi memilihnya (`split-session.ts`, docs/26 §4). */
   readonly executionProvider?: VocalExecutionProvider;
 }
 

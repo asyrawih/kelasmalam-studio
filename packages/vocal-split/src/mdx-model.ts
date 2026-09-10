@@ -31,9 +31,11 @@ import type { MdxDims } from './mdx-stft';
 export type VocalModelDownloadProgress = ScnetModelDownloadProgress;
 
 /**
- * `wasm` adalah jalur produksi P0/P1. `webgpu` HANYA untuk benchmark P1
- * (docs/26 §4): MDX-Net tidak punya LSTM, jadi layak diukur, tapi WKWebView
- * butuh macOS 26 dan belum ada gerbang yang mengizinkannya dipakai user.
+ * `wasm` adalah jalur produksi P0/P1. `webgpu` ditawarkan di web sejak 10 Sep
+ * 2026 (docs/26 §4) kalau `navigator.gpu.requestAdapter()` memberi adapter —
+ * `split-session.ts` yang memprobe dan yang jatuh kembali ke `wasm` kalau
+ * WebGPU gagal. MDX-Net tidak punya LSTM, jadi catatan docs/14 §WebGPU tidak
+ * berlaku.
  */
 export type VocalExecutionProvider = 'wasm' | 'webgpu';
 
@@ -107,7 +109,8 @@ export async function loadVocalModel(
   const ort: OrtRuntime = executionProvider === 'webgpu'
     ? await import('onnxruntime-web/webgpu')
     : await import('onnxruntime-web/wasm');
-  const threadLimit = options.maxThreads ?? 4;
+  // Batas 8 (bukan 4): docs/26 §4 — 8 thread 4,3 s/segmen vs 4 thread 5,2 s.
+  const threadLimit = options.maxThreads ?? 8;
   const threads = Math.max(1, Math.min(threadLimit, (navigator.hardwareConcurrency || 2) - 2));
   // Wrapper `.mjs` di-dynamic-import oleh ORT, jadi ia tidak boleh berada di
   // Vite `public/`. `new URL(..., import.meta.url)` membuat Vite menerbitkan
@@ -117,7 +120,7 @@ export async function loadVocalModel(
   // `onnxruntime-web/dist/` — BUKAN path relatif ke `node_modules`, karena
   // letak folder itu bergantung pada pengelola paket (workspace bun meng-hoist
   // ke root repo). `apps/web/src/__tests__/ort-dist.test.ts` menjaga berkas
-  // `wasm`-nya ada; varian `.jsep` (WebGPU) hanya dipakai benchmark.
+  // `wasm`-nya ada; varian `.jsep` dipakai EP WebGPU.
   ort.env.wasm.wasmPaths = executionProvider === 'webgpu'
     ? {
         mjs: new URL('@ort-dist/ort-wasm-simd-threaded.jsep.mjs', import.meta.url).href,
@@ -127,6 +130,8 @@ export async function loadVocalModel(
         mjs: new URL('@ort-dist/ort-wasm-simd-threaded.mjs', import.meta.url).href,
         wasm: new URL('@ort-dist/ort-wasm-simd-threaded.wasm', import.meta.url).href,
       };
+  // `numThreads` diset untuk KEDUA EP: WebGPU (JSEP) tetap menjalankan op
+  // yang tidak punya kernel GPU di WASM, dan pool thread-nya yang ini.
   ort.env.wasm.numThreads = threads;
   ort.env.wasm.simd = true;
 

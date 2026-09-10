@@ -11,6 +11,10 @@
  * jalur worker; host palsu dengan `vocalSplit` (`setPlatformHostForTests`) →
  * jalur native, di mana worker TIDAK pernah dibuat dan `run` host menerima
  * PCM yang sama.
+ *
+ * Jalur worker dengan WebGPU (`navigator.gpu` palsu): `separate` yang gagal
+ * di EP `webgpu` diulang SEKALI di klien WASM baru; AbortError tidak; dan
+ * kegagalan kedua dilempar apa adanya.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,21 +35,22 @@ import { DEFAULT_FADE_CURVE, type StudioClip } from '@kelasmalam/studio/studio/m
 import { registerBuffer } from '@kelasmalam/studio/studio/preview/audio-preview';
 import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
-import type { VocalModelInfo } from '../mdx-model';
-import type { SplitClient, SplitProgress, SplitResult, SplitSeparateOptions } from '../split-client';
+import type { VocalExecutionProvider, VocalModelInfo } from '../mdx-model';
+import type { SplitClient, SplitInitOptions, SplitProgress, SplitResult, SplitSeparateOptions } from '../split-client';
 import { cancelVocalSplit, runVocalSplit } from '../split-job';
 import { __resetVocalSplitSessionForTest, setVocalSplitError, setVocalSplitOutcome, vocalSplitSnapshot } from '../split-session';
 
-const holder = vi.hoisted(() => ({ client: null as unknown }));
+/** `createSplitClient` palsu: bawaan mengembalikan `client`; tes fallback menggantinya dengan pabrik. */
+const holder = vi.hoisted(() => ({ client: null as unknown, create: null as null | (() => unknown) }));
 
 vi.mock('../split-client', () => ({
-  createSplitClient: () => holder.client,
+  createSplitClient: () => (holder.create === null ? holder.client : holder.create()),
 }));
 
-const READY: VocalModelInfo = {
+const ready = (executionProvider: VocalExecutionProvider = 'wasm'): VocalModelInfo => ({
   loadMs: 1, inputs: ['input'], outputs: ['output'], threads: 2,
-  modelId: 'kim-vocal-2', modelBytes: 66_759_214, cacheHit: true, executionProvider: 'wasm',
-};
+  modelId: 'kim-vocal-2', modelBytes: 66_759_214, cacheHit: true, executionProvider,
+});
 
 interface PendingSeparate {
   readonly left: Float32Array;
@@ -59,14 +64,16 @@ interface PendingSeparate {
 /** Klien palsu: `init` selesai seketika (dengan dua kabar progres), `separate` menunggu perintah tes. */
 class FakeClient implements SplitClient {
   initCalls = 0;
+  initOptions: SplitInitOptions | undefined;
   pending: PendingSeparate | null = null;
   disposed = false;
 
-  init(_modelId: 'kim-vocal-2', onProgress?: (p: { loaded: number; total: number; cacheHit: boolean }) => void) {
+  init(_modelId: 'kim-vocal-2', onProgress?: (p: { loaded: number; total: number; cacheHit: boolean }) => void, options?: SplitInitOptions) {
     this.initCalls += 1;
+    this.initOptions = options;
     onProgress?.({ loaded: 5, total: 10, cacheHit: false });
     onProgress?.({ loaded: 10, total: 10, cacheHit: false });
-    return Promise.resolve(READY);
+    return Promise.resolve(ready(options?.executionProvider ?? 'wasm'));
   }
 
   separate(left: Float32Array, right: Float32Array, options: SplitSeparateOptions, onProgress?: (p: SplitProgress) => void, signal?: AbortSignal) {
@@ -271,6 +278,7 @@ const infoLog = (): string => info.mock.calls.map((c) => c.map(String).join(' ')
 beforeEach(() => {
   client = new FakeClient();
   holder.client = client;
+  holder.create = null;
   vi.stubGlobal('AudioBuffer', FakeAudioBuffer);
   info = vi.spyOn(console, 'info').mockImplementation(() => {});
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -281,6 +289,7 @@ afterEach(() => {
   info.mockRestore();
   warn.mockRestore();
   vi.unstubAllGlobals();
+  delete (navigator as unknown as { gpu?: unknown }).gpu;
   setPlatformHostForTests(null);
   __resetVocalSplitSessionForTest();
 });
@@ -333,6 +342,10 @@ describe('runVocalSplit · jalur sukses', () => {
     expect(studioStore.getState().importJobs).toEqual([]);
     expect(vocalSplitSnapshot().job).toBeNull();
     expect(client.initCalls).toBe(1);
+    // Tanpa WebGPU di jsdom: EP wasm, dan hasilnya membawa waktu dari worker.
+    expect(client.initOptions).toEqual({ maxThreads: 2, executionProvider: 'wasm' });
+    expect(outcome).toEqual({ laneIds: outcome.laneIds, totalMs: 10, inferenceMs: 8, segments: 2 });
+    expect(infoLog()).toMatch(/pemisahan selesai dalam \d+ ms \(5 ms\/segmen × 2\)/);
   });
 
   it('muteSource: false → lane sumber tetap berbunyi; satu langkah undo mengembalikan kedua lane', async () => {
@@ -536,6 +549,9 @@ describe('runVocalSplit · host dengan vocalSplit (native, docs/26 P3b)', () => 
     native.finish();
     const outcome = await job;
     if (!('laneIds' in outcome)) throw new Error('bukan sukses');
+    // Native tidak melaporkan waktu inferensi; total diukur di job.
+    expect(outcome).toMatchObject({ inferenceMs: null, segments: 2 });
+    expect(outcome.totalMs).toBeGreaterThanOrEqual(0);
     const lanes = studioStore.getState().lanes;
     expect(lanes.map((l) => l.name)).toEqual(['FIRST', 'LAGU · VOCALS', 'LAGU · INST']);
     expect(lanes[0]!.mute).toBe(true);
@@ -707,5 +723,111 @@ describe('runVocalSplit · lastError / lastOutcome / jejak log', () => {
     expect(infoLog()).toMatch(/dibatalkan \(lane-berubah\)/);
     // Proyek tidak disentuh: masih dua lane, tanpa lane hasil.
     expect(studioStore.getState().lanes).toHaveLength(2);
+  });
+});
+
+describe('runVocalSplit · fallback WebGPU → WASM (jalur worker)', () => {
+  /** Klien yang dibuat `createSplitClient`, urut. */
+  let clients: FakeClient[];
+
+  /** Klien ke-`i` (dibuat setelah probe runtime, jadi asinkron) lalu tunggu `separate`-nya. */
+  async function separateOn(i: number): Promise<PendingSeparate> {
+    await vi.waitFor(() => expect(clients.length).toBeGreaterThan(i));
+    return clients[i]!.separateCalled();
+  }
+
+  beforeEach(() => {
+    clients = [];
+    holder.create = () => {
+      const c = new FakeClient();
+      clients.push(c);
+      return c;
+    };
+    Object.defineProperty(navigator, 'gpu', { value: { requestAdapter: async () => ({}) }, configurable: true });
+  });
+
+  it('WebGPU tersedia → sesi init webgpu, PCM DISALIN (bukan dipindah), runtime log webgpu', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P, maxThreads: 4 });
+    const pending = await separateOn(0);
+    expect(clients[0]!.initOptions).toEqual({ maxThreads: 4, executionProvider: 'webgpu' });
+    expect(pending.options.transfer).toBe(false);
+    expect(vocalSplitSnapshot()).toMatchObject({ wasmAccel: 'webgpu', wasmAccels: ['wasm', 'webgpu'] });
+    clients[0]!.finish();
+    const outcome = await job;
+    expect('laneIds' in outcome).toBe(true);
+    expect(infoLog()).toMatch(/runtime webgpu/);
+    expect(clients).toHaveLength(1);
+    expect(vocalSplitSnapshot().runtimeNote).toBeNull();
+  });
+
+  it('separate gagal di webgpu → klien wasm baru, PCM sama dikirim ulang, job sukses; note + warn', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P, maxThreads: 3 });
+    const first = await separateOn(0);
+    const left = Array.from(first.left);
+    first.reject(new Error('WebGPU: device lost'));
+
+    const second = await separateOn(1);
+    expect(clients[0]!.disposed).toBe(true);
+    expect(clients[1]!.initOptions).toEqual({ maxThreads: 3, executionProvider: 'wasm' });
+    expect(Array.from(second.left)).toEqual(left);
+    expect(second.options.transfer).toBe(true);
+    expect(vocalSplitSnapshot()).toMatchObject({
+      wasmAccel: 'wasm',
+      runtimeNote: 'WebGPU gagal (separate: WebGPU: device lost), memakai WASM',
+    });
+    expect(String(warn.mock.calls[0]![0])).toMatch(/webgpu gagal, jatuh ke wasm: separate: WebGPU: device lost/);
+
+    clients[1]!.finish();
+    const outcome = await job;
+    expect(outcome).toMatchObject({ totalMs: 10, inferenceMs: 8, segments: 2 });
+    expect(studioStore.getState().lanes).toHaveLength(3);
+    expect(vocalSplitSnapshot().lastError).toBeNull();
+    expect(infoLog()).toMatch(/mengulang pemisahan di wasm/);
+
+    // Job berikutnya langsung memakai sesi wasm — tidak mencoba WebGPU lagi.
+    clients[1]!.pending = null;
+    const next = runVocalSplit({ clipId: clip.id, ...P, maxThreads: 3 });
+    await clients[1]!.separateCalled();
+    clients[1]!.finish();
+    await next;
+    expect(clients).toHaveLength(2);
+  });
+
+  it('fallback hanya SEKALI: separate wasm pengganti ikut gagal → job gagal, tidak ada klien ketiga', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    const first = await separateOn(0);
+    first.reject(new Error('gpu'));
+    const second = await separateOn(1);
+    second.reject(new Error('wasm juga gagal'));
+    await expect(job).rejects.toThrow('wasm juga gagal');
+    expect(clients).toHaveLength(2);
+    expect(vocalSplitSnapshot().lastError).toBe('wasm juga gagal');
+    expect(studioStore.getState().lanes).toHaveLength(1);
+    expect(studioStore.getState().importJobs).toEqual([]);
+  });
+
+  it('AbortError di webgpu → {cancelled}, TIDAK fallback', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    await separateOn(0);
+    expect(cancelVocalSplit()).toBe(true);
+    await expect(job).resolves.toEqual({ cancelled: true, reason: 'signal' });
+    expect(clients).toHaveLength(1);
+    expect(vocalSplitSnapshot()).toMatchObject({ wasmAccel: 'webgpu', runtimeNote: null });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('galat separate di sesi wasm biasa → tidak fallback (tidak ada tempat jatuh)', async () => {
+    delete (navigator as unknown as { gpu?: unknown }).gpu;
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    const pending = await separateOn(0);
+    pending.reject(new Error('shape mismatch'));
+    await expect(job).rejects.toThrow('shape mismatch');
+    expect(clients).toHaveLength(1);
+    expect(vocalSplitSnapshot().runtimeNote).toBeNull();
   });
 });

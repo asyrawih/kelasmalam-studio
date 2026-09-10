@@ -15,9 +15,14 @@
  *     non-null di store berarti export sedang jalan;
  *   - runtime (docs/26 P3b) TIDAK diputuskan di sini: `probeVocalSplitRuntime`
  *     yang membacanya dari kontrak host. Dialog hanya menampilkan badge
- *     (`NATIVE · CPU` / `NATIVE · COREML` / `WASM`), menawarkan akselerasi
- *     kalau host native punya lebih dari satu, dan menyembunyikan THREAD saat
- *     akselerasinya bukan CPU.
+ *     (`NATIVE · CPU` / `NATIVE · COREML` / `WASM` / `WEBGPU`), menawarkan
+ *     akselerasi kalau ada lebih dari satu (native: CPU/COREML; web:
+ *     WASM/WEBGPU bila adapter WebGPU ada), dan menyembunyikan THREAD saat
+ *     akselerasi native-nya bukan CPU. Di web THREAD selalu tampil — WebGPU
+ *     pun memakai pool WASM untuk op yang jatuh ke CPU;
+ *   - `runtimeNote` sesi (mis. "WebGPU gagal, memakai WASM") dan waktu job
+ *     terakhir (`lastOutcome`: total, ms/segmen) tampil supaya WASM vs WebGPU
+ *     bisa dibandingkan tanpa DevTools.
  *
  * Galat dari job: dialog ini sudah tertutup saat galatnya datang, dan studio
  * belum punya mekanisme notifikasi global — jadi galatnya hidup di sesi
@@ -51,14 +56,18 @@ import {
   CANCEL_REASON_TEXT,
   defaultVocalSplitThreads,
   ensureVocalModel,
+  maxVocalSplitThreads,
   probeVocalSplitRuntime,
   setVocalSplitAccel,
   setVocalSplitError,
+  setVocalSplitWasmAccel,
   useVocalSplit,
   vocalSplitErrorMessage,
   type VocalModelStatus,
   type VocalSplitAccel,
+  type VocalSplitLastOutcome,
   type VocalSplitRuntime,
+  type VocalSplitWasmAccel,
 } from './split-session';
 
 export interface VocalSplitDialogProps {
@@ -106,10 +115,37 @@ export function modelStatusText(status: VocalModelStatus, bytes: number): string
 
 const ACCEL_LABEL: Record<VocalSplitAccel, string> = { cpu: 'CPU', coreml: 'COREML' };
 
+const WASM_ACCEL_LABEL: Record<VocalSplitWasmAccel, string> = { wasm: 'WASM', webgpu: 'WEBGPU' };
+
 /** Teks badge runtime di header; kosong selama runtime belum diketahui. */
-export function runtimeBadgeText(runtime: VocalSplitRuntime | null, accel: VocalSplitAccel): string {
+export function runtimeBadgeText(
+  runtime: VocalSplitRuntime | null,
+  accel: VocalSplitAccel,
+  wasmAccel: VocalSplitWasmAccel = 'wasm',
+): string {
   if (runtime === null) return '';
-  return runtime === 'native' ? `NATIVE · ${ACCEL_LABEL[accel]}` : 'WASM';
+  return runtime === 'native' ? `NATIVE · ${ACCEL_LABEL[accel]}` : WASM_ACCEL_LABEL[wasmAccel];
+}
+
+/** `4333` → `4 333` (pemisah ribuan spasi, seperti tabel docs/26 §4). */
+function groupThousands(n: number): string {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/**
+ * Baris waktu job sukses terakhir: total (detik, koma desimal), ms/segmen dari
+ * `totalMs`, dan ms/segmen inferensi murni kalau runtime melaporkannya
+ * (worker ORT-web; native tidak). Kosong kalau outcome-nya batal/null.
+ */
+export function splitTimingText(outcome: VocalSplitLastOutcome | null): string {
+  if (outcome === null || 'cancelled' in outcome) return '';
+  const total = `${(outcome.totalMs / 1000).toFixed(1).replace('.', ',')} s`;
+  if (outcome.segments <= 0) return `job terakhir selesai dalam ${total}`;
+  const per = `${groupThousands(outcome.totalMs / outcome.segments)} ms/segmen`;
+  const inference = outcome.inferenceMs === null
+    ? ''
+    : ` · inferensi ${groupThousands(outcome.inferenceMs / outcome.segments)} ms/segmen`;
+  return `job terakhir selesai dalam ${total} · ${per} (${outcome.segments} segmen)${inference}`;
 }
 
 /** Warna galat; theme.css menulis merah ini literal (tidak ada `--cy-danger`). */
@@ -151,11 +187,11 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
   // (kalau nanti ada) dianggap belum dimuat.
   const status: VocalModelStatus = split.modelId === modelId ? split.model : { kind: 'idle' };
   const running = split.job !== null;
-  const maxThreads = Math.max(1, (typeof navigator === 'undefined' ? 2 : navigator.hardwareConcurrency) || 2);
+  const maxThreads = maxVocalSplitThreads();
   const native = split.runtime === 'native';
   // Pilihan akselerasi hanya kalau ada yang bisa dipilih; thread hanya berarti
-  // untuk WASM dan CPU native.
-  const showAccel = native && split.accels.length > 1;
+  // untuk jalur worker (WASM maupun WebGPU) dan CPU native.
+  const showAccel = native ? split.accels.length > 1 : split.runtime === 'wasm' && split.wasmAccels.length > 1;
   const showThreads = !native || split.accel === 'cpu';
 
   useEffect(() => {
@@ -282,7 +318,13 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
           <span style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}>MDX-NET</span>
           <span
             data-split-runtime
-            title={native ? 'Inferensi di luar WebView (ort native)' : 'Inferensi ORT-web WASM di Web Worker'}
+            title={
+              native
+                ? 'Inferensi di luar WebView (ort native)'
+                : split.wasmAccel === 'webgpu'
+                  ? 'Inferensi ORT-web WebGPU di Web Worker'
+                  : 'Inferensi ORT-web WASM di Web Worker'
+            }
             style={{
               marginLeft: 'auto',
               fontSize: '9px',
@@ -293,7 +335,7 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
               visibility: split.runtime === null ? 'hidden' : 'visible',
             }}
           >
-            {runtimeBadgeText(split.runtime, split.accel)}
+            {runtimeBadgeText(split.runtime, split.accel, split.wasmAccel)}
           </span>
         </header>
 
@@ -381,24 +423,50 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
           </label>
         </div>
 
-        {/* Akselerasi (hanya host native dengan lebih dari satu pilihan) */}
+        {/* Akselerasi (native: CPU/COREML kalau lebih dari satu; web: WASM/WEBGPU kalau adapter ada) */}
         {showAccel ? (
           <div style={ROW} data-split-accel>
             <div style={LABEL}>Akselerasi</div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              {split.accels.map((a) => (
-                <Button
-                  key={a}
-                  size="sm"
-                  variant={split.accel === a ? 'solid' : 'ghost'}
-                  aria-pressed={split.accel === a}
-                  onClick={() => setVocalSplitAccel(a)}
-                >
-                  {ACCEL_LABEL[a]}
-                </Button>
-              ))}
+              {native
+                ? split.accels.map((a) => (
+                    <Button
+                      key={a}
+                      size="sm"
+                      variant={split.accel === a ? 'solid' : 'ghost'}
+                      aria-pressed={split.accel === a}
+                      onClick={() => setVocalSplitAccel(a)}
+                    >
+                      {ACCEL_LABEL[a]}
+                    </Button>
+                  ))
+                : split.wasmAccels.map((a) => (
+                    <Button
+                      key={a}
+                      size="sm"
+                      variant={split.wasmAccel === a ? 'solid' : 'ghost'}
+                      aria-pressed={split.wasmAccel === a}
+                      disabled={running}
+                      onClick={() => setVocalSplitWasmAccel(a)}
+                    >
+                      {WASM_ACCEL_LABEL[a]}
+                    </Button>
+                  ))}
             </div>
-            <div style={{ ...HINT, marginTop: '4px' }}>CoreML paling cepat; CPU kalau hasilnya aneh</div>
+            <div style={{ ...HINT, marginTop: '4px' }}>
+              {native ? 'CoreML paling cepat; CPU kalau hasilnya aneh' : 'WebGPU biasanya jauh lebih cepat; WASM kalau hasilnya aneh atau gagal'}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Catatan runtime, mis. WebGPU gagal dan sesi jatuh ke WASM */}
+        {split.runtimeNote !== null ? (
+          <div
+            role="status"
+            data-split-runtime-note
+            style={{ ...ROW, fontSize: '9px', letterSpacing: '.1em', color: 'var(--cy-warning)', lineHeight: 1.5 }}
+          >
+            {split.runtimeNote}
           </div>
         ) : null}
 
@@ -475,6 +543,17 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
             style={{ fontSize: '9px', letterSpacing: '.1em', color: 'var(--cy-text-muted)', marginBottom: '8px' }}
           >
             job terakhir dibatalkan: {CANCEL_REASON_TEXT[split.lastOutcome.reason]}
+          </div>
+        ) : null}
+
+        {/* Job terakhir sukses: waktu total dan ms/segmen — pembanding WASM vs WebGPU tanpa DevTools */}
+        {split.lastError === null && split.lastOutcome !== null && 'laneIds' in split.lastOutcome ? (
+          <div
+            role="status"
+            data-split-timing
+            style={{ fontSize: '9px', letterSpacing: '.1em', color: 'var(--cy-text-muted)', marginBottom: '8px' }}
+          >
+            {splitTimingText(split.lastOutcome)}
           </div>
         ) : null}
 
