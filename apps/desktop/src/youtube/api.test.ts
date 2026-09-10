@@ -6,6 +6,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { LocalCommandError } from '../platform/local-invoke';
+
 const callLocal = vi.fn();
 vi.mock('../platform/local-invoke', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../platform/local-invoke')>()),
@@ -23,8 +25,11 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 import {
+  forgetYoutubeStatus,
+  forgetYoutubeStatusIfToolsBroken,
   formatYoutubeDuration,
   isYoutubeUrl,
+  peekYoutubeStatus,
   subscribeYoutubeProgress,
   youtubeAudio,
   youtubeFileName,
@@ -38,7 +43,12 @@ afterEach(() => {
   callLocal.mockReset();
   unlisten.mockReset();
   listeners.length = 0;
+  // Cache-nya hidup di modul, bukan per tes.
+  forgetYoutubeStatus();
 });
+
+const READY = { ready: true, ytDlpVersion: '2026.08.19' } as const;
+const NOT_READY = { ready: false, ytDlpVersion: null } as const;
 
 describe('isYoutubeUrl', () => {
   it('mengenali youtube.com, youtu.be, music.youtube.com, youtube-nocookie.com', () => {
@@ -90,6 +100,119 @@ describe('command', () => {
     callLocal.mockResolvedValue(buf);
     expect(await youtubeAudio('https://youtu.be/abc')).toBe(buf);
     expect(callLocal).toHaveBeenLastCalledWith('youtube_bytes', { url: 'https://youtu.be/abc' });
+  });
+});
+
+/**
+ * Cache status perkakas: `yt-dlp --version` adalah PyInstaller yang 1–3
+ * detik, dan yang menanyakannya (dialog tiap dibuka, drop link tiap kali)
+ * tidak boleh membayarnya berulang. Yang dijaga di sini: jawaban `ready`
+ * dipakai ulang, "belum terpasang" TIDAK, dua pemanggil bersamaan hanya satu
+ * IPC, dan setiap hal yang mengubah kenyataan membuang cache-nya.
+ */
+describe('cache status', () => {
+  it('jawaban ready dipakai ulang: pemeriksaan kedua tidak menyentuh Rust', async () => {
+    callLocal.mockResolvedValue(READY);
+    expect(peekYoutubeStatus()).toBeNull();
+
+    expect(await youtubeStatus()).toEqual(READY);
+    expect(await youtubeStatus()).toEqual(READY);
+    expect(callLocal).toHaveBeenCalledTimes(1);
+    expect(peekYoutubeStatus()).toEqual(READY);
+  });
+
+  it('belum terpasang TIDAK di-cache — SIAPKAN dari luar dialog tetap terbaca', async () => {
+    callLocal.mockResolvedValue(NOT_READY);
+    expect(await youtubeStatus()).toEqual(NOT_READY);
+    expect(peekYoutubeStatus()).toBeNull();
+
+    callLocal.mockResolvedValue(READY);
+    expect(await youtubeStatus()).toEqual(READY);
+    expect(callLocal).toHaveBeenCalledTimes(2);
+  });
+
+  it('dua pemanggil bersamaan ikut satu pemeriksaan yang sama', async () => {
+    let settle: (s: unknown) => void = () => {};
+    callLocal.mockReturnValue(new Promise((resolve) => (settle = resolve)));
+
+    const a = youtubeStatus();
+    const b = youtubeStatus();
+    expect(callLocal).toHaveBeenCalledTimes(1);
+    settle(READY);
+    expect(await a).toEqual(READY);
+    expect(await b).toEqual(READY);
+
+    // Sesudah selesai, pemeriksaan berikutnya dijawab cache (bukan promise lama).
+    callLocal.mockResolvedValue(NOT_READY);
+    expect(await youtubeStatus()).toEqual(READY);
+    expect(callLocal).toHaveBeenCalledTimes(1);
+  });
+
+  it('pemeriksaan yang GAGAL tidak meninggalkan promise nyangkut', async () => {
+    callLocal.mockRejectedValueOnce(new LocalCommandError({ code: 'IO', message: 'gagal' }));
+    await expect(youtubeStatus()).rejects.toThrow('gagal');
+    expect(peekYoutubeStatus()).toBeNull();
+
+    callLocal.mockResolvedValue(READY);
+    expect(await youtubeStatus()).toEqual(READY);
+    expect(callLocal).toHaveBeenCalledTimes(2);
+  });
+
+  it('jawaban youtube_setup langsung menjadi cache — tanpa youtube_status menyusul', async () => {
+    callLocal.mockResolvedValue(READY);
+    expect(await youtubeSetup()).toEqual(READY);
+    expect(callLocal).toHaveBeenCalledTimes(1);
+    expect(callLocal).toHaveBeenLastCalledWith('youtube_setup', {});
+
+    expect(await youtubeStatus()).toEqual(READY);
+    expect(callLocal).toHaveBeenCalledTimes(1);
+  });
+
+  it('setup yang berakhir tidak ready mengosongkan cache', async () => {
+    callLocal.mockResolvedValueOnce(READY);
+    await youtubeStatus();
+    callLocal.mockResolvedValueOnce(NOT_READY);
+    expect(await youtubeSetup()).toEqual(NOT_READY);
+    expect(peekYoutubeStatus()).toBeNull();
+  });
+
+  it('update yang mengganti binari membuang cache; yang tidak mengganti tidak', async () => {
+    callLocal.mockResolvedValueOnce(READY);
+    await youtubeStatus();
+
+    callLocal.mockResolvedValueOnce(false);
+    expect(await youtubeUpdate()).toBe(false);
+    expect(peekYoutubeStatus()).toEqual(READY);
+
+    callLocal.mockResolvedValueOnce(true);
+    expect(await youtubeUpdate()).toBe(true);
+    expect(peekYoutubeStatus()).toBeNull();
+
+    // Versi baru dibaca dari Rust, bukan dari cache lama.
+    const NEW = { ready: true, ytDlpVersion: '2026.09.01' };
+    callLocal.mockResolvedValueOnce(NEW);
+    expect(await youtubeStatus()).toEqual(NEW);
+  });
+
+  it('update yang gagal membuang cache — keadaan berkas tidak dijamin', async () => {
+    callLocal.mockResolvedValueOnce(READY);
+    await youtubeStatus();
+    callLocal.mockRejectedValueOnce(new LocalCommandError({ code: 'IO', message: 'unduhan putus' }));
+    await expect(youtubeUpdate()).rejects.toThrow('unduhan putus');
+    expect(peekYoutubeStatus()).toBeNull();
+  });
+
+  it('galat IO (yt-dlp tidak bisa dijalankan) membuang cache; galat YOUTUBE tidak', async () => {
+    callLocal.mockResolvedValue(READY);
+    await youtubeStatus();
+
+    forgetYoutubeStatusIfToolsBroken(new LocalCommandError({ code: 'YOUTUBE', message: 'Video unavailable' }));
+    expect(peekYoutubeStatus()).toEqual(READY);
+    forgetYoutubeStatusIfToolsBroken(new Error('bukan LocalError'));
+    expect(peekYoutubeStatus()).toEqual(READY);
+
+    forgetYoutubeStatusIfToolsBroken(new LocalCommandError({ code: 'IO', message: 'No such file' }));
+    expect(peekYoutubeStatus()).toBeNull();
   });
 });
 

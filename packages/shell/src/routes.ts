@@ -13,6 +13,7 @@
 
 export type Route =
   | 'landing'
+  | 'composer'
   | 'studio'
   | 'dj'
   | 'roblox'
@@ -21,6 +22,7 @@ export type Route =
   | 'terms-of-service';
 
 export const HOME_PATH = '/';
+export const COMPOSER_PATH = '/composer';
 export const STUDIO_PATH = '/studio';
 export const DJ_PATH = '/dj';
 export const ROBLOX_PATH = '/roblox';
@@ -32,6 +34,7 @@ export const TERMS_OF_SERVICE_PATH = '/terms-of-service';
 export const PATH_OF: Readonly<Record<Route, string>> = {
   landing: HOME_PATH,
   studio: STUDIO_PATH,
+  composer: COMPOSER_PATH,
   dj: DJ_PATH,
   roblox: ROBLOX_PATH,
   'proof-stem': PROOF_STEM_PATH,

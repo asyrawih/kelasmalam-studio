@@ -51,6 +51,7 @@
       "@kelasmalam/platform/*": ["packages/platform/src/*"],
       "@kelasmalam/studio-core/*": ["packages/studio-core/src/*"],
       "@kelasmalam/studio/*": ["packages/studio/src/*"],
+      "@kelasmalam/composer/*": ["packages/composer/src/*"],
       "@kelasmalam/dj/*": ["packages/dj/src/*"],
       "@kelasmalam/library/*": ["packages/library/src/*"],
       "@kelasmalam/roblox/*": ["packages/roblox/src/*"],

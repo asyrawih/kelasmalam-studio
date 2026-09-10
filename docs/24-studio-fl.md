@@ -27,6 +27,23 @@ paralel di worktree terpisah.
 
 ---
 
+## Status implementasi UI — 10 September 2026
+
+Tahap UI awal tersedia di `packages/composer/src/ComposerPage.tsx`, route
+`/composer` pada desktop, tombol COMPOSER di header Studio dan command palette.
+Browser placeholder, Playlist 8 bar, Channel Rack 16 step, Piano Roll satu
+oktaf, tab Mixer, tambah channel/pattern, mute/level UI, serta undo sudah
+interaktif. Not rack dan piano memakai data sama; clip merujuk pattern bersama.
+Draft disimpan di memori sesi dan hilang saat reload. Audio, rekaman, export,
+asset import, persistence project, drag/resize dan routing DSP belum tersedia.
+Revisi Mixer mengikuti [manual Mixer](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/mixer.htm):
+Master dock kiri, insert scroll, compact/wide, expand workspace, inspector
+10 slot FX, EQ tiga band, pan/stereo/phase/swap, fader dB, send/sidechain UI,
+assignment channel independen dan pencegahan routing cycle. Semua memakai
+CyberUI `--cy-*`; tidak memakai palet Composer terpisah. Belum mencakup
+Current utility track, dock kanan yang bisa dikonfigurasi, multi-select,
+plugin editor, PDC atau DSP. Ini fase UI pendahuluan, **bukan penyelesaian F0–F8**.
+
 ## 0. Dari mana kita mulai
 
 Empat fakta dari repo yang menentukan bentuk rencana ini:

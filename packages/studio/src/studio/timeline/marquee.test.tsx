@@ -72,6 +72,12 @@ function ids(): readonly string[] {
   return studioStore.getState().selectedClipIds;
 }
 
+function clipOfId(id: string): StudioClip {
+  const found = studioStore.getState().lanes.flatMap((lane) => lane.clips).find((item) => item.id === id);
+  if (found === undefined) throw new Error(`clip ${id} tidak ada`);
+  return found;
+}
+
 function clipStart(id: string): number {
   const found = studioStore.getState().lanes.flatMap((lane) => lane.clips).find((item) => item.id === id);
   if (found === undefined) throw new Error(`clip ${id} tidak ada`);
@@ -321,5 +327,53 @@ describe('magnetic snap saat drag', () => {
     fireEvent.pointerMove(moving, { pointerId: 1, clientX: pxAt(15.5), clientY: 10 });
     expect(clipStart('a')).toBeCloseTo(15.5 * SR, -2);
     expect(document.querySelector('[data-snap-guide]')).toBeNull();
+  });
+
+  /*
+   * Yang dikeluhkan user bukan "magnetnya tidak jalan", tapi "hasilnya tidak
+   * benar-benar nyambung". Jadi yang diuji di sini kesamaan SAMPLE antara tepi
+   * kanan clip yang digeser dan tepi kiri tetangganya — lewat jalur pointer yang
+   * sebenarnya, termasuk `pointerup`, karena dulu ada dugaan posisi berubah lagi
+   * saat dilepas.
+   */
+  it('tepi yang menempel sama PERSIS, dan tidak bergeser saat dilepas', () => {
+    render(<Harness />);
+    const moving = clipEl('a');
+    const b = clipOfId('b');
+    fireEvent.pointerDown(moving, { pointerId: 1, button: 0, clientX: 0, clientY: 10 });
+    fireEvent.pointerMove(moving, { pointerId: 1, clientX: pxAt(15.7), clientY: 10 });
+    const snapped = clipOfId('a');
+    expect(snapped.start + snapped.len).toBe(b.start);
+    fireEvent.pointerUp(moving, { pointerId: 1, clientX: pxAt(15.7), clientY: 10 });
+    const released = clipOfId('a');
+    expect(released.start).toBe(snapped.start);
+    expect(released.start + released.len).toBe(b.start);
+    expect(document.querySelector('[data-snap-guide]')).toBeNull();
+  });
+
+  it('rombongan juga menempel persis, jarak antar anggotanya utuh', () => {
+    render(<Harness />);
+    studioActions.setSelectedClips(['a', 'c'], 'a');
+    const moving = clipEl('a');
+    const b = clipOfId('b');
+    const gap = clipOfId('c').start - clipOfId('a').start;
+    fireEvent.pointerDown(moving, { pointerId: 1, button: 0, clientX: 0, clientY: 10 });
+    fireEvent.pointerMove(moving, { pointerId: 1, clientX: pxAt(15.7), clientY: 10 });
+    const a = clipOfId('a');
+    expect(a.start + a.len).toBe(b.start);
+    expect(clipOfId('c').start - a.start).toBe(gap);
+  });
+
+  it('tepi yang di-TRIM ikut bermagnet ke tetangganya', () => {
+    render(<Harness />);
+    const handle = document.querySelector('[data-clip="a"] [data-clip-trim="right"]');
+    if (handle === null) throw new Error('gagang trim tidak ada');
+    const b = clipOfId('b');
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: pxAt(4), clientY: 10 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: pxAt(19.7), clientY: 10 });
+    const a = clipOfId('a');
+    expect(a.start).toBe(0);
+    expect(a.start + a.len).toBe(b.start);
+    expect(document.querySelector('[data-snap-guide]')).not.toBeNull();
   });
 });

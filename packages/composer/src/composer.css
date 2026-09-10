@@ -1,0 +1,610 @@
+/* Composer consumes the same CyberUI tokens as Studio. Layout is page-specific; theme values come from ui/cyber/theme.css. */
+.composer {
+  background: var(--cy-bg);
+  color: var(--cy-text);
+  min-height: 100vh;
+  font: 12px var(--cy-font-mono, monospace);
+  display: flex;
+  flex-direction: column;
+}
+.composer button,
+.composer input,
+.composer select {
+  font: inherit;
+  color: inherit;
+}
+.composer button {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 7px 10px;
+}
+.composer button:hover:not(:disabled) {
+  background: var(--cy-surface-2);
+  border-color: var(--cy-accent);
+  color: var(--cy-accent);
+}
+.composer button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.composer button:focus-visible,
+.composer input:focus-visible,
+.composer select:focus-visible {
+  outline: 1px solid var(--cy-accent);
+  outline-offset: 1px;
+}
+.composer button.active,
+.composer button[aria-pressed="true"]:not(.cp-mute) {
+  color: var(--cy-accent);
+  border-color: var(--cy-accent);
+  background: var(--cy-surface-2);
+}
+.composer input,
+.composer select {
+  background: var(--cy-surface-1);
+  border: 1px solid var(--cy-border);
+  border-radius: 0;
+  padding: 7px;
+  min-width: 0;
+}
+.composer small {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--cy-text-dim);
+}
+.cp-header {
+  background: var(--cy-surface-1);
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--cy-border);
+}
+.cp-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cp-logo {
+  color: var(--cy-accent);
+  font-size: 32px;
+}
+.cp-brand h1 {
+  font: 700 22px var(--cy-font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0 0 4px;
+}
+.cp-header nav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.cp-badge {
+  display: inline-flex;
+}
+.cp-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  background: var(--cy-surface-2);
+  border-bottom: 1px solid var(--cy-border);
+  flex-wrap: wrap;
+}
+.cp-project {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-right: auto;
+  min-width: 180px;
+}
+.cp-project input {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 13px;
+  width: 210px;
+}
+.cp-segment {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--cy-border);
+  border-radius: 0;
+}
+.cp-segment button {
+  padding: 3px 8px;
+  font-size: 9px;
+}
+.cp-tempo {
+  position: relative;
+  text-align: center;
+  margin: 0 8px;
+}
+.cp-tempo input {
+  display: block;
+  width: 70px;
+  font-size: 20px;
+  text-align: center;
+  padding: 4px;
+  background: transparent;
+  border: 0;
+}
+.cp-position {
+  font-size: 23px;
+  letter-spacing: 1px;
+  border-left: 1px solid var(--cy-border);
+  padding: 0 20px;
+}
+.cp-position span {
+  color: var(--cy-text-muted);
+}
+.cp-position small {
+  display: block;
+  text-align: center;
+  font-size: 8px;
+  margin-top: 5px;
+}
+.cp-signature {
+  color: var(--cy-text-dim);
+  margin-right: 16px;
+}
+.cp-workspace {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.cp-browser {
+  border-right: 1px solid var(--cy-border);
+  background: var(--cy-surface-1);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 24px;
+}
+.cp-panel-title {
+  min-height: 46px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--cy-border);
+  color: var(--cy-text-dim);
+  font-size: 10px;
+}
+.cp-panel-title h2 {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--cy-accent);
+}
+.cp-panel-title h2 span {
+  margin-left: 10px;
+  color: var(--cy-text);
+  font-weight: 600;
+  font-size: 12px;
+}
+.composer kbd {
+  font: 9px var(--cy-font-mono, monospace);
+  color: var(--cy-text-dim);
+  border: 1px solid var(--cy-border);
+  padding: 2px 4px;
+  border-radius: 0;
+  margin-left: 9px;
+}
+.cp-search {
+  margin: 16px 14px;
+}
+.cp-library-title {
+  margin: 12px 16px 0;
+  font-size: 9px;
+  color: var(--cy-text-dim);
+  letter-spacing: 1px;
+  display: flex;
+  justify-content: space-between;
+}
+.cp-hint {
+  margin: 12px 16px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--cy-text-dim);
+}
+.composer .cp-preset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--cy-border);
+  border-radius: 0;
+  margin: 0 10px;
+  padding: 13px 6px;
+  font-size: 11px;
+}
+.cp-preset small {
+  display: block;
+  font-size: 7px;
+  margin-top: 6px;
+}
+.cp-preset > span:last-child {
+  margin-left: auto;
+  color: var(--cy-text-muted);
+}
+.cp-browser-foot {
+  margin: auto 16px 0;
+  padding-top: 60px;
+  color: var(--cy-text-muted);
+}
+.cp-browser-foot > span {
+  font: 600 24px/1.1 var(--cy-font-sans, sans-serif);
+}
+.cp-browser-foot p {
+  font-size: 10px;
+  line-height: 1.8;
+  color: var(--cy-text-muted);
+}
+.cp-editors {
+  padding: 0 18px 18px;
+  min-width: 0;
+}
+.cp-viewbar {
+  min-height: 47px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--cy-text-dim);
+  font-size: 9px;
+}
+.cp-viewbar button {
+  font-size: 9px;
+}
+.cp-dot {
+  color: var(--cy-accent);
+  margin: 0 12px;
+}
+.cp-panel {
+  box-shadow: var(--cy-glow-soft);
+  clip-path: polygon(
+    10px 0,
+    100% 0,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    0 100%,
+    0 10px
+  );
+  background: var(--cy-surface-1);
+  border: 1px solid var(--cy-border);
+  border-radius: 0;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.cp-tools {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cp-tools button,
+.cp-tools select {
+  font-size: 10px;
+  padding: 4px 8px;
+}
+.cp-tools > span {
+  margin: 0 8px;
+  font-size: 9px;
+}
+.cp-timeline {
+  overflow-x: auto;
+}
+.cp-ruler,
+.cp-track {
+  display: grid;
+  grid-template-columns: 145px repeat(8, minmax(70px, 1fr));
+  min-width: 720px;
+}
+.cp-ruler {
+  height: 28px;
+  border-bottom: 1px solid var(--cy-border);
+  font-size: 9px;
+  color: var(--cy-text-muted);
+}
+.cp-ruler > span {
+  padding: 8px;
+  border-right: 1px solid var(--cy-border);
+}
+.cp-ruler > span:first-child {
+  padding-left: 14px;
+  font-size: 8px;
+}
+.cp-track {
+  height: 54px;
+}
+.cp-track-name {
+  border-right: 1px solid var(--cy-border);
+  border-bottom: 1px solid var(--cy-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  font-size: 10px;
+  color: var(--cy-text);
+}
+.cp-track-name small {
+  color: var(--cy-text-muted);
+}
+.composer .cp-cell {
+  position: relative;
+  border-radius: 0;
+  border-right: 1px solid var(--cy-border);
+  border-bottom: 1px solid var(--cy-border);
+  padding: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(25% - 1px),
+    var(--cy-grid-line) calc(25% - 1px),
+    var(--cy-grid-line) 25%
+  );
+}
+.cp-clip {
+  height: 100%;
+  display: block;
+  background: var(--cy-surface-2);
+  border: 1px solid var(--cy-accent);
+  border-radius: 0;
+  overflow: hidden;
+  text-align: left;
+  color: var(--cy-accent);
+}
+.cp-clip strong {
+  display: block;
+  padding: 5px 5px 0;
+  font-size: 9px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.cp-mini-notes {
+  display: block;
+  position: relative;
+  margin: 7px 5px;
+  height: 18px;
+}
+.cp-mini-notes i {
+  position: absolute;
+  height: 3px;
+  width: 12%;
+  background: var(--cy-accent);
+}
+.cp-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  min-height: 32px;
+  border-top: 1px solid var(--cy-border);
+  font-size: 9px;
+  color: var(--cy-text-dim);
+  gap: 15px;
+}
+.cp-panel-foot button {
+  font-size: 10px;
+  padding: 2px 0;
+}
+.cp-panel-foot > span {
+  font-size: 8px;
+  white-space: nowrap;
+}
+.cp-rack-scroll {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+}
+.cp-channel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px;
+  border-radius: 0;
+  min-width: 550px;
+}
+.cp-channel.selected {
+  background: var(--cy-surface-2);
+}
+.composer .cp-mute {
+  color: var(--channel);
+  padding: 5px;
+}
+.composer .cp-channel-name {
+  width: 126px;
+  flex-shrink: 0;
+  text-align: left;
+  border-left: 2px solid var(--channel);
+  border-radius: 0;
+  font-size: 11px;
+  padding: 4px 9px;
+}
+.cp-channel-name small {
+  display: block;
+  font-size: 7px;
+  margin-top: 4px;
+  color: var(--cy-text-muted);
+}
+.cp-steps {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(14px, 1fr));
+  gap: 5px;
+  flex: 1;
+}
+.composer .cp-steps button {
+  height: 27px;
+  padding: 0;
+  border: 1px solid var(--cy-border);
+  border-radius: 0;
+  background: var(--cy-surface-2);
+  box-shadow: none;
+}
+.composer .cp-steps button.alt {
+  background: var(--cy-surface-2);
+  border-color: var(--cy-border-strong);
+}
+.composer .cp-steps button.on {
+  background: var(--channel);
+  border-color: var(--channel);
+  box-shadow: var(--cy-glow-soft);
+}
+.cp-tabs {
+  display: flex;
+  gap: 12px;
+}
+.cp-tabs button {
+  font-size: 11px;
+}
+.cp-piano {
+  padding: 8px 0;
+  overflow: auto;
+  max-height: 265px;
+}
+.cp-keyrow {
+  display: grid;
+  grid-template-columns: 58px repeat(16, minmax(24px, 1fr));
+  min-width: 550px;
+  height: 18px;
+}
+.cp-keyrow > span {
+  text-align: right;
+  padding: 3px 10px;
+  font-size: 8px;
+  background: var(--cy-surface-2);
+  color: var(--cy-text);
+  border-bottom: 1px solid var(--cy-border);
+}
+.cp-keyrow > span.black {
+  background: var(--cy-surface-1);
+  color: var(--cy-text-dim);
+}
+.composer .cp-keyrow button {
+  padding: 0;
+  border-radius: 0;
+  border-right: 1px solid var(--cy-border);
+  border-bottom: 1px solid var(--cy-border);
+  background: var(--cy-surface-1);
+}
+.composer .cp-keyrow button:nth-child(4n + 2) {
+  border-left: 1px solid var(--cy-border-strong);
+}
+.composer .cp-keyrow button[aria-pressed="true"] {
+  background: var(--channel);
+  border: 2px solid var(--cy-surface-1);
+  border-radius: 0;
+}
+.cp-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--cy-border);
+  font-size: 9px;
+  color: var(--cy-text-dim);
+  background: var(--cy-surface-1);
+}
+.cp-status i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cy-accent);
+  margin-right: 7px;
+}
+@media (min-width: 1500px) {
+  .cp-track {
+    height: 65px;
+  }
+  .cp-keyrow {
+    height: 20px;
+  }
+  .cp-editors {
+    padding: 0 24px 24px;
+  }
+  .cp-rack-scroll {
+    padding: 14px 18px;
+  }
+}
+@media (max-width: 900px) {
+  .cp-workspace {
+    grid-template-columns: 170px minmax(0, 1fr) !important;
+  }
+  .cp-workspace:not(:has(.cp-browser)) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cp-header {
+    padding: 12px;
+    gap: 12px;
+  }
+  .cp-brand small {
+    display: none;
+  }
+  .cp-header nav {
+    gap: 0;
+  }
+  .cp-header nav button {
+    padding: 7px;
+  }
+  .cp-position {
+    font-size: 18px;
+  }
+  .cp-editors {
+    padding: 0 10px 10px;
+  }
+  .cp-viewbar > span {
+    display: none;
+  }
+  .cp-viewbar {
+    justify-content: flex-end;
+  }
+  .cp-tools > span {
+    display: none;
+  }
+  .cp-status {
+    flex-wrap: wrap;
+  }
+  .cp-panel-title {
+    flex-wrap: wrap;
+  }
+  .cp-browser-foot > span {
+    font-size: 20px;
+  }
+}
+@media (max-width: 600px) {
+  .cp-workspace {
+    display: block;
+  }
+  .cp-browser {
+    max-height: 260px;
+    overflow: auto;
+    border-bottom: 1px solid var(--cy-border);
+  }
+  .cp-browser-foot {
+    display: none;
+  }
+  .cp-badge {
+    display: none;
+  }
+  .cp-header {
+    flex-wrap: wrap;
+  }
+  .cp-header nav {
+    margin-left: 0;
+  }
+  .cp-transport {
+    padding: 12px;
+  }
+  .cp-project {
+    width: 100%;
+  }
+  .cp-position {
+    padding: 0 8px;
+  }
+}

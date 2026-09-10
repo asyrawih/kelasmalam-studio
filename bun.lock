@@ -10,6 +10,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@breezystack/lamejs": "^1.2.7",
+        "@kelasmalam/composer": "workspace:*",
         "@kelasmalam/dj": "workspace:*",
         "@kelasmalam/engine": "workspace:*",
         "@kelasmalam/library": "workspace:*",
@@ -91,6 +92,15 @@
         "@types/node": "^22.20.1",
         "typescript": "^5.6.3",
         "vitest": "^2.1.4",
+      },
+    },
+    "packages/composer": {
+      "name": "@kelasmalam/composer",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/shell": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "react": "^18.3.1",
       },
     },
     "packages/dj": {
@@ -412,6 +422,8 @@
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.6.0", "", {}, "sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw=="],
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
+
+    "@kelasmalam/composer": ["@kelasmalam/composer@workspace:packages/composer"],
 
     "@kelasmalam/desktop": ["@kelasmalam/desktop@workspace:apps/desktop"],
 

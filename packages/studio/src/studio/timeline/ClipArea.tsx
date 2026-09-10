@@ -35,7 +35,7 @@ import { fadeOverlayGradient } from '@kelasmalam/studio-core/timeline/fade';
 import { useCanvasDraw } from '@kelasmalam/ui/lib/canvas';
 import { arrangementGridLines, drawArrangementBeatGrid } from './arrangement-beat-grid';
 import { clearTimelineCursor, setTimelineCursor } from './timeline-cursor';
-import { snapClipMove } from './clip-snap';
+import { snapClipMove, snapTrimEdge } from './clip-snap';
 import { useAudioFilePicker, useNativeFileDrop } from '@kelasmalam/platform/hooks';
 
 export interface ClipAreaProps {
@@ -865,7 +865,15 @@ export function ClipArea({
       // `grabOffset` menjaga tepi tidak MELOMPAT ke bawah kursor di gerakan
       // pertama: yang digeser adalah selisih dari titik pointer turun, bukan
       // posisi absolut kursor.
-      studioActions.trimClip(g.clipId, g.edge, (p.x - g.grabOffset) * g.samplesPerPx);
+      const at = (p.x - g.grabOffset) * g.samplesPerPx;
+      // Tepi yang di-trim ikut bermagnet ke tetangganya. Tanpa ini, "rapatkan
+      // dua clip dengan cara memanjangkan yang satu" hanya bisa berhasil kalau
+      // piksel di bawah pointer kebetulan jatuh persis di sample tepi tetangga.
+      const snapped = snapEnabled
+        ? snapTrimEdge(lanes, g.clipId, at, g.samplesPerPx)
+        : { at, guideSample: null };
+      setSnapGuide(snapped.guideSample);
+      studioActions.trimClip(g.clipId, g.edge, snapped.at);
       return;
     }
     if (g.kind === 'slip') {

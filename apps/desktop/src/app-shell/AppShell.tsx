@@ -25,6 +25,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { ComposerPage } from '@kelasmalam/composer/ComposerPage';
 import { DjPage } from '@kelasmalam/dj/dj';
 import { LibraryDock } from '@kelasmalam/library/library';
 import { ProofStemPage } from '@kelasmalam/proof-stem/proof-stem';
@@ -40,7 +41,7 @@ import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
 import { StoreSettings } from '../library-local/StoreSettings';
 import { guardWindowClose, listenMenuCommands, setWindowTitle } from '../window/desktop';
 import { YouTubeDialog } from '../youtube/YouTubeDialog';
-import { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
+import { COMPOSER_PATH, DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
 
 export interface AppShellProps {
   readonly createEngine?: () => Promise<unknown>;
@@ -90,6 +91,7 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
       },
       // `⌘,` konvensi OS untuk "Pengaturan…"; item menu native butuh id sendiri.
       { id: 'shell.preferences', title: 'Pengaturan…', group: 'Aplikasi', defaultChord: 'mod+Comma', run: () => setKeymap(true) },
+      { id: 'shell.goto.composer', title: 'Buka Composer', group: 'Aplikasi', defaultChord: null, run: () => navigate(COMPOSER_PATH) },
       { id: 'shell.goto.dj', title: 'Buka mixer DJ', group: 'Aplikasi', defaultChord: null, run: () => navigate(DJ_PATH) },
       { id: 'shell.goto.studio', title: 'Buka Studio', group: 'Aplikasi', defaultChord: null, run: () => navigate(STUDIO_PATH) },
       { id: 'shell.goto.roblox', title: 'Buka unggah Roblox', group: 'Aplikasi', defaultChord: null, run: () => navigate(ROBLOX_PATH) },
@@ -108,10 +110,10 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
   const projectName = useStudio((s) => s.projectName);
   const dirty = useStudio(selectProjectDirty);
   useEffect(() => {
-    const title = windowTitle(projectName, dirty);
+    const title = route === 'composer' ? 'Composer — Kelasmalam' : windowTitle(projectName, dirty);
     document.title = title;
     void setWindowTitle(title);
-  }, [projectName, dirty]);
+  }, [projectName, dirty, route]);
 
   // Menu native = pintu ketiga ke registry: satu listener, satu penerjemah.
   useEffect(() => listenMenuCommands(), []);
@@ -142,7 +144,9 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
 
   return (
     <>
-      {route === 'dj' ? (
+      {route === 'composer' ? (
+        <ComposerPage onOpenStudio={() => navigate(STUDIO_PATH)} onOpenDj={() => navigate(DJ_PATH)} />
+      ) : route === 'dj' ? (
         <DjPage onClose={() => navigate(STUDIO_PATH)} />
       ) : route === 'roblox' ? (
         <RobloxRoute onClose={() => navigate(STUDIO_PATH)} onOpenStudio={() => navigate(STUDIO_PATH)} />
@@ -157,7 +161,7 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
           extras={{
             // SoundCloud di kedua app; YouTube HANYA di desktop (docs/23):
             // yt-dlp dijalankan Rust.
-            importActions: [soundCloud.action, { id: 'youtube', label: 'YOUTUBE', run: () => setYoutubeOpen(true) }],
+            importActions: [{ id: 'composer', label: 'COMPOSER', run: () => navigate(COMPOSER_PATH) }, soundCloud.action, { id: 'youtube', label: 'YOUTUBE', run: () => setYoutubeOpen(true) }],
             dialogs: (
               <>
                 {soundCloud.dialog}

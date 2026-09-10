@@ -11,6 +11,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = {
+  peekYoutubeStatus: vi.fn(() => null as unknown),
   youtubeStatus: vi.fn(),
   youtubeSetup: vi.fn(),
   youtubeUpdate: vi.fn(),
@@ -20,6 +21,7 @@ const api = {
 };
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
+  peekYoutubeStatus: () => api.peekYoutubeStatus(),
   youtubeStatus: () => api.youtubeStatus(),
   youtubeSetup: () => api.youtubeSetup(),
   youtubeUpdate: () => api.youtubeUpdate(),
@@ -50,6 +52,8 @@ const INFO = {
 
 beforeEach(() => {
   studioActions.__resetForTest?.('empty');
+  // Belum ada yang di-cache: perilaku "modal dibuka pertama kali".
+  api.peekYoutubeStatus.mockReturnValue(null);
   api.youtubeStatus.mockResolvedValue({ ready: true, ytDlpVersion: '2026.08.19' });
   api.youtubeSetup.mockResolvedValue({ ready: true, ytDlpVersion: '2026.08.19' });
   api.youtubeInfo.mockResolvedValue(INFO);
@@ -87,6 +91,20 @@ describe('perkakas', () => {
     await act(async () => {});
     expect(api.youtubeStatus).toHaveBeenCalledTimes(1);
     expect(api.subscribeYoutubeProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it('status yang sudah di-cache dipakai langsung: SIAP tanpa kedip, tanpa youtube_status', async () => {
+    // Modal yang dibuka untuk kedua kalinya dalam satu sesi — cache di
+    // `api.ts` sudah berisi jawaban `ready`.
+    api.peekYoutubeStatus.mockReturnValue({ ready: true, ytDlpVersion: '2026.08.19' });
+    render(<YouTubeDialog onClose={() => {}} />);
+
+    // Sinkron sesudah render, sebelum promise apa pun diselesaikan.
+    expect(status().textContent).toMatch(/SIAP · yt-dlp 2026\.08\.19/);
+    expect(status().textContent).not.toMatch(/MEMERIKSA PERKAKAS/);
+    expect(button(/PERBARUI/).disabled).toBe(false);
+    await act(async () => {});
+    expect(api.youtubeStatus).not.toHaveBeenCalled();
   });
 
   it('Escape memanggil onClose yang TERBARU walau efeknya hanya saat mount', async () => {

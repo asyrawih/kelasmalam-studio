@@ -27,7 +27,7 @@ import { TransportButtons } from './studio/shell/TransportButtons';
 import { ReorderableStack } from './studio/shell/ReorderableStack';
 import { studioActions, studioStore } from './studio/store';
 import { registerExportHost } from './studio/rail/export-bridge';
-import { bufferLookup } from './studio/preview/audio-preview';
+import { bufferLookup, previewPositionSec } from './studio/preview/audio-preview';
 import { BeatProvider, TimelinePanel } from './studio/timeline';
 import { usePreviewPlayback } from './studio/preview/usePreviewPlayback';
 import { studioCommands } from './studio/commands';
@@ -118,11 +118,30 @@ export function StudioPage({ createEngine, onClose, onOpenDj, onOpenRoblox, extr
     };
   }, [createEngine]);
 
-  // Playhead berjalan dari timer UI, BUKAN dari clock audio. Selama engine
-  // belum ada ini satu-satunya cara timeline bisa dicoba; begitu engine ada,
-  // sumber posisi harus diganti ke snapshot transport engine.
+  // Timer UI hanya menentukan SEBERAPA SERING playhead diperbarui; POSISINYA
+  // datang dari jam audio.
+  //
+  // Bedanya bukan kosmetik. `setInterval(…, 60)` tidak pernah tepat 60 ms —
+  // periodenya dihitung ulang setelah callback selesai, jadi tiap tick memakan
+  // 60 ms + waktu render, dan tab yang tidak aktif dicekik sampai 1×/detik.
+  // Menambahkan 60 ms per tick karena itu SELALU lebih lambat dari yang
+  // benar-benar terdengar, galatnya searah dan menumpuk: lagu tiga menit habis
+  // sementara garis playhead masih di tengah. `previewPositionSec()` adalah jam
+  // yang SAMA dengan yang memutar sample-nya (dan yang sudah dipakai waveform
+  // geser di `LaneHeaders`), jadi tick yang terlambat hanya membuat gambarnya
+  // lebih jarang diperbarui — tidak melencengkan posisinya.
+  //
+  // Cadangan `tick(TICK_MS)` dipakai kalau tidak ada yang berbunyi (mode
+  // UI-only, atau AudioContext belum bisa dibuat): di situ playhead satu-satunya
+  // jam yang ada, jadi tidak ada apa pun yang bisa ia tinggalkan. Begitu engine
+  // WASM hidup, yang menggantikan `previewPositionSec()` adalah snapshot
+  // transport engine — bentuk pemanggilannya sudah sama.
   useEffect(() => {
-    const id = setInterval(() => studioActions.tick(TICK_MS), TICK_MS);
+    const id = setInterval(() => {
+      const heard = previewPositionSec();
+      if (heard === null) studioActions.tick(TICK_MS);
+      else studioActions.tickTo(heard);
+    }, TICK_MS);
     return () => clearInterval(id);
   }, []);
 
