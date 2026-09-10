@@ -5,7 +5,7 @@
   "build": {
     "devUrl": "http://localhost:5174",
     "frontendDist": "../dist",
-    "beforeDevCommand": "cd .. && bunx vite",
+    "beforeDevCommand": "bunx vite",
     "beforeBuildCommand": ""
   },
   "app": {
