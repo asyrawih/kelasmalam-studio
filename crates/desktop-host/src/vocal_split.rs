@@ -722,11 +722,14 @@ impl OrtMdxModel {
     /// Maka `load` memutuskan per akselerator; parameter ini dibuka
     /// `pub(crate)` supaya tes benchmark bisa mengukur keduanya.
     pub(crate) fn load_with(path: &Path, accel: Accel, pin_batch: bool) -> Result<Self, HostError> {
-        let mut coreml_registered = false;
-        let builder = match accel {
-            Accel::Cpu { threads } => {
-                ort::session::Session::builder()?.with_intra_threads(threads.max(1))?
-            }
+        // Tuple, bukan `let mut` + penugasan di cabang cfg: di non-macOS cabang
+        // CoreML langsung `return`, dan `mut` yang tak pernah dipakai ditolak
+        // `-D warnings` (clippy CI Ubuntu/Windows).
+        let (builder, coreml_registered) = match accel {
+            Accel::Cpu { threads } => (
+                ort::session::Session::builder()?.with_intra_threads(threads.max(1))?,
+                false,
+            ),
             Accel::CoreMl => {
                 #[cfg(target_os = "macos")]
                 {
@@ -737,15 +740,12 @@ impl OrtMdxModel {
                         .build()
                         .error_on_failure();
                     match ort::session::Session::builder()?.with_execution_providers([ep]) {
-                        Ok(builder) => {
-                            coreml_registered = true;
-                            builder
-                        }
+                        Ok(builder) => (builder, true),
                         Err(e) => {
                             eprintln!(
                                 "vocal-split: EP CoreML gagal didaftarkan, jatuh ke CPU: {e}"
                             );
-                            e.recover().with_intra_threads(DEFAULT_THREADS)?
+                            (e.recover().with_intra_threads(DEFAULT_THREADS)?, false)
                         }
                     }
                 }
