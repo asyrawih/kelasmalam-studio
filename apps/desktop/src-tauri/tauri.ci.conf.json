@@ -1,5 +1,4 @@
 {
-  "$comment": "Lapisan config untuk build CI TANPA kunci: `createUpdaterArtifacts` di tauri.conf.json menuntut TAURI_SIGNING_PRIVATE_KEY dan membuat tauri-cli menolak build. Artefak CI adalah build uji (unsigned), bukan rilis — updater-nya memang tidak dipakai. Dipasang lewat `--config tauri.ci.conf.json` di .github/workflows/desktop-artifacts.yml.",
   "bundle": {
     "createUpdaterArtifacts": false
   }
