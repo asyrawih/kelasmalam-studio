@@ -15,7 +15,14 @@
 import { importBytesToLane, type DropResult, type LaneImportOptions } from '@kelasmalam/studio/studio/timeline/audio-import';
 import type { UrlImporter } from '@kelasmalam/studio/studio/timeline/url-to-lane';
 import { isLocalError } from '../platform/local-invoke';
-import { subscribeYoutubeProgress, youtubeAudio, youtubeFileName, youtubeInfo, youtubeStatus } from './api';
+import {
+  forgetYoutubeStatusIfToolsBroken,
+  subscribeYoutubeProgress,
+  youtubeAudio,
+  youtubeFileName,
+  youtubeInfo,
+  youtubeStatus,
+} from './api';
 
 export const YOUTUBE_TOOLS_MISSING =
   'perkakas YouTube (yt-dlp) belum terpasang — buka YOUTUBE di header lalu tekan SIAPKAN';
@@ -34,6 +41,9 @@ export async function importYoutubeToLane(
 ): Promise<DropResult> {
   const url = text.trim();
   try {
+    // Lewat cache `api.ts`: link kedua yang di-drop tidak menjalankan
+    // `yt-dlp --version` lagi, dan status yang belum `ready` tetap ditanyakan
+    // (murah — berkasnya tidak ada) supaya SIAPKAN yang baru selesai terbaca.
     const status = await youtubeStatus();
     if (!status.ready) return { ok: false, reason: YOUTUBE_TOOLS_MISSING };
 
@@ -55,6 +65,9 @@ export async function importYoutubeToLane(
 
     return importBytesToLane(bytes, youtubeFileName(info), laneId, startSamples, projectSampleRate, opts);
   } catch (cause: unknown) {
+    // Binari hilang/rusak (`spawn` gagal → kode `IO`) membatalkan cache
+    // `ready`; drop berikutnya memeriksa perkakas lagi.
+    forgetYoutubeStatusIfToolsBroken(cause);
     return { ok: false, reason: reasonOf(cause) };
   }
 }

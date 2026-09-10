@@ -596,6 +596,34 @@ function nextId(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${idCounter}`;
 }
 
+/**
+ * Aturan UJUNG MATERI, satu tempat untuk kedua sumber waktu playhead
+ * (`tick` dari jam dinding, `tickTo` dari jam audio): keduanya WAJIB berhenti
+ * dan mengulang di titik yang sama, kalau tidak loop hanya bekerja di salah
+ * satunya dan tidak ada yang memberi tahu yang mana.
+ *
+ * Audisi loop SENGAJA tidak muncul di sini. Ia pemutar terpisah dengan jamnya
+ * sendiri; playhead timeline tidak boleh ikut terkurung di dua bar hanya karena
+ * satu clip sedang didengarkan berulang.
+ */
+function advancePlayhead(s: StudioAppState, next: Samples): Partial<StudioAppState> | null {
+  // Batas transport = ujung MATERI. Kalau belum ada clip sama sekali, pakai
+  // `duration` supaya playhead tetap bisa bergerak di project kosong.
+  const end = s.contentEnd > 0 ? s.contentEnd : s.duration;
+  if (next < end) return { playhead: Math.max(0, next) };
+
+  if (s.loop) {
+    // `seekEpoch` WAJIB naik: itu satu-satunya sinyal yang membuat playback
+    // menjadwalkan ulang voice dari posisi baru. Tanpa ini, playhead melompat
+    // ke 0 tapi audionya tidak ikut mengulang — loop-nya cuma terlihat, tidak
+    // terdengar.
+    return { playhead: 0, seekEpoch: s.seekEpoch + 1 };
+  }
+  // Tanpa loop: berhenti tepat di ujung materi, jangan terus berjalan menembus
+  // ekor kosong.
+  return { playing: false, playhead: end, seekEpoch: s.seekEpoch + 1 };
+}
+
 // ── Aksi publik ──────────────────────────────────────────────────────────────
 
 /**
@@ -1523,9 +1551,12 @@ export const studioActions = {
     set(() => ({ speed }));
   },
   /**
-   * Majukan playhead sebesar `dtMs` waktu dinding. Wrap ke 0 di ujung, sama
-   * seperti interval di design. Dipanggil dari App; ini yang membuat UI bisa
-   * diuji tanpa engine — bukan simulasi audio, hanya animasi playhead.
+   * Majukan playhead sebesar `dtMs` waktu dinding — CADANGAN untuk saat tidak
+   * ada audio yang berbunyi (mode UI-only, AudioContext belum ada). Selama tidak
+   * ada suara, playhead adalah satu-satunya jam yang ada dan tidak ada apa pun
+   * yang bisa ia dahului atau tinggalkan.
+   *
+   * Saat audio BERBUNYI yang dipakai `tickTo` — lihat catatannya di bawah.
    */
   tick(dtMs: number): void {
     set((s) => {
@@ -1535,28 +1566,34 @@ export const studioActions = {
       // oleh `pointermove` berikutnya — dan yang terdengar dari pemutar scrub
       // adalah butiran yang loncat-loncat, bukan gerakan tangan.
       if (s.scrubbing) return null;
-      const advance = secToSamples((dtMs / 1000) * s.speed, s.sampleRate);
-      const next = s.playhead + advance;
-
-      // Audisi loop SENGAJA tidak muncul di sini. Ia pemutar terpisah dengan
-      // jamnya sendiri; playhead timeline tidak boleh ikut terkurung di dua bar
-      // hanya karena satu clip sedang didengarkan berulang.
-
-      // Batas transport = ujung MATERI. Kalau belum ada clip sama sekali,
-      // pakai `duration` supaya playhead tetap bisa bergerak di project kosong.
-      const end = s.contentEnd > 0 ? s.contentEnd : s.duration;
-      if (next < end) return { playhead: next };
-
-      if (s.loop) {
-        // `seekEpoch` WAJIB naik: itu satu-satunya sinyal yang membuat playback
-        // menjadwalkan ulang voice dari posisi baru. Tanpa ini, playhead
-        // melompat ke 0 tapi audionya tidak ikut mengulang — loop-nya cuma
-        // terlihat, tidak terdengar.
-        return { playhead: 0, seekEpoch: s.seekEpoch + 1 };
-      }
-      // Tanpa loop: berhenti tepat di ujung materi, jangan terus berjalan
-      // menembus ekor kosong.
-      return { playing: false, playhead: end, seekEpoch: s.seekEpoch + 1 };
+      return advancePlayhead(s, s.playhead + secToSamples((dtMs / 1000) * s.speed, s.sampleRate));
+    });
+  },
+  /**
+   * Setel playhead ke posisi ABSOLUT (detik timeline) yang dilaporkan JAM AUDIO.
+   *
+   * Absolut, bukan delta, dan itu seluruh intinya. Menjumlahkan delta 60 ms per
+   * tick tidak pernah sama dengan waktu yang benar-benar berjalan: `setInterval`
+   * menghitung periodenya ulang SETELAH callback selesai (jadi tiap tick memakan
+   * 60 ms + waktu render), dan tab yang tidak aktif dicekik sampai 1×/detik.
+   * Galatnya searah dan menumpuk, sehingga garis playhead makin lama makin
+   * tertinggal dari yang keluar dari speaker — sampai lagunya habis sementara
+   * garisnya masih di tengah. Dengan posisi absolut, tick yang terlambat hanya
+   * berarti gambarnya diperbarui lebih jarang; posisinya tetap benar.
+   *
+   * Sumber angkanya `preview/audio-preview.previewPositionSec()` — jam yang SAMA
+   * dengan yang memutar sample-nya, dan sama dengan yang sudah dipakai waveform
+   * geser (`timeline/LaneHeaders`) serta kedip beat (`timeline/beat-pulse`).
+   * Sebelum ini keduanya berjalan di jam yang berbeda dari playhead, dan bedanya
+   * kelihatan di layar.
+   */
+  tickTo(timelineSec: number): void {
+    set((s) => {
+      if (!s.playing) return null;
+      // Alasan yang sama dengan `tick`: selama scrub, TANGAN yang memegang
+      // posisi. Mix-nya pun sudah dihentikan (lihat `usePreviewPlayback`).
+      if (s.scrubbing) return null;
+      return advancePlayhead(s, secToSamples(timelineSec, s.sampleRate));
     });
   },
 

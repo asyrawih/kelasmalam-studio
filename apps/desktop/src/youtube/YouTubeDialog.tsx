@@ -20,8 +20,10 @@ import { importBytesToLane } from '@kelasmalam/studio/studio/timeline/audio-impo
 import { Button, ProgressBar } from '@kelasmalam/ui/cyber';
 import { isLocalError } from '../platform/local-invoke';
 import {
+  forgetYoutubeStatusIfToolsBroken,
   formatYoutubeDuration,
   isYoutubeUrl,
+  peekYoutubeStatus,
   subscribeYoutubeProgress,
   youtubeAudio,
   youtubeFileName,
@@ -80,34 +82,48 @@ export function YouTubeDialog({ onClose }: YouTubeDialogProps): JSX.Element {
   const lanes = useStudio((s) => s.lanes);
   const selectedLaneId = useStudio((s) => s.selectedLaneId);
   const [laneId, setLaneId] = useState(selectedLaneId ?? lanes[0]?.id ?? '');
-  const [status, setStatus] = useState<YoutubeStatus | null>(null);
+  // Status perkakas dari cache modul `api.ts` kalau sudah pernah `ready`:
+  // modal yang dibuka lagi langsung menampilkan SIAP, tanpa kedip
+  // "MEMERIKSA PERKAKAS" dan tanpa `yt-dlp --version` lagi.
+  const [status, setStatus] = useState<YoutubeStatus | null>(peekYoutubeStatus);
   const [url, setUrl] = useState('');
   const [info, setInfo] = useState<YoutubeInfo | null>(null);
-  const [busy, setBusy] = useState<Busy>('status');
+  const [busy, setBusy] = useState<Busy>(() => (peekYoutubeStatus() === null ? 'status' : null));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /** Unduhan yang sedang berjalan, per nama (binari atau id video). */
   const [progress, setProgress] = useState<Readonly<Record<string, YoutubeProgress>>>({});
   const alive = useRef(true);
   // `onClose` dari App dibuat ulang tiap render-nya. Kalau efek di bawah
-  // bergantung padanya, tiap render App menjalankan `youtubeStatus()` lagi —
-  // dan itu satu proses yt-dlp (PyInstaller, 1–3 detik) per render. Maka
-  // efeknya hanya saat mount, dan Escape membaca `onClose` lewat ref.
+  // bergantung padanya, tiap render App memasang ulang langganan progres dan
+  // memeriksa status lagi. Maka efeknya hanya saat mount, dan Escape membaca
+  // `onClose` lewat ref.
+  //
+  // Pemeriksaan statusnya sendiri sekarang murah walau terulang: `api.ts`
+  // menyimpan jawaban `ready` selama sesi, jadi buka-tutup modal tidak
+  // menjalankan proses yt-dlp (PyInstaller, 1–3 detik) berkali-kali. Yang
+  // masih benar-benar menanyakan Rust hanyalah keadaan "belum terpasang" —
+  // yang murah di sana karena berkasnya tidak ada.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
     alive.current = true;
-    void youtubeStatus()
-      .then((s) => {
-        if (alive.current) setStatus(s);
-      })
-      .catch((cause: unknown) => {
-        if (alive.current) setError(reasonOf(cause));
-      })
-      .finally(() => {
-        if (alive.current) setBusy(null);
-      });
+    // Status awal sudah ada dari cache → tidak ada yang perlu ditanyakan.
+    // `youtubeStatus()` pun akan menjawab dari cache, tapi menahannya di sini
+    // membuat `busy` tidak pernah disentuh dua kali saat modal dibuka lagi.
+    if (peekYoutubeStatus() === null) {
+      void youtubeStatus()
+        .then((s) => {
+          if (alive.current) setStatus(s);
+        })
+        .catch((cause: unknown) => {
+          if (alive.current) setError(reasonOf(cause));
+        })
+        .finally(() => {
+          if (alive.current) setBusy(null);
+        });
+    }
     const unsubscribe = subscribeYoutubeProgress((p) => {
       if (!alive.current) return;
       setProgress((cur) => ({ ...cur, [`${p.phase}:${p.name}`]: p }));
@@ -133,6 +149,9 @@ export function YouTubeDialog({ onClose }: YouTubeDialogProps): JSX.Element {
     try {
       return await work();
     } catch (cause: unknown) {
+      // yt-dlp yang tidak bisa dijalankan (binari hilang/rusak) membatalkan
+      // status `ready` yang di-cache — SIAPKAN muncul lagi sesudah ini.
+      forgetYoutubeStatusIfToolsBroken(cause);
       if (alive.current) setError(reasonOf(cause));
       return null;
     } finally {
