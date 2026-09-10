@@ -764,6 +764,65 @@ export const studioActions = {
       ],
     }));
   },
+  /**
+   * Sisipkan lane-lane baru TEPAT di bawah `laneId`, urut sesuai input.
+   *
+   * Dipakai hasil pemisahan vokal (docs/26 §3a): dua lane (VOCALS, INST)
+   * lahir dari satu clip sumber, dan yang paling sering diinginkan sesudahnya
+   * adalah lane sumber diam — `muteSource`. Mute itu terjadi dalam mutasi yang
+   * SAMA dengan penyisipan, jadi satu ⌘Z mengembalikan keduanya sekaligus;
+   * kalau dua langkah, undo pertama hanya membunyikan lagi lane sumber di
+   * atas dua stem yang masih ada, dan itu terdengar seperti bug.
+   *
+   * Id clip tidak diminta dari pemanggil: id-nya dari pembilang yang sama
+   * dengan `newClipId`, supaya hasil job yang datang belakangan tidak bisa
+   * bertabrakan dengan clip yang dibuat user sementara job berjalan.
+   *
+   * @returns id lane baru (urut sesuai input); `[]` kalau `laneId` tidak ada.
+   */
+  insertLanesBelow(
+    laneId: string,
+    lanes: readonly { name: string; color?: string; clips: readonly Omit<StudioClip, 'id'>[] }[],
+    options?: { muteSource?: boolean },
+  ): readonly string[] {
+    const at = state.lanes.findIndex((l) => l.id === laneId);
+    if (at < 0) return [];
+    const inserted: StudioLane[] = lanes.map((lane, i) => ({
+      id: nextId('lane-'),
+      name: lane.name,
+      // Palet berjalan dari jumlah lane SEKARANG, seperti `addLane` — lane
+      // ke-n selalu dapat warna ke-n, dari mana pun ia datang.
+      color: lane.color ?? LANE_COLORS[(state.lanes.length + i) % LANE_COLORS.length] ?? '#6f6a5e',
+      mute: false,
+      solo: false,
+      gainDb: 0,
+      speedRatio: 1,
+      eq: defaultEq(),
+      chain: [],
+      clips: lane.clips
+        .map((clip) => ({ ...clip, id: nextId('clip-') }))
+        .sort((a, b) => a.start - b.start),
+    }));
+    const first = inserted[0];
+    const firstClip = first?.clips[0];
+    set((s) => {
+      const next = s.lanes.map((l) =>
+        options?.muteSource === true && l.id === laneId ? { ...l, mute: true } : l,
+      );
+      next.splice(at + 1, 0, ...inserted);
+      return {
+        lanes: next,
+        ...(first === undefined
+          ? {}
+          : {
+              selectedLaneId: first.id,
+              selectedClipId: firstClip?.id ?? null,
+              selectedClipIds: firstClip === undefined ? [] : [firstClip.id],
+            }),
+      };
+    });
+    return inserted.map((l) => l.id);
+  },
   renameLane(laneId: string, name: string): void {
     set((s) => mapLane(s, laneId, (l) => ({ ...l, name })));
   },

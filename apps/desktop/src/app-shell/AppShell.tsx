@@ -40,6 +40,7 @@ import { useCommands } from '@kelasmalam/shell/useCommands';
 import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
 import { StoreSettings } from '../library-local/StoreSettings';
 import { guardWindowClose, listenMenuCommands, setWindowTitle } from '../window/desktop';
+import { vocalSplitToolbarActions } from '../vocal-split/register';
 import { YouTubeDialog } from '../youtube/YouTubeDialog';
 import { COMPOSER_PATH, DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
 
@@ -168,6 +169,9 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
                 {youtubeOpen ? <YouTubeDialog onClose={closeYoutube} /> : null}
               </>
             ),
+            // SPLIT (vocal split MDX-Net) HANYA di desktop untuk sekarang
+            // (docs/26 §2 butir 1); model dibaca lewat Rust (`modelBytes`).
+            toolbarActions: vocalSplitToolbarActions(),
           }}
         />
       )}

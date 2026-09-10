@@ -13,6 +13,7 @@ import { DEFAULT_FADE_CURVE, findClip, samplesToSec } from '../model';
 import { studioActions, studioStore } from '../store';
 import { BeatProvider, ClipEditPanel, ClipWavePanel, LaneHeaders, OverviewStrip, TimelinePanel } from '../timeline';
 import { MenuBar, ReadoutStrip, STUDIO_MENUS, StudioHeader, TransportButtons } from '../shell';
+import { ToolbarButton } from '../shell/ToolbarButton';
 
 const RECT = {
   x: 0,
@@ -104,6 +105,25 @@ describe('StudioPage', () => {
     fireEvent.click(button);
     expect(studioStore.getState().snapEnabled).toBe(false);
     expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('extras.toolbarActions dirender di toolbar, tepat di kiri SNAP', () => {
+    render(
+      <StudioPage
+        extras={{
+          toolbarActions: (
+            <ToolbarButton icon="⋔" label="SPLIT" title="Pisahkan vokal" onClick={() => {}} />
+          ),
+        }}
+      />,
+    );
+    const split = screen.getByRole('button', { name: 'SPLIT' });
+    const snap = screen.getByRole('button', { name: 'SNAP' });
+    expect(split.closest('[data-menu-bar]')).not.toBeNull();
+    // Urutan DOM: SPLIT mendahului SNAP.
+    expect(split.compareDocumentPosition(snap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Bertetangga langsung dalam satu wadah — bukan cuma "ada di halaman".
+    expect(split.nextElementSibling).toBe(snap);
   });
 });
 

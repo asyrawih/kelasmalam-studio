@@ -70,6 +70,12 @@ export interface StudioExtras {
   readonly importActions?: readonly ImportAction[];
   /** Dirender di dalam `BeatProvider`, di atas tata letak. */
   readonly dialogs?: ReactNode;
+  /**
+   * Dirender di toolbar kanan, tepat di kiri tombol SNAP. Desktop memasang
+   * tombol SPLIT (pemisahan vokal, docs/26 §3a) di sini; pakai `ToolbarButton`
+   * supaya ukurannya sama dengan SNAP.
+   */
+  readonly toolbarActions?: ReactNode;
 }
 
 /** Periode tick playhead. 60 ms = angka yang sama dengan interval di design. */
@@ -158,7 +164,21 @@ export function StudioPage({ createEngine, onClose, onOpenDj, onOpenRoblox, extr
           />
         }
         readouts={<ReadoutStrip />}
-        menuBar={<MenuBar menus={STUDIO_MENUS} leading={<TransportButtons />} trailing={<SnapToggle />} />}
+        menuBar={
+          <MenuBar
+            menus={STUDIO_MENUS}
+            leading={<TransportButtons />}
+            trailing={
+              // Satu baris flex, bukan fragment: `MenuBar` menaruh `trailing`
+              // di baris yang `flexWrap`, dan tombol yang berdiri sendiri-
+              // sendiri bisa terpisah ke baris berbeda saat jendela sempit.
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {extras?.toolbarActions}
+                <SnapToggle />
+              </div>
+            }
+          />
+        }
         /*
          * Kepustakaan duduk di DASAR layar, menempel, dan terlipat sampai
          * diminta. Alasannya di kepala `LibraryDock`: ia tempat mengambil

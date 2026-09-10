@@ -189,11 +189,22 @@ export type AssetMap = Readonly<Record<number, StudioAsset>>;
 /**
  * Tahap yang sedang dikerjakan satu import. Urutannya = urutan kejadiannya.
  *
- * Tiga, bukan satu bar "loading", karena ketiganya punya perilaku waktu yang
- * berbeda dan user perlu tahu bedanya: `reading` bisa diukur persis (ukuran
- * file diketahui), `decoding` dikerjakan browser di luar kendali kita dan
- * TIDAK bisa diukur, `analyzing` (peak pyramid) singkat tapi sinkron. Satu bar
- * tanpa nama tahap akan terlihat menggantung di 60% selama decode berjalan,
+ * Bernama, bukan satu bar "loading", karena tiap tahap punya perilaku waktu
+ * yang berbeda dan user perlu tahu bedanya: `reading` bisa diukur persis
+ * (ukuran file diketahui), `decoding` dikerjakan browser di luar kendali kita
+ * dan TIDAK bisa diukur, `analyzing` (peak pyramid) singkat tapi sinkron. Satu
+ * bar tanpa nama tahap akan terlihat menggantung di 60% selama decode berjalan,
  * dan itu terbaca sebagai macet.
+ *
+ * Tiga tahap terakhir milik job PEMISAHAN VOKAL (docs/26 §3a), yang memakai
+ * bar progres lane yang sama karena hasilnya juga "materi baru di lane":
+ * `model` mengunduh bobot ORT (terukur), `separating` inferensi per segmen
+ * (terukur, bisa lama), `assembling` menyusun dua asset hasil (singkat).
  */
-export type ImportStage = 'reading' | 'decoding' | 'analyzing';
+export type ImportStage =
+  | 'reading'
+  | 'decoding'
+  | 'analyzing'
+  | 'model'
+  | 'separating'
+  | 'assembling';

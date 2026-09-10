@@ -18,6 +18,10 @@ const STAGE_LABEL: Record<ImportStage, string> = {
   reading: 'MEMBACA',
   decoding: 'DECODE',
   analyzing: 'ANALISIS',
+  // Tahap job pemisahan vokal (docs/26 §3a).
+  model: 'MODEL',
+  separating: 'PISAH',
+  assembling: 'SUSUN',
 };
 
 export interface LaneImportOverlayProps {
