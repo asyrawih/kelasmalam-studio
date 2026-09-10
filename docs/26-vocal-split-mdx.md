@@ -173,6 +173,27 @@ Tiga jalur yang ada, dari yang termurah:
 worker ≤ 1,5 GB. Lulus → lanjut dengan WASM/WebGPU. Gagal → §7 memutuskan,
 bukan menambah runtime diam-diam.
 
+### Hasil P1 (10 Sep 2026, Apple M4 10-core, satu segmen = 5,92 s audio)
+
+| Runtime | Per segmen | RTF | Lagu 4 mnt (overlap 0,25) | RSS |
+|---|---|---|---|---|
+| ORT-web WASM 1 thread (Node) | 15 399 ms | 0,38× | 14,1 mnt | 1,2 GB |
+| ORT-web WASM 4 thread (Node) | 5 235 ms | 1,13× | 4,8 mnt | 1,5 GB |
+| ORT-web WASM 8 thread (Node) | 4 333 ms | 1,37× | 4,0 mnt | 1,5 GB |
+| onnxruntime native CPU 1 thread | 2 411 ms | 2,46× | 2,2 mnt | — |
+| onnxruntime native CPU 4 thread | 1 051 ms | 5,64× | 1,0 mnt | — |
+| onnxruntime native CoreML | 388 ms | 15,3× | 0,4 mnt | — |
+| ORT-web WebGPU (Safari/WKWebView) | **belum diukur** — halaman benchmark disiapkan, user menguji manual | | | |
+
+WASM **gagal gerbang tipis** (4,0 > 3 mnt, dan ini di M4; mesin user lebih
+lambat). Native CPU lolos 3× lebih cepat, CoreML 8× lagi.
+
+**Keputusan sementara:** P3 dibangun di atas jalur WASM yang sudah ada, karena
+UI, job, dan komit ke proyek tidak bergantung pada runtime — `split-client.ts`
+adalah satu-satunya titik tukar. Runtime native (`ort` crate, PCM lewat IPC
+biner) masuk sebagai **P3b** setelah angka WebGPU ada: kalau WebGPU di
+WKWebView < 1,5 s/segmen, native ditunda; kalau tidak, native dikerjakan.
+
 ## 5. Struktur kode
 
 ```
