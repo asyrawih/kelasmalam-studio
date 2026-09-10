@@ -32,7 +32,8 @@
  *
  * `StudioPage` tidak tahu kepustakaan maupun SoundCloud: dok kepustakaan
  * (`<LibraryDock/>`) dan tombol + dialog SoundCloud disuntik dari sini lewat
- * `dock` dan `extras`. Desktop menyusun yang sama plus YouTube.
+ * `dock` dan `extras`, begitu juga tombol SPLIT (docs/26 P5, digerbangi
+ * kapabilitas). Desktop menyusun yang sama plus YouTube.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -52,6 +53,7 @@ import { KeymapEditor } from '@kelasmalam/shell/KeymapEditor';
 import { closeGuardReason, windowTitle } from '@kelasmalam/shell/title';
 import { useCommands } from '@kelasmalam/shell/useCommands';
 import { useKeyDispatch } from '@kelasmalam/shell/useKeyDispatch';
+import { vocalSplitToolbarActions } from '../vocal-split/register';
 import { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
 
 export interface AppShellProps {
@@ -319,7 +321,13 @@ export function AppShell({ createEngine, authApi: injectedAuthApi }: AppShellPro
           onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
           dock={<LibraryDock />}
-          extras={{ importActions: [soundCloud.action], dialogs: soundCloud.dialog }}
+          extras={{
+            importActions: [soundCloud.action],
+            dialogs: soundCloud.dialog,
+            // SPLIT (vocal split MDX-Net, docs/26 P5) lewat worker WASM;
+            // digerbangi caps + bukan iOS di `vocal-split/register.tsx`.
+            toolbarActions: vocalSplitToolbarActions(),
+          }}
         />
       ) : route === 'dj' ? (
         <DjPage onClose={() => navigate(HOME_PATH)} />

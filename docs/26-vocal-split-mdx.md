@@ -1,6 +1,7 @@
 # 26 — Vocal split desktop (Kim_Vocal_2 / MDX-Net)
 
-Status: **rencana**, belum ada kode. Menjawab satu permintaan produk:
+Status: **terpasang** (desktop native P0–P3b, web WASM P5 — 10 Sep 2026);
+dokumen ini catatan keputusan dan fasenya. Menjawab satu permintaan produk:
 tombol di sebelah SNAP yang memisahkan clip menjadi dua lane — vokal dan
 instrumen — memakai model **Kim_Vocal_2** dari UVR, **hanya di desktop**.
 
@@ -74,10 +75,10 @@ tersentuh** (prinsip docs/14: FFT tetap di worker, bukan di engine).
 
 ## 2. Keputusan yang mengikat
 
-1. **Desktop dulu, web menyusul; keduanya disuntik lewat `StudioExtras`**
-   (docs/25 §1c), bukan `if (isTauri)`. `apps/desktop` (lalu `apps/web`) yang
-   memasang tombolnya; `packages/studio` hanya menyediakan slot. Tes
-   `app-web-imports.test.ts` tetap hijau.
+1. **Desktop dulu, web menyusul (P5, terpasang 10 Sep 2026); keduanya
+   disuntik lewat `StudioExtras`** (docs/25 §1c), bukan `if (isTauri)`.
+   `apps/desktop` dan `apps/web` yang memasang tombolnya; `packages/studio`
+   hanya menyediakan slot. Tes `app-web-imports.test.ts` tetap hijau.
 2. **Runtime ONNX = jalur yang sudah ada dulu**: ORT-web WASM SIMD
    multi-thread di Web Worker, byte model diambil main thread lewat
    `PlatformHost.modelBytes` (pola `prefetchModelBytes` di proof-stem).
@@ -294,6 +295,27 @@ Denoise, pilihan overlap 0,5, perbandingan A/B dengan output UVR pada 3 lagu
 (korelasi > 0,99 terhadap UVR dengan setelan sama, sebagai bukti transform
 kita sama dengan rujukan).
 
+### P5 — Web (terpasang 10 Sep 2026)
+
+Tombol SPLIT masuk `apps/web` lewat `extras.toolbarActions` yang sama, tanpa
+menyentuh desktop maupun paket. Runtime = worker WASM yang sudah ada sejak P2
+(host web tidak punya `vocalSplit`/`modelBytes`, jadi worker `fetch` model
+dari HuggingFace dan menyimpannya di OPFS; badge dialog `WASM`). Gerbang di
+`apps/web/src/vocal-split/register.tsx`: caps `isolated && sab && wasmThreads
+&& simd` (dibaca dari `caps.ts`, bukan dideteksi ulang) dan bukan
+iOS/iPadOS. Tidak ada CSP di sisi web (`public/_headers` hanya COOP/COEP),
+jadi tidak ada `connect-src` yang perlu dibuka untuk `huggingface.co` /
+`*.hf.co`. Build web menerbitkan `split.worker` sebagai chunk ES dan aset
+ORT lewat alias `@ort-dist` tanpa konfigurasi tambahan.
+
+**Done:** tombol tampil aktif di Chrome/Safari desktop dengan COOP/COEP;
+`disabled` dengan alasan di `title` saat tidak isolated atau di iOS/iPadOS;
+UNDUH menaruh 66,8 MB ke OPFS dengan progres; PISAHKAN menghasilkan dua lane
+VOCALS/INST. Tes `register.test.tsx` + penjaga `no-desktop-leak`,
+`no-platform-leak`, `no-package-cycles`, `workspace-aliases` hijau.
+**Belum:** gerbang performa browser (RTF §4) di Safari dan WebGPU BELUM
+diukur — user yang menguji manual.
+
 **Total realistis: 1–1,5 minggu**, gerbang pembatalan di hari ke-3.
 
 ## 7. Yang harus diputuskan sebelum P2
@@ -319,10 +341,17 @@ kita sama dengan rujukan).
   sudah dirancang untuk itu tapi UI-nya belum).
 - Cache hasil split per `(assetHash, modelId, overlap, denoise)` supaya split
   ulang clip yang sama instan.
-- Web: **bukan utang, tapi fase P5 yang belum dijadwalkan.** `packages/vocal-split`
-  netral platform, unduhan client-side sudah lolos COEP (§2 butir 3), dan
-  tombolnya disuntik `apps/web` lewat `StudioExtras` yang sama. Gerbang P1
-  harus diulang di Chrome dan Safari desktop; iOS disembunyikan sejak awal
-  (batas memori per tab, docs/14). Risiko khas web: Safari bisa membersihkan
-  OPFS saat storage penuh, jadi status model di dialog harus jujur
-  ("siap" / "perlu unduh 66,8 MB") dengan tombol unduh terpisah.
+- Web: **terpasang sebagai P5 (10 Sep 2026)**, bukan utang lagi.
+  `apps/web/src/vocal-split/register.tsx` menyuntik tombol lewat
+  `StudioExtras.toolbarActions` yang sama dengan desktop, memakai jalur
+  worker WASM yang sudah ada (`fetch` HuggingFace + cache OPFS, §2 butir 3).
+  Gerbang yang dipakai: `isolated && sab && wasmThreads && simd` dari
+  `engine/audio/caps.ts` DAN bukan iOS/iPadOS (termasuk iPad yang mengaku
+  `MacIntel` dengan `maxTouchPoints > 1`; batas memori per tab, docs/14).
+  Kalau gerbang tidak lolos, tombol tetap ada tapi `disabled` dengan alasan
+  `degradedReasons()` / "tidak tersedia di iOS" di `title` — tidak hilang
+  diam-diam. Yang masih terbuka: gerbang performa (RTF) di Chrome/Safari
+  desktop dan WebGPU **belum diukur** — user menguji manual; dan risiko Safari
+  membersihkan OPFS saat storage penuh tetap ada, jadi status model di dialog
+  harus tetap jujur ("siap" / "perlu unduh 66,8 MB") dengan tombol unduh
+  terpisah.

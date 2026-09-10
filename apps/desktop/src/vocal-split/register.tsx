@@ -1,7 +1,8 @@
 /**
- * Pemasangan SPLIT (vocal split MDX-Net, docs/26) ke Studio — HANYA desktop
- * (docs/26 §2 butir 1): `apps/web` belum memasangnya, jadi tombolnya tidak
- * ada di sana dan `no-desktop-leak.test.ts` tidak perlu tahu paket ini.
+ * Pemasangan SPLIT (vocal split MDX-Net, docs/26) ke Studio di desktop.
+ * `apps/web` memasangnya sendiri (`apps/web/src/vocal-split/register.tsx`,
+ * P5) dengan gerbang kapabilitas; di sini tanpa gerbang karena server
+ * loopback selalu memberi COOP/COEP dan inferensinya native (docs/26 §3b).
  *
  * Bentuknya `ReactNode` untuk `extras.toolbarActions` di `StudioPage`, sama
  * seperti `dialogs` untuk YouTube. Paket `@kelasmalam/vocal-split` sendiri
