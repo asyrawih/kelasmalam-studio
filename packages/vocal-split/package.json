@@ -1,0 +1,21 @@
+{
+  "name": "@kelasmalam/vocal-split",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Vocal split MDX-Net (Kim_Vocal_2): katalog model, STFT/iSTFT MDX, penjahitan segmen, pemuat ONNX, dan dialog SPLIT. Netral platform — byte model dari host bila ia punya `modelBytes`, kalau tidak dari fetch + OPFS (docs/26).",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@kelasmalam/platform": "workspace:*",
+    "@kelasmalam/ui": "workspace:*",
+    "onnxruntime-web": "1.21.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

@@ -56,7 +56,8 @@
       "@kelasmalam/library/*": ["packages/library/src/*"],
       "@kelasmalam/roblox/*": ["packages/roblox/src/*"],
       "@kelasmalam/soundcloud/*": ["packages/soundcloud/src/*"],
-      "@kelasmalam/proof-stem/*": ["packages/proof-stem/src/*"]
+      "@kelasmalam/proof-stem/*": ["packages/proof-stem/src/*"],
+      "@kelasmalam/vocal-split/*": ["packages/vocal-split/src/*"]
     }
   }
 }

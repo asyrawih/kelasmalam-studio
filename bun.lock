@@ -297,6 +297,21 @@
         "typescript": "^5.6.3",
       },
     },
+    "packages/vocal-split": {
+      "name": "@kelasmalam/vocal-split",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kelasmalam/platform": "workspace:*",
+        "@kelasmalam/ui": "workspace:*",
+        "onnxruntime-web": "1.21.0",
+        "react": "^18.3.1",
+      },
+      "devDependencies": {
+        "@types/react": "^18.3.12",
+        "typescript": "^5.6.3",
+        "vitest": "^2.1.4",
+      },
+    },
   },
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.5.0", "", {}, "sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q=="],
@@ -448,6 +463,8 @@
     "@kelasmalam/studio-core": ["@kelasmalam/studio-core@workspace:packages/studio-core"],
 
     "@kelasmalam/ui": ["@kelasmalam/ui@workspace:packages/ui"],
+
+    "@kelasmalam/vocal-split": ["@kelasmalam/vocal-split@workspace:packages/vocal-split"],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

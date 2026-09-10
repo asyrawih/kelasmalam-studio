@@ -49,8 +49,10 @@ Parameter dari `model_data.json` UVR untuk hash di atas:
 
 Turunannya, semua pada 44,1 kHz stereo:
 
-- Sumbu channel `4` = `[L.re, R.re, L.im, R.im]` — real dan imajiner dipisah,
-  bukan complex.
+- Sumbu channel `4` = `[L.re, L.im, R.re, R.im]` — hasil `reshape` UVR dari
+  `[B, ch, 2, F, T]` ke `[B, ch×2, F, T]`, jadi real/imajiner per channel
+  berdampingan. STFT `center=true`, window Hann **periodik** (`torch.hann_window`
+  default), padding refleksi.
 - Panjang segmen = `hop × (256 − 1)` = **261 120 sampel ≈ 5,92 detik**.
 - `trim = n_fft / 2 = 3840` sampel dipotong di kedua tepi tiap segmen.
 - Overlap antar segmen (UVR default 0,25) dijahit dengan window Hann dan
