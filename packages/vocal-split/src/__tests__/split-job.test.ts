@@ -34,7 +34,7 @@ import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 import type { VocalModelInfo } from '../mdx-model';
 import type { SplitClient, SplitProgress, SplitResult, SplitSeparateOptions } from '../split-client';
 import { cancelVocalSplit, runVocalSplit } from '../split-job';
-import { __resetVocalSplitSessionForTest, vocalSplitSnapshot } from '../split-session';
+import { __resetVocalSplitSessionForTest, setVocalSplitError, setVocalSplitOutcome, vocalSplitSnapshot } from '../split-session';
 
 const holder = vi.hoisted(() => ({ client: null as unknown }));
 
@@ -259,15 +259,27 @@ function recordStages(laneId: string): (ImportStage | 'end')[] {
 }
 
 let client: FakeClient;
+/** Jejak `[vocal-split]` job diredam supaya keluaran tes tetap bersih; isinya diuji lewat spy ini. */
+let info: ReturnType<typeof vi.spyOn>;
+let warn: ReturnType<typeof vi.spyOn>;
+
+const P = { modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: true } as const;
+
+/** Semua baris `console.info` sebagai satu teks, untuk `toMatch`. */
+const infoLog = (): string => info.mock.calls.map((c) => c.map(String).join(' ')).join('\n');
 
 beforeEach(() => {
   client = new FakeClient();
   holder.client = client;
   vi.stubGlobal('AudioBuffer', FakeAudioBuffer);
+  info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   __resetVocalSplitSessionForTest();
 });
 
 afterEach(() => {
+  info.mockRestore();
+  warn.mockRestore();
   vi.unstubAllGlobals();
   setPlatformHostForTests(null);
   __resetVocalSplitSessionForTest();
@@ -409,12 +421,15 @@ describe('runVocalSplit · kondisi tepi (docs/26 §3c)', () => {
     const job = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: true });
     await client.separateCalled();
     expect(cancelVocalSplit()).toBe(true);
-    await expect(job).resolves.toEqual({ cancelled: true });
+    await expect(job).resolves.toEqual({ cancelled: true, reason: 'signal' });
     expect(studioStore.getState().lanes).toHaveLength(1);
     expect(studioStore.getState().lanes[0]!.mute).toBe(false);
     expect(studioStore.getState().importJobs).toEqual([]);
     expect(stages[stages.length - 1]).toBe('end');
     expect(vocalSplitSnapshot().job).toBeNull();
+    expect(vocalSplitSnapshot().lastOutcome).toEqual({ cancelled: true, reason: 'signal' });
+    expect(vocalSplitSnapshot().lastError).toBeNull();
+    expect(infoLog()).toMatch(/dibatalkan \(signal, saat inferensi\)/);
     // Tidak ada job → tidak ada yang dibatalkan.
     expect(cancelVocalSplit()).toBe(false);
   });
@@ -435,7 +450,9 @@ describe('runVocalSplit · kondisi tepi (docs/26 §3c)', () => {
     await client.separateCalled();
     studioActions.removeClip(clip.id);
     client.finish();
-    await expect(job).resolves.toEqual({ cancelled: true });
+    await expect(job).resolves.toEqual({ cancelled: true, reason: 'clip-hilang' });
+    expect(vocalSplitSnapshot().lastOutcome).toEqual({ cancelled: true, reason: 'clip-hilang' });
+    expect(infoLog()).toMatch(/dibatalkan \(clip-hilang\)/);
     expect(studioStore.getState().lanes).toHaveLength(1);
     expect(studioStore.getState().lanes[0]!.clips).toHaveLength(0);
     expect(studioStore.getState().importJobs).toEqual([]);
@@ -449,7 +466,8 @@ describe('runVocalSplit · kondisi tepi (docs/26 §3c)', () => {
     // yang membedakannya adalah `importJobs` yang dikosongkan `hydrate`.
     studioActions.hydrate({ ...studioStore.getState(), projectName: 'LAIN' });
     client.finish();
-    await expect(job).resolves.toEqual({ cancelled: true });
+    await expect(job).resolves.toEqual({ cancelled: true, reason: 'job-tidak-terdaftar' });
+    expect(infoLog()).toMatch(/dibatalkan \(job-tidak-terdaftar\)/);
     expect(studioStore.getState().lanes).toHaveLength(1);
   });
 
@@ -573,7 +591,7 @@ describe('runVocalSplit · host dengan vocalSplit (native, docs/26 P3b)', () => 
     const job = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: true });
     await native.runCalled();
     expect(cancelVocalSplit()).toBe(true);
-    await expect(job).resolves.toEqual({ cancelled: true });
+    await expect(job).resolves.toEqual({ cancelled: true, reason: 'signal' });
     expect(native.cancelled).toBe(1);
     expect(studioStore.getState().lanes).toHaveLength(1);
     expect(studioStore.getState().lanes[0]!.mute).toBe(false);
@@ -601,5 +619,93 @@ describe('runVocalSplit · host dengan vocalSplit (native, docs/26 P3b)', () => 
     expect(native.pending).toBeNull();
     expect(vocalSplitSnapshot().model).toEqual({ kind: 'error', message: 'HTTP 500' });
     expect(studioStore.getState().importJobs).toEqual([]);
+  });
+});
+
+describe('runVocalSplit · lastError / lastOutcome / jejak log', () => {
+  it('sukses → lastOutcome {laneIds}, lastError null, log menyebut runtime, frame, dan lane hasil', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    await client.separateCalled();
+    client.finish();
+    const outcome = await job;
+    expect(vocalSplitSnapshot().lastOutcome).toEqual(outcome);
+    expect(vocalSplitSnapshot().lastError).toBeNull();
+    const log = infoLog();
+    expect(log).toMatch(/mulai: clip "LAGU" \(.+\) 4000 frame @44100 Hz/);
+    expect(log).toMatch(/runtime wasm/);
+    expect(log).toMatch(/PCM sumber siap: 4000 frame @44100 Hz/);
+    expect(log).toMatch(/pemisahan selesai dalam \d+ ms/);
+    if (!('laneIds' in outcome)) throw new Error('bukan sukses');
+    expect(log).toContain(`selesai: lane [${outcome.laneIds.join(', ')}]`);
+  });
+
+  it('galat worker → lastError terisi, lastOutcome null, console.warn menyebut tahap', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    const pending = await client.separateCalled();
+    pending.reject(new Error('shape mismatch'));
+    await expect(job).rejects.toThrow('shape mismatch');
+    expect(vocalSplitSnapshot().lastError).toBe('shape mismatch');
+    expect(vocalSplitSnapshot().lastOutcome).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toMatch(/gagal di tahap separating setelah \d+ ms: shape mismatch/);
+  });
+
+  it('galat host native dengan code → lastError "KODE: pesan"', async () => {
+    const native = new FakeNative();
+    setPlatformHostForTests({ ...webHost, vocalSplit: native });
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    const pending = await native.runCalled();
+    pending.reject(Object.assign(new Error('Kim_Vocal_2.onnx belum diunduh'), { code: 'MODEL_MISSING' }));
+    await expect(job).rejects.toThrow('belum diunduh');
+    expect(vocalSplitSnapshot().lastError).toBe('MODEL_MISSING: Kim_Vocal_2.onnx belum diunduh');
+    expect(infoLog()).toMatch(/runtime native·coreml/);
+  });
+
+  it('galat sebelum job terdaftar (clip tidak ada) → lastError terisi juga', async () => {
+    setup();
+    await expect(runVocalSplit({ clipId: 'tidak-ada', ...P })).rejects.toThrow('clip tidak ditemukan');
+    expect(vocalSplitSnapshot().lastError).toBe('clip tidak ditemukan');
+    expect(String(warn.mock.calls[0]![0])).toMatch(/gagal di tahap persiapan/);
+  });
+
+  it('job baru mulai → lastError dan lastOutcome lama dihapus lebih dulu', async () => {
+    const { clip } = setup();
+    setVocalSplitError('galat lama');
+    setVocalSplitOutcome({ cancelled: true, reason: 'signal' });
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    await client.separateCalled();
+    // Sudah bersih SAAT job jalan, bukan baru setelah selesai.
+    expect(vocalSplitSnapshot().lastError).toBeNull();
+    expect(vocalSplitSnapshot().lastOutcome).toBeNull();
+    client.finish();
+    await job;
+    expect(vocalSplitSnapshot().lastOutcome).toMatchObject({ laneIds: expect.any(Array) });
+  });
+
+  it('job kedua yang ditolak (masih berjalan) TIDAK menimpa lastError job pertama', async () => {
+    const { clip } = setup();
+    const first = runVocalSplit({ clipId: clip.id, ...P });
+    await client.separateCalled();
+    await expect(runVocalSplit({ clipId: clip.id, ...P })).rejects.toThrow(/masih berjalan/);
+    expect(vocalSplitSnapshot().lastError).toBeNull();
+    client.finish();
+    await first;
+  });
+
+  it('clip pindah lane saat job jalan → {cancelled, lane-berubah}', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, ...P });
+    await client.separateCalled();
+    studioActions.addLane();
+    studioActions.moveClip(clip.id, clip.start, 1);
+    client.finish();
+    await expect(job).resolves.toEqual({ cancelled: true, reason: 'lane-berubah' });
+    expect(vocalSplitSnapshot().lastOutcome).toEqual({ cancelled: true, reason: 'lane-berubah' });
+    expect(infoLog()).toMatch(/dibatalkan \(lane-berubah\)/);
+    // Proyek tidak disentuh: masih dua lane, tanpa lane hasil.
+    expect(studioStore.getState().lanes).toHaveLength(2);
   });
 });

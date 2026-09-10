@@ -19,9 +19,15 @@
  *     kalau host native punya lebih dari satu, dan menyembunyikan THREAD saat
  *     akselerasinya bukan CPU.
  *
- * Galat dari job dilaporkan lewat `alert` (native di WebView desktop): studio
- * belum punya mekanisme notifikasi global, dan dialog ini sudah tertutup saat
- * galatnya datang.
+ * Galat dari job: dialog ini sudah tertutup saat galatnya datang, dan studio
+ * belum punya mekanisme notifikasi global — jadi galatnya hidup di sesi
+ * (`lastError`, `split-session.ts`), SELALU dicatat `console.error`, dan
+ * tampil sebagai baris merah (`[data-split-error]`) begitu dialog dibuka lagi,
+ * sampai user menekan TUTUP atau job baru mulai. BUKAN `window.alert`: wry
+ * (WKWebView di Tauri macOS) tidak mengimplementasikan panelnya — fungsinya
+ * ada, tapi tidak menampilkan apa pun, dan semua galat tertelan diam-diam.
+ * Hasil batal (`lastOutcome`) juga tampil beralasan supaya "batal" tidak
+ * terbaca sebagai "gagal".
  */
 
 import {
@@ -42,11 +48,14 @@ import { Button } from '@kelasmalam/ui/cyber';
 import { VOCAL_MODELS, type VocalModelId } from './catalog';
 import { cancelVocalSplit, runVocalSplit } from './split-job';
 import {
+  CANCEL_REASON_TEXT,
   defaultVocalSplitThreads,
   ensureVocalModel,
   probeVocalSplitRuntime,
   setVocalSplitAccel,
+  setVocalSplitError,
   useVocalSplit,
+  vocalSplitErrorMessage,
   type VocalModelStatus,
   type VocalSplitAccel,
   type VocalSplitRuntime,
@@ -103,10 +112,19 @@ export function runtimeBadgeText(runtime: VocalSplitRuntime | null, accel: Vocal
   return runtime === 'native' ? `NATIVE · ${ACCEL_LABEL[accel]}` : 'WASM';
 }
 
+/** Warna galat; theme.css menulis merah ini literal (tidak ada `--cy-danger`). */
+const ERROR_RED = '#ff4d4d';
+
+/**
+ * Galat job: ke konsol SELALU (objeknya utuh, dengan stack), dan ke sesi
+ * supaya dialog berikutnya + tombol SPLIT menampilkannya. `runVocalSplit`
+ * sendiri sudah mengisi `lastError` untuk galat di dalam job; pengisian di
+ * sini menutup galat SEBELUM job (clip hilang, job lain masih jalan) dan
+ * jalur job yang dipalsukan.
+ */
 function reportSplitError(err: unknown): void {
-  const message = `Vocal split gagal: ${err instanceof Error ? err.message : String(err)}`;
-  if (typeof alert === 'function') alert(message);
-  else console.error(message);
+  console.error('[vocal-split]', err);
+  setVocalSplitError(vocalSplitErrorMessage(err));
 }
 
 export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Element {
@@ -416,6 +434,49 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
         ) : null}
 
         <div style={{ ...HINT, fontSize: '8px', marginBottom: '12px' }}>{model.attribution}</div>
+
+        {/* Galat job terakhir — tetap tampil sampai TUTUP atau job baru mulai */}
+        {split.lastError !== null ? (
+          <div
+            role="alert"
+            data-split-error
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '8px',
+              marginBottom: '8px',
+              padding: '6px 8px',
+              border: `1px solid ${ERROR_RED}`,
+              color: ERROR_RED,
+              fontSize: '9px',
+              letterSpacing: '.1em',
+              lineHeight: 1.5,
+              wordBreak: 'break-word',
+            }}
+          >
+            <span style={{ flex: 1 }}>SPLIT GAGAL — {split.lastError}</span>
+            <button
+              type="button"
+              className="cy-btn-reset cy-focusable"
+              aria-label="Tutup pesan galat"
+              onClick={() => setVocalSplitError(null)}
+              style={{ color: ERROR_RED, fontSize: '8px', letterSpacing: '.14em', cursor: 'pointer', flexShrink: 0 }}
+            >
+              TUTUP
+            </button>
+          </div>
+        ) : null}
+
+        {/* Job terakhir batal: bukan galat, tapi juga bukan "hasilnya hilang begitu saja" */}
+        {split.lastError === null && split.lastOutcome !== null && 'cancelled' in split.lastOutcome ? (
+          <div
+            role="status"
+            data-split-outcome
+            style={{ fontSize: '9px', letterSpacing: '.1em', color: 'var(--cy-text-muted)', marginBottom: '8px' }}
+          >
+            job terakhir dibatalkan: {CANCEL_REASON_TEXT[split.lastOutcome.reason]}
+          </div>
+        ) : null}
 
         <div
           role="status"

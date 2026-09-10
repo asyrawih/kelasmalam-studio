@@ -25,7 +25,13 @@ import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 import type { VocalModelInfo } from '../mdx-model';
 import type { SplitClient, SplitResult, SplitSeparateOptions } from '../split-client';
-import { __resetVocalSplitSessionForTest, markVocalSplitJob, vocalSplitSnapshot } from '../split-session';
+import {
+  __resetVocalSplitSessionForTest,
+  markVocalSplitJob,
+  setVocalSplitError,
+  setVocalSplitOutcome,
+  vocalSplitSnapshot,
+} from '../split-session';
 import { formatModelSize, runtimeBadgeText, VocalSplitDialog } from '../VocalSplitDialog';
 
 const mocks = vi.hoisted(() => ({
@@ -246,14 +252,75 @@ describe('VocalSplitDialog · PISAHKAN', () => {
     expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ clipId: clip.id, maxThreads: 8 }));
   });
 
-  it('galat job dilaporkan lewat alert', async () => {
+});
+
+describe('VocalSplitDialog · galat job', () => {
+  // `window.alert` di WKWebView (wry) tidak menampilkan apa pun; galat harus
+  // ke konsol DAN ke sesi supaya tampil di dialog.
+  it('galat job → console.error + baris galat di dialog, BUKAN alert', async () => {
     withClip();
-    mocks.run.mockRejectedValueOnce(new Error('worker mati'));
+    const err = new Error('worker mati');
+    mocks.run.mockRejectedValueOnce(err);
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<VocalSplitDialog onClose={() => {}} />);
     fireEvent.click(pisahkan());
-    await vi.waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Vocal split gagal: worker mati'));
+    await vi.waitFor(() => expect(errorSpy).toHaveBeenCalledWith('[vocal-split]', err));
+    expect(alertSpy).not.toHaveBeenCalled();
+    const line = await vi.waitFor(() => {
+      const el = document.querySelector('[data-split-error]');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(line.getAttribute('role')).toBe('alert');
+    expect(line.textContent).toContain('SPLIT GAGAL — worker mati');
+    expect(vocalSplitSnapshot().lastError).toBe('worker mati');
     alertSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('kode galat host (VocalSplitCommandError.code) ikut di pesan', async () => {
+    withClip();
+    mocks.run.mockRejectedValueOnce(Object.assign(new Error('Kim_Vocal_2.onnx belum diunduh'), { code: 'MODEL_MISSING' }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<VocalSplitDialog onClose={() => {}} />);
+    fireEvent.click(pisahkan());
+    await vi.waitFor(() => expect(vocalSplitSnapshot().lastError).toBe('MODEL_MISSING: Kim_Vocal_2.onnx belum diunduh'));
+    expect(document.querySelector('[data-split-error]')!.textContent).toContain('MODEL_MISSING: Kim_Vocal_2.onnx belum diunduh');
+    errorSpy.mockRestore();
+  });
+
+  it('galat tetap tampil saat dialog dibuka lagi; TUTUP menghapusnya', () => {
+    withClip();
+    setVocalSplitError('INFERENCE: shape mismatch');
+    const first = render(<VocalSplitDialog onClose={() => {}} />);
+    expect(document.querySelector('[data-split-error]')!.textContent).toContain('INFERENCE: shape mismatch');
+    first.unmount();
+
+    // Dialog dibuka lagi setelah galat: pesannya masih ada — hidup di sesi, bukan di komponen.
+    render(<VocalSplitDialog onClose={() => {}} />);
+    expect(document.querySelector('[data-split-error]')!.textContent).toContain('INFERENCE: shape mismatch');
+    fireEvent.click(screen.getByRole('button', { name: 'Tutup pesan galat' }));
+    expect(document.querySelector('[data-split-error]')).toBeNull();
+    expect(vocalSplitSnapshot().lastError).toBeNull();
+  });
+
+  it('job terakhir batal → baris status beralasan, bukan galat', () => {
+    withClip();
+    setVocalSplitOutcome({ cancelled: true, reason: 'clip-hilang' });
+    render(<VocalSplitDialog onClose={() => {}} />);
+    expect(document.querySelector('[data-split-error]')).toBeNull();
+    const line = document.querySelector('[data-split-outcome]')!;
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.textContent).toBe('job terakhir dibatalkan: clip sumber hilang saat job berjalan');
+  });
+
+  it('job sukses / belum ada job → tanpa baris galat maupun batal', () => {
+    withClip();
+    setVocalSplitOutcome({ laneIds: ['a', 'b'] });
+    render(<VocalSplitDialog onClose={() => {}} />);
+    expect(document.querySelector('[data-split-error]')).toBeNull();
+    expect(document.querySelector('[data-split-outcome]')).toBeNull();
   });
 });
 

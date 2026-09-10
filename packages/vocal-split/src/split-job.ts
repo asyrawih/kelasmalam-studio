@@ -31,6 +31,13 @@
  * tahap `model` selama `init`, `separating` per segmen, `assembling` saat
  * asset dan lane dibuat. `endImport` SELALU dipanggil di `finally` — bar yang
  * tidak pernah hilang tidak bisa dibedakan dari aplikasi yang menggantung.
+ *
+ * Jejak di konsol (`[vocal-split]`, `console.info`) di tiap tahap: runtime
+ * yang dipilih, jumlah frame, lama tiap tahap, lane hasil, atau ALASAN batal.
+ * Ada tujuh jalur `{cancelled: true}` dan tanpa jejak semuanya tampak sama
+ * dari luar — "hasil split tidak masuk" tanpa pesan. Galat job juga dicatat
+ * ke sesi (`lastError`) supaya dialog/tombol bisa menampilkannya setelah
+ * dialognya sendiri sudah tertutup; hasil sukses/batal ke `lastOutcome`.
  */
 
 import { assetActions } from '@kelasmalam/studio-core/assets/store';
@@ -48,8 +55,12 @@ import {
   nativeVocalSplitHost,
   probeVocalSplitRuntime,
   readyVocalSplitClient,
+  setVocalSplitError,
+  setVocalSplitOutcome,
+  vocalSplitErrorMessage,
   vocalSplitSnapshot,
   type VocalSplitAccel,
+  type VocalSplitCancelReason,
 } from './split-session';
 
 /** Kim_Vocal_2 dilatih di 44,1 kHz; segmen dan STFT-nya dihitung di rate ini. */
@@ -68,9 +79,10 @@ export interface VocalSplitParams {
   readonly accel?: VocalSplitAccel;
 }
 
+/** Hasil job; `reason` menyebut jalur batal yang mana (docs/26 §3c) — juga masuk `lastOutcome` sesi. */
 export type VocalSplitOutcome =
   | { readonly laneIds: readonly string[] }
-  | { readonly cancelled: true };
+  | { readonly cancelled: true; readonly reason: VocalSplitCancelReason };
 
 export interface VocalSplitDeps {
   /** Hanya untuk benchmark P1; produksi `'wasm'`. */
@@ -104,11 +116,47 @@ function isAbortError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError';
 }
 
+const TAG = '[vocal-split]';
+
+const ms = (since: number): string => `${Math.round(performance.now() - since)} ms`;
+
 export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDeps = {}): Promise<VocalSplitOutcome> {
   if (active !== null) {
+    // Penolakan panggilan, bukan kegagalan job: `lastError` milik job yang
+    // sedang berjalan tidak boleh tertimpa.
     throw new Error('Vocal split masih berjalan — tunggu sampai selesai atau hentikan dulu; inferensinya satu pool');
   }
+  // Job baru mulai bersih; galat job sebelumnya sudah bukan galat job ini.
+  setVocalSplitError(null);
+  setVocalSplitOutcome(null);
+  const started = performance.now();
+  let stage = 'persiapan';
+  try {
+    const outcome = await runJob(params, deps, started, (s) => {
+      stage = s;
+    });
+    setVocalSplitOutcome(outcome);
+    return outcome;
+  } catch (err: unknown) {
+    const message = vocalSplitErrorMessage(err);
+    setVocalSplitError(message);
+    console.warn(`${TAG} job gagal di tahap ${stage} setelah ${ms(started)}: ${message}`);
+    throw err;
+  }
+}
 
+/** Alasan batal: `signal` selalu disertai tahap saat sinyalnya terbaca. */
+function cancelled(reason: VocalSplitCancelReason, started: number, at?: string): VocalSplitOutcome {
+  console.info(`${TAG} dibatalkan (${reason}${at === undefined ? '' : `, ${at}`}) setelah ${ms(started)}`);
+  return { cancelled: true, reason };
+}
+
+async function runJob(
+  params: VocalSplitParams,
+  deps: VocalSplitDeps,
+  started: number,
+  setStage: (stage: string) => void,
+): Promise<VocalSplitOutcome> {
   const state = studioStore.getState();
   const hit = findClip(state.lanes, params.clipId);
   if (hit === null) throw new Error('clip tidak ditemukan');
@@ -124,26 +172,39 @@ export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDe
   markVocalSplitJob({ id: jobId, clipId: clip.id, laneId: lane.id });
   studioActions.beginImport({ id: jobId, laneId: lane.id, name: clip.label });
   studioActions.setImportStage(jobId, 'model', null);
+  const frames = Math.max(1, Math.min(clip.sourceLen, buffer.length - clip.sourceStart));
+  console.info(
+    `${TAG} job ${jobId} mulai: clip "${clip.label}" (${clip.id}) ${frames} frame @${buffer.sampleRate} Hz` +
+      ` (${buffer.numberOfChannels} kanal, proyek ${projectRate} Hz), model ${params.modelId},` +
+      ` overlap ${params.overlap}, denoise ${params.denoise}, thread ${params.maxThreads ?? '-'}`,
+  );
 
   try {
     // ── 1. Model ────────────────────────────────────────────────────────
     // Native: tahap ini hanya unduhan (`ensureModel`); worker: unduh + sesi ORT.
+    setStage('model');
+    let t = performance.now();
     await ensureVocalModel(
       params.modelId,
       { maxThreads: params.maxThreads, executionProvider: deps.executionProvider },
       (p) => studioActions.setImportStage(jobId, 'model', p.total > 0 ? Math.min(1, p.loaded / p.total) : null),
     );
-    if (signal.aborted) return { cancelled: true };
-    const separate = await pickSeparator(params);
-    if (signal.aborted) return { cancelled: true };
+    if (signal.aborted) return cancelled('signal', started, 'setelah model siap');
+    const { separate, runtime } = await pickSeparator(params);
+    console.info(`${TAG} model siap dalam ${ms(t)}; runtime ${runtime}`);
+    if (signal.aborted) return cancelled('signal', started, 'setelah runtime dipilih');
 
     // ── 2. PCM sumber → stereo 44,1 kHz ─────────────────────────────────
-    const frames = Math.max(1, Math.min(clip.sourceLen, buffer.length - clip.sourceStart));
+    setStage('pcm-sumber');
+    t = performance.now();
     const input = await sourceRegionForModel(buffer, clip.sourceStart, frames);
-    if (signal.aborted) return { cancelled: true };
+    console.info(`${TAG} PCM sumber siap: ${input.left.length} frame @${MODEL_SAMPLE_RATE} Hz dalam ${ms(t)}`);
+    if (signal.aborted) return cancelled('signal', started, 'setelah PCM sumber');
 
     // ── 3. Pisahkan (worker atau native) ────────────────────────────────
+    setStage('separating');
     studioActions.setImportStage(jobId, 'separating', 0);
+    t = performance.now();
     let result: SeparationResult;
     try {
       result = await separate(
@@ -152,15 +213,18 @@ export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDe
         signal,
       );
     } catch (err: unknown) {
-      if (isAbortError(err)) return { cancelled: true };
+      if (isAbortError(err)) return cancelled('signal', started, 'saat inferensi');
       throw err;
     }
+    console.info(`${TAG} pemisahan selesai dalam ${ms(t)}`);
 
     // ── 4. Susun asset + lane ───────────────────────────────────────────
+    setStage('assembling');
     studioActions.setImportStage(jobId, 'assembling', null);
+    t = performance.now();
     const vocals = await pcmToProjectBuffer(result.vocals, projectRate);
     const instrumental = await pcmToProjectBuffer(result.instrumental, projectRate);
-    if (signal.aborted) return { cancelled: true };
+    if (signal.aborted) return cancelled('signal', started, 'setelah konversi ke rate proyek');
 
     // Verifikasi SEBELUM commit (docs/26 §3c). Store tidak punya id proyek;
     // yang dipakai: clip masih ada DI LANE YANG SAMA, dan job ini masih
@@ -168,8 +232,9 @@ export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDe
     // job yang hilang dari daftar berarti proyeknya sudah bukan yang tadi.
     const now = studioStore.getState();
     const still = findClip(now.lanes, clip.id);
-    const registered = now.importJobs.some((j) => j.id === jobId);
-    if (still === null || still.lane.id !== lane.id || !registered) return { cancelled: true };
+    if (still === null) return cancelled('clip-hilang', started);
+    if (still.lane.id !== lane.id) return cancelled('lane-berubah', started);
+    if (!now.importJobs.some((j) => j.id === jobId)) return cancelled('job-tidak-terdaftar', started);
 
     const label = clip.label;
     const vocalsId = assetActions.newAssetId();
@@ -186,6 +251,10 @@ export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDe
         { name: `${label} · INST`, clips: [resultClip(still.clip, instId, instrumental.length, `${label} · INST`)] },
       ],
       { muteSource: params.muteSource },
+    );
+    console.info(
+      `${TAG} selesai: lane [${laneIds.join(', ')}] (${vocals.length} frame @${projectRate} Hz),` +
+        ` susun ${ms(t)}, total ${ms(started)}`,
     );
     return { laneIds };
   } finally {
@@ -208,17 +277,23 @@ type Separator = (
   signal: AbortSignal,
 ) => Promise<SeparationResult>;
 
+interface PickedSeparator {
+  readonly separate: Separator;
+  /** Label untuk log: `native·coreml`, `native·cpu`, atau `wasm`. */
+  readonly runtime: string;
+}
+
 /**
  * Langkah 3 untuk runtime yang dipilih sesi. Dipanggil SETELAH
  * `ensureVocalModel`, jadi klien worker (kalau itu runtimenya) sudah siap.
  */
-async function pickSeparator(params: VocalSplitParams): Promise<Separator> {
+async function pickSeparator(params: VocalSplitParams): Promise<PickedSeparator> {
   const native = nativeVocalSplitHost();
   if (native !== undefined) {
     // Probe mengisi `accel` bawaan (coreml kalau ada); di-cache setelah pertama.
     await probeVocalSplitRuntime();
     const accel = params.accel ?? vocalSplitSnapshot().accel;
-    return (input, onProgress, signal) =>
+    const separate: Separator = (input, onProgress, signal) =>
       native.run(
         {
           left: input.left,
@@ -234,10 +309,11 @@ async function pickSeparator(params: VocalSplitParams): Promise<Separator> {
         onProgress,
         signal,
       );
+    return { separate, runtime: `native·${accel}` };
   }
   const client = readyVocalSplitClient(params.modelId);
   if (client === null) throw new Error('sesi model hilang setelah dimuat');
-  return (input, onProgress, signal) =>
+  const separate: Separator = (input, onProgress, signal) =>
     client.separate(
       input.left,
       input.right,
@@ -247,6 +323,7 @@ async function pickSeparator(params: VocalSplitParams): Promise<Separator> {
       (p) => onProgress(p.done, p.total),
       signal,
     );
+  return { separate, runtime: 'wasm' };
 }
 
 /**

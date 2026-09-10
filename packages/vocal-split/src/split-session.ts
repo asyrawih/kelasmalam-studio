@@ -71,11 +71,42 @@ export interface VocalSplitJob {
   readonly laneId: string;
 }
 
+/**
+ * Kenapa job berakhir `{cancelled}` tanpa lane baru (docs/26 §3c):
+ *   - `signal`: HENTIKAN ditekan (`cancelVocalSplit`);
+ *   - `clip-hilang`: clip sumber dihapus saat job jalan;
+ *   - `lane-berubah`: clip masih ada tapi sudah pindah lane;
+ *   - `job-tidak-terdaftar`: proyek diganti (`hydrate` mengosongkan `importJobs`).
+ */
+export type VocalSplitCancelReason = 'signal' | 'clip-hilang' | 'lane-berubah' | 'job-tidak-terdaftar';
+
+/** Teks alasan batal untuk dialog; kuncinya dipakai di log. */
+export const CANCEL_REASON_TEXT: Record<VocalSplitCancelReason, string> = {
+  signal: 'dihentikan',
+  'clip-hilang': 'clip sumber hilang saat job berjalan',
+  'lane-berubah': 'clip sumber pindah lane saat job berjalan',
+  'job-tidak-terdaftar': 'proyek diganti saat job berjalan',
+};
+
+/** Hasil job terakhir yang berakhir tanpa galat; dialog memakainya untuk membedakan "batal" dari "gagal". */
+export type VocalSplitLastOutcome =
+  | { readonly laneIds: readonly string[] }
+  | { readonly cancelled: true; readonly reason: VocalSplitCancelReason };
+
 export interface VocalSplitSnapshot {
   readonly model: VocalModelStatus;
   /** Model yang sedang/terakhir dimuat sesi; null sebelum `init` pertama. */
   readonly modelId: VocalModelId | null;
   readonly job: VocalSplitJob | null;
+  /**
+   * Galat job terakhir (pesan + kode host kalau ada), tetap ada sampai job
+   * baru mulai atau user menutupnya di dialog. Hidup di sini, bukan di
+   * komponen: dialog sudah tertutup saat galatnya datang, dan `window.alert`
+   * di WKWebView (wry) tidak menampilkan apa pun.
+   */
+  readonly lastError: string | null;
+  /** Hasil job terakhir; null selama job berjalan, setelah gagal, atau sebelum job pertama. */
+  readonly lastOutcome: VocalSplitLastOutcome | null;
   /** Runtime yang dipakai; `null` sebelum [`probeVocalSplitRuntime`] pertama. */
   readonly runtime: VocalSplitRuntime | null;
   /** Akselerasi yang ditawarkan host native; kosong untuk `wasm` atau sebelum probe. */
@@ -115,6 +146,8 @@ const IDLE: VocalSplitSnapshot = {
   model: { kind: 'idle' },
   modelId: null,
   job: null,
+  lastError: null,
+  lastOutcome: null,
   runtime: null,
   accels: [],
   accel: 'cpu',
@@ -341,6 +374,41 @@ export function disposeVocalSplitSession(): void {
 export function markVocalSplitJob(job: VocalSplitJob | null): void {
   if (snapshot.job === job) return;
   set({ job });
+}
+
+/**
+ * Catat (atau hapus, `null`) galat job terakhir. `split-job.ts` mengisinya di
+ * `catch`, dialog menghapusnya lewat TUTUP; job baru selalu mulai dengan
+ * `null` supaya galat lama tidak tampak seperti galat job yang sedang jalan.
+ */
+export function setVocalSplitError(message: string | null): void {
+  if (snapshot.lastError === message) return;
+  set({ lastError: message });
+}
+
+/** Catat hasil job terakhir (`null` = belum ada / sedang berjalan / gagal). */
+export function setVocalSplitOutcome(outcome: VocalSplitLastOutcome | null): void {
+  if (snapshot.lastOutcome === outcome) return;
+  set({ lastOutcome: outcome });
+}
+
+/**
+ * Pesan galat untuk `lastError`/log: `KODE: pesan` kalau galatnya membawa
+ * `code` string (galat command Rust — `VocalSplitCommandError` di host
+ * desktop, atau `{code, message}` mentah dari IPC), selain itu pesannya saja.
+ * Kodenya penting: `MODEL_MISSING`, `BUSY`, `INFERENCE` menunjuk ke penyebab
+ * yang berbeda meski pesannya sama-sama "gagal".
+ */
+export function vocalSplitErrorMessage(err: unknown): string {
+  const code = typeof err === 'object' && err !== null && typeof (err as { code?: unknown }).code === 'string'
+    ? (err as { code: string }).code
+    : null;
+  const message = err instanceof Error
+    ? err.message
+    : typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string'
+      ? (err as { message: string }).message
+      : String(err);
+  return code === null || message.startsWith(`${code}:`) ? message : `${code}: ${message}`;
 }
 
 /** Sesi, probe runtime, dan snapshot kembali kosong. Hanya untuk tes. */

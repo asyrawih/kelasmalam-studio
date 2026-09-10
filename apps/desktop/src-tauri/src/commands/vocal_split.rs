@@ -24,10 +24,18 @@
 //! Sesi ORT di-cache per `(model, accel)` di `AppState.vocal_split`; job
 //! berjalan di `spawn_blocking` sambil memegang `Mutex`-nya, sehingga
 //! `try_lock` yang gagal = `BUSY`.
+//!
+//! Jejak ke stderr (`[vocal-split] …`, seperti `menu.rs`; crate ini tidak
+//! memakai `log`/`tracing`): satu baris saat mulai (frame, accel, overlap,
+//! denoise), satu saat selesai (ms), dan SETIAP `Err` yang dikembalikan
+//! `vocal_split_run` dicetak `{code}: {message}` sebelum dikembalikan. Galat
+//! yang sampai ke TS lewat IPC bisa tertelan di WebView; stderr terminal
+//! `tauri dev` adalah jalur yang selalu terlihat.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, TryLockError};
+use std::time::Instant;
 
 use daw_desktop_host::vocal_split::{
     mdx_params, separate, Accel, SeparateOptions, VocalSplitEngine,
@@ -68,6 +76,23 @@ pub async fn vocal_split_run(
     app: AppHandle,
     state: State<'_, AppState>,
     request: Request<'_>,
+) -> CmdResult<Response> {
+    let started = Instant::now();
+    let result = run_inner(app, &state, &request).await;
+    match &result {
+        Ok(_) => eprintln!(
+            "[vocal-split] selesai dalam {} ms",
+            started.elapsed().as_millis()
+        ),
+        Err(e) => eprintln!("[vocal-split] {}: {}", e.0.code, e.0.message),
+    }
+    result
+}
+
+async fn run_inner(
+    app: AppHandle,
+    state: &State<'_, AppState>,
+    request: &Request<'_>,
 ) -> CmdResult<Response> {
     let header = |name: &str| -> CmdResult<String> {
         request
@@ -150,6 +175,13 @@ pub async fn vocal_split_run(
             format!("model {model_id} belum diunduh ({})", path.display()),
         ));
     }
+
+    eprintln!(
+        "[vocal-split] job {id}: mulai {frames} frame @{SAMPLE_RATE} Hz, model {model_id}, \
+         accel {}, thread {}, overlap {overlap}, denoise {denoise}",
+        accel.as_str(),
+        threads.map_or_else(|| "-".to_owned(), |t| t.to_string()),
+    );
 
     // Daftarkan flag batal SEBELUM kerja mulai supaya `vocal_split_cancel`
     // yang datang lebih awal tidak jatuh ke id yang belum dikenal.
