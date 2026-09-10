@@ -21,6 +21,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { assertModelSize, SCNET_MODELS } from '@kelasmalam/proof-stem/proof-stem/scnet-catalog';
+import { assertVocalModelSize, VOCAL_MODELS } from '@kelasmalam/vocal-split/catalog';
 import type { ExportSink } from '@kelasmalam/platform/export-sink';
 import type {
   DropPoint,
@@ -28,7 +29,7 @@ import type {
   OpenAudioFilesOptions,
   PlatformHost,
   SaveTarget,
-  ScnetModelId,
+  ModelId,
 } from '@kelasmalam/platform/host';
 
 export const AUDIO_EXTENSIONS: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'aif', 'aiff', 'm4a', 'aac'];
@@ -248,8 +249,14 @@ export function createDesktopHost(): PlatformHost {
       return {};
     },
 
-    async modelBytes(id: ScnetModelId, onProgress): Promise<ModelBytes> {
-      const model = SCNET_MODELS[id];
+    async modelBytes(id: ModelId, onProgress): Promise<ModelBytes> {
+      // Ukuran diverifikasi dari katalog yang tepat: `SCNET_MODELS` untuk
+      // SCNet, `VOCAL_MODELS` untuk Kim_Vocal_2 (docs/26 P2). Kedua katalog
+      // hanya butuh `bytes`/`label`, jadi tidak ada ORT yang tertarik.
+      const verify: { readonly total: number; readonly assertSize: (actual: number) => void } =
+        id === 'kim-vocal-2'
+          ? { total: VOCAL_MODELS[id].bytes, assertSize: (n) => assertVocalModelSize(VOCAL_MODELS[id], n) }
+          : { total: SCNET_MODELS[id].bytes, assertSize: (n) => assertModelSize(SCNET_MODELS[id], n) };
       const { listen } = await import('@tauri-apps/api/event');
       // Kalau Rust tidak pernah mengirim progres, unduhannya tidak terjadi —
       // berkasnya sudah ada di `appDataDir()/models/`. Itu definisi cache hit.
@@ -267,9 +274,9 @@ export function createDesktopHost(): PlatformHost {
       const raw = await invoke<RawBytes>('model_read', { id });
       const bytes =
         raw instanceof Uint8Array ? raw : raw instanceof ArrayBuffer ? new Uint8Array(raw) : Uint8Array.from(raw);
-      assertModelSize(model, bytes.byteLength);
+      verify.assertSize(bytes.byteLength);
       const cacheHit = !sawProgress;
-      onProgress({ loaded: bytes.byteLength, total: model.bytes, cacheHit });
+      onProgress({ loaded: bytes.byteLength, total: verify.total, cacheHit });
       return { bytes, cacheHit };
     },
 

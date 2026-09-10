@@ -25,11 +25,13 @@ export type {
   DropPoint,
   LoginRequest,
   ModelBytes,
+  ModelId,
   OpenAudioFilesOptions,
   PlatformHost,
   PlatformKind,
   SaveTarget,
   ScnetModelDownloadProgress,
   ScnetModelId,
+  VocalModelId,
 } from './host';
 export type { ExportSink } from './export-sink';

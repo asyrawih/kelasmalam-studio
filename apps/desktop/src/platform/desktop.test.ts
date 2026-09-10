@@ -327,4 +327,35 @@ describe('modelBytes', () => {
     invoke.mockImplementation(async (cmd) => (cmd === 'model_read' ? new Uint8Array(5) : '/p'));
     await expect(createDesktopHost().modelBytes!('base', () => {})).rejects.toThrow(/tidak lengkap/);
   });
+
+  it("'kim-vocal-2' lewat pipa yang sama, ukurannya dari VOCAL_MODELS (docs/26 P2)", async () => {
+    const total = 66_759_214;
+    invoke.mockImplementation(async (cmd) => {
+      if (cmd === 'model_download') {
+        progressHandler!({ payload: { id: 'kim-vocal-2', done: 10, total } });
+        progressHandler!({ payload: { id: 'base', done: 999, total: 1 } }); // model lain: abaikan
+        return '/data/models/Kim_Vocal_2.onnx';
+      }
+      if (cmd === 'model_read') return new Uint8Array(total);
+      return null;
+    });
+    const progress: unknown[] = [];
+    const out = await createDesktopHost().modelBytes!('kim-vocal-2', (p) => progress.push(p));
+    expect(out.bytes.byteLength).toBe(total);
+    expect(out.cacheHit).toBe(false);
+    expect(progress).toEqual([
+      { loaded: 10, total, cacheHit: false },
+      { loaded: total, total, cacheHit: false },
+    ]);
+    expect(invoke).toHaveBeenCalledWith('model_download', { id: 'kim-vocal-2' });
+    expect(invoke).toHaveBeenCalledWith('model_read', { id: 'kim-vocal-2' });
+  });
+
+  it("'kim-vocal-2' yang terpotong ditolak dengan ukuran katalog vocal-split, bukan SCNet", async () => {
+    // 44 516 685 byte = ukuran scnet-base: kalau katalognya keliru, ini lolos.
+    invoke.mockImplementation(async (cmd) => (cmd === 'model_read' ? new Uint8Array(44_516_685) : '/p'));
+    await expect(createDesktopHost().modelBytes!('kim-vocal-2', () => {})).rejects.toThrow(
+      /tidak lengkap: 44516685 \/ 66759214/,
+    );
+  });
 });

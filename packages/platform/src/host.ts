@@ -16,15 +16,26 @@ import type { ExportSink } from './export-sink';
 export type PlatformKind = 'web' | 'desktop';
 
 /**
- * Id model SCNet yang bisa diminta lewat [`PlatformHost.modelBytes`].
+ * Id model yang bisa diminta lewat [`PlatformHost.modelBytes`].
  *
- * Tinggal di KONTRAK, bukan di katalog `proof-stem`: daftar id ini adalah
- * bagian dari apa yang dijanjikan host (desktop menjawab `model_download`
- * untuk id ini), dan platform tidak boleh mengimpor paket halaman (docs/25
- * §1b). Katalog `proof-stem/scnet-catalog.ts` mengekspornya ulang dan
- * `SCNET_MODELS: Record<ScnetModelId, …>` memaksa katalog menutupi semua id.
+ * Tinggal di KONTRAK, bukan di katalog paket halaman: daftar id ini adalah
+ * bagian dari apa yang dijanjikan host (desktop menjawab `model_download` /
+ * `model_read` untuk tiap id — cermin `ModelId` di
+ * `crates/desktop-host/src/model.rs`), dan platform tidak boleh mengimpor
+ * paket halaman (docs/25 §1b). Tiap keluarga model punya tipe sendiri supaya
+ * katalognya bisa memaksa cakupan penuh lewat `Record<…Id, …>`:
+ *
+ *   - `ScnetModelId`  → `proof-stem/scnet-catalog.ts` (`SCNET_MODELS`);
+ *                       berkas disajikan dari `/models/scnet/` origin web.
+ *   - `VocalModelId`  → `vocal-split/catalog.ts` (`VOCAL_MODELS`); berkas
+ *                       diunduh client langsung dari HuggingFace, tidak
+ *                       pernah di-rehost (docs/26 §2 butir 3).
+ *
+ * `ModelId` adalah gabungannya — itu yang diterima `modelBytes`.
  */
 export type ScnetModelId = 'base' | 'large';
+export type VocalModelId = 'kim-vocal-2';
+export type ModelId = ScnetModelId | VocalModelId;
 
 export interface ScnetModelDownloadProgress {
   readonly loaded: number;
@@ -118,19 +129,20 @@ export interface PlatformHost {
   login?(req: LoginRequest): Promise<void>;
 
   /**
-   * Byte model ONNX, dengan laporan kemajuan unduhan.
+   * Byte model ONNX, dengan laporan kemajuan unduhan. Berlaku untuk semua
+   * [`ModelId`]: SCNet maupun model vocal split (docs/26).
    *
    * OPSIONAL, dan ketiadaannya BERARTI SESUATU: host yang tidak punya ini
    * membiarkan worker inferensi mengambil modelnya sendiri (fetch `/models/…`
-   * + cache OPFS, `proof-stem/scnet-model.ts`) — jalur yang bekerja di
-   * browser mana pun tanpa bantuan siapa pun. Host yang PUNYA ini (desktop:
+   * atau URL HuggingFace + cache OPFS, `proof-stem/scnet-model.ts`) — jalur
+   * yang bekerja di browser mana pun tanpa bantuan siapa pun. Host yang PUNYA ini (desktop:
    * unduhan sisi Rust ke `appDataDir()`) hanya bisa dipanggil dari main thread
    * (IPC tidak ada di worker), jadi main thread memanggilnya lebih dulu dan
    * mengirim byte-nya ke worker sebagai transferable. Pemanggil bertanya
    * "host ini punya `modelBytes`?", bukan "ini desktop?".
    */
   modelBytes?(
-    id: ScnetModelId,
+    id: ModelId,
     onProgress: (progress: ScnetModelDownloadProgress) => void,
   ): Promise<ModelBytes>;
 

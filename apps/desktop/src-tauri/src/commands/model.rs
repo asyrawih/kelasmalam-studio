@@ -1,12 +1,13 @@
-//! `model_download` / `model_read` (docs/20 §1g) — mengawinkan
-//! `daw_desktop_host::model` (PR #44) dengan kontrak `platform/desktop.ts`:
+//! `model_download` / `model_read` (docs/20 §1g; docs/26 P2 untuk
+//! Kim_Vocal_2) — mengawinkan `daw_desktop_host::model` (PR #44) dengan
+//! kontrak `platform/desktop.ts`:
 //! `model_download({id}) -> path` dengan event `daw://model-progress`
 //! `{id, done, total}`, lalu `model_read({id}) -> byte`.
 //!
 //! Model tinggal di `<folder kepustakaan>/models/` supaya ikut pindah saat
 //! `store_relocate`; folder itu yang dibaca dari `Store::dir()`.
 
-use daw_desktop_host::{download_model, model_specs, read_model, ModelId, ModelSpec};
+use daw_desktop_host::{download_model, read_model, ModelId, ModelSpec};
 use serde::Serialize;
 use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
@@ -20,13 +21,12 @@ struct ModelProgress<'a> {
     total: u64,
 }
 
+/// `"base"` / `"large"` (SCNet, dari `MODEL_BASE_URL`) atau `"kim-vocal-2"`
+/// (Kim_Vocal_2, URL absolut HuggingFace — `MODEL_BASE_URL` diabaikan).
+/// Id yang tidak dikenal → `UnknownModel` dari `FromStr`.
 fn spec_for(id: &str) -> CmdResult<ModelSpec> {
     let id: ModelId = id.parse().map_err(CmdError::from)?;
-    let [base, large] = model_specs(MODEL_BASE_URL);
-    Ok(match id {
-        ModelId::Base => base,
-        ModelId::Large => large,
-    })
+    Ok(id.spec(MODEL_BASE_URL))
 }
 
 async fn data_dir(state: &State<'_, AppState>) -> CmdResult<std::path::PathBuf> {

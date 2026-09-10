@@ -61,6 +61,11 @@ Turunannya, semua pada 44,1 kHz stereo:
   (`spek[:, :, :3, :] = 0`), sama seperti UVR.
 - Lagu 4 menit ≈ **41 segmen** tanpa overlap, ≈ 55 dengan overlap 0,25.
 - Instrumen: `inst = mix − vocals × 1.009`, dihitung di domain waktu.
+- **Temuan P0:** pada overlap 0, `demix` UVR menumpuk keluaran segmen utuh dan
+  `zeroLowBins` pada frame yang melintasi tepi segmen meninggalkan galat
+  sub-17 Hz sepanjang ±nFft di batas interior (terukur SNR ≈ 62 dB di sana,
+  > 148 dB di tempat lain). Ini sifat algoritma rujukan, alasan UVR default
+  0,25 — overlap 0 tidak ditawarkan sebagai pilihan di dialog.
 - Opsi *denoise* UVR = jalankan model dua kali (`x` dan `−x`), rata-ratakan
   `(y⁺ − y⁻) / 2`. Biaya 2×, artefak berkurang. Default **mati**.
 
@@ -128,7 +133,7 @@ tersentuh** (prinsip docs/14: FFT tetap di worker, bukan di engine).
 |---|---|---|
 | Sumber | clip terpilih (`selectedClipId`) | kalau tidak ada clip terpilih, tombol PISAHKAN nonaktif dengan alasan tertulis |
 | Model | `Kim_Vocal_2` | katalog `VOCAL_MODELS`; status: `belum diunduh (66,8 MB)` / `siap` / `mengunduh 40%` dengan tombol unduh terpisah — mengunduh **bukan** bagian dari tombol PISAHKAN |
-| Overlap | 0,25 | pilihan 0 / 0,25 / 0,5; makin besar makin halus dan makin lama |
+| Overlap | 0,25 | pilihan 0,25 / 0,5; makin besar makin halus dan makin lama (0 dibuang, lihat §1 temuan P0) |
 | Denoise | mati | 2× waktu |
 | Thread | `min(4, cores − 2)` | sama dengan `loadScnetModel` |
 | Mute lane sumber | ya | |

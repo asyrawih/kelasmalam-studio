@@ -43,7 +43,7 @@ pub use tracks::{Probe, TRACKS_SUBDIR};
 // Model (docs/20 §1g) — grup sendiri supaya tetap di bawah.
 pub use model::{
     download_model, model_is_ready, model_path, model_specs, read_model, ModelId, ModelSpec,
-    MODELS_SUBDIR,
+    KIM_VOCAL_2_URL, MODELS_SUBDIR,
 };
 
 #[cfg(test)]

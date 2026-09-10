@@ -26,6 +26,7 @@
     "@kelasmalam/studio": "workspace:*",
     "@kelasmalam/studio-core": "workspace:*",
     "@kelasmalam/ui": "workspace:*",
+    "@kelasmalam/vocal-split": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-deep-link": "^2.4.10",
     "@tauri-apps/plugin-dialog": "^2.7.3",

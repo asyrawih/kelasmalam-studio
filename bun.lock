@@ -22,6 +22,7 @@
         "@kelasmalam/studio": "workspace:*",
         "@kelasmalam/studio-core": "workspace:*",
         "@kelasmalam/ui": "workspace:*",
+        "@kelasmalam/vocal-split": "workspace:*",
         "@tauri-apps/api": "^2.11.1",
         "@tauri-apps/plugin-deep-link": "^2.4.10",
         "@tauri-apps/plugin-dialog": "^2.7.3",
@@ -302,12 +303,9 @@
       "version": "0.1.0",
       "dependencies": {
         "@kelasmalam/platform": "workspace:*",
-        "@kelasmalam/ui": "workspace:*",
         "onnxruntime-web": "1.21.0",
-        "react": "^18.3.1",
       },
       "devDependencies": {
-        "@types/react": "^18.3.12",
         "typescript": "^5.6.3",
         "vitest": "^2.1.4",
       },

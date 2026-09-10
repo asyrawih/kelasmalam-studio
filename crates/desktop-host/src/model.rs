@@ -1,16 +1,27 @@
-//! Model SCNet yang tidak ikut bundel desktop (docs/20 §1g, D4).
+//! Model ONNX yang tidak ikut bundel desktop (docs/20 §1g, D4; docs/26 P2).
 //!
-//! Di web, `scnet-model.ts` mem-`fetch` model dari `/models/scnet/` dan
-//! menyimpannya di OPFS. Di desktop jalur itu tidak dipakai — COEP
-//! `require-corp` menuntut header CORP dari server model, dan mengalirkan
-//! byte lewat IPC menghindari seluruh pertanyaan itu. Maka unduhan terjadi
-//! di sini, ke `appDataDir()/models/`, dan hasilnya dibaca sebagai `Vec<u8>`
-//! untuk `InferenceSession.create(bytes)`.
+//! Dua keluarga model lewat satu pipa:
 //!
-//! Angka ukuran dan hash di bawah HARUS sama dengan `SCNET_MODELS` di
-//! `web/src/proof-stem/scnet-model.ts`; keduanya adalah kebenaran yang sama
-//! ditulis dua kali karena Rust dan TS tidak berbagi konstanta. Kalau model
-//! diganti, ubah keduanya.
+//!   - **SCNet** (`base`, `large`): di web `scnet-model.ts` mem-`fetch` dari
+//!     `/models/scnet/` origin web dan menyimpannya di OPFS. Desktop
+//!     mengunduh dari origin yang sama (`base_url + /models/scnet/<file>`).
+//!   - **Kim_Vocal_2** (`kim-vocal-2`, MDX-Net): URL-nya ABSOLUT — URL
+//!     *resolve* HuggingFace, sama di web dan desktop; bobot tidak pernah
+//!     di-rehost (docs/26 §2 butir 3). HuggingFace menjawab 302 ke CDN;
+//!     `reqwest::Client` bawaan mengikuti redirect (sampai 10 hop), dan
+//!     hanya status akhir yang diperiksa.
+//!
+//! Di desktop jalur fetch WebView tidak dipakai — COEP `require-corp`
+//! menuntut header CORP dari server model, dan mengalirkan byte lewat IPC
+//! menghindari seluruh pertanyaan itu. Maka unduhan terjadi di sini, ke
+//! `appDataDir()/models/`, dan hasilnya dibaca sebagai `Vec<u8>` untuk
+//! `InferenceSession.create(bytes)`.
+//!
+//! Angka ukuran dan hash di bawah HARUS sama dengan katalog TS: `SCNET_MODELS`
+//! di `packages/proof-stem/src/proof-stem/scnet-catalog.ts` dan `VOCAL_MODELS`
+//! di `packages/vocal-split/src/catalog.ts`; keduanya adalah kebenaran yang
+//! sama ditulis dua kali karena Rust dan TS tidak berbagi konstanta. Kalau
+//! model diganti, ubah keduanya — tes kontrak di kedua sisi yang menjaganya.
 //!
 //! Invarian berkas: path akhir hanya pernah berisi berkas yang SUDAH lolos
 //! verifikasi ukuran (dan hash). Unduhan berjalan ke `<path>.part` dan baru
@@ -34,36 +45,74 @@ pub const MODELS_SUBDIR: &str = "models";
 /// Akhiran berkas unduhan yang belum diverifikasi.
 const PART_SUFFIX: &str = ".part";
 
-/// Varian model. Urutannya mengikuti `SCNET_MODELS` di TS.
+/// URL *resolve* HuggingFace untuk Kim_Vocal_2 (docs/26 §1). Bukan URL CDN
+/// yang berubah-ubah; isi berkas dijaga hash, bukan URL. Sama persis dengan
+/// `VOCAL_MODELS['kim-vocal-2'].url` di TS.
+pub const KIM_VOCAL_2_URL: &str =
+    "https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx";
+
+/// Varian model. Urutannya: `SCNET_MODELS` di TS, lalu `VOCAL_MODELS`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ModelId {
-    /// 44 MB, untuk pratinjau realtime.
+    /// SCNet 44 MB, untuk pratinjau realtime.
     Base,
-    /// 170 MB, kualitas.
+    /// SCNet 170 MB, kualitas.
     Large,
+    /// Kim_Vocal_2 (MDX-Net) 67 MB, vocal split (docs/26).
+    KimVocal2,
 }
 
 impl ModelId {
     /// Semua varian, urutan tetap.
-    pub const ALL: [ModelId; 2] = [ModelId::Base, ModelId::Large];
+    pub const ALL: [ModelId; 3] = [ModelId::Base, ModelId::Large, ModelId::KimVocal2];
 
-    /// Id seperti di TS: `"base"` / `"large"`.
+    /// Id seperti di TS: `"base"` / `"large"` / `"kim-vocal-2"`.
     pub fn as_str(self) -> &'static str {
         match self {
             ModelId::Base => "base",
             ModelId::Large => "large",
+            ModelId::KimVocal2 => "kim-vocal-2",
         }
     }
 
-    /// Nama berkas, sama dengan yang ada di `web/public/models/scnet/`.
+    /// Nama berkas di `appDataDir()/models/`. SCNet: sama dengan yang ada di
+    /// `/models/scnet/` origin web; Kim: nama berkas asli di HuggingFace
+    /// (`VOCAL_MODELS['kim-vocal-2'].fileName`).
     pub fn file_name(self) -> String {
-        format!("scnet-{}.onnx", self.as_str())
+        match self {
+            ModelId::Base | ModelId::Large => format!("scnet-{}.onnx", self.as_str()),
+            ModelId::KimVocal2 => "Kim_Vocal_2.onnx".to_owned(),
+        }
+    }
+
+    /// URL unduhan. SCNet relatif ke `base_url` (origin web yang menyajikan
+    /// `/models/scnet/`, dengan atau tanpa `/` di akhir); Kim absolut ke
+    /// HuggingFace — `base_url` diabaikan.
+    pub fn url(self, base_url: &str) -> String {
+        match self {
+            ModelId::Base | ModelId::Large => {
+                let base = base_url.trim_end_matches('/');
+                format!("{base}/models/scnet/{}", self.file_name())
+            }
+            ModelId::KimVocal2 => KIM_VOCAL_2_URL.to_owned(),
+        }
+    }
+
+    /// Spesifikasi produksi (ukuran + hash) untuk id ini.
+    pub fn spec(self, base_url: &str) -> ModelSpec {
+        ModelSpec {
+            id: self,
+            url: self.url(base_url),
+            bytes: self.bytes(),
+            sha256: Some(self.sha256()),
+        }
     }
 
     fn bytes(self) -> u64 {
         match self {
             ModelId::Base => 44_516_685,
             ModelId::Large => 170_914_085,
+            ModelId::KimVocal2 => 66_759_214,
         }
     }
 
@@ -74,6 +123,9 @@ impl ModelId {
             }
             ModelId::Large => {
                 hex32(b"b604b88207a8b3830b7969c7aef708c56710a39bd1c8b196f105ee7b68c0f939")
+            }
+            ModelId::KimVocal2 => {
+                hex32(b"ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b")
             }
         }
     }
@@ -92,6 +144,7 @@ impl FromStr for ModelId {
         match s {
             "base" => Ok(ModelId::Base),
             "large" => Ok(ModelId::Large),
+            "kim-vocal-2" => Ok(ModelId::KimVocal2),
             other => Err(HostError::UnknownModel(other.to_owned())),
         }
     }
@@ -110,17 +163,12 @@ pub struct ModelSpec {
     pub sha256: Option<[u8; 32]>,
 }
 
-/// Spesifikasi kedua model dengan URL `base_url + "/models/scnet/<file>"`.
-/// `base_url` adalah origin web yang sudah menyajikan model untuk browser
-/// (mis. `https://studio.kelasmalam.app`), dengan atau tanpa `/` di akhir.
-pub fn model_specs(base_url: &str) -> [ModelSpec; 2] {
-    let base = base_url.trim_end_matches('/');
-    ModelId::ALL.map(|id| ModelSpec {
-        id,
-        url: format!("{base}/models/scnet/{}", id.file_name()),
-        bytes: id.bytes(),
-        sha256: Some(id.sha256()),
-    })
+/// Spesifikasi semua model, urutan [`ModelId::ALL`]. `base_url` adalah
+/// origin web yang menyajikan model SCNet untuk browser (mis.
+/// `https://studio.kelasmalam.app`), dengan atau tanpa `/` di akhir; lihat
+/// [`ModelId::url`] — Kim_Vocal_2 tidak memakainya.
+pub fn model_specs(base_url: &str) -> [ModelSpec; 3] {
+    ModelId::ALL.map(|id| id.spec(base_url))
 }
 
 /// Path akhir model di dalam `data_dir` (`appDataDir()` Tauri).

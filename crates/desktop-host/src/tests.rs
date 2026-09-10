@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::model::{part_path_for_test, to_hex};
 use crate::{
     download_model, model_is_ready, model_path, model_specs, read_model, HostError, ModelId,
-    ModelSpec, MODELS_SUBDIR,
+    ModelSpec, KIM_VOCAL_2_URL, MODELS_SUBDIR,
 };
 
 // ------------------------------------------------------------------- Model
@@ -23,8 +23,18 @@ use crate::{
 fn model_id_parses_and_displays() {
     assert_eq!("base".parse::<ModelId>().unwrap(), ModelId::Base);
     assert_eq!("large".parse::<ModelId>().unwrap(), ModelId::Large);
+    assert_eq!(
+        "kim-vocal-2".parse::<ModelId>().unwrap(),
+        ModelId::KimVocal2
+    );
     assert_eq!(ModelId::Base.to_string(), "base");
     assert_eq!(ModelId::Large.to_string(), "large");
+    assert_eq!(ModelId::KimVocal2.to_string(), "kim-vocal-2");
+    // Bolak-balik untuk semua varian: `ALL` dan `FromStr` tidak boleh
+    // berbeda daftar.
+    for id in ModelId::ALL {
+        assert_eq!(id.as_str().parse::<ModelId>().unwrap(), id);
+    }
     match "medium".parse::<ModelId>() {
         Err(HostError::UnknownModel(id)) => assert_eq!(id, "medium"),
         other => panic!("harus UnknownModel, dapat {other:?}"),
@@ -33,8 +43,11 @@ fn model_id_parses_and_displays() {
 
 #[test]
 fn model_specs_mirror_typescript_definitions() {
-    // Angka-angka ini adalah `SCNET_MODELS` di web/src/proof-stem/scnet-model.ts.
-    let [base, large] = model_specs("https://studio.kelasmalam.app/");
+    // Angka-angka ini adalah `SCNET_MODELS` di
+    // packages/proof-stem/src/proof-stem/scnet-catalog.ts dan `VOCAL_MODELS` di
+    // packages/vocal-split/src/catalog.ts (dijaga dari sisi TS oleh
+    // catalog-mirrors-rust.test.ts).
+    let [base, large, kim] = model_specs("https://studio.kelasmalam.app/");
     assert_eq!(base.id, ModelId::Base);
     assert_eq!(
         base.url,
@@ -55,9 +68,30 @@ fn model_specs_mirror_typescript_definitions() {
         to_hex(&large.sha256.unwrap()),
         "b604b88207a8b3830b7969c7aef708c56710a39bd1c8b196f105ee7b68c0f939"
     );
+    // Kim_Vocal_2: URL absolut ke HuggingFace, tidak peduli `base_url`.
+    assert_eq!(kim.id, ModelId::KimVocal2);
+    assert_eq!(
+        kim.url,
+        "https://huggingface.co/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx"
+    );
+    assert_eq!(kim.url, KIM_VOCAL_2_URL);
+    assert_eq!(kim.bytes, 66_759_214);
+    assert_eq!(
+        to_hex(&kim.sha256.unwrap()),
+        "ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b"
+    );
 
     // Tanpa `/` di akhir hasilnya sama — pemanggil tidak perlu tahu aturannya.
-    assert_eq!(model_specs("https://studio.kelasmalam.app"), [base, large]);
+    assert_eq!(
+        model_specs("https://studio.kelasmalam.app"),
+        [base.clone(), large.clone(), kim.clone()]
+    );
+    // `spec` per id = elemen `model_specs` yang sama; ini yang dipakai
+    // `spec_for` di crate Tauri.
+    assert_eq!(ModelId::Base.spec("https://studio.kelasmalam.app/"), base);
+    assert_eq!(ModelId::Large.spec("https://studio.kelasmalam.app/"), large);
+    assert_eq!(ModelId::KimVocal2.spec("apa saja"), kim);
+    assert_eq!(ModelId::KimVocal2.url("apa saja"), KIM_VOCAL_2_URL);
 }
 
 #[test]
@@ -74,6 +108,10 @@ fn model_path_lives_under_models_subdir() {
         Path::new("/data")
             .join(MODELS_SUBDIR)
             .join("scnet-large.onnx")
+    );
+    assert_eq!(
+        model_path(dir, ModelId::KimVocal2),
+        dir.join(MODELS_SUBDIR).join("Kim_Vocal_2.onnx")
     );
 }
 
@@ -252,6 +290,28 @@ async fn download_hash_mismatch_leaves_no_files() {
 }
 
 #[tokio::test]
+async fn download_follows_redirect_like_huggingface() {
+    // HuggingFace `resolve/` menjawab 302 ke CDN; `reqwest::Client` bawaan
+    // mengikutinya. Ditiru dengan dua server: yang pertama hanya mengarahkan.
+    let data = body(4_000);
+    let cdn = Server::spawn(Reply::Full(data.clone()));
+    let hub = Server::spawn(Reply::Redirect(cdn.url("/cdn/Kim_Vocal_2.onnx")));
+    let spec = ModelSpec {
+        id: ModelId::KimVocal2,
+        url: hub.url("/seanghay/uvr_models/resolve/main/Kim_Vocal_2.onnx"),
+        bytes: data.len() as u64,
+        sha256: Some(Sha256::digest(&data).into()),
+    };
+    let tmp = tempfile::tempdir().unwrap();
+
+    let path = download_model(tmp.path(), &spec, |_, _| {}).await.unwrap();
+    assert_eq!(path, model_path(tmp.path(), ModelId::KimVocal2));
+    assert!(path.ends_with("Kim_Vocal_2.onnx"));
+    assert!(model_is_ready(tmp.path(), &spec));
+    assert_eq!(read_model(tmp.path(), &spec).unwrap(), data);
+}
+
+#[tokio::test]
 async fn download_http_error_status() {
     let server = Server::spawn(Reply::NotFound);
     let spec = spec_for(&body(10), &server.url("/scnet-base.onnx"));
@@ -331,6 +391,9 @@ pub(crate) enum Reply {
         body: Vec<u8>,
         send: usize,
     },
+    /// 302 ke `Location` — bentuk jawaban HuggingFace `resolve/` yang
+    /// mengarahkan ke CDN (docs/26 §2 butir 3).
+    Redirect(String),
     NotFound,
 }
 
@@ -395,6 +458,12 @@ fn write_reply(stream: &mut std::net::TcpStream, reply: &Reply) -> std::io::Resu
                 stream.write_all(b"\r\n")?;
             }
             stream.write_all(b"0\r\n\r\n")?;
+        }
+        Reply::Redirect(location) => {
+            write!(
+                stream,
+                "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )?;
         }
         Reply::Truncated { body, send } => {
             write!(
