@@ -30,6 +30,8 @@ Thumbs.db
 /tmp/
 *.wav
 !tests/fixtures/*.wav
+AGENT.md
+.claude
 
 # --- output deploy Vercel (dirakit scripts/vercel-build.sh) ---
 /.vercel/
