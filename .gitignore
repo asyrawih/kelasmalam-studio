@@ -42,6 +42,9 @@ AGENT.md
 # Pernah ter-`git add -A` sebagai gitlink di ff0cebc dan muncul selamanya
 # sebagai "modified"; isinya sudah punya branch sendiri, tidak perlu dilacak.
 .claude/worktrees/
+desktop
+web
+.pnpm-store
 
 # --- desktop (Tauri, docs/20) ---
 # `gen/` berisi skema capability yang ditulis ulang tauri-build tiap compile;

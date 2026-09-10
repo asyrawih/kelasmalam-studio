@@ -1,5 +1,11 @@
 # Bagian 9 — Roadmap M0–M9
 
+> Roadmap ini adalah baseline editor/web. Untuk halaman baru Composer `/composer` di desktop,
+> [docs/24](24-studio-fl.md) revisi 10 September 2026 memasukkan recording,
+> MIDI, automation, routing dan stretch ke fase wajib produksi F9–F14;
+> daftar penundaan di sini tidak membatalkan scope Composer tersebut.
+> Studio `/studio` tetap tersedia; Composer bukan penggantinya.
+
 Urutan ini disusun dengan satu prinsip: **buktikan yang paling bisa membunuh
 proyek lebih dulu, sebelum membangun apa pun yang lebar.**
 

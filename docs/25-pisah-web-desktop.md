@@ -3,7 +3,7 @@
 Rencana memecah `web/` menjadi **dua aplikasi** di atas **paket-paket
 bersama**: `apps/web` (Vercel, tetap seperti sekarang) dan `apps/desktop`
 (frontend Tauri). Tujuannya satu: desktop boleh berbeda dari web — mulai dari
-Studio ala FL Studio (docs/24) — tanpa memaksa web ikut berubah, dan tanpa
+halaman baru Composer (docs/24) — tanpa memaksa web ikut berubah, dan tanpa
 menyalin 45 ribu baris kode.
 
 Ini **merevisi** docs/20 §1a ("satu frontend, satu build Vite, tidak ada fork
@@ -86,7 +86,7 @@ packages/
   ui/                  ← ui/cyber, ui/lib, ui/panels
   shell/               ← app-shell tanpa desktop.ts: registry command, keymap, palette, VersionTag
   platform/            ← KONTRAK saja: host.ts, hooks (useAudioFilePicker, useNativeFileDrop)
-  studio/              ← studio/ (lane) + stem/ + StudioPage — dipakai apps/web selamanya, apps/desktop sampai docs/24 F8
+  studio/              ← studio/ (lane) + stem/ + StudioPage — dipakai apps/web selamanya, apps/desktop tetap; Composer page terpisah (docs/24)
   studio-core/         ← (P4) bagian studio yang tidak tahu lane: peaks, waveform, import/decode, analysis, fade, snap, stem. Pipeline export sudah di engine/src/export (cicilan P4 di P3)
   dj/                  ← dj/
   library/             ← kontrak LibraryApi + DTO + local-error, klien Worker, dok/browser, registry `registerLibraryApi`; implementasi lokal di apps/desktop
@@ -191,14 +191,14 @@ untuk komponen paket dipasang `apps/web/src/__tests__/setup.ts` (memuat
 `../platform` → resolver bawaan web); setup desktop mengimpornya dan resolver
 app desktop tetap menang.
 
-### e) Studio web tidak berubah; Studio desktop boleh berbeda
+### e) Studio tetap tersedia; Composer halaman baru desktop
 
-`packages/studio` adalah Studio lane hari ini, dipakai `apps/web` **tanpa
-batas waktu**. `apps/desktop` juga memakainya sampai docs/24 F8, lalu
-berganti ke `packages/studio-fl`. Keduanya berdiri di atas
-`packages/studio-core` (P4), sehingga perbaikan pada waveform, import, BPM,
-stem, atau export mengalir ke dua Studio sekaligus. DJ hanya bergantung pada
-`studio-core`, bukan pada `studio` maupun `studio-fl`.
+`packages/studio` tetap dipakai `/studio` pada `apps/web` dan `apps/desktop`.
+Composer adalah halaman baru `/composer` dari `packages/composer` (docs/24),
+bukan pengganti Studio. Keduanya memakai `packages/studio-core` untuk aset,
+waveform, import, BPM dan stem; engine/export tetap paket bersama. Store,
+project kind, undo dan autosave Composer terpisah. DJ hanya bergantung pada
+`studio-core`, bukan pada `studio` maupun `composer`.
 
 ### f) Satu konfigurasi Vite dasar, dua entry
 

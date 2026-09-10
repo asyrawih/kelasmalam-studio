@@ -1,25 +1,29 @@
-# 24 — Studio ala FL Studio: Channel Rack, Pattern, Playlist, Piano Roll, Mixer
+# 24 — Composer: halaman produksi musik ala FL Studio
 
-Rencana mengganti paradigma Studio dari **"lane = track = mixer channel, clip
-menempel ke lane"** menjadi paradigma FL Studio: sumber bunyi adalah
-**Channel** di Channel Rack, not/step dikumpulkan dalam **Pattern**, Pattern dan
-audio clip disusun bebas di **Playlist**, dan setiap Channel dialirkan ke
-**Insert** di Mixer. Lane sebagai konsep dihapus; tidak ada dua paradigma yang
-hidup berdampingan.
+Rencana membangun halaman baru **Composer** di route **`/composer`** dengan
+workflow ala FL Studio: Channel Rack, Pattern, Playlist, Piano Roll dan Mixer.
+Composer berdampingan dengan `/studio` dan `/dj`; Studio lane tetap tersedia
+pada web maupun desktop. Ini penambahan halaman, bukan penggantian Studio.
+
+**Revisi riset: 10 September 2026.** Target kini mencakup workflow produksi lengkap,
+bukan hanya lima panel FL. F0–F8 adalah fondasi; F9–F14 wajib untuk rilis
+produksi, F15–F17 perluasan. Matriks cakupan, koreksi kontrak, dan sumber
+resmi ada di §8–§11. Semua fase adalah rencana, bukan klaim sudah tersedia.
+Lampiran user berisi katalog Lua Roblox, sehingga review memakai dokumen ini.
 
 Dokumen ini adalah keputusan dan fase. Kode datang setelahnya, per fase, lewat
 `pengoding` (AGENT.md), dengan fase yang tidak saling bergantung dikerjakan
 paralel di worktree terpisah.
 
-> **Lingkup: desktop saja.** Web tetap web — `apps/web` mempertahankan Studio
-> lane yang ada hari ini tanpa batas waktu. Studio ala FL dibangun sebagai
-> `packages/studio-fl` dan dipakai `apps/desktop`. Pemisahan web/desktop yang
-> membuat itu mungkin ada di [docs/25](25-pisah-web-desktop.md); **F0 di sini
-> baru dimulai setelah docs/25 P2 selesai**, dan F8 mencabut lane dari
-> desktop, bukan dari web. Bagian yang menyebut "Studio" di bawah ini
-> berarti Studio desktop, dan bagian yang dipakai bersama dua Studio
-> (waveform, import, BPM, stem, export) hidup di `packages/studio-core`
-> (docs/25 P4).
+> **Koreksi scope user: Composer adalah page baru.** Implementasi awal tetap
+> desktop sesuai scope sebelumnya, dengan entry `ComposerPage`, route
+> `/composer` dan paket `packages/composer`. `/studio` tetap menggunakan
+> `packages/studio` di kedua host. Prasyarat paket bersama mengikuti
+> [docs/25](25-pisah-web-desktop.md) P2/P4. Asset, waveform, import, BPM dan
+> stem memakai `packages/studio-core`; engine/export memakai `packages/engine`.
+> Penyebutan Studio sebagai produk baru pada sketsa lama berarti Composer;
+> nama FL Studio hanya referensi workflow. File plan tetap bernama
+> `24-studio-fl.md` agar tautan dokumentasi yang ada tidak putus.
 
 ---
 
@@ -61,7 +65,7 @@ Pitch, Stem), export offline (docs/03), app-shell command registry + keymap
 
 ## 1. Peta paradigma: sekarang → FL
 
-| Konsep FL Studio | Sekarang di Studio | Sesudah revamp |
+| Konsep FL Studio | Sekarang di Studio | Di Composer |
 |---|---|---|
 | **Channel** (sumber bunyi: sampler, audio clip, instrumen) | tidak ada; clip audio langsung di lane | `Channel` di model Rust; jenis `Sampler`, `AudioClip`, `Synth` |
 | **Channel Rack** (daftar channel + 16 step per bar) | shell statis `StepSequencer.tsx` | panel nyata, state dari store, step = `Note` panjang 1 step |
@@ -71,7 +75,7 @@ Pitch, Stem), export offline (docs/03), app-shell command registry + keymap
 | **Mixer Insert** (slot FX, EQ, volume, pan, routing) | lane punya gain/EQ/chain sendiri | `Insert` di `Mixer`; channel → satu insert; insert 0 = Master |
 | **Browser** (kiri) | dok kepustakaan di bawah | sidebar kiri, isi sama |
 | **Transport** PAT/SONG, BPM project, posisi bar:beat | speed transport, BPM per-asset | tempo project di `TempoMap`, tampil bar:beat:tick |
-| **Lane** | inti UI, 14 ribu baris di `studio/timeline/` | **dihapus**; `PlaylistTrack` hanya baris visual: nama, warna, tinggi, mute, kunci |
+| **Lane** | inti UI, 14 ribu baris di `studio/timeline/` | tetap di Studio; Composer memakai `PlaylistTrack`: nama, warna, tinggi, mute, kunci |
 
 Aturan FL yang sengaja diikuti persis, karena inilah yang membuat "terasa FL":
 
@@ -92,9 +96,9 @@ Yang sengaja **tidak** diikuti persis, dan alasannya:
 | Milik FL | Keputusan di sini | Alasan |
 |---|---|---|
 | Jendela mengambang bebas di atas desktop | Panel dok yang bisa diubah ukurannya; F5–F9 menampilkan/menyembunyikan | Jendela mengambang di halaman web rapuh di layar kecil dan di WebView desktop; toggle F-key sudah memberi ritme kerja yang sama |
-| 10 slot FX per insert, routing insert → insert bebas | 4 slot (`MAX_CHAIN_LEN`), routing channel → insert → master | Batas engine yang ada; multi-routing masuk utang terbuka §8 |
-| Plugin VST/AU, instrumen FL bawaan | Sampler + satu synth osilator sederhana (§7 F7) | Tidak ada jalur plugin di WASM; synth kecil cukup untuk membuktikan jalur not |
-| Time signature bebas, tempo automation | 4/4 tetap, tempo konstan per project | `TempoMap` sudah bisa menampung perubahan tempo; UI-nya menyusul (§8) |
+| Mixer dengan chain dan routing fleksibel | F6: 4 slot; F11: target 10 slot, bus/send/sidechain + kompensasi latensi | Perlu perubahan kapasitas engine dan kontrak SAB, bukan sekadar UI |
+| Plugin eksternal dan instrumen bawaan | Sampler + synth F7, sampler lengkap F12, host plugin native F16 | Hosting native memerlukan jalur audio desktop tersendiri; bukan memuat binary VST dalam WASM |
+| Time signature dan tempo berubah | 4/4 konstan untuk fondasi; tempo map dan meter map F13 | Model menyisakan kontrak sejak F1; compiler, ruler, recording, dan stretch harus konsisten |
 
 ---
 
@@ -107,11 +111,10 @@ Alternatif yang dipertimbangkan: scheduler lookahead di JS
 sampel, tapi tidak bisa memainkan synth, tidak bisa menjamin preview ≡ export,
 dan membuat "jalur sementara" jadi permanen. **Ditolak.**
 
-Keputusan: jalur realtime Studio dipindah ke `EngineClient` + AudioWorklet
-(`web/src/audio/engine-client.ts`, yang hari ini hanya dipakai export dan
-tes integrasi). Preview Web Audio dicabut pada fase terakhir (§7 F8).
-Prasyaratnya adalah F0: project audio-clip yang ada hari ini harus berbunyi
-lewat worklet dan null-test terhadap export sebelum satu not pun ditambahkan.
+Keputusan: Composer memakai `EngineClient` + AudioWorklet sejak awal.
+Playback Studio yang ada tetap berjalan lewat jalurnya sendiri. F0 membuktikan
+fixture audio-clip melalui render realtime dan offline engine yang sama
+sebelum menambahkan sequencer not; tidak memerlukan pergantian playback Studio.
 
 ### 2b. Waktu musikal: tick
 
@@ -132,16 +135,24 @@ lewat worklet dan null-test terhadap export sebelum satu not pun ditambahkan.
 
 Struct baru masuk `crates/timeline-core/src/model.rs` dan
 `schema/project.schema.json` (`PROJECT_VERSION = 2`). Tipe TS di
-`web/src/studio/model.ts` mengikuti, dan pemetaan UI → engine tetap **hanya**
+`packages/composer/src/model.ts` mengikuti, dan pemetaan UI → engine tetap **hanya**
 di `crates/wasm-bridge/src/studio.rs`. Tidak ada tata letak postcard yang
 disalin ke TS.
 
-### 2d. Lane dihapus, bukan disembunyikan
+### 2d. Halaman dan sesi terpisah
 
-`StudioLane`, `LaneHeaders`, `lane-import`, `lane-speed`, `LaneColorModal`,
-dan tes-tesnya dicabut di F8. Sebelum itu, kode lane tetap jalan di `main`
-supaya branch fase bisa masuk satu per satu tanpa memutus produk. Project
-lama dimigrasi (§6), bukan dibaca oleh dua jalur.
+Daftarkan `/composer` dan menu **Composer** melalui route/command registry
+app desktop. `/studio` dan `/dj` tetap bisa dibuka. Composer memiliki store,
+undo history, autosave namespace, project kind (`composer`) dan version sendiri;
+Studio mempertahankan format/sesi lamanya. Tidak ada konversi otomatis saat
+membuka Studio atau Composer. Konversi §6 adalah aksi **Import from Studio**
+yang membuat salinan project baru tanpa menimpa sumber.
+
+Aset bersama memakai registry/ref-count yang sama, dengan asset-root Composer
+tersendiri supaya pruning Studio/DJ tidak menghapus aset Composer. Saat pindah
+halaman, transport halaman asal berhenti dan melepas voice/input monitoring;
+halaman tujuan tidak autoplay. State tersimpan dipulihkan tanpa playback.
+Lifecycle engine dan listener dilepas saat unmount untuk mencegah audio ganda.
 
 ### 2e. Yang terlihat di layar
 
@@ -270,7 +281,8 @@ setiap `Channel.insert` ada; setiap `PlaylistClipKind::Pattern.pattern` ada;
 setiap `Audio.channel` bertipe `AudioClip`; not tidak keluar dari
 `len_bars` bila eksplisit; `key` ≤ 127.
 
-`Track`, `Clip.track`, dan `Bus` lama dihapus dari model v2. `edit.rs`
+`Track`, `Clip.track`, dan `Bus` legacy tetap untuk Studio; model Composer
+tidak memakai lane. Modul edit Composer
 (split/trim/move) dipindah ke tick untuk `PlaylistClip`, dan versi sample-nya
 tetap dipakai untuk `source_start/source_len` audio clip.
 
@@ -341,8 +353,8 @@ seperti sekarang.
 
 ### 5a. Store dan command
 
-`web/src/studio/store.ts` (`useSyncExternalStore`) tetap, `StudioState`
-berubah bentuk mengikuti §3. `studioActions` bertambah: `addChannel`,
+`packages/composer/src/store.ts` memakai `useSyncExternalStore` dengan state
+Composer sendiri mengikuti §3. `composerActions` menyediakan: `addChannel`,
 `setStep`, `addNote`, `moveNote`, `addPattern`, `clonePattern`,
 `paintPatternClip`, `setChannelInsert`, dan seterusnya. Semua mutasi
 struktural mengirim snapshot baru lewat `useEngineCommands().commit()` (jalur
@@ -380,31 +392,37 @@ dipanggil dari klik kanan clip.
 | F5 / F6 / F7 / F8 / F9 | toggle Playlist / Channel Rack / Piano Roll / Browser / Mixer |
 | L | PAT ↔ SONG |
 | Space | play/pause; Ctrl+Space play dari awal |
-| Ctrl+B | pilih pattern berikutnya; Ctrl+Shift+B sebelumnya |
+| Ctrl+B | duplicate selection di Playlist/Piano Roll; pattern berikut/sebelum memakai command terpisah |
 | Ctrl+Shift+C | clone pattern |
-| Z X C V B N M , (baris bawah) dan Q W E R T Y U I (baris atas) | keyboard mengetik → `NOTE_ON` channel terpilih, oktaf ±: `,` `.` |
+| Z X C V B N M , (baris bawah) dan Q W E R T Y U I (baris atas) | keyboard mengetik → `NOTE_ON` channel terpilih, oktaf ±: command terpisah tanpa bentrok tombol not |
 
-Semuanya lewat `studio/commands.ts` (docs/15) supaya bisa di-remap.
+Semuanya lewat `packages/composer/src/commands.ts` (docs/15) supaya bisa di-remap.
 
 ---
 
-## 6. Migrasi project lama (skema 1 → 2)
+## 6. Import salinan project Studio ke Composer
 
-Konverter di Rust (`timeline-core::migrate`) supaya dipakai persis sama oleh
-persist browser (`web/src/studio/persist/persistence.ts`, `SCHEMA_VERSION`
-1 → 2), kepustakaan (`library/projects.ts`), dan desktop lokal (docs/21).
+Konverter Rust digunakan oleh aksi Import from Studio. Skema Composer
+berversi terpisah dengan discriminator `kind: composer`; versi format Studio
+bukan versi Composer. Nama v1/v2 pada fixture di bawah hanya menyebut sumber
+legacy dan target model baru. Simpan ID baru, sumber tetap utuh, dan laporkan
+field yang belum dapat dikonversi sebelum menyimpan salinan. Autosave Studio
+serta reader web tidak diubah menjadi format Composer.
 
 | Lama | Baru |
 |---|---|
 | `Project.tempo_map` (120 konstan) | tetap; tempo project = 120 kecuali user ubah |
 | `lane[i]` | `PlaylistTrack[i]` (nama, warna, tinggi) **dan** `Insert[i+1]` (gain, EQ, chain, mute, solo) |
 | `lane.speedRatio` | `PlaylistClipKind::Audio.speed_ratio` tiap clip di lane itu |
-| `clip` di lane i | satu `Channel{AudioClip, asset}` per asset (dibagi antar clip yang assetnya sama), `insert = i+1`; satu `PlaylistClip::Audio` di track i, `start = sample_to_tick(clip.start)` |
+| `clip` di lane i | satu `Channel{AudioClip, asset}` per pasangan asset + lane/routing asal, `insert = i+1`; satu `PlaylistClip::Audio` di track i, `start = sample_to_tick(clip.start)` |
 | `masterGainDb`, chain master | `Insert[0]` |
 
-Pembulatan `sample_to_tick` pada 120 BPM / 48 kHz: 1 tick = 26,04 sample,
-jadi posisi bisa bergeser ≤ 13 sample (0,27 ms). Diterima dan dinyatakan;
-uji null di §7 F1 memakai ambang, bukan bit-exact.
+Migrasi tidak boleh membulatkan onset audio ke tick begitu saja: pada 120 BPM /
+48 kHz, 1 tick = 25 sample, sehingga rounding bisa menggeser hingga sekitar
+12,5 sample dan merusak null-test. Simpan `SampleAnchor` integer untuk audio
+lama (onset dan durasi absolut), plus tick untuk editing musikal. Audio baru
+memilih timebase `absolute` atau `musical`; sumber tetap dalam source sample.
+Pada tempo asal, migrasi mempertahankan onset, durasi, routing, dan suara.
 
 Project v2 tidak bisa dibuka oleh aplikasi lama; itu perilaku yang sudah ada
 (`d.version !== SCHEMA_VERSION → null`) dan pesan "file dari versi lebih baru"
@@ -421,16 +439,15 @@ dikerjakan **bersamaan**.
 ```
 F0 engine realtime ──┐
                      ├─► F2 sequencer engine ──┬─► F3 Channel Rack ─┐
-F1 model v2+migrasi ─┘                        ├─► F4 Playlist ─────┼─► F7 synth ─► F8 cabut lane
+F1 model v2+migrasi ─┘                        ├─► F4 Playlist ─────┼─► F7 synth ─► F8 rilis page
                                               ├─► F5 Piano Roll ───┤
                                               └─► F6 Mixer ────────┘
 ```
 
-### F0 — Engine realtime menggantikan preview Web Audio (paralel dengan F1)
+### F0 — Engine realtime Composer (paralel dengan F1)
 
-Studio memutar project **yang ada sekarang** (lane, clip audio) lewat
-`EngineClient` + worklet, memakai pemetaan `wasm-bridge/studio.rs` yang sudah
-dipakai export. Preview Web Audio masih ada di balik flag untuk perbandingan.
+Harness Composer memutar fixture audio legacy lewat `EngineClient` + worklet
+untuk dibandingkan dengan export. Jalur playback Studio tidak diubah.
 
 **Done:**
 1. Project 8 lane × 5 clip dengan fade, gain, EQ, dan speed dimainkan lewat
@@ -444,14 +461,15 @@ dipakai export. Preview Web Audio masih ada di balik flag untuk perbandingan.
 ### F1 — Model v2, skema, migrasi, mirror TS (paralel dengan F0)
 
 `timeline-core` §3, `schema/project.schema.json` v2, `migrate` §6, tipe TS
-§5a. Belum ada UI baru: `store.ts` membaca v2 dan menyajikan proyeksi yang
-masih dipakai UI lane, supaya F0/F1 bisa masuk `main` tanpa mengubah layar.
+§5a. Store Composer membaca format Composer di balik feature flag;
+store dan UI Studio tetap membaca format existing tanpa migrasi otomatis.
 
 **Done:**
 1. Property test: `normalize(migrate(v1))` untuk 200 project v1 acak tidak
    panik dan semua invariant §3 terpenuhi.
 2. 20 fixture project v1 yang ada di tes: bounce sebelum migrasi vs sesudah
-   (lewat export) residual < −90 dBFS (ambang pembulatan tick §6).
+   (lewat export) residual < −100 dBFS dengan onset/durasi integer sample identik (§6);
+   tanpa DSP dan perubahan urutan summing, wajib bit-exact.
 3. Roundtrip JSON v2 → struct → JSON identik; postcard v2 dibaca engine.
 
 ### F2 — Sequencer di engine
@@ -462,8 +480,9 @@ baru, sampler pitch, PAT/SONG, swing, `render_insert`.
 **Done:**
 1. Pattern 1 bar, kick di step 1/5/9/13, 120 BPM, 48 kHz, mode PAT, bounce 4
    bar: onset terdeteksi tepat di sample 0, 24000, 48000, … (toleransi 0).
-2. Not yang sama dengan swing 50%: step ganjil bergeser tepat
-   `tick_to_sample(1/32 bar)` sample.
+2. Swing memakai nilai normalisasi 0..1. Pada 50% (0.5), setiap step
+   selang-seling bergeser 0.5 × 240/2 = 60 tick: 1.500 sample pada
+   120 BPM / 48 kHz. Uji juga swing 0 dan 1, tanpa drift di batas loop.
 3. Sampler `key = root + 12` menghasilkan spektrum yang puncaknya 2× (uji
    FFT pada sine asset).
 4. Realtime vs offline null-test untuk song 8 bar dengan 4 pattern clip + 2
@@ -481,12 +500,13 @@ baru, sampler pitch, PAT/SONG, swing, `render_insert`.
 2. Toggle 16 step, PAT mode play → berbunyi sesuai; kolom step yang sedang
    main mengikuti playhead SAB tanpa `setState` (rAF, aturan docs/08).
 3. Knob vol/pan channel → `SET_CHANNEL_*` live; mute LED dan solo bekerja.
-4. Pattern selector: buat, ganti nama, clone, pindah; Ctrl+B.
+4. Pattern selector: buat, ganti nama, clone, pindah; duplicate selection
+   memakai Ctrl+B sesuai konteks editor, bukan mengganti pattern.
 5. Graph editor velocity per step; velocity tampil di piano roll sebagai
    tinggi bar.
 6. Smoke test jsdom + tes interaksi pointer seperti `studio/__tests__`.
 
-### F4 — Playlist (menggantikan `studio/timeline/`)
+### F4 — Playlist Composer (panel baru)
 
 **Done:**
 1. Draw/Paint pattern aktif di track mana pun; pattern clip menampilkan
@@ -515,7 +535,10 @@ baru, sampler pitch, PAT/SONG, swing, `render_insert`.
    insert pada channel terpilih → routing berubah dan terdengar.
 2. Setiap insert: EQ 4 band (komponen yang ada), 4 slot FX dari registry,
    fader, pan, mute, meter dari SAB.
-3. Bounce dua channel ke insert yang sama vs ke dua insert identik: bit-exact.
+3. Dengan FX bypass dan pan/gain unity, routing satu vs dua insert
+   mempertahankan hasil dalam toleransi f32 yang ditetapkan. Compressor,
+   saturasi, limiter, dan FX stateful diuji terpisah: FX(a+b) tidak harus
+   sama dengan FX(a)+FX(b).
 
 ### F7 — Synth sederhana + keyboard mengetik
 
@@ -526,32 +549,261 @@ baru, sampler pitch, PAT/SONG, swing, `render_insert`.
 3. Realtime vs offline null-test untuk song dengan synth: residual < −100
    dBFS (fase osilator harus deterministik dari sample absolut).
 
-### F8 — Cabut lane dan preview Web Audio dari desktop, dokumen
+### F8 — Integrasi dan rilis halaman Composer alpha
 
 **Done:**
-1. `apps/desktop` tidak lagi mengimpor `packages/studio` (lane) maupun
-   preview Web Audio; `ui/panels/*` shell lama dan flag F0 dihapus.
-   `packages/studio` tetap utuh untuk `apps/web`.
-2. docs/06, 07, 08, 09, 12, 13 diperbarui: "lane/track" → channel / insert /
-   playlist track; docs/08 §8c dihapus (bukan lagi DITUNDA).
-3. Desktop (docs/20) dan `/dj` tidak tersentuh dan tesnya lolos.
+1. Menu Composer membuka `/composer`; direct navigation, back/forward dan
+   refresh route memulihkan halaman yang benar. Studio dan DJ tetap tersedia.
+2. `apps/desktop` memuat `packages/composer` untuk route baru dan tetap
+   memuat `packages/studio` untuk `/studio`; panel/lane/preview Studio
+   tidak dihapus. Composer tidak bergantung pada store/preview Studio.
+3. Uji Studio → Composer → DJ → Studio: project, undo, autosave dan pilihan
+   aset masing-masing tidak tercampur; tidak ada audio ganda/listener bocor.
+4. Import from Studio menghasilkan project Composer baru; file asal tetap
+   bisa dibuka di Studio dengan hasil audio yang sama.
+5. Asset-root Composer diuji terhadap prune dari Studio/DJ. Build dan tes
+   regresi web, desktop, Studio dan DJ lolos; dokumentasi memakai nama Composer.
 
 ---
 
-## 8. Utang yang dinyatakan terbuka
+## 8. Cakupan hasil review dan riset
 
-Bukan bagian dari rencana ini, dicatat supaya tidak diminta diam-diam:
+Target adalah kesetaraan **workflow utama**, bukan menyalin seluruh plugin,
+format project `.flp`, atau layanan Image-Line. Referensi lintas edisi: fitur
+recording, editing, dan plugin tertentu tidak tersedia sama di setiap edisi
+([perbandingan resmi](https://www.image-line.com/fl-studio/compare)).
+Prioritas di bawah adalah keputusan produk DawOnWeb berdasarkan riset.
 
-- **Automation clip** di playlist (FL) — model `Automation` sudah ada di
-  `timeline-core`; UI dan kompilasi eventnya fase berikutnya.
-- **Routing insert → insert, send** — `SendDesc`/`MAX_SENDS` ada di engine;
-  UI belum.
-- **Perubahan tempo di tengah lagu, time signature ≠ 4/4** — `TempoMap` bisa;
-  UI dan Playlist ruler belum.
-- **MIDI hardware in** — `NOTE_ON/OFF` sudah menjadi pintu; Web MIDI di
-  app-shell (docs/15 "MIDI") menyusul.
-- **Plugin VST/AU** — tidak ada jalur di WASM; desktop v2 (cpal, docs/20 §1b)
-  mungkin membukanya.
-- **Rekam audio** — tidak ada di paradigma ini maupun sebelumnya.
-- **Stretch audio clip mengikuti tempo** (FL "stretch" mode) — sekarang hanya
-  varispeed; time-stretch ada di docs/07 fase 2.
+| Area referensi FL | Gap plan awal | Target konkret | Fase / prioritas |
+|---|---|---|---|
+| Channel Rack / step sequencer | Fondasi sudah direncanakan | Multi-bar, panjang channel independen, fill every N, swing per-channel, mute/solo, clone, velocity/pan graph | F3 + F12 / utama |
+| Pattern workflow | Belum lengkap | PAT/SONG, shared pattern, make unique, split by channel, merge, rename/color, picker preview | F3–F5 / utama |
+| Piano Roll | Hanya edit dasar | Marquee, duplicate, transpose, quantize strength, triplet, scale highlight, chord stamp, ghost notes, velocity/pan, legato | F5 / utama |
+| Piano Roll lanjutan | Tidak ada | Arpeggiate, strum, humanize dengan seed, chop/glue, portamento/slide untuk instrumen yang mendukung | F12 + F15 / lanjutan |
+| Playlist | Fondasi ada | Audio/pattern/automation, slip/slice/stretch, group/lock, marker, make unique, consolidasi selection | F4 + F9 + F12 + F14 / utama |
+| Automation | Ditunda | Clip envelope, kurva, create automation dari parameter, record knob, read/touch/latch, undo | F9 / wajib produksi |
+| Rekam MIDI | Ditunda | MIDI device, note/velocity, sustain, pitch bend, CC, count-in, overdub/replace, input quantize opsional | F10 / wajib produksi |
+| Rekam audio | Di luar plan | Arm input, monitoring, metronome, count-in, punch/loop takes, kompensasi input latency | F10 / wajib produksi |
+| Mixer | Hanya 4 FX dan master | Bus/group, send level, sidechain detector, solo-safe return, wet/dry, reorder/bypass, PDC | F11 / wajib produksi |
+| Sampler / drum tools | One-shot sederhana | ADSR, root/tune, reverse, loop points, choke groups, slice-to-notes, drum presets | F12 / wajib produksi |
+| Audio editor | Trim/split saja | Crop, normalize, reverse, fade, transient slice; edit menghasilkan asset turunan dan undo | F12 / wajib produksi |
+| Stretch / warp ala NewTime | Varispeed saja | Tempo sync tanpa perubahan pitch, pitch tanpa perubahan durasi, warp markers | F12–F13 / wajib produksi |
+| Pitch editing ala NewTone | Tidak ada | Deteksi not monofonik, koreksi pitch/formant, render turunan | F15 / lanjutan |
+| Tempo dan meter | 4/4 konstan | Tempo points/ramp, meter changes, metronome/ruler konsisten | F13 / wajib produksi |
+| Browser dan preset | Library reuse | Search/tag/favorite, preview sync tempo, recent, missing-file relink, preset instrument/FX chain | F3 + F12 + F14 / utama |
+| Export dan project | Reuse disebut, workflow kurang | Master/stems, range/tail, WAV/FLAC/MP3/OGG, MIDI, collect assets, autosave/recovery | F14 / wajib produksi |
+| Stem separation | Sudah ada pipeline | Integrasikan ke Playlist baru, progress/cancel, alignment hasil dan provenance asset | F4 + F12 / reuse |
+| Instrumen dan FX | Synth minimal + registry | Subtractive synth, drum sampler; EQ/comp/limiter/reverb/delay/filter/distortion/chorus; preset | F7 + F11–F12 / utama |
+| Plugin eksternal | Ditunda tanpa jalur | VST3 native; AU macOS kandidat setelah feasibility; scan/state/crash isolation | F16 / lanjutan |
+| Patcher / Performance Mode | Tidak ada | Graph instrument/FX/macros; clip launching quantized dan rekam arrangement | F17 / lanjutan |
+| Cloud, remote, AI assistant | Tidak ada | Backlog opsional setelah workflow lokal lengkap | Bukan gate produksi |
+
+Dasar workflow: [manual workflow](https://www.image-line.com/fl-studio-learning-content/fl-studio-online-manual/html/basics_workflow.htm),
+[Playlist](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/playlist.htm),
+[Piano Roll tools](https://www.image-line.com/fl-studio-learning-content/fl-studio-online-manual/html/pianoroll_menu.htm).
+Ketiganya menjadi referensi fungsi; interaksi DawOnWeb tetap menyesuaikan panel dok.
+
+## 9. Koreksi kontrak sebelum F1/F2 diimplementasikan
+
+Bagian ini memperluas sketsa §3–§5; sketsa itu belum merupakan skema final.
+
+1. **Lindungi Studio web/desktop dan DJ.** `packages/composer` mempunyai store/model UI
+   desktop sendiri; jangan mengubah `packages/studio/src/studio/store.ts`
+   menjadi v2 secara global. Decoder Rust membaca versi lama dan baru;
+   compiler menurunkan keduanya ke render IR bersama. Model lane legacy
+   tetap tersedia bagi web. Penghapusan tipe lama pada §3 hanya berlaku di
+   model Composer, bukan API bersama yang masih dipakai web.
+2. **Path aktual.** Rujukan `web/src/studio` di bagian awal adalah historis:
+   UI lane ada di `packages/studio/src/studio`, asset/waveform/import di
+   `packages/studio-core/src`, engine client/worklet/export di
+   `packages/engine/src`, shell di `packages/shell`. Jangan membuat jalur
+   import baru ke folder historis. Verifikasi docs/25 P2 dan dependensi P4
+   di checkout target sebelum mulai; status branch bukan bukti merge/rilis.
+3. **Routing migrasi.** Asset sama pada dua lane dengan FX/gain berbeda
+   harus menghasilkan channel berbeda. PCM boleh tetap dedup. Simpan solo,
+   pan, send, mute dan semua per-clip FX; contoh `Insert` §3 perlu `soloed`
+   serta referensi send. Buat fixture khusus kasus ini.
+4. **Presisi waktu.** PPQ 960 adalah pilihan kita. `SampleAnchor` menjaga
+   audio legacy. Tambahkan `timebase`, `TempoPoint`, `MeterPoint` sejak F1;
+   perubahan tempo pada audio absolute tidak memindahkan onset sample,
+   audio musical mengikuti tick. Panjang audio musical dikendalikan mode
+   stretch; jangan otomatis mengubah pitch. Ganti `len_bars` internal dengan
+   `length_ticks` agar meter dan pattern non-satu-bar dapat diwakili.
+5. **Identitas.** Note perlu ID stabil; event membawa channel, note ID dan
+   instance clip, agar dua clip dari pattern sama tidak saling mematikan not.
+   Urutan event sample sama ditetapkan (off sebelum on untuk retrigger).
+   Seek/stop/switch PAT–SONG dan disconnect harus melepas not/sustain;
+   define chase envelope/automation dan kebijakan note yang melintasi loop.
+6. **Sampler.** `one_shot` mengabaikan note-off; `gated` mengikuti envelope.
+   `cut_self`/choke group mematikan voice terkait saat trigger baru, bukan
+   pengganti note-off. Audisi pad dipisah dari edit step.
+7. **Snapshot.** Tetapkan generation/ack dan reclamation arena di non-audio
+   thread; jangan menimpa arena yang masih dibaca voice/render. Snapshot
+   overflow ditolak dengan error recoverable. Jalur ST menggunakan payload
+   bounded tanpa Atomics/SAB; buktikan no-allocation pada render. Snapshot
+   aktif di batas blok, event masa lalu tidak diputar ulang; trigger yang
+   sudah terlewat menunggu loop berikutnya. Uji delete channel aktif.
+8. **Automation.** Tambahkan ID parameter stabil, target channel/insert/FX,
+   clip curve + points tick, nilai default dan mapping normalized→unit.
+   Tentukan overlap (prioritas track lalu ID stabil), manual override,
+   nilai saat seek, recording mode, smoothing, dan bypass. Tempo automation
+   masuk tempo map compiler, bukan ditulis sembarang ke knob audio.
+9. **Mixer capacity.** Engine saat review: `MAX_BUSES=8`, `MAX_SENDS=4`,
+   `MAX_CHAIN_LEN=4` di `crates/engine/src/snapshot.rs`. Jangan memetakan
+   seluruh insert langsung ke 8 bus. F11 mendesain kapasitas/graph dan
+   versioning SAB; target 64 insert × 10 FX adalah budget produk yang perlu
+   benchmark, bukan kapasitas yang sudah tersedia. Tolak feedback cycle
+   pada rilis awal dan bedakan audible send dari sidechain input.
+10. **Tes yang valid.** Null-test menangkap PCM sebelum perangkat output,
+    dengan sample alignment, sample rate/seed identik, warmup/tail dan
+    dither dimatikan. Loopback hardware tidak punya jaminan null −100 dBFS.
+    PDC diuji pakai impulse di jalur berbeda. Latensi ≤1 blok hanya dari
+    event diterima engine ke proses render, bukan dari klik ke speaker.
+    Target FPS/xrun harus mencatat mesin, OS, buffer, sample rate, fixture.
+
+Perubahan API/skema/SAB wajib didahului pembaruan docs/00, docs/01,
+schema project dan bridge. Jangan menggunakan revisi dokumentasi ini
+sebagai klaim bahwa implementasi, benchmark, atau migrasi sudah lulus.
+
+## 10. Fase lanjutan dan release gate
+
+Urutan: **F0+F1 → F2 → F3/F4/F5/F6 → F7 → F8 (alpha)**.
+F9 bergantung F2/F4/F6; F10 bergantung F7/F9; F11 bergantung F6/F9;
+F12 bergantung F4/F7; F13 bergantung F9/F10/F12; F14 menyatukan F9–F13.
+F15–F17 menyusul setelah gate produksi. Pekerjaan independen boleh paralel
+sesuai aturan repo saat implementasi; estimasi kalender dibuat setelah spike
+F0, recording, stretch dan graph selesai, bukan dari jumlah panel.
+
+### F9 — Automation yang bisa dipakai produksi
+
+Buat automation dari parameter yang dipilih/last tweaked; point/curve editor,
+copy/paste, duplicate/make unique, record movement, undo, read/touch/latch.
+Event automation pattern dapat dikonversi ke clip. **Done:** sweep filter,
+volume dan wet/dry kembali sama setelah save/reopen dan seek di tengah;
+realtime/offline residual < −100 dBFS pada fixture deterministik; overlap dan
+manual override punya tes, parameter hilang ditampilkan sebagai unresolved.
+Referensi: [Event Editor](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/automation_eventeditor.htm).
+
+### F10 — Recording audio dan MIDI
+
+Spike input/output device dan clock lebih dulu. Gunakan kontrak host untuk
+MIDI/audio capture desktop; Web MIDI hanya bila runtime benar-benar mendukung,
+karena [Web MIDI](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API)
+bukan baseline lintas browser. Pisahkan adapter OS dari package Studio.
+
+Audio: input mono/stereo, arm, level, monitoring off/on, count-in/metronome,
+punch range, loop take lanes dan pilih potongan take (comp sederhana).
+MIDI: note, velocity, sustain, CC learn, pitch bend, overdub/replace,
+quantize saat rekam opsional dan simpan timing mentah untuk undo.
+Tulis PCM bertahap di worker/native writer, jangan mengumpulkan rekaman panjang
+seluruhnya di RAM. Rekaman selesai menjadi asset + audio clip otomatis.
+
+**Done:** rekam audio 10 menit tanpa lost frame, cancel/kehabisan disk/perangkat
+tercabut menyelamatkan take parsial; loopback terkalibrasi selisih ≤1 ms pada
+mesin uji. MIDI timestamp ke engine diuji terpisah dari latency hardware;
+sustain/retrigger/disconnect tidak menyisakan stuck note. Take dan edit comp
+pulih setelah restart. Input permission ditolak menghasilkan status actionable.
+Referensi: [Recording](https://www.image-line.com/fl-studio-learning-content/fl-studio-online-manual/html/recording.htm),
+[audio recording](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/recording_audio.htm).
+
+### F11 — Mixer produksi dan latency compensation
+
+Implementasikan bus/send, pre/post fader sebagai pilihan produk, sidechain
+compressor, routing graph tanpa siklus, chain reorder, wet/dry dan preset.
+Tambahkan limiter, saturation/distortion, chorus bila belum ada di registry;
+fitur disebut selesai hanya setelah DSP dan UI keduanya berfungsi.
+Setiap node melaporkan latency/tail untuk PDC dan export.
+
+**Done:** kick men-duck bass tanpa suara kick bocor lewat sidechain; return
+reverb tetap benar saat solo-safe; impulse paralel sejajar ≤1 sample setelah
+PDC. Perubahan routing/latency tidak klik. Ukur target 64 insert × 10 slot
+(pakai kombinasi FX yang dinyatakan, bukan asumsi seluruh FX berat) dengan
+xrun 0 selama 10 menit; jika gagal, tetapkan limit hasil ukur secara eksplisit.
+Referensi: [Mixer](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/mixer.htm),
+[PDC](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/mixer_trackprops.htm).
+
+### F12 — Sampling, instrumen, audio editing dan stretch
+
+Lengkapi sampler/drum rack dan tool Piano Roll pada matriks; preset mencakup
+kick/snare/hihat, bass, pad dan lead dengan aset yang boleh didistribusikan.
+Editor menghasilkan asset turunan, menyimpan sumber dan recipe edit.
+Slice ke pad/not, reverse, normalize, loop/choke, envelopes dan tuning.
+Stretch berkualitas dikerjakan worker/native job dengan cache berversi;
+preview dan export memakai PCM hasil job yang sama. Jangan mengganti tempo
+preserving-pitch dengan playbackRate. Stem separation reuse pipeline yang ada.
+
+**Done:** loop 100 BPM masuk project 128 BPM, durasi tepat dalam ≤1 sample
+pada panjang target; sine uji mempertahankan pitch ±5 cent. Materi drum/vokal
+ikut listening test untuk transient/smearing, bukan hanya sine. Cancel,
+cache invalidation, undo, reopen dan missing source tidak merusak asset asli.
+Referensi: [NewTime](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/plugins/Newtime.htm).
+
+### F13 — Tempo map, meter map, warp
+
+Tempo points/ramp dan perubahan 4/4→3/4; warp marker source sample→tick.
+Bangun konversi absolut teruji, jangan menjumlah pembulatan per beat.
+**Done:** song 120→140 BPM dengan perubahan meter, pattern, automation dan
+rekaman tetap sinkron; roundtrip tick/sample ≤1 sample pada domain yang
+representable. Audio absolute tetap pada sample asal, audio musical mengikuti
+map, waveform dan export cocok; undo mengembalikan semua anchor.
+
+### F14 — Project, export dan release produksi
+
+Autosave/version history/recovery sejak fondasi; fase ini menjadi gate ketahanan.
+Portable project dengan collect assets, relink file hilang, preset/metadata,
+MIDI import/export, consolidate/freeze/unfreeze dan render master/stems.
+WAV 16/24/32-float, FLAC/MP3/OGG memanfaatkan encoder yang tersedia setelah
+verifikasi capability; pilih range, sample rate, dither, normalization dan
+cut/leave tail secara eksplisit. Stem per insert memasukkan dependensi sidechain;
+shared return dan nonlinear master diberi opsi render yang jelas.
+
+**Done:** project dipindah ke mesin lain dan berbunyi sama; paksa crash saat
+save tidak merusak versi terakhir; freeze/unfreeze memenuhi null-test.
+Stem sejajar sample dan panjang/tail sesuai; penjumlahan stem hanya wajib
+null terhadap master untuk fixture linear tanpa master nonlinear/shared return
+yang terhitung dua kali. Reimport MIDI menjaga not/tempo/meter yang didukung;
+fitur tak terwakili dilaporkan. Tidak menjanjikan buka/simpan `.flp`.
+
+Gate user: buat beat dari nol → bass/chord → susun lagu → rekam vokal/MIDI →
+edit timing → automation build-up → sidechain dan mix → export master/stems →
+save/reopen. Seluruh alur wajib lulus di desktop macOS dan Windows yang ditargetkan.
+F8 hanya alpha beat-maker; label produksi lengkap menunggu F14.
+
+### F15–F17 — Perluasan setelah produksi stabil
+
+- **F15:** pitch correction monofonik/formant, Piano Roll generators lanjutan,
+  multisample/velocity layers dan modulation matrix. Gate: undoable edit,
+  preset roundtrip, deterministic bounce dan listening test vokal.
+- **F16:** spike VST3 native terlebih dulu: realtime + offline host, GUI,
+  scan/quarantine, state save/restore, parameter automation, MIDI, latency,
+  multi-output dan crash isolation. AU hanya setelah jalur macOS terbukti.
+  Bukan janji menjalankan plugin desktop di AudioWorklet WASM. Gate minimal:
+  satu instrumen dan satu efek dari vendor berbeda, restore project dan
+  crash terisolasi tanpa kehilangan project; plugin nondeterministik punya
+  toleransi tes tersendiri. Evaluasi SDK, lisensi dan packaging saat spike.
+- **F17:** patch graph/macros dan performance clip launcher dengan quantized
+  launch/stop, scene, controller mapping dan record performance ke Playlist.
+  Gate: launch tepat batas bar, tidak stuck note, arrangement rekaman memutar
+  urutan event yang sama. `/dj` tetap produk terpisah.
+
+## 11. Sumber dan batas riset
+
+Ditinjau 10 September 2026 dari dokumentasi resmi; tidak memakai rumor versi
+atau menganggap semua edisi punya plugin yang sama. Link inline §8–§10 adalah
+sumber fungsi pembanding. Angka kapasitas/performa dan fase DawOnWeb adalah
+usulan engineering, bukan spesifikasi FL Studio.
+
+- [FL Studio features](https://www.image-line.com/fl-studio/features): cakupan
+  umum produksi, mixing, recording dan stem separation.
+- [Compare editions](https://www.image-line.com/fl-studio/compare): perbedaan
+  edisi, instrumen/efek serta alat audio editing; bukan target harga produk ini.
+- [Piano Roll](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/pianoroll.htm):
+  not, channel, scale dan hubungan dengan pattern.
+- [Plugin Wrapper](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/plugins/wrapper.htm):
+  acuan kebutuhan integrasi plugin, routing dan sidechain.
+- [AudioWorklet](https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet):
+  pemrosesan audio di thread terpisah; dukungan runtime tetap harus diuji.
+
+Review kode lokal terbatas pada struktur paket, dokumen arsitektur dan konstanta
+engine; bukan audit implementasi seluruh fitur. Tes/build tidak dijalankan
+untuk revisi plan ini. Checklist done di atas baru dijalankan saat implementasi.
