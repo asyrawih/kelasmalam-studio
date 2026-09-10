@@ -3,17 +3,30 @@
  * dipalsukan (`vi.mock('../split-job')`) supaya yang diuji adalah apa yang
  * dialog kirimkan, dan klien worker dipalsukan (`vi.mock('../split-client')`)
  * untuk baris status model + tombol UNDUH.
+ *
+ * Runtime (docs/26 P3b): host bawaan tes (web) → badge `WASM`; host palsu
+ * dengan `vocalSplit` → badge `NATIVE · …`, pilihan akselerasi kalau lebih
+ * dari satu, baris THREAD hanya untuk CPU, dan UNDUH lewat `ensureModel` host
+ * tanpa menyentuh klien worker.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  setPlatformHostForTests,
+  type PlatformHost,
+  type ScnetModelDownloadProgress,
+  type VocalSplitAccel,
+  type VocalSplitHost,
+} from '@kelasmalam/platform';
 
 import { DEFAULT_FADE_CURVE, type StudioClip } from '@kelasmalam/studio/studio/model';
 import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 import type { VocalModelInfo } from '../mdx-model';
 import type { SplitClient, SplitResult, SplitSeparateOptions } from '../split-client';
-import { __resetVocalSplitSessionForTest, markVocalSplitJob } from '../split-session';
-import { formatModelSize, VocalSplitDialog } from '../VocalSplitDialog';
+import { __resetVocalSplitSessionForTest, markVocalSplitJob, vocalSplitSnapshot } from '../split-session';
+import { formatModelSize, runtimeBadgeText, VocalSplitDialog } from '../VocalSplitDialog';
 
 const mocks = vi.hoisted(() => ({
   run: vi.fn(async () => ({ laneIds: ['a', 'b'] })),
@@ -70,6 +83,45 @@ class FakeClient implements SplitClient {
   }
 }
 
+const webHost: PlatformHost = {
+  kind: 'web',
+  pickSaveTarget: async () => ({ kind: 'cancelled' }),
+  openExternal: async () => {},
+  authHeaders: async () => ({}),
+};
+
+/** Host native palsu: `ensureModel` menunggu perintah tes; `run` tidak dipakai (job di-mock). */
+class FakeNative implements VocalSplitHost {
+  ensureCalls = 0;
+  onProgress: ((p: ScnetModelDownloadProgress) => void) | undefined;
+  private resolve: (() => void) | null = null;
+
+  constructor(readonly accelList: readonly VocalSplitAccel[]) {}
+
+  accels(): Promise<readonly VocalSplitAccel[]> {
+    return Promise.resolve(this.accelList);
+  }
+
+  ensureModel(_id: 'kim-vocal-2', onProgress: (p: ScnetModelDownloadProgress) => void): Promise<void> {
+    this.ensureCalls += 1;
+    this.onProgress = onProgress;
+    return new Promise<void>((resolve) => {
+      this.resolve = resolve;
+    });
+  }
+
+  run(): Promise<never> {
+    return Promise.reject(new Error('tidak dipakai di tes dialog'));
+  }
+
+  ready(): void {
+    this.onProgress?.({ loaded: 66_759_214, total: 66_759_214, cacheHit: true });
+    this.resolve?.();
+  }
+}
+
+const badge = (): HTMLElement => document.querySelector('[data-split-runtime]') as HTMLElement;
+
 function withClip(): StudioClip {
   studioActions.__resetForTest('empty');
   const laneId = studioStore.getState().lanes[0]!.id;
@@ -111,6 +163,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  setPlatformHostForTests(null);
   __resetVocalSplitSessionForTest();
 });
 
@@ -257,5 +310,85 @@ describe('VocalSplitDialog · dialog', () => {
     withClip();
     render(<VocalSplitDialog onClose={() => {}} />);
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
+  });
+});
+
+describe('VocalSplitDialog · runtime (docs/26 P3b)', () => {
+  it('runtimeBadgeText: kosong sebelum probe, WASM, NATIVE · CPU/COREML', () => {
+    expect(runtimeBadgeText(null, 'cpu')).toBe('');
+    expect(runtimeBadgeText('wasm', 'coreml')).toBe('WASM');
+    expect(runtimeBadgeText('native', 'cpu')).toBe('NATIVE · CPU');
+    expect(runtimeBadgeText('native', 'coreml')).toBe('NATIVE · COREML');
+  });
+
+  it('host tanpa vocalSplit → badge WASM, tanpa pilihan akselerasi, THREAD ada', async () => {
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    await vi.waitFor(() => expect(badge().textContent).toBe('WASM'));
+    expect(document.querySelector('[data-split-accel]')).toBeNull();
+    expect(screen.getByLabelText('thread')).toBeTruthy();
+  });
+
+  it('host native cpu+coreml → badge NATIVE · COREML, pilihan CPU/COREML, THREAD hanya saat CPU', async () => {
+    const native = new FakeNative(['cpu', 'coreml']);
+    setPlatformHostForTests({ ...webHost, vocalSplit: native });
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    await vi.waitFor(() => expect(badge().textContent).toBe('NATIVE · COREML'));
+    expect(document.querySelector('[data-split-accel]')).not.toBeNull();
+    const coreml = screen.getByRole('button', { name: 'COREML' });
+    const cpu = screen.getByRole('button', { name: 'CPU' });
+    expect(coreml.getAttribute('aria-pressed')).toBe('true');
+    expect(cpu.getAttribute('aria-pressed')).toBe('false');
+    // CoreML mengatur threadnya sendiri: baris THREAD disembunyikan.
+    expect(screen.queryByLabelText('thread')).toBeNull();
+
+    fireEvent.click(cpu);
+    await vi.waitFor(() => expect(badge().textContent).toBe('NATIVE · CPU'));
+    expect(cpu.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByLabelText('thread')).toBeTruthy();
+    expect(vocalSplitSnapshot().accel).toBe('cpu');
+
+    // Pilihan hidup di sesi, bukan di parameter job — job membacanya sendiri.
+    fireEvent.click(pisahkan());
+    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'kim-vocal-2', maxThreads: 4 }));
+    const params = (mocks.run.mock.calls as unknown as [[Record<string, unknown>]])[0][0];
+    expect(params).not.toHaveProperty('accel');
+  });
+
+  it('host native hanya cpu → badge NATIVE · CPU, tanpa pilihan akselerasi, THREAD ada', async () => {
+    setPlatformHostForTests({ ...webHost, vocalSplit: new FakeNative(['cpu']) });
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    await vi.waitFor(() => expect(badge().textContent).toBe('NATIVE · CPU'));
+    expect(document.querySelector('[data-split-accel]')).toBeNull();
+    expect(screen.getByLabelText('thread')).toBeTruthy();
+  });
+
+  it('UNDUH di host native → ensureModel host (unduhan saja), klien worker tidak dibuat, status siap', async () => {
+    const native = new FakeNative(['cpu', 'coreml']);
+    setPlatformHostForTests({ ...webHost, vocalSplit: native });
+    withClip();
+    await act(async () => {
+      render(<VocalSplitDialog onClose={() => {}} />);
+    });
+    expect(modelStatus().textContent).toBe('belum diunduh (66,8 MB)');
+    fireEvent.click(screen.getByRole('button', { name: 'UNDUH' }));
+    expect(native.ensureCalls).toBe(1);
+    expect(client.initCalls).toBe(0);
+    await vi.waitFor(() => expect(modelStatus().textContent).toBe('mengunduh …'));
+    act(() => native.onProgress?.({ loaded: 25, total: 100, cacheHit: false }));
+    await vi.waitFor(() => expect(modelStatus().textContent).toBe('mengunduh 25%'));
+    await act(async () => native.ready());
+    await vi.waitFor(() => expect(modelStatus().textContent).toBe('siap'));
+    expect((screen.getByRole('button', { name: 'SIAP' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(vocalSplitSnapshot().model).toMatchObject({ kind: 'ready', info: { runtime: 'native' } });
+    expect(mocks.run).not.toHaveBeenCalled();
   });
 });

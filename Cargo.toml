@@ -86,6 +86,14 @@ uuid = { version = "1", features = ["v4"] }
 # revisi supaya build bisa diulang. Menarik reqwest 0.12 di samping 0.13 —
 # dua salinan reqwest di binari desktop, diterima sampai soundclaude naik versi.
 soundclaude  = { git = "https://github.com/asyrawih/soundclaude", rev = "a5c3aa6005c42ad02377cf6ccb752a6e0d7560eb" }
+# --- vocal split native (docs/26 P3b) — HANYA crates/desktop-host ---
+# ONNX Runtime 1.28 native (CPU + CoreML di macOS). Fitur dipilih satu per
+# satu di crate pemakai (`download-binaries`, `coreml` hanya macOS); di sini
+# hanya versinya. Lihat kepala `crates/desktop-host/src/vocal_split.rs`
+# untuk temuan static/dynamic binari.
+ort     = { version = "2.0.0-rc.13", default-features = false }
+# FFT mixed-radix untuk n_fft 7680 (bukan pangkat dua) — cermin `fft.ts`.
+rustfft = "6"
 # Dev/test.
 criterion    = "0.5"
 proptest     = "1"

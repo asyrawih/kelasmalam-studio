@@ -33,5 +33,9 @@ export type {
   ScnetModelDownloadProgress,
   ScnetModelId,
   VocalModelId,
+  VocalSplitAccel,
+  VocalSplitHost,
+  VocalSplitInput,
+  VocalSplitOutput,
 } from './host';
 export type { ExportSink } from './export-sink';

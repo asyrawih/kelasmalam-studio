@@ -65,6 +65,9 @@
     "allow-youtube-update",
     "allow-youtube-info",
     "allow-youtube-bytes",
+    "allow-vocal-split-run",
+    "allow-vocal-split-cancel",
+    "allow-vocal-split-accels",
     "dialog:allow-open",
     "dialog:allow-save",
     {

@@ -7,7 +7,14 @@
  * (buffer dari `getBuffer`, asset lewat `assetFromBuffer` + `registerAsset` +
  * `registerBuffer`, `contentHash` kosong karena tidak punya berkas asal) —
  * tidak ada jalur asset kedua. Yang berbeda hanya dari mana PCM hasilnya
- * datang: worker ORT, bukan `OfflineAudioContext` + rantai stem.
+ * datang: worker ORT atau host native, bukan `OfflineAudioContext` + rantai
+ * stem.
+ *
+ * Dua runtime (docs/26 P3b), dipilih oleh KONTRAK host lewat `split-session`:
+ * host dengan `vocalSplit` → PCM 44,1 kHz dikirim ke `vocalSplit.run` (Rust),
+ * hasilnya kembali sebagai PCM; tanpa itu → `SplitClient.separate` di worker.
+ * Segala sesuatu sebelum (PCM sumber, resample) dan sesudah (asset, lane,
+ * verifikasi, undo) SAMA untuk keduanya — hanya langkah 3 yang bercabang.
  *
  * Kondisi tepi §3c yang ditangani di sini:
  *   - clip di-trim/loop: yang diproses `sourceStart..sourceLen`, bukan asset utuh;
@@ -35,8 +42,15 @@ import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 import type { VocalModelId } from './catalog';
 import type { VocalExecutionProvider } from './mdx-model';
 import type { StereoPcm } from './mdx-separate';
-import type { SplitResult } from './split-protocol';
-import { ensureVocalModel, markVocalSplitJob, readyVocalSplitClient } from './split-session';
+import {
+  ensureVocalModel,
+  markVocalSplitJob,
+  nativeVocalSplitHost,
+  probeVocalSplitRuntime,
+  readyVocalSplitClient,
+  vocalSplitSnapshot,
+  type VocalSplitAccel,
+} from './split-session';
 
 /** Kim_Vocal_2 dilatih di 44,1 kHz; segmen dan STFT-nya dihitung di rate ini. */
 export const MODEL_SAMPLE_RATE = 44_100;
@@ -48,7 +62,10 @@ export interface VocalSplitParams {
   readonly overlap: 0.25 | 0.5;
   readonly denoise: boolean;
   readonly muteSource: boolean;
+  /** Batas thread: worker WASM, atau `cpu` native. Diabaikan `coreml`. */
   readonly maxThreads?: number;
+  /** Hanya runtime native. Default = pilihan sesi (`vocalSplitSnapshot().accel`). */
+  readonly accel?: VocalSplitAccel;
 }
 
 export type VocalSplitOutcome =
@@ -89,7 +106,7 @@ function isAbortError(err: unknown): boolean {
 
 export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDeps = {}): Promise<VocalSplitOutcome> {
   if (active !== null) {
-    throw new Error('Vocal split masih berjalan — tunggu sampai selesai atau hentikan dulu; thread WASM hanya satu pool');
+    throw new Error('Vocal split masih berjalan — tunggu sampai selesai atau hentikan dulu; inferensinya satu pool');
   }
 
   const state = studioStore.getState();
@@ -110,31 +127,28 @@ export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDe
 
   try {
     // ── 1. Model ────────────────────────────────────────────────────────
+    // Native: tahap ini hanya unduhan (`ensureModel`); worker: unduh + sesi ORT.
     await ensureVocalModel(
       params.modelId,
       { maxThreads: params.maxThreads, executionProvider: deps.executionProvider },
       (p) => studioActions.setImportStage(jobId, 'model', p.total > 0 ? Math.min(1, p.loaded / p.total) : null),
     );
     if (signal.aborted) return { cancelled: true };
-    const client = readyVocalSplitClient(params.modelId);
-    if (client === null) throw new Error('sesi model hilang setelah dimuat');
+    const separate = await pickSeparator(params);
+    if (signal.aborted) return { cancelled: true };
 
     // ── 2. PCM sumber → stereo 44,1 kHz ─────────────────────────────────
     const frames = Math.max(1, Math.min(clip.sourceLen, buffer.length - clip.sourceStart));
     const input = await sourceRegionForModel(buffer, clip.sourceStart, frames);
     if (signal.aborted) return { cancelled: true };
 
-    // ── 3. Worker ───────────────────────────────────────────────────────
+    // ── 3. Pisahkan (worker atau native) ────────────────────────────────
     studioActions.setImportStage(jobId, 'separating', 0);
-    let result: SplitResult;
+    let result: SeparationResult;
     try {
-      result = await client.separate(
-        input.left,
-        input.right,
-        // `transfer`: PCM di `input` adalah salinan/hasil render milik job ini,
-        // bukan buffer asset — boleh dipindahkan tanpa salinan kedua.
-        { overlap: params.overlap, denoise: params.denoise, transfer: true },
-        (p) => studioActions.setImportStage(jobId, 'separating', p.total > 0 ? p.done / p.total : null),
+      result = await separate(
+        input,
+        (done, total) => studioActions.setImportStage(jobId, 'separating', total > 0 ? done / total : null),
         signal,
       );
     } catch (err: unknown) {
@@ -179,6 +193,60 @@ export async function runVocalSplit(params: VocalSplitParams, deps: VocalSplitDe
     active = null;
     markVocalSplitJob(null);
   }
+}
+
+// ── Pemilihan runtime ────────────────────────────────────────────────────────
+
+interface SeparationResult {
+  readonly vocals: StereoPcm;
+  readonly instrumental: StereoPcm;
+}
+
+type Separator = (
+  input: StereoPcm,
+  onProgress: (done: number, total: number) => void,
+  signal: AbortSignal,
+) => Promise<SeparationResult>;
+
+/**
+ * Langkah 3 untuk runtime yang dipilih sesi. Dipanggil SETELAH
+ * `ensureVocalModel`, jadi klien worker (kalau itu runtimenya) sudah siap.
+ */
+async function pickSeparator(params: VocalSplitParams): Promise<Separator> {
+  const native = nativeVocalSplitHost();
+  if (native !== undefined) {
+    // Probe mengisi `accel` bawaan (coreml kalau ada); di-cache setelah pertama.
+    await probeVocalSplitRuntime();
+    const accel = params.accel ?? vocalSplitSnapshot().accel;
+    return (input, onProgress, signal) =>
+      native.run(
+        {
+          left: input.left,
+          right: input.right,
+          sampleRate: MODEL_SAMPLE_RATE,
+          modelId: params.modelId,
+          overlap: params.overlap,
+          denoise: params.denoise,
+          accel,
+          // Thread hanya berarti untuk CPU; CoreML mengatur dirinya sendiri.
+          ...(accel === 'cpu' && params.maxThreads !== undefined ? { threads: params.maxThreads } : {}),
+        },
+        onProgress,
+        signal,
+      );
+  }
+  const client = readyVocalSplitClient(params.modelId);
+  if (client === null) throw new Error('sesi model hilang setelah dimuat');
+  return (input, onProgress, signal) =>
+    client.separate(
+      input.left,
+      input.right,
+      // `transfer`: PCM di `input` adalah salinan/hasil render milik job ini,
+      // bukan buffer asset — boleh dipindahkan tanpa salinan kedua.
+      { overlap: params.overlap, denoise: params.denoise, transfer: true },
+      (p) => onProgress(p.done, p.total),
+      signal,
+    );
 }
 
 /**
@@ -252,7 +320,7 @@ function pcmToBuffer(pcm: StereoPcm, sampleRate: number): AudioBuffer {
   return out;
 }
 
-/** Hasil worker (44,1 kHz) → `AudioBuffer` di rate proyek, resample kalau perlu. */
+/** Hasil pemisahan (44,1 kHz) → `AudioBuffer` di rate proyek, resample kalau perlu. */
 async function pcmToProjectBuffer(pcm: StereoPcm, projectRate: number): Promise<AudioBuffer> {
   const atModelRate = pcmToBuffer(pcm, MODEL_SAMPLE_RATE);
   if (projectRate === MODEL_SAMPLE_RATE) return atModelRate;

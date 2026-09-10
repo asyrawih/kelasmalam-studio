@@ -5,8 +5,10 @@
  *
  * Bentuknya `ReactNode` untuk `extras.toolbarActions` di `StudioPage`, sama
  * seperti `dialogs` untuk YouTube. Paket `@kelasmalam/vocal-split` sendiri
- * netral platform; byte modelnya datang lewat `PlatformHost.modelBytes`
- * (Rust, `model_download`/`model_read`) karena host desktop menyediakannya.
+ * netral platform; di desktop ia menemukan `PlatformHost.vocalSplit`
+ * (docs/26 P3b: unduhan lewat `model_download`, inferensi `ort` native lewat
+ * `vocal_split_run`) dan memakainya alih-alih worker WASM — keputusan itu
+ * dibuat dari kontrak host, bukan dari berkas ini.
  */
 
 import type { ReactNode } from 'react';

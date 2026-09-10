@@ -6,8 +6,23 @@
  * selesai, PCM sumber diambil dari `sourceStart..sourceLen` (mono digandakan,
  * rate lain di-resample), dan tiap kondisi tepi docs/26 §3c: batal, clip
  * hilang saat job jalan, job kedua ditolak, galat tidak meninggalkan bar.
+ *
+ * Dua runtime (docs/26 P3b): host bawaan tes (web, tanpa `vocalSplit`) →
+ * jalur worker; host palsu dengan `vocalSplit` (`setPlatformHostForTests`) →
+ * jalur native, di mana worker TIDAK pernah dibuat dan `run` host menerima
+ * PCM yang sama.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  setPlatformHostForTests,
+  type PlatformHost,
+  type ScnetModelDownloadProgress,
+  type VocalSplitAccel,
+  type VocalSplitHost,
+  type VocalSplitInput,
+  type VocalSplitOutput,
+} from '@kelasmalam/platform';
 
 import type { ImportStage } from '@kelasmalam/studio-core/assets/model';
 import { assetActions, assetStore } from '@kelasmalam/studio-core/assets/store';
@@ -85,6 +100,69 @@ class FakeClient implements SplitClient {
     });
   }
 }
+
+interface PendingRun {
+  readonly input: VocalSplitInput;
+  readonly onProgress: (done: number, total: number) => void;
+  readonly resolve: (r: VocalSplitOutput) => void;
+  readonly reject: (reason: unknown) => void;
+}
+
+/** Host native palsu: `ensureModel` selesai seketika (cache hit), `run` menunggu perintah tes. */
+class FakeNative implements VocalSplitHost {
+  accelList: readonly VocalSplitAccel[] = ['cpu', 'coreml'];
+  ensureCalls = 0;
+  cancelled = 0;
+  pending: PendingRun | null = null;
+
+  accels(): Promise<readonly VocalSplitAccel[]> {
+    return Promise.resolve(this.accelList);
+  }
+
+  ensureModel(_id: 'kim-vocal-2', onProgress: (p: ScnetModelDownloadProgress) => void): Promise<void> {
+    this.ensureCalls += 1;
+    onProgress({ loaded: 66_759_214, total: 66_759_214, cacheHit: true });
+    return Promise.resolve();
+  }
+
+  run(input: VocalSplitInput, onProgress: (done: number, total: number) => void, signal?: AbortSignal): Promise<VocalSplitOutput> {
+    return new Promise<VocalSplitOutput>((resolve, reject) => {
+      this.pending = { input, onProgress, resolve, reject };
+      signal?.addEventListener(
+        'abort',
+        () => {
+          this.cancelled += 1;
+          reject(new DOMException('dibatalkan', 'AbortError'));
+        },
+        { once: true },
+      );
+    });
+  }
+
+  async runCalled(): Promise<PendingRun> {
+    await vi.waitFor(() => expect(this.pending).not.toBeNull());
+    return this.pending!;
+  }
+
+  /** Dua kabar progres lalu hasil: vokal = input × 0,5, instrumen = input × 0,25. */
+  finish(): void {
+    const p = this.pending!;
+    p.onProgress(1, 2);
+    p.onProgress(2, 2);
+    const scale = (a: Float32Array, k: number): Float32Array => a.map((v) => v * k);
+    p.resolve({
+      vocals: { left: scale(p.input.left, 0.5), right: scale(p.input.right, 0.5) },
+      instrumental: { left: scale(p.input.left, 0.25), right: scale(p.input.right, 0.25) },
+    });
+  }
+}
+
+const webHost: PlatformHost = {
+  kind: 'web',
+  pickSaveTarget: async () => ({ kind: 'cancelled' }),
+  openExternal: async () => {},
+  authHeaders: async () => ({}),
+};
 
 /** `AudioBuffer` palsu — jsdom tidak punya; cukup untuk `buildEnvelope`, `set`, dan pembacaan kanal. */
 class FakeAudioBuffer {
@@ -191,6 +269,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setPlatformHostForTests(null);
   __resetVocalSplitSessionForTest();
 });
 
@@ -405,5 +484,122 @@ describe('runVocalSplit · kondisi tepi (docs/26 §3c)', () => {
       .rejects.toThrow(/belum punya audio/);
     expect(studioStore.getState().importJobs.filter((j) => j.laneId === laneId)).toEqual([]);
     expect(client.initCalls).toBe(0);
+  });
+});
+
+describe('runVocalSplit · host dengan vocalSplit (native, docs/26 P3b)', () => {
+  let native: FakeNative;
+
+  beforeEach(() => {
+    native = new FakeNative();
+    setPlatformHostForTests({ ...webHost, vocalSplit: native });
+  });
+
+  it('run host dipanggil dengan PCM region 44,1 kHz + opsi; worker tidak dibuat; dua lane seperti jalur worker', async () => {
+    const { laneId, clip } = setup();
+    const stages = recordStages(laneId);
+    const job = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.5, denoise: true, muteSource: true, maxThreads: 3 });
+
+    const pending = await native.runCalled();
+    expect(pending.input.left.length).toBe(4000);
+    expect(pending.input.right.length).toBe(4000);
+    const src = sourceBuffer(2, 44_100);
+    expect(pending.input.left[0]).toBeCloseTo(src.getChannelData(0)[500]!);
+    expect(pending.input.right[0]).toBeCloseTo(src.getChannelData(1)[500]!);
+    // Default akselerasi = coreml kalau host menawarkannya; thread tidak ikut.
+    expect(pending.input).toMatchObject({ sampleRate: 44_100, modelId: 'kim-vocal-2', overlap: 0.5, denoise: true, accel: 'coreml' });
+    expect(pending.input.threads).toBeUndefined();
+    expect(native.ensureCalls).toBe(1);
+    expect(client.initCalls).toBe(0);
+    expect(vocalSplitSnapshot()).toMatchObject({ runtime: 'native', accels: ['cpu', 'coreml'], accel: 'coreml' });
+    expect(vocalSplitSnapshot().model).toMatchObject({ kind: 'ready', info: { runtime: 'native', cacheHit: true } });
+    expect(studioStore.getState().importJobs.find((j) => j.laneId === laneId)).toMatchObject({ stage: 'separating' });
+
+    native.finish();
+    const outcome = await job;
+    if (!('laneIds' in outcome)) throw new Error('bukan sukses');
+    const lanes = studioStore.getState().lanes;
+    expect(lanes.map((l) => l.name)).toEqual(['FIRST', 'LAGU · VOCALS', 'LAGU · INST']);
+    expect(lanes[0]!.mute).toBe(true);
+    for (const lane of lanes.slice(1)) {
+      const c = lane.clips[0]!;
+      expect(c.start).toBe(1000);
+      expect(c.len).toBe(4000);
+      expect(c.sourceLen).toBe(4000);
+    }
+    expect(stages).toEqual(['reading', 'model', 'separating', 'assembling', 'end']);
+    expect(studioStore.getState().importJobs).toEqual([]);
+    expect(vocalSplitSnapshot().job).toBeNull();
+  });
+
+  it('accel cpu (dari params) membawa maxThreads; host tanpa coreml → default cpu', async () => {
+    const { clip } = setup();
+    const first = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: false, maxThreads: 3, accel: 'cpu' });
+    const a = await native.runCalled();
+    expect(a.input).toMatchObject({ accel: 'cpu', threads: 3 });
+    native.finish();
+    await first;
+
+    __resetVocalSplitSessionForTest();
+    native = new FakeNative();
+    native.accelList = ['cpu'];
+    setPlatformHostForTests({ ...webHost, vocalSplit: native });
+    const second = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: false, maxThreads: 2 });
+    const b = await native.runCalled();
+    expect(b.input).toMatchObject({ accel: 'cpu', threads: 2 });
+    expect(vocalSplitSnapshot()).toMatchObject({ accels: ['cpu'], accel: 'cpu' });
+    native.finish();
+    await second;
+  });
+
+  it('job kedua tidak mengunduh ulang: ensureModel host sekali', async () => {
+    const { clip } = setup();
+    const first = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: false });
+    await native.runCalled();
+    native.finish();
+    await first;
+    native.pending = null;
+    const second = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: false });
+    await native.runCalled();
+    native.finish();
+    await second;
+    expect(native.ensureCalls).toBe(1);
+    expect(studioStore.getState().lanes).toHaveLength(5);
+  });
+
+  it('batal → signal host di-abort, {cancelled}, tidak ada lane, bar hilang', async () => {
+    const { laneId, clip } = setup();
+    const stages = recordStages(laneId);
+    const job = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: true });
+    await native.runCalled();
+    expect(cancelVocalSplit()).toBe(true);
+    await expect(job).resolves.toEqual({ cancelled: true });
+    expect(native.cancelled).toBe(1);
+    expect(studioStore.getState().lanes).toHaveLength(1);
+    expect(studioStore.getState().lanes[0]!.mute).toBe(false);
+    expect(studioStore.getState().importJobs).toEqual([]);
+    expect(stages[stages.length - 1]).toBe('end');
+    expect(vocalSplitSnapshot().job).toBeNull();
+  });
+
+  it('galat host (mis. MODEL_MISSING) → dilempar, bar hilang, tidak ada lane', async () => {
+    const { clip } = setup();
+    const job = runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: true });
+    const pending = await native.runCalled();
+    pending.reject(Object.assign(new Error('Kim_Vocal_2.onnx belum diunduh'), { code: 'MODEL_MISSING' }));
+    await expect(job).rejects.toThrow('belum diunduh');
+    expect(studioStore.getState().lanes).toHaveLength(1);
+    expect(studioStore.getState().importJobs).toEqual([]);
+    expect(vocalSplitSnapshot().job).toBeNull();
+  });
+
+  it('ensureModel host gagal → job gagal di tahap model, status model = error', async () => {
+    native.ensureModel = () => Promise.reject(new Error('HTTP 500'));
+    const { clip } = setup();
+    await expect(runVocalSplit({ clipId: clip.id, modelId: 'kim-vocal-2', overlap: 0.25, denoise: false, muteSource: true }))
+      .rejects.toThrow('HTTP 500');
+    expect(native.pending).toBeNull();
+    expect(vocalSplitSnapshot().model).toEqual({ kind: 'error', message: 'HTTP 500' });
+    expect(studioStore.getState().importJobs).toEqual([]);
   });
 });

@@ -20,6 +20,8 @@
 //!   `web/src/platform/local-commands.ts`, dijaga tes `contract_tests.rs`.
 //! - **Rahasia** (`secret.rs`): [`SecretStore`] untuk API key/cookie Roblox
 //!   dalam satu berkas lokal di `app_config_dir()`, di luar folder kepustakaan.
+//! - **Vocal split** (`vocal_split.rs`, docs/26 P3b): STFT/iSTFT + pipa
+//!   segmen MDX-Net di Rust dan sesi ONNX Runtime native (CPU / CoreML).
 
 mod error;
 mod library;
@@ -62,3 +64,12 @@ mod youtube_tests;
 /// Grant Access lokal (docs/21 §3f): port rute `/roblox/*` Worker kepustakaan
 /// — sync katalog dengan cookie, experience, resolve place, grant izin Use.
 pub mod roblox_grant;
+
+/// Vocal split Kim_Vocal_2 native (docs/26 P3b): transform MDX-Net + ORT.
+pub mod vocal_split;
+pub use vocal_split::{
+    mdx_params, separate, Accel, MdxModel, MdxParams, MdxStft, OrtMdxModel, SeparateOptions,
+    Separated, VocalSplitEngine, KIM_VOCAL_2_MDX,
+};
+#[cfg(test)]
+mod vocal_split_tests;

@@ -20,6 +20,8 @@
  *   - `library_put_bytes` → badan mentah `Uint8Array` + metadata di header
  *     `x-hash`/`x-ext`. Ia TIDAK bisa lewat `callLocal` — tipe `callLocal`
  *     mengecualikannya, dan `putLocalBytes` adalah satu-satunya pintunya.
+ *   - `vocal_split_run` → badan mentah PCM + header `x-*` (docs/26 P3b),
+ *     bentuk yang sama; pintunya `createDesktopHost().vocalSplit.run`.
  *
  * ## Galat
  *
@@ -88,8 +90,16 @@ export function toLocalError(reason: unknown): LocalCommandError {
   return new LocalCommandError({ code: 'IO', message });
 }
 
-/** Command yang argumen dan hasilnya JSON — semuanya kecuali jalur unggah biner. */
-export type JsonLocalCommandName = Exclude<LocalCommandName, 'library_put_bytes'>;
+/**
+ * Command yang badannya MENTAH (`invoke(cmd, Uint8Array, { headers })`), bukan
+ * JSON: `library_put_bytes` lewat [`putLocalBytes`]; `vocal_split_run` lewat
+ * `createDesktopHost().vocalSplit.run` (`desktop.ts`) — PCM-nya tidak pernah
+ * jadi array angka.
+ */
+export type RawBodyLocalCommandName = 'library_put_bytes' | 'vocal_split_run';
+
+/** Command yang argumen dan hasilnya JSON — semuanya kecuali jalur badan mentah. */
+export type JsonLocalCommandName = Exclude<LocalCommandName, RawBodyLocalCommandName>;
 
 /** Byte biner boleh datang sebagai `ArrayBuffer`, `Uint8Array`, atau `number[]` (tes). */
 export function toArrayBuffer(raw: unknown): ArrayBuffer {

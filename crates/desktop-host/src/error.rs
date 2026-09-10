@@ -61,6 +61,12 @@ pub enum HostError {
     /// ("Video unavailable", "Sign in to confirm you're not a bot"), sudah
     /// tanpa label extractor — itu yang paling berguna dipajang ke user.
     Youtube(String),
+    /// Job dibatalkan lewat flag (vocal split, docs/26 P3b). Bukan kegagalan:
+    /// UI yang meminta, UI yang tahu harus diam.
+    Cancelled,
+    /// ONNX Runtime menolak/gagal (sesi tidak bisa dibuat, nama tensor tidak
+    /// cocok, `run` gagal). Isinya pesan ORT sendiri.
+    Inference(String),
 }
 
 impl HostError {
@@ -77,6 +83,8 @@ impl HostError {
             Self::DiskFull { .. } => "DISK_FULL",
             Self::SecretUnavailable(_) => "SECRET_UNAVAILABLE",
             Self::Youtube(_) => "YOUTUBE",
+            Self::Cancelled => "CANCELLED",
+            Self::Inference(_) => "INFERENCE",
         }
     }
 
@@ -142,6 +150,8 @@ impl fmt::Display for HostError {
             Self::Invalid(why) => f.write_str(why),
             Self::SecretUnavailable(why) => write!(f, "berkas rahasia Roblox: {why}"),
             Self::Youtube(why) => write!(f, "YouTube: {why}"),
+            Self::Cancelled => f.write_str("dibatalkan"),
+            Self::Inference(why) => write!(f, "ONNX Runtime: {why}"),
         }
     }
 }

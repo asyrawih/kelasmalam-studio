@@ -27,6 +27,7 @@ mod model;
 mod roblox;
 mod soundcloud;
 mod store;
+mod vocal_split;
 mod youtube;
 
 use std::sync::{Arc, Mutex};
@@ -47,6 +48,8 @@ pub const MODEL_PROGRESS_EVENT: &str = "daw://model-progress";
 /// Event progres YouTube (docs/23): `{ phase, name, done, total }` —
 /// `phase` `tools` (mengunduh yt-dlp/qjs) atau `audio` (mengunduh lagu).
 pub const YOUTUBE_PROGRESS_EVENT: &str = "daw://youtube-progress";
+/// Event progres vocal split (docs/26 P3b): `{ id, done, total }` per segmen.
+pub const VOCAL_SPLIT_PROGRESS_EVENT: &str = "daw://vocal-split-progress";
 
 /// Origin web yang menyajikan model untuk browser; desktop mengunduh dari
 /// tempat yang sama (docs/20 §1g).
@@ -68,6 +71,11 @@ pub struct AppState {
     /// Di folder data bawaan, bukan folder kepustakaan — ia cache. SATU
     /// instance supaya cache versi `status()`-nya bertahan antar command.
     pub youtube: daw_desktop_host::youtube::Tools,
+    /// Sesi ONNX Runtime vocal split (docs/26 P3b), satu per `(model, accel)`.
+    /// Job memegang `Mutex` ini selama berjalan; `try_lock` gagal = `BUSY`.
+    pub vocal_split: vocal_split::VocalSplitState,
+    /// Flag batal per `x-job-id` yang sedang berjalan.
+    pub vocal_split_jobs: vocal_split::VocalSplitJobs,
 }
 
 /// Galat yang menyeberang IPC — `LocalError` kontrak, dibungkus karena aturan
@@ -177,5 +185,9 @@ pub fn invoke_handler() -> impl Fn(Invoke) -> bool + Send + Sync + 'static {
         youtube::youtube_update,
         youtube::youtube_info,
         youtube::youtube_bytes,
+        // vocal split native (docs/26 P3b)
+        vocal_split::vocal_split_run,
+        vocal_split::vocal_split_cancel,
+        vocal_split::vocal_split_accels,
     ]
 }

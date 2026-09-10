@@ -12,7 +12,12 @@
  *   - PISAHKAN menutup dialog lalu memanggil `runVocalSplit`; progresnya
  *     tampil di lane sumber (`LaneImportOverlay`), bukan di dialog ini;
  *   - job ditolak saat export berjalan (docs/26 §2 butir 5) — `exportProgress`
- *     non-null di store berarti export sedang jalan.
+ *     non-null di store berarti export sedang jalan;
+ *   - runtime (docs/26 P3b) TIDAK diputuskan di sini: `probeVocalSplitRuntime`
+ *     yang membacanya dari kontrak host. Dialog hanya menampilkan badge
+ *     (`NATIVE · CPU` / `NATIVE · COREML` / `WASM`), menawarkan akselerasi
+ *     kalau host native punya lebih dari satu, dan menyembunyikan THREAD saat
+ *     akselerasinya bukan CPU.
  *
  * Galat dari job dilaporkan lewat `alert` (native di WebView desktop): studio
  * belum punya mekanisme notifikasi global, dan dialog ini sudah tertutup saat
@@ -36,7 +41,16 @@ import { Button } from '@kelasmalam/ui/cyber';
 
 import { VOCAL_MODELS, type VocalModelId } from './catalog';
 import { cancelVocalSplit, runVocalSplit } from './split-job';
-import { defaultVocalSplitThreads, ensureVocalModel, useVocalSplit, type VocalModelStatus } from './split-session';
+import {
+  defaultVocalSplitThreads,
+  ensureVocalModel,
+  probeVocalSplitRuntime,
+  setVocalSplitAccel,
+  useVocalSplit,
+  type VocalModelStatus,
+  type VocalSplitAccel,
+  type VocalSplitRuntime,
+} from './split-session';
 
 export interface VocalSplitDialogProps {
   readonly onClose: () => void;
@@ -81,6 +95,14 @@ export function modelStatusText(status: VocalModelStatus, bytes: number): string
   }
 }
 
+const ACCEL_LABEL: Record<VocalSplitAccel, string> = { cpu: 'CPU', coreml: 'COREML' };
+
+/** Teks badge runtime di header; kosong selama runtime belum diketahui. */
+export function runtimeBadgeText(runtime: VocalSplitRuntime | null, accel: VocalSplitAccel): string {
+  if (runtime === null) return '';
+  return runtime === 'native' ? `NATIVE · ${ACCEL_LABEL[accel]}` : 'WASM';
+}
+
 function reportSplitError(err: unknown): void {
   const message = `Vocal split gagal: ${err instanceof Error ? err.message : String(err)}`;
   if (typeof alert === 'function') alert(message);
@@ -112,6 +134,15 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
   const status: VocalModelStatus = split.modelId === modelId ? split.model : { kind: 'idle' };
   const running = split.job !== null;
   const maxThreads = Math.max(1, (typeof navigator === 'undefined' ? 2 : navigator.hardwareConcurrency) || 2);
+  const native = split.runtime === 'native';
+  // Pilihan akselerasi hanya kalau ada yang bisa dipilih; thread hanya berarti
+  // untuk WASM dan CPU native.
+  const showAccel = native && split.accels.length > 1;
+  const showThreads = !native || split.accel === 'cpu';
+
+  useEffect(() => {
+    void probeVocalSplitRuntime();
+  }, []);
 
   const blocker =
     selected === null
@@ -231,6 +262,21 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
             Pisahkan Vokal
           </h2>
           <span style={{ fontSize: '9px', letterSpacing: '.12em', color: 'var(--cy-text-muted)' }}>MDX-NET</span>
+          <span
+            data-split-runtime
+            title={native ? 'Inferensi di luar WebView (ort native)' : 'Inferensi ORT-web WASM di Web Worker'}
+            style={{
+              marginLeft: 'auto',
+              fontSize: '9px',
+              letterSpacing: '.14em',
+              padding: '1px 6px',
+              border: '1px solid var(--cy-border)',
+              color: native ? 'var(--cy-accent)' : 'var(--cy-text-muted)',
+              visibility: split.runtime === null ? 'hidden' : 'visible',
+            }}
+          >
+            {runtimeBadgeText(split.runtime, split.accel)}
+          </span>
         </header>
 
         {/* Sumber */}
@@ -317,34 +363,57 @@ export function VocalSplitDialog({ onClose }: VocalSplitDialogProps): JSX.Elemen
           </label>
         </div>
 
+        {/* Akselerasi (hanya host native dengan lebih dari satu pilihan) */}
+        {showAccel ? (
+          <div style={ROW} data-split-accel>
+            <div style={LABEL}>Akselerasi</div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {split.accels.map((a) => (
+                <Button
+                  key={a}
+                  size="sm"
+                  variant={split.accel === a ? 'solid' : 'ghost'}
+                  aria-pressed={split.accel === a}
+                  onClick={() => setVocalSplitAccel(a)}
+                >
+                  {ACCEL_LABEL[a]}
+                </Button>
+              ))}
+            </div>
+            <div style={{ ...HINT, marginTop: '4px' }}>CoreML paling cepat; CPU kalau hasilnya aneh</div>
+          </div>
+        ) : null}
+
         {/* Thread */}
-        <div style={ROW}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ ...LABEL, marginBottom: 0 }}>Thread</span>
-            <input
-              type="number"
-              aria-label="thread"
-              min={1}
-              max={maxThreads}
-              value={threads}
-              onChange={(e) => {
-                const n = Number.parseInt(e.target.value, 10);
-                if (Number.isFinite(n)) setThreads(Math.max(1, Math.min(maxThreads, n)));
-              }}
-              style={{
-                width: '56px',
-                height: '28px',
-                padding: '0 6px',
-                background: 'var(--cy-surface-2)',
-                color: 'var(--cy-text)',
-                border: '1px solid var(--cy-border-strong)',
-                fontFamily: 'var(--cy-font-mono)',
-                fontSize: '11px',
-              }}
-            />
-            <span style={HINT}>dari {maxThreads} core</span>
-          </label>
-        </div>
+        {showThreads ? (
+          <div style={ROW}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ ...LABEL, marginBottom: 0 }}>Thread</span>
+              <input
+                type="number"
+                aria-label="thread"
+                min={1}
+                max={maxThreads}
+                value={threads}
+                onChange={(e) => {
+                  const n = Number.parseInt(e.target.value, 10);
+                  if (Number.isFinite(n)) setThreads(Math.max(1, Math.min(maxThreads, n)));
+                }}
+                style={{
+                  width: '56px',
+                  height: '28px',
+                  padding: '0 6px',
+                  background: 'var(--cy-surface-2)',
+                  color: 'var(--cy-text)',
+                  border: '1px solid var(--cy-border-strong)',
+                  fontFamily: 'var(--cy-font-mono)',
+                  fontSize: '11px',
+                }}
+              />
+              <span style={HINT}>dari {maxThreads} core</span>
+            </label>
+          </div>
+        ) : null}
 
         <div style={{ ...HINT, fontSize: '8px', marginBottom: '12px' }}>{model.attribution}</div>
 

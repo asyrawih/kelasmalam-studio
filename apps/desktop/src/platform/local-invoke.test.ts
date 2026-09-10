@@ -35,9 +35,15 @@ describe('bentuk: setiap command di kontrak bisa dipanggil', () => {
   it('semua nama di LOCAL_COMMAND_NAMES lewat callLocal, kecuali unggah biner lewat putLocalBytes', async () => {
     // `library_blob` menormalkan jawabannya; ArrayBuffer kosong sah untuk semua.
     invoke.mockResolvedValue(new ArrayBuffer(0));
+    let skipped = 0;
     for (const name of LOCAL_COMMAND_NAMES) {
       if (name === 'library_put_bytes') {
         await putLocalBytes('h', 'mp3', new Uint8Array(2));
+      } else if (name === 'vocal_split_run') {
+        // Badan mentah PCM: pintunya `createDesktopHost().vocalSplit.run`,
+        // diuji di `desktop.test.ts` — bukan pembungkus ini.
+        skipped += 1;
+        continue;
       } else {
         // Argumen kosong cukup untuk tes bentuk: yang diuji adalah bahwa nama
         // itu diterima pembungkus dan diteruskan apa adanya ke `invoke`.
@@ -45,7 +51,8 @@ describe('bentuk: setiap command di kontrak bisa dipanggil', () => {
       }
       expect(invoke).toHaveBeenLastCalledWith(name, expect.anything(), ...(name === 'library_put_bytes' ? [expect.anything()] : [undefined]));
     }
-    expect(invoke).toHaveBeenCalledTimes(LOCAL_COMMAND_NAMES.length);
+    expect(skipped).toBe(1);
+    expect(invoke).toHaveBeenCalledTimes(LOCAL_COMMAND_NAMES.length - skipped);
   });
 
   it('tipe hasil mengikuti kontrak', () => {
@@ -63,6 +70,8 @@ describe('bentuk: setiap command di kontrak bisa dipanggil', () => {
     const hanyaDikompilasi = (): void => {
       // @ts-expect-error library_put_bytes hanya lewat putLocalBytes
       void callLocal('library_put_bytes', { hash: 'h', ext: 'mp3' });
+      // @ts-expect-error vocal_split_run hanya lewat host.vocalSplit.run (badan mentah PCM)
+      void callLocal('vocal_split_run', {});
       // @ts-expect-error nama yang tidak ada di kontrak
       void callLocal('library_traks', {});
       // @ts-expect-error argumen yang salah bentuk

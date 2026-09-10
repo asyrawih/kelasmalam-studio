@@ -88,6 +88,54 @@ export interface ModelBytes {
   readonly cacheHit: boolean;
 }
 
+// ── Vocal split native (docs/26 P3b) ────────────────────────────────────────
+
+/** Akselerasi inferensi native. `coreml` hanya ditawarkan host macOS. */
+export type VocalSplitAccel = 'cpu' | 'coreml';
+
+export interface VocalSplitInput {
+  readonly left: Float32Array;
+  readonly right: Float32Array;
+  /** Wajib 44 100 — Kim_Vocal_2 dilatih di rate ini; host menolak yang lain. */
+  readonly sampleRate: number;
+  readonly modelId: VocalModelId;
+  readonly overlap: 0.25 | 0.5;
+  readonly denoise: boolean;
+  readonly accel: VocalSplitAccel;
+  /** Batas thread intra-op untuk `cpu`; diabaikan `coreml`. */
+  readonly threads?: number;
+}
+
+export interface VocalSplitOutput {
+  readonly vocals: { readonly left: Float32Array; readonly right: Float32Array };
+  readonly instrumental: { readonly left: Float32Array; readonly right: Float32Array };
+}
+
+/**
+ * Inferensi vocal split di LUAR WebView — sisi Rust (`ort` crate) di desktop.
+ * Lihat [`PlatformHost.vocalSplit`] untuk kapan ia ada dan apa artinya bila
+ * tidak ada.
+ */
+export interface VocalSplitHost {
+  /** Akselerasi yang tersedia di mesin ini; `cpu` selalu ada. */
+  accels(): Promise<readonly VocalSplitAccel[]>;
+  /**
+   * Unduh bila belum ada; TIDAK membaca byte ke JS — modelnya dipakai di sisi
+   * host. Idempoten: berkas yang sudah ada selesai seketika tanpa progres.
+   */
+  ensureModel(id: VocalModelId, onProgress: (progress: ScnetModelDownloadProgress) => void): Promise<void>;
+  /**
+   * Satu job: PCM masuk sekali, hasil keluar sekali. `onProgress(done, total)`
+   * per segmen. `signal` yang di-abort membatalkan di host dan menolak dengan
+   * `DOMException` bernama `AbortError` — bentuk yang sama dengan jalur worker.
+   */
+  run(
+    input: VocalSplitInput,
+    onProgress: (done: number, total: number) => void,
+    signal?: AbortSignal,
+  ): Promise<VocalSplitOutput>;
+}
+
 export interface PlatformHost {
   readonly kind: PlatformKind;
 
@@ -145,6 +193,23 @@ export interface PlatformHost {
     id: ModelId,
     onProgress: (progress: ScnetModelDownloadProgress) => void,
   ): Promise<ModelBytes>;
+
+  /**
+   * Inferensi vocal split NATIVE (docs/26 P3b): PCM dikirim ke host, hasilnya
+   * kembali sebagai PCM — tidak ada ORT di WebView sama sekali untuk jalur
+   * ini.
+   *
+   * OPSIONAL, dan ketiadaannya BERARTI SESUATU: host yang tidak punya ini
+   * membiarkan `vocal-split` menjalankan ORT-web WASM di Web Worker-nya
+   * sendiri (byte model lewat `modelBytes` atau fetch + OPFS) — jalur yang
+   * bekerja di browser mana pun. Host yang PUNYA ini (desktop: `ort` crate
+   * dengan CPU/CoreML, 4–11× lebih cepat dari WASM) mengunduh modelnya sendiri
+   * lewat `ensureModel` dan tidak pernah mengirim byte model ke JS. Pemanggil
+   * bertanya "host ini punya `vocalSplit`?", bukan "ini desktop?" — UI, job,
+   * dan komit ke proyek sama untuk keduanya; yang berbeda hanya badge runtime
+   * dan pilihan akselerasi.
+   */
+  readonly vocalSplit?: VocalSplitHost;
 
   /**
    * Dialog pilih berkas native. OPSIONAL: host yang tidak punya (web) membiarkan

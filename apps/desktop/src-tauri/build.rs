@@ -64,6 +64,9 @@ const COMMANDS: &[&str] = &[
     "youtube_update",
     "youtube_info",
     "youtube_bytes",
+    "vocal_split_run",
+    "vocal_split_cancel",
+    "vocal_split_accels",
 ];
 
 fn main() {

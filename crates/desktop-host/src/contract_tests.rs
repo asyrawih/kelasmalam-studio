@@ -173,6 +173,7 @@ fn event_names_match_the_contract() {
         ("storeRelocate", "daw://store-relocate"),
         ("robloxProgress", "daw://roblox-progress"),
         ("youtubeProgress", "daw://youtube-progress"),
+        ("vocalSplitProgress", "daw://vocal-split-progress"),
     ] {
         assert!(
             ts.contains(&format!("{key}: '{name}'")),

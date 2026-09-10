@@ -25,6 +25,18 @@ uuid         = { workspace = true }
 serde        = { workspace = true, features = ["std"] }
 serde_json   = { workspace = true, features = ["std"] }
 
+# Vocal split native (docs/26 P3b, `src/vocal_split.rs`): ONNX Runtime +
+# FFT. `download-binaries` mengunduh binari ORT prebuilt saat build pertama
+# (temuan static/dynamic ada di kepala modul). `ndarray` tidak dibutuhkan:
+# tensor dibuat dari `(shape, Vec<f32>)`.
+ort          = { workspace = true, features = ["std", "download-binaries", "tls-rustls", "api-27"] }
+rustfft      = { workspace = true }
+
+# EP CoreML hanya di macOS: fitur `coreml` ort-sys menautkan framework
+# CoreML/Foundation yang tidak ada di Windows.
+[target.'cfg(target_os = "macos")'.dependencies]
+ort          = { workspace = true, features = ["coreml"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio    = { workspace = true, features = ["rt-multi-thread", "macros"] }

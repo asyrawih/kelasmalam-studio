@@ -271,6 +271,23 @@ proyek → batal di tengah tidak meninggalkan lane setengah jadi. Null-test
 docs/09 masih lulus. Tes `app-web-imports.test.ts` masih hijau (web tidak
 tahu fitur ini ada).
 
+### P3b — Runtime native di desktop (2–3 hari) — DIKERJAKAN 10 Sep 2026
+
+Keputusan produk: user menerima biaya bundel demi kecepatan desktop. Inferensi
+pindah ke Rust: `crates/desktop-host/src/vocal_split.rs` (rustfft untuk
+STFT/iSTFT dengan semantik yang sama persis dengan `mdx-stft.ts`, `ort` crate
+untuk model, EP CPU dengan CoreML opsional di macOS). PCM masuk sekali lewat
+badan mentah IPC (`vocal_split_run`, Float32 LE `[L, R]`) dan keluar sekali
+(`[vocL, vocR, instL, instR]`), progres lewat `daw://vocal-split-progress`,
+batal lewat `vocal_split_cancel`. Kontrak host: `PlatformHost.vocalSplit?`
+(`accels`, `ensureModel`, `run`) — pemanggil bertanya "host punya
+`vocalSplit`?", bukan "ini desktop?". Web tetap worker WASM.
+
+**Done:** null test Rust > 100 dB, tes paritas STFT TS↔Rust, tes ignore dengan
+model asli mencetak ms/segmen mendekati §4 (CPU ≈ 1 050 ms, CoreML ≈ 390 ms),
+dialog menampilkan badge `NATIVE · CPU/COREML`, batal bekerja, kontrak command
+TS == Rust hijau.
+
 ### P4 — Kualitas & polish (1 hari, opsional)
 
 Denoise, pilihan overlap 0,5, perbandingan A/B dengan output UVR pada 3 lagu

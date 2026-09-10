@@ -164,6 +164,35 @@ export interface YoutubeProgress {
   readonly total: number;
 }
 
+// ── Vocal split native (docs/26 P3b) — HANYA desktop ──────────────────────
+
+/** Cermin `VocalSplitAccel` di `@kelasmalam/platform/host`; `cpu` selalu ada, `coreml` hanya macOS. */
+export type VocalSplitAccelName = 'cpu' | 'coreml';
+
+/**
+ * Header `vocal_split_run` — metadata job yang menyertai badan mentah PCM.
+ * Semua nilai string karena ia header IPC, bukan JSON: Rust mem-parse
+ * `x-frames`/`x-overlap`/`x-threads` sendiri.
+ */
+export interface VocalSplitRunHeaders {
+  readonly 'x-job-id': string;
+  /** Jumlah frame N; badan = Float32 LE `[left(N), right(N)]`, 44 100 Hz. */
+  readonly 'x-frames': string;
+  readonly 'x-model': 'kim-vocal-2';
+  readonly 'x-overlap': '0.25' | '0.5';
+  readonly 'x-denoise': '0' | '1';
+  readonly 'x-accel': VocalSplitAccelName;
+  /** Batas thread intra-op, hanya berarti untuk `cpu`. */
+  readonly 'x-threads'?: string;
+}
+
+/** Payload `daw://vocal-split-progress`: segmen selesai per job. */
+export interface VocalSplitProgress {
+  readonly id: string;
+  readonly done: number;
+  readonly total: number;
+}
+
 // ── Peta command → argumen → hasil ─────────────────────────────────────────
 
 /**
@@ -297,6 +326,21 @@ export interface LocalCommands {
   youtube_info: { args: { url: string }; result: YoutubeInfo };
   /** Badan mentah audio (`bestaudio[ext=m4a]/bestaudio`); progres lewat `daw://youtube-progress` (`phase: 'audio'`). */
   youtube_bytes: { args: { url: string }; result: ArrayBuffer };
+
+  // vocal split — inferensi native `ort` crate (docs/26 P3b); HANYA desktop
+  /** `['cpu']` atau `['cpu','coreml']`. */
+  vocal_split_accels: { args: Record<string, never>; result: readonly VocalSplitAccelName[] };
+  /**
+   * Badan mentah = PCM Float32 LE `[left(N), right(N)]` 44 100 Hz; metadata
+   * lewat header (`VocalSplitRunHeaders`). Balasan biner Float32 LE
+   * `[voc_l(N), voc_r(N), inst_l(N), inst_r(N)]`. Progres lewat
+   * `daw://vocal-split-progress`. Galat `CANCELLED` | `BUSY` | `MODEL_MISSING`.
+   * Model harus sudah ada (`model_download`). TIDAK lewat `callLocal` —
+   * pintunya `createDesktopHost().vocalSplit.run`.
+   */
+  vocal_split_run: { args: VocalSplitRunHeaders; result: ArrayBuffer };
+  /** Hentikan job `id`; `vocal_split_run`-nya menolak dengan `CANCELLED`. */
+  vocal_split_cancel: { args: { id: string }; result: null };
 }
 
 export type LocalCommandName = keyof LocalCommands;
@@ -353,6 +397,9 @@ export const LOCAL_COMMAND_NAMES: readonly LocalCommandName[] = [
   'youtube_update',
   'youtube_info',
   'youtube_bytes',
+  'vocal_split_accels',
+  'vocal_split_run',
+  'vocal_split_cancel',
 ];
 
 /** Nama event Tauri yang dipancarkan sisi Rust untuk kontrak ini. */
@@ -360,4 +407,5 @@ export const LOCAL_EVENTS = {
   storeRelocate: 'daw://store-relocate',
   robloxProgress: 'daw://roblox-progress',
   youtubeProgress: 'daw://youtube-progress',
+  vocalSplitProgress: 'daw://vocal-split-progress',
 } as const;

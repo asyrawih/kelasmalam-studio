@@ -68,6 +68,9 @@ fn open_state(app: &App) -> Result<AppState, Box<dyn std::error::Error>> {
         youtube: daw_desktop_host::youtube::Tools::new(
             default_dir.join(daw_desktop_host::youtube::TOOLS_SUBDIR),
         ),
+        // Sesi ORT dimuat malas saat job pertama, bukan saat app mulai.
+        vocal_split: Arc::new(Mutex::new(daw_desktop_host::VocalSplitEngine::new())),
+        vocal_split_jobs: Arc::new(Mutex::new(std::collections::HashMap::new())),
     })
 }
 
