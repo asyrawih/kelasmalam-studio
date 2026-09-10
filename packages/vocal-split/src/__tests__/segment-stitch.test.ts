@@ -18,7 +18,12 @@
  * > 55 dB keseluruhan (terukur ≈ 62–65 dB); overlap 0,25 dan 0,5 > 100 dB
  * di semua sampel karena jendela Hann jahitan menekan frame tepi.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Tes ini mengolah puluhan detik audio dengan FFT murni JS; di runner CI
+// (2 vCPU) satu kasus bisa > 5 s — bawaan vitest. Batas per berkas, bukan
+// per kasus, supaya kasus baru tidak lupa memakainya.
+vi.setConfig({ testTimeout: 60_000 });
 
 import { VOCAL_MODELS, samplesPerSegment, segmentTrim } from '../catalog';
 import {

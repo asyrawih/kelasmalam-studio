@@ -8,7 +8,12 @@
  *   penuh, (b) sinyal yang energinya di bawah 17,6 kHz kembali > 40 dB.
  * - bentuk tensor: 261 120 sampel → tepat 256 frame, layout [4, dimF, T].
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Tes ini mengolah puluhan detik audio dengan FFT murni JS; di runner CI
+// (2 vCPU) satu kasus bisa > 5 s — bawaan vitest. Batas per berkas, bukan
+// per kasus, supaya kasus baru tidak lupa memakainya.
+vi.setConfig({ testTimeout: 60_000 });
 
 import { VOCAL_MODELS, samplesPerSegment } from '../catalog';
 import { createMdxStft, hannPeriodic, specIndex, zeroLowBins } from '../mdx-stft';
