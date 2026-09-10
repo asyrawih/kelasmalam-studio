@@ -14,9 +14,9 @@
 
 import { makeRouteOf, type Route as AnyRoute } from '@kelasmalam/shell/routes';
 
-export { DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, pathOf } from '@kelasmalam/shell/routes';
+export { COMPOSER_PATH, DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, pathOf } from '@kelasmalam/shell/routes';
 
-export type Route = Extract<AnyRoute, 'studio' | 'dj' | 'roblox' | 'proof-stem'>;
+export type Route = Extract<AnyRoute, 'composer' | 'studio' | 'dj' | 'roblox' | 'proof-stem'>;
 
 /** Trailing slash diabaikan; yang tidak dikenal (termasuk `/`) = studio. */
-export const routeOf: (pathname: string) => Route = makeRouteOf<Route>(['studio', 'dj', 'roblox', 'proof-stem'], 'studio');
+export const routeOf: (pathname: string) => Route = makeRouteOf<Route>(['composer', 'studio', 'dj', 'roblox', 'proof-stem'], 'studio');

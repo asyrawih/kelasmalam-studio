@@ -1,0 +1,14 @@
+{
+  "name": "@kelasmalam/composer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@kelasmalam/shell": "workspace:*",
+    "react": "^18.3.1",
+    "@kelasmalam/ui": "workspace:*"
+  }
+}

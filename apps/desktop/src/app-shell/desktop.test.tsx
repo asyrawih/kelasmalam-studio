@@ -13,6 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppShell } from './AppShell';
+import { routeOf } from './routes';
 import { __resetMenuWarningsForTest } from '../window/desktop';
 import { djActions, djStore } from '@kelasmalam/dj/dj/store';
 import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
@@ -404,4 +405,10 @@ describe('tanpa gerbang auth', () => {
     const dialog = screen.getByRole('dialog', { name: 'pintasan keyboard' });
     expect(within(dialog).getByText('PENYIMPANAN')).toBeTruthy();
   });
+});
+
+it("routes Composer alongside Studio and DJ", () => {
+  expect(routeOf("/composer/")).toBe("composer");
+  expect(routeOf("/studio")).toBe("studio");
+  expect(routeOf("/dj")).toBe("dj");
 });
