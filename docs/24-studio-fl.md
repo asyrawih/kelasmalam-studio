@@ -29,6 +29,16 @@ paralel di worktree terpisah.
 
 ## Status implementasi UI — 10 September 2026
 
+> **25 September 2026 — pintu masuknya DICABUT dari desktop.** Route
+> `/composer`, command `shell.goto.composer`, dan tombol COMPOSER di
+> header Studio sudah tidak ada di `apps/desktop`: fiturnya belum
+> dibutuhkan, dan halaman yang hanya separuh jadi lebih baik tidak bisa
+> dibuka daripada bisa dibuka lalu tidak berbunyi. `packages/composer`
+> TETAP UTUH dan tetap anggota workspace; menghidupkannya lagi berarti
+> mengembalikan `composer` ke daftar di `apps/desktop/src/app-shell/routes.ts`
+> dan cabangnya di `AppShell`. Paragraf di bawah menggambarkan keadaan
+> kodenya, bukan apa yang bisa dibuka user hari ini.
+
 Tahap UI awal tersedia di `packages/composer/src/ComposerPage.tsx`, route
 `/composer` pada desktop, tombol COMPOSER di header Studio dan command palette.
 Browser placeholder, Playlist 8 bar, Channel Rack 16 step, Piano Roll satu

@@ -15,9 +15,14 @@
  *
  * Halaman pemilik tiap id ditentukan dari awalannya (`menuCommandRoute`):
  * `shell.*` hidup di semua halaman; `studio.*` dan `library.*` ikut Studio
- * (dock kepustakaan dirender di sana); `dj.*` dan `roblox.*` ikut halamannya. Id yang dipanggil
- * saat halamannya tidak aktif diabaikan dengan peringatan — lihat
+ * (dock kepustakaan dirender di sana); `roblox.*` ikut halamannya. Id yang
+ * dipanggil saat halamannya tidak aktif diabaikan dengan peringatan — lihat
  * `dispatchMenuCommand`.
+ *
+ * Tidak ada `dj.*` maupun `shell.goto.dj` di sini: halaman DJ dan Composer
+ * tidak punya route di desktop untuk sekarang (`../app-shell/routes`), dan
+ * item menu yang menyasar halaman yang tidak bisa dibuka adalah item yang
+ * diam saat diklik — persis yang dilarang catatan `menu.rs`.
  */
 
 import type { Route } from '../app-shell/routes';
@@ -30,7 +35,6 @@ export const DESKTOP_MENU_COMMAND_IDS = [
   'shell.keymap',
   'shell.goto.home',
   'shell.goto.studio',
-  'shell.goto.dj',
   'shell.goto.roblox',
   'shell.goto.proof-stem',
 
@@ -51,17 +55,6 @@ export const DESKTOP_MENU_COMMAND_IDS = [
   // Tampilan
   'library.toggle',
 
-  // ── DJ ──
-  'dj.deckA.playPause',
-  'dj.deckB.playPause',
-  'dj.focused.playPause',
-  'dj.focus.toggle',
-  'dj.crossfader.center',
-  'dj.fx.toggle',
-  'dj.grid.toggle',
-  'dj.grid.undo',
-  'dj.grid.redo',
-
   // ── Roblox ──
   'roblox.bersihkan-selesai',
   'roblox.kosongkan',
@@ -74,7 +67,6 @@ const ROUTE_BY_PREFIX: Readonly<Record<string, Route | 'any'>> = {
   shell: 'any',
   studio: 'studio',
   library: 'studio',
-  dj: 'dj',
   roblox: 'roblox',
 };
 

@@ -12,12 +12,15 @@
 //!     sengaja disalin dari registrasi yang sungguhan ada, bukan dari apa
 //!     yang "seharusnya" ada. Tes D5 di sisi web menjaga ⊆ registry.
 //!   - command yang terdaftar oleh HALAMAN (`studio.*`, `library.toggle`,
-//!     `dj.*`) tidak berarti apa-apa di halaman lain; `runCommand()`
-//!     mengembalikan false dan tidak terjadi apa-apa. Menu Transport karena
-//!     itu punya dua bagian — Studio dan DJ — dan yang satu diam saat halaman
-//!     yang lain terbuka. Itu disengaja: menu native tidak dibangun ulang tiap
-//!     berpindah halaman, dan item yang muncul-hilang lebih membingungkan
-//!     daripada item yang diam.
+//!     `roblox.*`) tidak berarti apa-apa di halaman lain; `runCommand()`
+//!     mengembalikan false dan tidak terjadi apa-apa. Itu disengaja: menu
+//!     native tidak dibangun ulang tiap berpindah halaman, dan item yang
+//!     muncul-hilang lebih membingungkan daripada item yang diam.
+//!   - halaman DJ dan Composer TIDAK punya route di desktop untuk sekarang
+//!     (`apps/desktop/src/app-shell/routes.ts`), jadi item menunya dicabut
+//!     juga — bukan dibiarkan diam. Item yang diam karena halaman lain
+//!     sedang terbuka masih bisa dibuka user; item yang menyasar halaman
+//!     yang tidak ada tidak akan pernah bekerja.
 //!
 //! Item yang murni urusan OS (Quit, Hide, Cut/Copy/Paste/Select All,
 //! Fullscreen) memakai `PredefinedMenuItem`: perilakunya sudah benar
@@ -117,7 +120,6 @@ const VIEW_ITEMS: &[CommandItem] = &[
     item("library.toggle", "Kepustakaan"),
     item("shell.goto.home", "Beranda"),
     item("shell.goto.studio", "Studio"),
-    item("shell.goto.dj", "Mixer DJ"),
     item("shell.goto.roblox", "Unggah Roblox"),
     item("shell.goto.proof-stem", "Proof Stem"),
 ];
@@ -130,18 +132,6 @@ const TRANSPORT_STUDIO_ITEMS: &[CommandItem] = &[
     item("studio.transport.toStart", "Ke Awal"),
     item("studio.transport.toEnd", "Ke Akhir"),
     item("studio.loop.toggle", "Ulangi dari Awal saat Habis"),
-];
-
-const TRANSPORT_DJ_ITEMS: &[CommandItem] = &[
-    item("dj.focused.playPause", "Putar / Jeda deck yang fokus"),
-    item("dj.focus.toggle", "Pindah fokus deck"),
-    item("dj.deckA.playPause", "Putar / Jeda deck A"),
-    item("dj.deckB.playPause", "Putar / Jeda deck B"),
-    item("dj.crossfader.center", "Crossfader ke tengah"),
-    item("dj.fx.toggle", "Beat FX nyala / mati"),
-    item("dj.grid.toggle", "GRID EDIT — buka / tutup"),
-    item("dj.grid.undo", "Batalkan suntingan grid"),
-    item("dj.grid.redo", "Ulangi suntingan grid"),
 ];
 
 const HELP_ITEMS: &[CommandItem] = &[
@@ -157,7 +147,6 @@ pub const MENU_COMMANDS: &[&[CommandItem]] = &[
     EDIT_ITEMS,
     VIEW_ITEMS,
     TRANSPORT_STUDIO_ITEMS,
-    TRANSPORT_DJ_ITEMS,
     HELP_ITEMS,
 ];
 
@@ -217,18 +206,9 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Menu
     view_menu = add_items(app, view_menu, &VIEW_ITEMS[1..])?;
     let view_menu = view_menu.separator().fullscreen().build()?;
 
-    // Studio dulu, lalu DJ — masing-masing dipisah separator, bukan submenu:
-    // submenu menambah satu hover untuk perintah yang dipakai terus-menerus.
+    // Hanya Studio: bagian DJ dicabut bersama route-nya (lihat catatan modul).
     let mut transport_menu = SubmenuBuilder::new(app, "Transport");
     transport_menu = add_items(app, transport_menu, TRANSPORT_STUDIO_ITEMS)?;
-    transport_menu = transport_menu.separator();
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[..2])?;
-    transport_menu = transport_menu.separator();
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[2..4])?;
-    transport_menu = transport_menu.separator();
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[4..6])?;
-    transport_menu = transport_menu.separator();
-    transport_menu = add_items(app, transport_menu, &TRANSPORT_DJ_ITEMS[6..])?;
     let transport_menu = transport_menu.build()?;
 
     let window_menu = SubmenuBuilder::new(app, "Jendela")

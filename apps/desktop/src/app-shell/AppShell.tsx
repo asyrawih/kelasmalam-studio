@@ -7,7 +7,12 @@
  * yang dibuang P2 — melainkan komposisi yang berbeda:
  *
  *   - Tabel route sendiri (`./routes`): tanpa landing, tanpa halaman legal;
- *     `/` = Studio.
+ *     `/` = Studio. Tanpa Composer dan tanpa mixer DJ juga: keduanya belum
+ *     dibutuhkan di desktop, jadi pintu masuknya (route, command
+ *     `shell.goto.*`, tombol COMPOSER di baris impor, tombol MODE DJ di
+ *     header Studio, item menu native) dicabut semua sekaligus. Paketnya
+ *     tetap ada dan app web tetap punya `/dj`; menghidupkannya lagi berarti
+ *     mengembalikan daftar di `./routes` dan cabang render di bawah.
  *   - TANPA gerbang login dan tanpa `AuthApi`: cookie sesi tidak pernah ikut
  *     dari origin `tauri://` (docs/20 §1d), kepustakaannya lokal (docs/21),
  *     jadi tidak ada MASUK/KELUAR untuk dijaga.
@@ -25,8 +30,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { ComposerPage } from '@kelasmalam/composer/ComposerPage';
-import { DjPage } from '@kelasmalam/dj/dj';
 import { LibraryDock } from '@kelasmalam/library/library';
 import { ProofStemPage } from '@kelasmalam/proof-stem/proof-stem';
 import { RobloxRoute } from '@kelasmalam/roblox/roblox';
@@ -42,7 +45,7 @@ import { StoreSettings } from '../library-local/StoreSettings';
 import { guardWindowClose, listenMenuCommands, setWindowTitle } from '../window/desktop';
 import { vocalSplitToolbarActions } from '../vocal-split/register';
 import { YouTubeDialog } from '../youtube/YouTubeDialog';
-import { COMPOSER_PATH, DJ_PATH, HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
+import { HOME_PATH, PROOF_STEM_PATH, ROBLOX_PATH, STUDIO_PATH, routeOf, type Route } from './routes';
 
 export interface AppShellProps {
   readonly createEngine?: () => Promise<unknown>;
@@ -92,8 +95,6 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
       },
       // `⌘,` konvensi OS untuk "Pengaturan…"; item menu native butuh id sendiri.
       { id: 'shell.preferences', title: 'Pengaturan…', group: 'Aplikasi', defaultChord: 'mod+Comma', run: () => setKeymap(true) },
-      { id: 'shell.goto.composer', title: 'Buka Composer', group: 'Aplikasi', defaultChord: null, run: () => navigate(COMPOSER_PATH) },
-      { id: 'shell.goto.dj', title: 'Buka mixer DJ', group: 'Aplikasi', defaultChord: null, run: () => navigate(DJ_PATH) },
       { id: 'shell.goto.studio', title: 'Buka Studio', group: 'Aplikasi', defaultChord: null, run: () => navigate(STUDIO_PATH) },
       { id: 'shell.goto.roblox', title: 'Buka unggah Roblox', group: 'Aplikasi', defaultChord: null, run: () => navigate(ROBLOX_PATH) },
       { id: 'shell.goto.home', title: 'Kembali ke beranda', group: 'Aplikasi', defaultChord: null, run: () => navigate(HOME_PATH) },
@@ -111,10 +112,10 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
   const projectName = useStudio((s) => s.projectName);
   const dirty = useStudio(selectProjectDirty);
   useEffect(() => {
-    const title = route === 'composer' ? 'Composer — Kelasmalam' : windowTitle(projectName, dirty);
+    const title = windowTitle(projectName, dirty);
     document.title = title;
     void setWindowTitle(title);
-  }, [projectName, dirty, route]);
+  }, [projectName, dirty]);
 
   // Menu native = pintu ketiga ke registry: satu listener, satu penerjemah.
   useEffect(() => listenMenuCommands(), []);
@@ -145,24 +146,19 @@ export function AppShell({ createEngine }: AppShellProps): JSX.Element {
 
   return (
     <>
-      {route === 'composer' ? (
-        <ComposerPage onOpenStudio={() => navigate(STUDIO_PATH)} onOpenDj={() => navigate(DJ_PATH)} />
-      ) : route === 'dj' ? (
-        <DjPage onClose={() => navigate(STUDIO_PATH)} />
-      ) : route === 'roblox' ? (
+      {route === 'roblox' ? (
         <RobloxRoute onClose={() => navigate(STUDIO_PATH)} onOpenStudio={() => navigate(STUDIO_PATH)} />
       ) : route === 'proof-stem' ? (
         <ProofStemPage onClose={() => navigate(STUDIO_PATH)} />
       ) : (
         <StudioPage
           createEngine={createEngine}
-          onOpenDj={() => navigate(DJ_PATH)}
           onOpenRoblox={() => navigate(ROBLOX_PATH)}
           dock={<LibraryDock />}
           extras={{
             // SoundCloud di kedua app; YouTube HANYA di desktop (docs/23):
             // yt-dlp dijalankan Rust.
-            importActions: [{ id: 'composer', label: 'COMPOSER', run: () => navigate(COMPOSER_PATH) }, soundCloud.action, { id: 'youtube', label: 'YOUTUBE', run: () => setYoutubeOpen(true) }],
+            importActions: [soundCloud.action, { id: 'youtube', label: 'YOUTUBE', run: () => setYoutubeOpen(true) }],
             dialogs: (
               <>
                 {soundCloud.dialog}

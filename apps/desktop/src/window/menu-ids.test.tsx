@@ -15,7 +15,6 @@ import { AppShell } from '../app-shell/AppShell';
 import { pathOf, type Route } from '../app-shell/routes';
 import { listCommands } from '@kelasmalam/shell/command';
 import { DESKTOP_MENU_COMMAND_IDS, menuCommandRoute } from './menu-ids';
-import { djActions } from '@kelasmalam/dj/dj/store';
 import { studioActions } from '@kelasmalam/studio/studio/store';
 
 // Shell desktop memasang judul jendela, listener menu, dan penjaga tutup saat
@@ -39,7 +38,6 @@ const RECT = {
 
 beforeEach(() => {
   Element.prototype.getBoundingClientRect = () => RECT as DOMRect;
-  djActions.__resetForTest();
   studioActions.__resetForTest();
 });
 
@@ -64,9 +62,9 @@ describe('DESKTOP_MENU_COMMAND_IDS', () => {
   });
 
   it('tiap id terdaftar oleh halaman pemiliknya', () => {
-    // Tidak ada `landing` di desktop (`../app-shell/routes`): `shell.*` diperiksa
-    // di tiga halaman aplikasi.
-    const pages: readonly Route[] = ['studio', 'dj', 'roblox'];
+    // Tidak ada `landing` di desktop, dan tidak ada `dj` maupun `composer`
+    // (`../app-shell/routes`): `shell.*` diperiksa di halaman yang tersisa.
+    const pages: readonly Route[] = ['studio', 'roblox'];
     const byRoute = new Map<Route, ReadonlySet<string>>();
     for (const route of pages) byRoute.set(route, registeredAt(route));
 

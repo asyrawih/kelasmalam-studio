@@ -15,7 +15,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppShell } from './AppShell';
 import { routeOf } from './routes';
 import { __resetMenuWarningsForTest } from '../window/desktop';
-import { djActions, djStore } from '@kelasmalam/dj/dj/store';
 import { studioActions, studioStore } from '@kelasmalam/studio/studio/store';
 
 type Listener = (e: { payload: unknown }) => void;
@@ -47,7 +46,6 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
   ask: tauri.ask,
 }));
 
-const SR = 48_000;
 const RECT = {
   x: 0,
   y: 0,
@@ -104,17 +102,15 @@ async function requestClose(): Promise<{ prevented: boolean }> {
 
 beforeEach(() => {
   Element.prototype.getBoundingClientRect = () => RECT as DOMRect;
-  window.history.pushState(null, '', '/dj');
-  djActions.__resetForTest();
+  // Studio adalah satu-satunya halaman yang dibuka `/` di desktop, dan sejak
+  // Composer + DJ dicabut ia juga satu-satunya halaman transport.
+  window.history.pushState(null, '', '/studio');
   studioActions.__resetForTest();
   __resetMenuWarningsForTest();
   tauri.listeners.clear();
   tauri.closeHandlers = [];
   vi.clearAllMocks();
   installMocks();
-  act(() =>
-    djActions.loadDeck('A', { assetId: 1, frames: SR * 120, name: 'LAGU A', sampleRate: SR }),
-  );
 });
 
 afterEach(cleanup);
@@ -127,8 +123,8 @@ afterEach(cleanup);
 describe('menu native → registry', () => {
   it('event daw://menu-command menjalankan command yang sama dengan keyboard', async () => {
     render(<AppShell />);
-    await emitMenu({ id: 'dj.deckA.playPause' });
-    expect(djStore.getState().decks.A.playing).toBe(true);
+    await emitMenu({ id: 'studio.transport.playPause' });
+    expect(studioStore.getState().playing).toBe(true);
   });
 
   it('id yang tidak terdaftar di halaman ini → warn SEKALI, bukan throw', async () => {
@@ -144,8 +140,8 @@ describe('menu native → registry', () => {
   it('payload yang bentuknya salah diabaikan dengan peringatan', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     render(<AppShell />);
-    await emitMenu('dj.deckA.playPause');
-    expect(djStore.getState().decks.A.playing).toBe(false);
+    await emitMenu('studio.transport.playPause');
+    expect(studioStore.getState().playing).toBe(false);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -379,13 +375,7 @@ describe('tanpa gerbang auth', () => {
     expect(screen.queryByRole('button', { name: 'MASUK' })).toBeNull();
   });
 
-  it('/dj dan /roblox juga terbuka', () => {
-    window.history.pushState(null, '', '/dj');
-    const view = render(<AppShell />);
-    expect(screen.queryByTestId('auth-guard')).toBeNull();
-    expect(screen.getByText('KELAS MALAM DJ')).toBeTruthy();
-    view.unmount();
-
+  it('/roblox juga terbuka', () => {
     window.history.pushState(null, '', '/roblox');
     render(<AppShell />);
     expect(screen.queryByTestId('auth-guard')).toBeNull();
@@ -407,8 +397,22 @@ describe('tanpa gerbang auth', () => {
   });
 });
 
-it("routes Composer alongside Studio and DJ", () => {
-  expect(routeOf("/composer/")).toBe("composer");
-  expect(routeOf("/studio")).toBe("studio");
-  expect(routeOf("/dj")).toBe("dj");
+/**
+ * Composer dan mixer DJ DICABUT dari desktop: bukan halaman yang disembunyikan
+ * di balik bendera, melainkan path yang tidak ada di tabel route — jadi ia
+ * jatuh ke fallback seperti path asing lainnya. Tes ini yang gagal lebih dulu
+ * kalau salah satunya dihidupkan kembali tanpa disengaja.
+ */
+it('/composer dan /dj tidak ada di desktop — keduanya jatuh ke Studio', () => {
+  expect(routeOf('/composer')).toBe('studio');
+  expect(routeOf('/composer/')).toBe('studio');
+  expect(routeOf('/dj')).toBe('studio');
+  expect(routeOf('/studio')).toBe('studio');
+});
+
+it('Studio desktop tidak punya tombol MODE DJ maupun COMPOSER', () => {
+  window.history.pushState(null, '', '/studio');
+  render(<AppShell />);
+  expect(screen.queryByRole('button', { name: 'MODE DJ' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'COMPOSER' })).toBeNull();
 });
